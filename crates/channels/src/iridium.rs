@@ -1,6 +1,7 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{ANY_MODULATION, HzRange, SignalSignature};
-use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_wire::{Capability, Control, Hue, KindSpec, SettingField, Symbol};
 mod model;
 pub use model::*;
 mod burst;
@@ -36,11 +37,24 @@ pub(crate) fn iridium_form() -> Vec<SettingField> {
 }
 
 fn iridium_kinds() -> Vec<KindSpec> {
-    vec![crate::datalink::iridium_kind()]
+    vec![
+        KindSpec::tagged::<DataLinkMessage>(
+            EventKind::named("iridium"),
+            "Iridium",
+            "Bursts",
+            Hue::Blue,
+        )
+        .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+        .symbol(Symbol::DOT)
+        .sighting()
+        .build(),
+    ]
 }
 
 #[cfg(test)]
 mod encode;
+#[cfg(test)]
+pub(crate) mod fixture;
 mod frame;
 mod gsm;
 mod iip;
@@ -59,17 +73,14 @@ mod sbd;
 mod sensitivity;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-pub(crate) use tests::fixture;
 mod u3;
 mod voice;
 mod wideband;
 
 use std::sync::LazyLock;
 
-use crate::acars::block as acars;
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
+use sdrmm_aviation::acars::block as acars;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::Value;
@@ -77,10 +88,8 @@ use serde_json::Value;
 use self::ira::IridiumFrame;
 use self::receiver::ChannelDecoder;
 use self::wideband::{USABLE_FRACTION, WidebandDecoder};
-use crate::datalink::{self, Quality};
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
-};
+use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 
 const CHANNEL_RATE: f64 = 250_000.0;
 const HALF_BANDWIDTH: f64 = 25_000.0;
@@ -96,6 +105,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     emits: vec![EventKind::named("iridium")],
     ..ChannelDescriptor::default()
 });
+
+/// Where an Iridium burst keeps its envelope: the aircraft, or the satellite that sent it.
+const LINK: Fields = Fields::station(&["tail", "icao", "sat"]);
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -139,7 +151,7 @@ pub struct IridiumChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<IridiumParams, ChannelError> {
-    crate::settings_of::<IridiumParams>(settings)
+    sdrmm_decoder::settings_of::<IridiumParams>(settings)
 }
 
 pub(crate) fn input_rate(params: IridiumParams) -> f64 {
@@ -154,10 +166,10 @@ pub(crate) fn occupied_band(params: IridiumParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: IridiumParams) -> ChannelFilter {
+pub(crate) fn channel_filter(params: IridiumParams) -> FilterSpec {
     match params.span {
-        IridiumSpan::Channel => datalink::channel_filter(CHANNEL_RATE, HALF_BANDWIDTH),
-        _ => ChannelFilter::Passthrough,
+        IridiumSpan::Channel => FilterSpec::channel(HALF_BANDWIDTH),
+        _ => FilterSpec::Passthrough,
     }
 }
 
@@ -168,8 +180,9 @@ fn message(frame: &IridiumFrame) -> DataLinkMessage {
         .and_then(Value::as_u64)
         .and_then(|fixed| u32::try_from(fixed).ok());
     match &frame.acars {
-        Some(block) => datalink::message(
+        Some(block) => link::message(
             &Body::Acars(&block.core),
+            &LINK,
             Quality {
                 crc_ok: block.crc_ok,
                 fec_corrected,
@@ -178,11 +191,12 @@ fn message(frame: &IridiumFrame) -> DataLinkMessage {
             },
             None,
         ),
-        None => datalink::message(
+        None => link::message(
             &Body::<()>::Iridium {
                 kind: frame.kind,
                 details: &frame.details,
             },
+            &LINK,
             Quality {
                 crc_ok: frame
                     .details
@@ -213,7 +227,7 @@ impl NativeChannel for IridiumChannel {
     }
 }
 
-impl ChannelRx for IridiumChannel {
+impl Channel for IridiumChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         if params(&settings)?.span == self.span {
             Ok(())

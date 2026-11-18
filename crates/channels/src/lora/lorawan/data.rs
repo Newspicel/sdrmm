@@ -2,8 +2,8 @@ use crate::lora::LorawanFrame;
 use crate::lora::LorawanMessageType;
 
 use super::{Keys, Session, frame, le_u16, le_u32, mac, mic, split_mic};
-use crate::crypto::{self, Aes};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
+use sdrmm_crypto::{self as crypto, Aes};
 
 const MIN_DATA_LEN: usize = 12;
 const OPTS_START: usize = 8;

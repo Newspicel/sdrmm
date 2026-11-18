@@ -8,6 +8,9 @@ use crate::{
 };
 
 fn ports_for(kind: &str) -> Vec<PortSpec> {
+    if processors::NAMES.contains(&kind) {
+        return processors::body(kind).ports(None);
+    }
     NodeKind::parse(kind).map_or_default(NodeKind::ports)
 }
 
@@ -747,13 +750,7 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
         .collect();
     assert_eq!(
         cycle,
-        vec![
-            "event_filter",
-            "audio_fx",
-            "passive_radar",
-            "triangulation",
-            "bearing_fix"
-        ]
+        vec!["event_filter", "audio_fx", "triangulation", "bearing_fix"]
     );
 }
 
@@ -2199,6 +2196,7 @@ fn triangulation_without_data_loads_with_defaults() {
 }
 
 mod arrays;
+pub(crate) mod processors;
 mod registry;
 
 #[test]

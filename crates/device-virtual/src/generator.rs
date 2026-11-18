@@ -6,7 +6,7 @@ use std::{
 use arc_swap::ArcSwap;
 use num_complex::Complex;
 use sdrmm_device::{DeviceError, RxSink, SdrDevice, Worker, check_stream_settings, single_rx_sink};
-use sdrmm_modem::synth::{self, Catalog, Signal};
+use sdrmm_modem::synth::{self, Catalog, Rendered, Signal};
 use sdrmm_wire::{
     Agc, ArgumentOption, Capabilities, Coherence, DcArtifact, DeviceSettings, Duplex, ExtraSetting,
     ExtraValue, NoiseSource, Range, StreamScope,
@@ -24,6 +24,8 @@ pub const MAX_GENERATORS: usize = 64;
 pub const NOISE_OFF_DB: f64 = -140.0;
 const MIN_LEVEL_DB: f64 = -60.0;
 
+/// Where a generator starts tuned, in the 2 m band most of its signals live in.
+const CENTER_HZ: f64 = 145_000_000.0;
 const BLOCK_SECS: f64 = 0.025;
 const DEFAULT_LEVEL_DB: f64 = -12.0;
 const DEFAULT_NOISE_DB: f64 = -60.0;
@@ -184,7 +186,7 @@ impl SignalGen {
 
 fn settings_of(params: &Params) -> DeviceSettings {
     DeviceSettings {
-        center_hz: Some(params.catalog.center_hz),
+        center_hz: Some(CENTER_HZ),
         sample_rate: Some(params.rate_hz),
         extra: vec![
             ExtraValue {
@@ -371,7 +373,13 @@ fn skip_replay(at: &mut usize, len: usize, gap: u64, lost: u64) -> (u64, u64) {
 }
 
 fn renderable(params: &Params) -> Result<Vec<Complex<f32>>, DeviceError> {
-    let iq = render(params);
+    let iq = render(params).map_err(|error| {
+        tracing::warn!(signal = params.signal.id, %error, "the generator failed");
+        DeviceError::Io(format!(
+            "the {} generator failed: {error}",
+            params.signal.id
+        ))
+    })?;
     if iq.is_empty() {
         tracing::warn!(
             signal = params.signal.id,
@@ -385,10 +393,10 @@ fn renderable(params: &Params) -> Result<Vec<Complex<f32>>, DeviceError> {
     Ok(iq)
 }
 
-fn render(params: &Params) -> Vec<Complex<f32>> {
-    let mut iq = (params.signal.render)();
+fn render(params: &Params) -> Rendered {
+    let mut iq = params.signal.rendered()?;
     if iq.is_empty() {
-        return iq;
+        return Ok(iq);
     }
     if params.rate_hz != params.signal.rate_hz {
         iq = synth::resample(&iq, params.signal.rate_hz, params.rate_hz);
@@ -400,7 +408,7 @@ fn render(params: &Params) -> Vec<Complex<f32>> {
     if params.noise_db > NOISE_OFF_DB {
         synth::add_noise(&mut iq, 0x5DEE_CE66, amplitude(params.noise_db));
     }
-    iq
+    Ok(iq)
 }
 
 fn amplitude(db: f64) -> f32 {
@@ -409,7 +417,7 @@ fn amplitude(db: f64) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::mpsc, time::Duration};
+    use std::{borrow::Cow, sync::mpsc, time::Duration};
 
     use sdrmm_modem::synth::EMPTY_CATALOG;
 
@@ -417,6 +425,7 @@ mod tests {
     use sdrmm_wire::{GENERATOR_PREFIX, generator_key};
 
     use super::*;
+    use sdrmm_modem::synth::Render;
 
     #[test]
     fn a_late_replay_skips_signal_and_gap_alike() {
@@ -452,39 +461,37 @@ mod tests {
             id: "tone",
             label: "Carrier tone",
             rate_hz: 48_000.0,
-            render: tone,
+            render: Render::Always(tone),
         },
         Signal {
             id: "chirp",
             label: "Chirp",
             rate_hz: 96_000.0,
-            render: chirp,
+            render: Render::Always(chirp),
         },
         Signal {
             id: "keyed",
             label: "Keyed carrier",
             rate_hz: 240_000.0,
-            render: keyed,
+            render: Render::Always(keyed),
         },
     ];
 
     static CATALOG: Catalog = Catalog {
-        signals: SIGNALS,
+        signals: Cow::Borrowed(SIGNALS),
         default_id: "chirp",
-        center_hz: 145_000_000.0,
     };
 
     static SILENT_SIGNALS: &[Signal] = &[Signal {
         id: "silent",
         label: "Silent",
         rate_hz: 48_000.0,
-        render: nothing,
+        render: Render::Always(nothing),
     }];
 
     static SILENT_CATALOG: Catalog = Catalog {
-        signals: SILENT_SIGNALS,
+        signals: Cow::Borrowed(SILENT_SIGNALS),
         default_id: "silent",
-        center_hz: 145_000_000.0,
     };
 
     fn extra(name: &str, value: serde_json::Value) -> DeviceSettings {
@@ -506,6 +513,10 @@ mod tests {
             return 0.0;
         }
         iq.iter().map(|s| f64::from(s.norm_sqr())).sum::<f64>() / iq.len() as f64
+    }
+
+    fn rendered(params: &Params) -> Vec<Complex<f32>> {
+        render(params).expect("the signal renders")
     }
 
     fn generator() -> SignalGen {
@@ -619,8 +630,8 @@ mod tests {
             noise_db: -10.0,
             ..quiet
         };
-        assert!(power(&render(&loud)) > power(&render(&quiet)) * 100.0);
-        assert!(power(&render(&noisy)) > power(&render(&quiet)) * 10.0);
+        assert!(power(&rendered(&loud)) > power(&rendered(&quiet)) * 100.0);
+        assert!(power(&rendered(&noisy)) > power(&rendered(&quiet)) * 10.0);
     }
 
     #[test]

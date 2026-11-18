@@ -1,24 +1,28 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
-use crate::flex::PagerPayload;
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass, ermes_bch_decode};
+use sdrmm_dsp::{ShortBch, SyncDetector};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_CONTINUOUS},
     pulse::{self, Norm},
 };
+use sdrmm_wire::PagerPayload;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
+/// BCH(30,18).
+pub(crate) const BCH: ShortBch<30> = ShortBch::new(0o15315, 12);
 const RATE: f64 = 48_000.0;
 const BAUD: f64 = 3_125.0;
 const DEVIATION_HZ: f64 = 4_687.5;
@@ -77,7 +81,7 @@ fn mapping() -> Mapping {
 }
 
 fn params(settings: &ChannelSettings) -> Result<ErmesParams, ChannelError> {
-    crate::settings_of::<ErmesParams>(settings)
+    sdrmm_decoder::settings_of::<ErmesParams>(settings)
 }
 
 fn check_params(params: &ErmesParams) -> Result<(), ChannelError> {
@@ -99,13 +103,9 @@ pub(crate) fn occupied_band(params: &ErmesParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &ErmesParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: &ErmesParams) -> Result<FilterSpec, ChannelError> {
     check_params(params)?;
-    let half = params.bandwidth_hz / 2.0;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / RATE),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, params.bandwidth_hz / 2.0))
 }
 
 impl ErmesChannel {
@@ -142,7 +142,7 @@ impl ErmesChannel {
                 *word = *word << 1 | u32::from(bit);
                 *bits += 1;
                 if *bits == 30 {
-                    if ermes_bch_decode(*word).is_none() {
+                    if BCH.decode(*word).is_none() {
                         self.reset();
                     } else {
                         *words += 1;
@@ -170,7 +170,7 @@ impl ErmesChannel {
                         *terminated = true;
                         *bits = 0;
                         *word = 0;
-                    } else if !*terminated && ermes_bch_decode(*word).is_some() {
+                    } else if !*terminated && BCH.decode(*word).is_some() {
                         *bits = 0;
                         *word = 0;
                     } else {
@@ -209,7 +209,7 @@ impl ErmesChannel {
                 self.flush(out);
                 continue;
             }
-            let Some((word, errors)) = ermes_bch_decode(word) else {
+            let Some((word, errors)) = BCH.decode(word) else {
                 self.drop_message();
                 continue;
             };
@@ -348,7 +348,7 @@ impl NativeChannel for ErmesChannel {
     }
 }
 
-impl ChannelRx for ErmesChannel {
+impl Channel for ErmesChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         check_params(&params)?;
@@ -399,12 +399,16 @@ fn ermes_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn ermes_decoder() -> Native<ErmesParams> {
-    Native::new::<ErmesChannel>(occupied_band)
+    let decoder = Native::new::<ErmesChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(ermes_signatures)
         .trial(ermes_trial)
         .form(ermes_form)
-        .kinds(ermes_kinds)
+        .kinds(ermes_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn ermes_form() -> Vec<SettingField> {
@@ -419,9 +423,12 @@ fn ermes_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{synth, testutil::settings};
+    use crate::synth;
+    use sdrmm_decoder_test_support::settings;
     use sdrmm_wire::ChannelParams;
 
     #[test]
@@ -551,6 +558,6 @@ mod tests {
             "{:?}",
             out.events
         );
-        assert_eq!(ChannelRx::rejected(&channel), 1);
+        assert_eq!(Channel::rejected(&channel), 1);
     }
 }

@@ -1,0 +1,87 @@
+{
+  "name": "2157ece75dd0ac9a",
+  "test": "a pattern face > draws the pattern, the lane weights and the mode's form",
+  "graph": {
+    "nodes": [
+      {
+        "id": "arr",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "proc",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "processor",
+        "data": {
+          "processor_type": "beamformer",
+          "settings": {
+            "adaptation": "nlms",
+            "auto_nulls": false,
+            "bandwidth_hz": 200000,
+            "carry_over": 0.7,
+            "crossfade_ms": 20,
+            "forget": 0.999,
+            "loading": 0.1,
+            "main_lane": 0,
+            "mode": "mrc",
+            "noise": "measured",
+            "nulls_deg": [],
+            "offset_hz": 0,
+            "reference_lanes": [],
+            "steer": {
+              "kind": "wired"
+            },
+            "steer_timeout_ms": 5000,
+            "step": 0.05,
+            "taps": 1,
+            "update_ms": 200
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "arr",
+          "port": "array"
+        },
+        "to": {
+          "node": "proc",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

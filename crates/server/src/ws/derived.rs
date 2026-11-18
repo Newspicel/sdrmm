@@ -12,7 +12,7 @@ use super::{FrameThrottle, MAX_BINS, MAX_FPS, MIN_BINS, Outbox, text_event};
 pub(super) const IQ_FFT: usize = 2048;
 pub(super) const AUDIO_FFT: usize = 1024;
 
-const AUDIO_RATE: f32 = sdrmm_channels::AUDIO_RATE as f32;
+const AUDIO_RATE: f32 = sdrmm_decoder::AUDIO_RATE as f32;
 
 struct Ring {
     buf: Vec<Complex<f32>>,

@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{ClickProfile, Control, KindSpec, NumberSpec, SettingField};
 mod chroma;
+#[cfg(test)]
+pub(crate) mod fixture;
 mod front;
 mod luma;
 mod model;
@@ -8,6 +11,8 @@ mod picture;
 mod secam;
 mod standard;
 mod sync;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 #[cfg(test)]
 mod tests;
 mod transform;
@@ -17,11 +22,9 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
-};
 use front::{Detector, Discriminator, Rate, SOUND_AUDIO_HZ, SOUND_DEVIATION_HZ, SoundDecoder};
 use picture::{Adjust, Picture};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 use standard::{CHROMA_BANDWIDTH_HZ, Geometry, subcarrier_hz, video_rate_hz};
 use sync::{Fields, LineSync, Pulse, Samples};
 use transform::Depth;
@@ -80,7 +83,7 @@ pub struct AtvChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<AtvParams, ChannelError> {
-    crate::settings_of::<AtvParams>(settings)
+    sdrmm_decoder::settings_of::<AtvParams>(settings)
 }
 
 fn check_params(p: &AtvParams) -> Result<(), ChannelError> {
@@ -114,9 +117,9 @@ fn check_params(p: &AtvParams) -> Result<(), ChannelError> {
     }
 }
 
-pub(crate) fn channel_filter(p: &AtvParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &AtvParams) -> Result<FilterSpec, ChannelError> {
     check_params(p)?;
-    Ok(ChannelFilter::Passthrough)
+    Ok(FilterSpec::Passthrough)
 }
 
 pub(crate) fn input_rate(p: &AtvParams) -> f64 {
@@ -315,7 +318,7 @@ impl NativeChannel for AtvChannel {
     }
 }
 
-impl ChannelRx for AtvChannel {
+impl Channel for AtvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_rate(
@@ -359,11 +362,15 @@ impl ChannelRx for AtvChannel {
 }
 
 pub(crate) fn atv_decoder() -> Native<AtvParams> {
-    Native::new::<AtvChannel>(occupied_band)
+    let decoder = Native::new::<AtvChannel>(occupied_band)
         .filter(channel_filter)
         .input_rate(input_rate)
         .form(atv_form)
-        .kinds(atv_kinds)
+        .kinds(atv_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 fn hertz_or_auto(hz: Option<f64>) -> String {

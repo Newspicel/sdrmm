@@ -1,5 +1,3 @@
-use sdrmm_dsp::crc16_msb;
-
 use super::*;
 
 const HEADER: u8 = 3;
@@ -12,7 +10,7 @@ fn group(kind: u8, transport_id: u16, number: u16, last: bool, data: &[u8]) -> V
     bytes.extend_from_slice(&transport_id.to_be_bytes());
     bytes.extend_from_slice(&(0x6000 | data.len() as u16).to_be_bytes());
     bytes.extend_from_slice(data);
-    bytes.extend_from_slice(&(!crc16_msb(0x1021, 0xffff, &bytes)).to_be_bytes());
+    sdrmm_dsp::push_crc16_genibus(&mut bytes);
     bytes
 }
 

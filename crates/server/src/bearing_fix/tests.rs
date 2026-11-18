@@ -208,7 +208,10 @@ fn events(from: &str, to: &str) -> PatchEdge {
 fn wired_graph() -> PatchGraph {
     PatchGraph {
         nodes: vec![
-            node("df", "df"),
+            PatchNode {
+                body: crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+                ..node("df", "processor")
+            },
             node("fix", "bearing_fix"),
             node("map", "map"),
         ],

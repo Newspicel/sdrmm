@@ -3,8 +3,10 @@ use crate::ism::IsmIntegrity;
 use crate::ism::IsmMessage;
 use crate::ism::UNKNOWN_MODEL;
 
+use sdrmm_crypto::hex_string as hex;
+
 use super::{
-    bits::{Bits, hex},
+    bits::Bits,
     pulse::{MAX_PULSES, Package},
     slicer::{Timing, slice},
 };

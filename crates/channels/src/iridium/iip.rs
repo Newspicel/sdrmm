@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
 use super::rs::{bytes_of_bits, checksum_16, first_39, iip_crc24, rs8_correct};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 fn iip_type_name(t: u8) -> &'static str {
     match t {

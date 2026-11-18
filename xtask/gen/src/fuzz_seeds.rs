@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use num_complex::Complex;
-use sdrmm_channels::synth::dv;
+use sdrmm_channels::synth;
 
 const MAX_SEED_BYTES: usize = 32 * 1024;
 const SEED_SAMPLES: usize = 1_024;
@@ -71,7 +71,7 @@ fn dv_voice(out: &Path) -> Result<()> {
 fn channel_chain(out: &Path) -> Result<()> {
     make(out)?;
     let tone = quantised(&tone(SEED_SAMPLES, SEED_TONE));
-    for descriptor in sdrmm_channels::descriptors() {
+    for descriptor in sdrmm_decoder::descriptors() {
         let mut seed = descriptor.type_id.clone().into_bytes();
         seed.push(0);
         seed.extend_from_slice(&tone);
@@ -83,8 +83,8 @@ fn channel_chain(out: &Path) -> Result<()> {
 fn channel_settings(out: &Path) -> Result<()> {
     make(out)?;
     let tone = quantised(&tone(SEED_SAMPLES, SEED_TONE));
-    for descriptor in sdrmm_channels::descriptors() {
-        let Some(settings) = sdrmm_channels::default_settings(&descriptor.type_id) else {
+    for descriptor in sdrmm_decoder::descriptors() {
+        let Some(settings) = sdrmm_decoder::default_settings(&descriptor.type_id) else {
             continue;
         };
         let mut seed = serde_json::to_vec(&settings)
@@ -102,41 +102,41 @@ fn transmissions(type_id: &str, rate: f64) -> Vec<(&'static str, Vec<Complex<f32
         "dmr" => vec![
             (
                 "voice",
-                dv::dmr::transmission(&dv::dmr::Call::default(), rate),
+                synth::dmr::transmission(&synth::dmr::Call::default(), rate),
             ),
             (
                 "simplex",
-                dv::dmr::simplex_transmission(&dv::dmr::Call::default(), rate),
+                synth::dmr::simplex_transmission(&synth::dmr::Call::default(), rate),
             ),
         ],
         "dpmr" => vec![(
             "voice",
-            dv::dpmr::transmission(&dv::dpmr::Call::default(), rate),
+            synth::dpmr::transmission(&synth::dpmr::Call::default(), rate),
         )],
         "dstar" => vec![
             (
                 "voice",
-                dv::dstar::transmission(&dv::dstar::Call::default(), rate),
+                synth::dstar::transmission(&synth::dstar::Call::default(), rate),
             ),
             (
                 "repeated",
-                dv::dstar::repeated_transmission(&dv::dstar::Call::default(), 2, rate),
+                synth::dstar::repeated_transmission(&synth::dstar::Call::default(), 2, rate),
             ),
         ],
-        "m17" => vec![("voice", dv::m17::transmission("ALL", "DL1ABC", rate))],
+        "m17" => vec![("voice", synth::m17::transmission("ALL", "DL1ABC", rate))],
         "nxdn" => vec![(
             "voice",
-            dv::nxdn::transmission(&dv::nxdn::Shape::default(), 1, true, rate),
+            synth::nxdn::transmission(&synth::nxdn::Shape::default(), 1, true, rate),
         )],
         "p25" => vec![
-            ("voice", dv::p25::transmission(0x293, rate)),
-            ("trunking", dv::p25::trunking(0x293, rate)),
+            ("voice", synth::p25::transmission(0x293, rate)),
+            ("trunking", synth::p25::trunking(0x293, rate)),
         ],
         _ => vec![(
             "voice",
-            dv::ysf::transmission_with_callsigns(
-                &dv::ysf::Fich::default(),
-                &dv::ysf::Call::default(),
+            synth::ysf::transmission_with_callsigns(
+                &synth::ysf::Fich::default(),
+                &synth::ysf::Call::default(),
                 rate,
             ),
         )],
@@ -144,7 +144,7 @@ fn transmissions(type_id: &str, rate: f64) -> Vec<(&'static str, Vec<Complex<f32
 }
 
 fn input_rate(type_id: &str) -> Result<f64> {
-    sdrmm_channels::descriptor(type_id)
+    sdrmm_decoder::descriptor(type_id)
         .map(|descriptor| descriptor.input_rate_hz)
         .with_context(|| format!("no channel describes itself as `{type_id}`"))
 }

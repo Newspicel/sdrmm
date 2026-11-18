@@ -3,7 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use sdrmm_channels::{ChannelError, array_processor::MAX_LANES};
+use sdrmm_array::MAX_LANES;
+use sdrmm_decoder::ChannelError;
 use sdrmm_wire::{
     ArrayFailure, ArrayGain, ArrayTune, ArrayTuningMode, Capabilities, Coherence, DcArtifact,
     DeviceSetStatus, DeviceSettings, GeometryError, NoiseSource, array::MAX_ARRAY_GAIN_DB,

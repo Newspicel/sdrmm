@@ -1,13 +1,12 @@
 use std::sync::{Arc, TryLockError, atomic::Ordering};
 
-use sdrmm_channels::{
-    ChannelError,
-    array_processor::{
-        LaneFormat, ProcessorDescriptor, ProcessorNeeds, descriptor_for, processor_plugin,
-    },
+use sdrmm_array::{
+    Descriptor, LaneFormat, Params, ProcessorDescriptor, ProcessorNeeds, descriptor, parse_params,
+    processor_plugin,
 };
+use sdrmm_decoder::ChannelError;
 use sdrmm_device::lock;
-use sdrmm_wire::{ProcessorParams, ServerEvent, StateScope, array::MAX_VIRTUAL_LANES};
+use sdrmm_wire::{ServerEvent, StateScope, array::MAX_VIRTUAL_LANES};
 
 use super::{ArrayState, find, find_mut};
 use crate::{
@@ -15,6 +14,7 @@ use crate::{
     array::{
         ArrayShape, Command, ControlConfig, DedicatedPlan, HostPlan, HostSinks, LiveFrame,
         ProcessorAction, ProcessorHost, ProcessorSpec, ProcessorStats, SteerInput, SteerMailbox,
+        engine_host,
     },
     lock_runtime,
     runtime::{VirtualLaneSink, capture::RetiredLane},
@@ -37,6 +37,8 @@ pub(crate) struct LaneOut {
 #[derive(Clone)]
 pub(crate) struct ProcessorRecord {
     pub(crate) spec: ProcessorSpec,
+    /// The settings parsed for the type that runs them; absent while the type is refused.
+    pub(crate) params: Option<Params>,
     pub(crate) kind: String,
     pub(crate) lanes: Vec<LaneOut>,
     pub(crate) stats: Arc<ProcessorStats>,
@@ -52,12 +54,13 @@ impl ProcessorRecord {
     }
 
     fn takes(&self, action: ProcessorAction) -> bool {
-        descriptor_for(&self.spec.params).is_some_and(|descriptor| descriptor.takes(action))
+        descriptor(self.spec.params.type_id()).is_some_and(|descriptor| descriptor.takes(action))
     }
 
     fn refused(spec: &ProcessorSpec, error: &EngineError) -> Self {
         Self {
             spec: spec.clone(),
+            params: None,
             kind: spec.params.type_id().to_owned(),
             lanes: Vec::new(),
             stats: Arc::new(ProcessorStats::default()),
@@ -86,13 +89,13 @@ struct Opened {
 }
 
 fn wired_ports(
-    descriptor: &ProcessorDescriptor,
+    descriptor: &dyn ProcessorDescriptor,
     names: &[String],
 ) -> Result<Vec<(usize, String)>, EngineError> {
+    let lane_ports = descriptor.lane_ports();
     let mut ports: Vec<(usize, String)> = Vec::with_capacity(names.len());
     for name in names {
-        let port = descriptor
-            .lane_ports
+        let port = lane_ports
             .iter()
             .position(|port| port == name)
             .ok_or_else(|| EngineError::Processor(format!("No port {name}")))?;
@@ -174,21 +177,9 @@ fn free_stream(state: &DeviceSetState) -> Result<u32, EngineError> {
 }
 
 fn reopens(record: &ProcessorRecord, type_ids: &[String]) -> bool {
-    let ProcessorParams::Plugin(plugin) = &record.spec.params else {
-        return false;
-    };
-    type_ids.contains(&plugin.type_id)
-        || (!record.installed && processor_plugin(&plugin.type_id).is_some())
-}
-
-/// `spec` with what its plugin type needs now, which a reload may have changed.
-fn on_loaded(mut spec: ProcessorSpec) -> ProcessorSpec {
-    if let ProcessorParams::Plugin(plugin) = &mut spec.params
-        && let Some(factory) = processor_plugin(&plugin.type_id)
-    {
-        plugin.needs = factory.kind().needs;
-    }
-    spec
+    let type_id = record.spec.params.type_id();
+    type_ids.iter().any(|reloaded| reloaded == type_id)
+        || (!record.installed && processor_plugin(type_id).is_some())
 }
 
 fn processor<'a>(
@@ -233,7 +224,7 @@ impl Engine {
             .values()
             .flat_map(|state| state.processors.values())
             .filter(|record| reopens(record, type_ids))
-            .map(|record| on_loaded(record.spec.clone()))
+            .map(|record| record.spec.clone())
             .collect();
         let mut errors = Vec::new();
         for spec in &due {
@@ -433,17 +424,18 @@ impl Engine {
         carried: Option<ProcessorRecord>,
         force: bool,
     ) -> Result<(), EngineError> {
-        let descriptor = descriptor_for(&spec.params)
-            .ok_or_else(|| ChannelError::UnknownType(spec.params.type_id().to_owned()))?;
-        if let Some(problem) = spec.params.problem() {
+        let params = parse_params(&spec.params)?;
+        let descriptor = descriptor(params.type_id())
+            .ok_or_else(|| ChannelError::UnknownType(params.type_id().to_owned()))?;
+        if let Some(problem) = params.problem() {
             return Err(ChannelError::Refused(problem).into());
         }
-        let ports = wired_ports(descriptor, &spec.lane_ports)?;
+        let ports = wired_ports(descriptor.as_ref(), &spec.lane_ports)?;
         let view = self.view(spec, carried)?;
-        if !force && self.apply_in_place(spec, &view, descriptor, &ports)? {
+        if !force && self.apply_in_place(spec, &params, &view, descriptor.as_ref(), &ports)? {
             return Ok(());
         }
-        self.build_processor(spec, view, descriptor, &ports)
+        self.build_processor(spec, params, view, &descriptor, &ports)
     }
 
     fn view(
@@ -486,8 +478,9 @@ impl Engine {
     fn apply_in_place(
         &self,
         spec: &ProcessorSpec,
+        params: &Params,
         view: &View,
-        descriptor: &ProcessorDescriptor,
+        descriptor: &dyn ProcessorDescriptor,
         ports: &[(usize, String)],
     ) -> Result<bool, EngineError> {
         let Some(previous) = view.previous.as_ref().filter(|record| record.installed) else {
@@ -499,7 +492,7 @@ impl Engine {
                 Some(lane.device_set) == view.anchor
                     && ports.iter().any(|(port, _)| {
                         *port == lane.port
-                            && (descriptor.lane_format)(&spec.params, &ctx, *port) == lane.format
+                            && descriptor.lane_format(params, &ctx, *port) == lane.format
                     })
             });
         if previous.kind != spec.params.type_id()
@@ -508,20 +501,23 @@ impl Engine {
         {
             return Ok(false);
         }
-        let (command, dedicated) = if previous.spec.params == spec.params {
+        let Some(previous_params) = previous.params.as_ref() else {
+            return Ok(false);
+        };
+        let (command, dedicated) = if previous_params == params {
             (None, None)
         } else if let Some(dedicated) = &previous.dedicated {
-            let gpu = (descriptor.gpu)(&spec.params);
-            let (prepared, plan) = dedicated.prepare(&ctx, &spec.params, gpu)?;
+            let gpu = descriptor.gpu(params);
+            let (prepared, plan) = dedicated.prepare(&ctx, params, gpu, engine_host())?;
             let commit = Command::CommitDedicated {
                 node: spec.node.clone(),
                 prepared,
             };
             (Some(commit), Some(plan))
-        } else if (descriptor.in_place)(&previous.spec.params, &spec.params) {
+        } else if descriptor.in_place(previous_params, params) {
             let apply = Command::ApplyParams {
                 node: spec.node.clone(),
-                params: Box::new(spec.params.clone()),
+                params: Box::new(params.clone()),
             };
             (Some(apply), None)
         } else {
@@ -534,7 +530,8 @@ impl Engine {
         }
         if let Some(record) = state.processors.get_mut(&spec.node) {
             record.spec = spec.clone();
-            record.needs = (descriptor.needs)(&spec.params);
+            record.params = Some(params.clone());
+            record.needs = descriptor.needs(params);
             record.error = None;
             if dedicated.is_some() {
                 record.dedicated = dedicated;
@@ -548,8 +545,9 @@ impl Engine {
     fn build_processor(
         &self,
         spec: &ProcessorSpec,
+        params: Params,
         view: View,
-        descriptor: &'static ProcessorDescriptor,
+        descriptor: &Descriptor,
         ports: &[(usize, String)],
     ) -> Result<(), EngineError> {
         let stats = view.previous.as_ref().map_or_else(
@@ -558,7 +556,7 @@ impl Engine {
         );
         let plan = HostPlan {
             node: spec.node.clone(),
-            params: spec.params.clone(),
+            params: params.clone(),
             shape: view.shape.clone(),
             sinks: Vec::new(),
             outputs: view.sinks.clone(),
@@ -574,18 +572,20 @@ impl Engine {
                 (
                     *port,
                     name.clone(),
-                    (descriptor.lane_format)(&spec.params, &ctx, *port),
+                    descriptor.lane_format(&params, &ctx, *port),
                 )
             })
             .collect();
         let opened = self.open_lanes(spec, view.anchor, view.previous.as_ref(), &formats)?;
+        let needs = descriptor.needs(&params);
         let record = ProcessorRecord {
             spec: spec.clone(),
+            params: Some(params),
             kind: spec.params.type_id().to_owned(),
             lanes: opened.iter().map(|lane| lane.out.clone()).collect(),
             stats,
             dedicated: built.dedicated,
-            needs: (descriptor.needs)(&spec.params),
+            needs,
             installed: true,
             error: None,
         };
@@ -851,12 +851,15 @@ impl Engine {
             let mut stale: Vec<String> = Vec::new();
             let mut moved: Vec<(u32, u32, LaneFormat)> = Vec::new();
             for record in state.processors.values_mut() {
-                let Some(descriptor) = descriptor_for(&record.spec.params) else {
+                let (Some(descriptor), Some(params)) = (
+                    descriptor(record.spec.params.type_id()),
+                    record.params.as_ref(),
+                ) else {
                     continue;
                 };
                 let ctx = shape.ctx(&record.spec.node, &frame);
                 for lane in &mut record.lanes {
-                    let format = (descriptor.lane_format)(&record.spec.params, &ctx, lane.port);
+                    let format = descriptor.lane_format(params, &ctx, lane.port);
                     if format.sample_rate != lane.format.sample_rate {
                         stale.push(record.spec.node.clone());
                         break;

@@ -72,7 +72,7 @@ pub fn lpdu_logon_confirm(icao: u32, assigned_id: u8) -> Vec<u8> {
 }
 
 pub fn acars_block() -> Vec<u8> {
-    crate::acars::block::build(
+    sdrmm_aviation::acars::block::build(
         '2',
         "N471XG",
         None,

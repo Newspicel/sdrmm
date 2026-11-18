@@ -1,5 +1,5 @@
-use super::bb::{BaseBandData, StreamKind, USER_PACKET_BITS, crc8};
-use crate::datv::dvbs::{PACKET, SYNC};
+use sdrmm_modem::dvb::bb::{BaseBandData, StreamKind, USER_PACKET_BITS, crc8};
+use sdrmm_modem::dvb::{PACKET, SYNC};
 
 pub struct Transport {
     packet: [u8; PACKET],
@@ -77,7 +77,7 @@ impl Transport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datv::dvbs2::bb::BaseBandHeader;
+    use sdrmm_modem::dvb::bb::BaseBandHeader;
 
     fn frame(field: &[u8], offset: usize) -> BaseBandData {
         BaseBandData {
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn acquisition_discards_the_partial_packet_before_sync_distance() {
         let mut receiver = Transport::new();
-        let packet = crate::datv::ts::null_packet();
+        let packet = sdrmm_modem::mpegts::null_packet();
         let mut bytes = vec![0; 37];
         bytes.push(0);
         bytes.extend_from_slice(&packet[1..]);

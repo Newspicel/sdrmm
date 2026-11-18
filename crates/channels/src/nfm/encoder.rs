@@ -3,24 +3,23 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Compander, Limiter, RealDecimator};
+use sdrmm_dsp::{Compander, Limiter, Preemphasis, RealDecimator};
 use sdrmm_modem::keying::{Burst, TxQueue};
 use sdrmm_wire::{Control, NumberSpec, SettingField};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AudioPreemphasis, BANDWIDTHS_HZ, COMPANDER_HEADROOM_DB, COMPANDER_RANGE_DB,
-    COMPANDER_REFERENCE_RMS, DESCRIPTOR, DEVIATION_RATIO, NfmParams, audio_lowpass,
+    BANDWIDTHS_HZ, COMPANDER_HEADROOM_DB, COMPANDER_RANGE_DB, COMPANDER_REFERENCE_RMS, DESCRIPTOR,
+    DEVIATION_RATIO, NfmParams, audio_lowpass, audio_preemphasis,
 };
-use crate::{
+use sdrmm_decoder::{
     AUDIO_RATE,
     encoder::{
         EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload, tx_limiter,
     },
-    voice_inversion::{
-        DEFAULT_INVERSION_HZ, MAX_INVERSION_HZ, MIN_INVERSION_HZ, VoiceInverter,
-        is_supported_inversion,
-    },
+};
+use sdrmm_modem::analog::inversion::{
+    DEFAULT_INVERSION_HZ, MAX_INVERSION_HZ, MIN_INVERSION_HZ, VoiceInverter, is_supported_inversion,
 };
 
 const TYPE_ID: &str = "nfm";
@@ -53,7 +52,7 @@ pub struct NfmModulator {
     audio_lp: RealDecimator,
     compressor: Option<Compander>,
     inverter: Option<VoiceInverter>,
-    preemphasis: AudioPreemphasis,
+    preemphasis: Preemphasis,
     limiter: Limiter<f32>,
     filtered: Vec<f32>,
     burst: Burst,
@@ -113,7 +112,7 @@ impl NativeModulator for NfmModulator {
             audio_lp: audio_lowpass(),
             compressor: tx_compressor(settings, f64::from(AUDIO_RATE)),
             inverter: tx_inverter(settings, f64::from(AUDIO_RATE)),
-            preemphasis: AudioPreemphasis::new(f64::from(AUDIO_RATE)),
+            preemphasis: audio_preemphasis(f64::from(AUDIO_RATE)),
             limiter: tx_limiter(f64::from(AUDIO_RATE)),
             filtered: Vec::new(),
             burst: Burst::new(rate),
@@ -191,7 +190,8 @@ fn nfm_encoder_form() -> Vec<SettingField> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{encoder::Carries, synth::burst};
+    use sdrmm_decoder::encoder::Carries;
+    use sdrmm_decoder::encoder::burst;
 
     const RATE: f64 = 48_000.0;
 

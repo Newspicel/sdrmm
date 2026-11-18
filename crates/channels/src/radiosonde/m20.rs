@@ -10,7 +10,9 @@ use super::{
     meteomodem::update_checksum,
 };
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const BAUD: f64 = 9_600.0;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const LEN_BYTE: u8 = 0x45;
 pub(crate) const TYPE: u8 = 0x20;
 

@@ -1,34 +1,37 @@
-use crate::registry::Native;
-use sdrmm_wire::{KindSpec, SettingField};
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{KindSpec, SettingField, airtime_form};
 mod classify;
+mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
+pub use model::*;
 mod tally;
 
 use std::sync::LazyLock;
 
-use crate::airtime::{
-    AIRTIME_REPORT_MS, DEFAULT_SURVEY_MARGIN_DB, IsmSurveyParams, IsmSurveyReport, airtime_form,
-    ism_survey_kind,
-};
 use num_complex::Complex;
 use sdrmm_dsp::{
     math::fastmath::{fast_db_to_power, fast_power_db},
-    measure::airtime::{Burst, Bursts, PowerFrames, QuietFloor, band_degrees},
+    measure::airtime::{
+        self as grid, BIN_HZ, Burst, Bursts, FLOOR_RISE_DB, PowerFrames, QuietFloor, band_degrees,
+        bin_offset_hz, bins_between, fft_len, frame_s, frames_in, gated, threshold, usable_half_hz,
+        warmup_frames,
+    },
 };
-use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
+use sdrmm_wire::{
+    AIRTIME_REPORT_MS, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    check_airtime_margin,
+};
 
 use self::{
     classify::{Shape, classify},
     tally::Tally,
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    airtime::{
-        self, BIN_HZ, FLOOR_RISE_DB, REPORT_FRAMES, WARMUP_FRAMES, bin_offset_hz, bins_between,
-        fft_len, frame_s, gated, threshold, usable_half_hz,
-    },
-    check_rate,
-};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 
+const REPORT_FRAMES: u64 = frames_in(AIRTIME_REPORT_MS);
+const WARMUP_FRAMES: u64 = warmup_frames(AIRTIME_REPORT_MS);
 const FLOOR_STRIDE: u64 = 8;
 const TRACKS: usize = 48;
 const LONGEST_S: f64 = 50e-3;
@@ -38,7 +41,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "2.4 GHz survey".to_owned(),
     summary: "Wi-Fi, Bluetooth, 802.15.4 and ovens by airtime, energy only".to_owned(),
     family: DecoderFamily::UTILITY,
-    bandwidth_hz: 2.0 * usable_half_hz(IsmSurveyParams::default().span),
+    bandwidth_hz: 2.0 * usable_half_hz(IsmSurveyParams::default().span.sample_rate_hz()),
     input_rate_hz: IsmSurveyParams::default().span.sample_rate_hz(),
     has_audio: false,
     emits: vec![EventKind::named("ism_survey")],
@@ -46,8 +49,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<IsmSurveyParams, ChannelError> {
-    let params: IsmSurveyParams = crate::settings_of(settings)?;
-    airtime::check_margin(params.margin_db)?;
+    let params: IsmSurveyParams = sdrmm_decoder::settings_of(settings)?;
+    check_airtime_margin(params.margin_db).map_err(ChannelError::InvalidSettings)?;
     Ok(params)
 }
 
@@ -56,11 +59,11 @@ pub(crate) fn input_rate(params: IsmSurveyParams) -> f64 {
 }
 
 pub(crate) fn occupied_band(params: IsmSurveyParams) -> (f64, f64) {
-    airtime::occupied_band(params.span)
+    grid::occupied_band(params.span.sample_rate_hz())
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    airtime::channel_filter()
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 struct Floors {
@@ -72,8 +75,8 @@ struct Floors {
 
 impl Floors {
     fn new(params: IsmSurveyParams) -> Self {
-        let len = fft_len(params.span);
-        let half = usable_half_hz(params.span);
+        let len = fft_len(params.span.sample_rate_hz());
+        let half = usable_half_hz(params.span.sample_rate_hz());
         Self {
             bins: (0..len)
                 .map(|_| QuietFloor::new(band_degrees(1), FLOOR_RISE_DB))
@@ -170,7 +173,7 @@ impl NativeChannel for IsmSurveyChannel {
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
         let params = params(&settings)?;
         check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
-        let len = fft_len(params.span);
+        let len = fft_len(params.span.sample_rate_hz());
         Ok(Self {
             frames: PowerFrames::new(len),
             floors: Floors::new(params),
@@ -185,7 +188,7 @@ impl NativeChannel for IsmSurveyChannel {
     }
 }
 
-impl ChannelRx for IsmSurveyChannel {
+impl Channel for IsmSurveyChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.span != self.params.span {
@@ -247,8 +250,8 @@ impl ChannelRx for IsmSurveyChannel {
                 *dropped = bursts.dropped();
                 out.events.push(DecoderEvent::of(&IsmSurveyReport {
                     window_ms: AIRTIME_REPORT_MS,
-                    low_hz: *frequency_hz - usable_half_hz(params.span),
-                    high_hz: *frequency_hz + usable_half_hz(params.span),
+                    low_hz: *frequency_hz - usable_half_hz(params.span.sample_rate_hz()),
+                    high_hz: *frequency_hz + usable_half_hz(params.span.sample_rate_hz()),
                     measured: (*measured as f64 / REPORT_FRAMES as f64) as f32,
                     busy: tally.busy(*measured),
                     floor_dbfs,
@@ -263,12 +266,16 @@ impl ChannelRx for IsmSurveyChannel {
 }
 
 pub(crate) fn ism_survey_decoder() -> Native<IsmSurveyParams> {
-    Native::new::<IsmSurveyChannel>(|p| occupied_band(*p))
+    let decoder = Native::new::<IsmSurveyChannel>(|p| occupied_band(*p))
         .filter(|_| Ok(channel_filter()))
         .input_rate(|p| input_rate(*p))
         .home(2_442_000_000.0)
         .form(ism_survey_form)
-        .kinds(ism_survey_kinds)
+        .kinds(ism_survey_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn ism_survey_form() -> Vec<SettingField> {
@@ -279,5 +286,7 @@ fn ism_survey_kinds() -> Vec<KindSpec> {
     vec![ism_survey_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

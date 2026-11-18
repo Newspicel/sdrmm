@@ -1,5 +1,3 @@
-use super::code::{codeword_bit, codeword_len, hamming_encode};
-
 pub(crate) const MAX_BITS: usize = 12;
 
 #[must_use]
@@ -137,39 +135,6 @@ fn level(blocks: &[f32], merged: &mut [f32]) -> (f32, f32) {
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Decision {
-    pub nibble: u8,
-    pub corrected: bool,
-}
-
-#[must_use]
-pub(crate) fn decode_codeword(llrs: &[f32], parity_bits: u8) -> Decision {
-    let len = codeword_len(parity_bits);
-    let mut best = (0u8, f32::MIN);
-    for nibble in 0..16u8 {
-        let codeword = hamming_encode(nibble, parity_bits);
-        let score: f32 = (0..len)
-            .map(|i| {
-                if codeword_bit(codeword, len, i) {
-                    llrs[i]
-                } else {
-                    -llrs[i]
-                }
-            })
-            .sum();
-        if score > best.1 {
-            best = (nibble, score);
-        }
-    }
-    let codeword = hamming_encode(best.0, parity_bits);
-    let corrected = (0..len).any(|i| codeword_bit(codeword, len, i) != (llrs[i] > 0.0));
-    Decision {
-        nibble: best.0,
-        corrected,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,27 +207,6 @@ mod tests {
                     .fold(f32::MIN, f32::max)
             };
             assert_eq!(*llr, side(true) - side(false), "bit {bit}");
-        }
-    }
-
-    #[test]
-    fn soft_decoding_fixes_a_weak_wrong_bit() {
-        for parity in 1..=4u8 {
-            let len = codeword_len(parity);
-            let codeword = hamming_encode(0b1011, parity);
-            let mut llrs: Vec<f32> = (0..len)
-                .map(|i| {
-                    if codeword_bit(codeword, len, i) {
-                        4.0
-                    } else {
-                        -4.0
-                    }
-                })
-                .collect();
-            llrs[len - 1] = -llrs[len - 1] * 0.25;
-            let decision = decode_codeword(&llrs, parity);
-            assert_eq!(decision.nibble, 0b1011, "parity {parity}");
-            assert!(decision.corrected);
         }
     }
 }

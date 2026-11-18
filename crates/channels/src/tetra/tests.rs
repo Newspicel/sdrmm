@@ -1,13 +1,13 @@
-use crate::NativeChannel;
 use crate::tetra::TetraParams;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, DvFrame, DvFrameKind};
 
 use super::{INPUT_RATE_HZ, TetraChannel, cmce, sds::Payload};
-use crate::{
-    ChannelCtx, ChannelRx,
-    synth::tetra::{self as tx, Cell},
-    testutil::{at_snr, frequency_shift, run_events, sample_clock_offset, settings},
+use crate::synth::tetra::{self as tx, Cell};
+use sdrmm_decoder::{Channel, ChannelCtx};
+use sdrmm_decoder_test_support::{
+    at_snr, frequency_shift, run_events, sample_clock_offset, settings,
 };
 
 fn channel() -> TetraChannel {
@@ -125,7 +125,7 @@ fn an_inverted_spectrum_still_decodes() {
 
 #[test]
 fn noise_yields_nothing() {
-    let iq = crate::testutil::complex_noise(9, 0.3, 200_000);
+    let iq = sdrmm_decoder_test_support::complex_noise(9, 0.3, 200_000);
     let (frames, rejected) = decode(&iq);
     assert!(frames.is_empty(), "{frames:#?}");
     assert_eq!(rejected, 0);
@@ -177,7 +177,11 @@ fn a_status_message_carries_its_code() {
 }
 
 fn recording(bytes: &[u8], rate: f64, offset_hz: f64) -> Vec<Complex<f32>> {
-    let iq = crate::synth::resample(&crate::fixtures::ci16_le(bytes), rate, INPUT_RATE_HZ);
+    let iq = sdrmm_modem::synth::resample(
+        &crate::builtin::fixtures::ci16_le(bytes),
+        rate,
+        INPUT_RATE_HZ,
+    );
     frequency_shift(&iq, -offset_hz, INPUT_RATE_HZ)
 }
 

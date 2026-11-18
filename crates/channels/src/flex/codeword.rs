@@ -1,4 +1,7 @@
-use sdrmm_dsp::pocsag_bch_decode;
+use sdrmm_dsp::{ShortBch, coding::fec::chase};
+
+/// BCH(31,21) plus an even parity bit, sent LSB first.
+const BCH: ShortBch<31> = ShortBch::new(0x769, 10);
 
 pub const WORDS: usize = 88;
 pub const PHASE_BITS: usize = WORDS * 32;
@@ -54,7 +57,8 @@ fn from_pocsag(pocsag: u32) -> u32 {
 }
 
 fn repaired(raw: u32) -> Option<u32> {
-    pocsag_bch_decode(to_pocsag(raw)).map(|(corrected, _)| from_pocsag(corrected))
+    BCH.decode_extended(to_pocsag(raw))
+        .map(|(corrected, _)| from_pocsag(corrected))
 }
 
 fn data_of(raw: u32) -> u32 {
@@ -63,11 +67,11 @@ fn data_of(raw: u32) -> u32 {
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) fn encode_word(data: u32) -> u32 {
-    from_pocsag(sdrmm_dsp::pocsag_bch_encode(reverse21(data & 0x1F_FFFF)))
+    from_pocsag(BCH.encode_extended(reverse21(data & 0x1F_FFFF)))
 }
 
 pub fn decode_word(raw: u32) -> Option<(u32, u32)> {
-    let (corrected, errors) = pocsag_bch_decode(to_pocsag(raw))?;
+    let (corrected, errors) = BCH.decode_extended(to_pocsag(raw))?;
     Some((reverse21(corrected >> 11), errors))
 }
 
@@ -96,56 +100,28 @@ pub fn deinterleave(bits: &[f32]) -> Option<[Received; WORDS]> {
 pub fn decode(received: &Received) -> Word {
     match decode_word(received.raw) {
         Some((data, errors)) => Word::Hard { data, errors },
-        None => chase(received),
+        None => chase_word(received),
     }
 }
 
-fn least_reliable(reliability: &[f32; 32]) -> [usize; CHASE_BITS] {
-    let mut order: [usize; 32] = std::array::from_fn(|bit| bit);
-    order.select_nth_unstable_by(CHASE_BITS, |&a, &b| {
-        reliability[a].total_cmp(&reliability[b])
-    });
-    std::array::from_fn(|index| order[index])
-}
-
-fn chase(received: &Received) -> Word {
-    let weak = least_reliable(&received.reliability);
-    let mut best: Option<(f32, u32)> = None;
-    for pattern in 1..1u32 << CHASE_BITS {
-        let flips = weak
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| pattern >> index & 1 == 1)
-            .fold(0u32, |mask, (_, &bit)| mask | 1 << bit);
-        let Some(candidate) = repaired(received.raw ^ flips) else {
-            continue;
-        };
-        let distance = distance(received, candidate);
-        if best.is_none_or(|(metric, _)| distance < metric) {
-            best = Some((distance, candidate));
+fn chase_word(received: &Received) -> Word {
+    let raw = u64::from(received.raw);
+    let repair = |word: u64| repaired(word as u32).map(u64::from);
+    chase(raw, &received.reliability, CHASE_BITS, repair).map_or(Word::Lost, |candidate| {
+        let candidate = candidate as u32;
+        Word::Soft {
+            data: data_of(candidate),
+            errors: (candidate ^ received.raw).count_ones(),
         }
-    }
-    best.map_or(Word::Lost, |(_, candidate)| Word::Soft {
-        data: data_of(candidate),
-        errors: (candidate ^ received.raw).count_ones(),
     })
-}
-
-fn distance(received: &Received, candidate: u32) -> f32 {
-    let differ = candidate ^ received.raw;
-    (0..32)
-        .filter(|bit| differ >> bit & 1 == 1)
-        .map(|bit| received.reliability[bit])
-        .sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdrmm_dsp::pocsag_bch_encode;
 
     fn codeword(data: u32) -> u32 {
-        from_pocsag(pocsag_bch_encode(reverse21(data)))
+        from_pocsag(BCH.encode_extended(reverse21(data)))
     }
 
     fn received(raw: u32, weak: &[usize]) -> Received {

@@ -4,10 +4,8 @@ use crate::sarsat::SarsatProtocol;
 use sdrmm_wire::ChannelParams;
 
 use super::*;
-use crate::{
-    synth::{self, sarsat::EpirbFix},
-    testutil::settings,
-};
+use crate::synth::{self, sarsat::EpirbFix};
+use sdrmm_decoder_test_support::settings;
 
 const SPEC_SHORT: &str = "56E6804002202009655250";
 
@@ -50,8 +48,8 @@ fn close(got: Option<f64>, want: f64) {
 #[test]
 fn decodes_a_located_epirb_off_centre_in_noise() {
     let mut iq = synth::sarsat::transmission(&synth::sarsat::epirb_location(fix()), false, RATE);
-    synth::shift(&mut iq, 3_170.0, RATE);
-    synth::add_noise(&mut iq, 0x406, 1.0);
+    sdrmm_modem::synth::shift(&mut iq, 3_170.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x406, 1.0);
     let (got, rejected) = run(&iq);
     assert_eq!(got.len(), 1, "{got:?}");
     let message = &got[0];
@@ -69,7 +67,7 @@ fn decodes_a_located_epirb_off_centre_in_noise() {
 fn decodes_the_published_short_message_as_a_self_test() {
     let message = synth::sarsat::from_hex(SPEC_SHORT).expect("hex");
     let mut iq = synth::sarsat::transmission(&message, true, RATE);
-    synth::shift(&mut iq, -6_250.0, RATE);
+    sdrmm_modem::synth::shift(&mut iq, -6_250.0, RATE);
     let (got, _) = run(&iq);
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0].hex_id, "ADCD00800440401");
@@ -84,7 +82,7 @@ fn an_inverted_spectrum_still_decodes() {
     for sample in &mut iq {
         *sample = sample.conj();
     }
-    synth::shift(&mut iq, 1_000.0, RATE);
+    sdrmm_modem::synth::shift(&mut iq, 1_000.0, RATE);
     let (got, _) = run(&iq);
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0].identity.as_deref(), Some("MMSI 366123456"));
@@ -94,9 +92,9 @@ fn an_inverted_spectrum_still_decodes() {
 fn consecutive_bursts_each_decode() {
     let message = synth::sarsat::epirb_location(fix());
     let mut iq = synth::sarsat::transmission(&message, false, RATE);
-    iq.extend(synth::silence(RATE as usize));
+    iq.extend(sdrmm_modem::synth::silence(RATE as usize));
     iq.extend(synth::sarsat::transmission(&message, false, RATE));
-    synth::add_noise(&mut iq, 0xB0A7, 0.05);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xB0A7, 0.05);
     assert_eq!(run(&iq).0.len(), 2);
 }
 
@@ -129,11 +127,11 @@ fn a_broken_second_field_is_flagged_with_the_coarse_fix() {
 
 #[test]
 fn noise_and_a_steady_carrier_emit_and_reject_nothing() {
-    let mut iq = synth::silence(RATE as usize * 5);
+    let mut iq = sdrmm_modem::synth::silence(RATE as usize * 5);
     for (k, sample) in iq.iter_mut().enumerate() {
         *sample = Complex::from_polar(0.3, (k as f32 * 0.37).rem_euclid(std::f32::consts::TAU));
     }
-    synth::add_noise(&mut iq, 0xBAD, 1.0);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xBAD, 1.0);
     assert_eq!(run(&iq), (Vec::new(), 0));
 }
 

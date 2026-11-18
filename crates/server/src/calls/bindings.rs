@@ -83,7 +83,7 @@ fn gate_of(live: &StateSnapshot, addr: ChannelAddr) -> Result<CallGate, GateMiss
         .find(|set| set.id == addr.device_set)
         .and_then(|set| set.channels.iter().find(|info| info.id == addr.channel))
         .ok_or(GateMiss::Unknown)?;
-    let gate = sdrmm_channels::descriptor(info.settings.params.type_id())
+    let gate = sdrmm_decoder::descriptor(info.settings.params.type_id())
         .and_then(|descriptor| descriptor.calls)
         .ok_or(GateMiss::Unknown)?;
     match gate {

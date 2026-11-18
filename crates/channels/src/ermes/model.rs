@@ -1,10 +1,8 @@
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
 use serde::{Deserialize, Serialize};
 
-use crate::flex::PagerPayload;
-use crate::flex::default_pager_bandwidth_hz;
-use crate::flex::pager_payload;
 use sdrmm_wire::EventKind;
+use sdrmm_wire::{PagerPayload, default_pager_bandwidth_hz};
 
 use sdrmm_wire::present::EventPayload;
 use sdrmm_wire::present::Field;
@@ -63,7 +61,7 @@ fn ermes_fields(p: &ErmesMessage) -> Vec<Field> {
     fields(&[
         ("address", "Address", text_of(p.local_address)),
         ("number", "Number", count(Some(p.message_number))),
-        ("payload", "Payload", text_of(pager_payload(p.payload))),
+        ("payload", "Payload", text_of(p.payload.label())),
         ("urgent", "Urgent", flag(Some(p.urgent))),
         ("alert", "Alert", count(Some(p.alert))),
         ("repaired", "Repaired", repaired(p.errors_corrected)),
@@ -84,4 +82,27 @@ impl EventContract for ErmesMessage {
 
 impl sdrmm_wire::DecoderSettings for ErmesParams {
     const TYPE_ID: &'static str = "ermes";
+}
+
+#[cfg(test)]
+mod model_tests {
+    use sdrmm_wire::present::{flag, text};
+
+    use super::*;
+
+    fn present(json: serde_json::Value) -> Presentation {
+        serde_json::from_value::<ErmesMessage>(json)
+            .unwrap()
+            .present(&EventKind::named("ermes"))
+    }
+
+    #[test]
+    fn ermes_lists_its_message_facts() {
+        let ermes = present(serde_json::json!({
+            "local_address": 42, "message_number": 5, "payload": "numeric", "text": "123",
+            "urgent": true, "alert": 2, "errors_corrected": 1,
+        }));
+        assert_eq!(ermes.field("Urgent"), flag(Some(true)).as_ref());
+        assert_eq!(ermes.field("Payload"), text(Some("numeric")).as_ref());
+    }
 }

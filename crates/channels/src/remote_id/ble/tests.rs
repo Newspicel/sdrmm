@@ -1,11 +1,11 @@
-use crate::ble::BlePdu;
 use crate::remote_id::RemoteIdMessage;
 use crate::remote_id::UaType;
 use crate::remote_id::UasIdType;
 use sdrmm_modem::ble::crc_ok;
+use sdrmm_modem::ble::pdu::{PduKind, parse};
 
 use super::remote_id_payload;
-use crate::{ble::pdu::parse, remote_id::odid};
+use crate::remote_id::odid;
 
 pub(crate) const BT5_LONG_RANGE_PDU: &str = "07f409091c2febea7de0750ee916faff0d41f01905001253534556544647393337303030373000000000000000001023b5ff7e000000000000000062070000cf07005000000100300044726f6e652049442064656d6f0000000000000000000040040000000000000000010000000000001100000000000000500046494e38376173747264676531326b78797a38000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001a656";
 
@@ -31,7 +31,7 @@ fn a_sniffed_long_range_advert_passes_the_crc() {
 fn a_sniffed_long_range_advert_carries_a_message_pack() {
     let frame = bytes(BT5_LONG_RANGE_PDU);
     let advert = parse(&frame[..frame.len() - 3], Some(5)).unwrap();
-    assert_eq!(advert.kind, BlePdu::AuxAdvInd);
+    assert_eq!(advert.kind, PduKind::AuxAdvInd);
     assert_eq!(advert.sender.unwrap().text(), "E0:7D:EA:EB:2F:1C");
     let (counter, pack) = remote_id_payload(advert.data).unwrap();
     assert_eq!(counter, 0x41);
@@ -53,7 +53,7 @@ fn a_legacy_advert_names_its_address_and_service_data() {
     pdu.extend_from_slice(&[30, 0x16, 0xFA, 0xFF, 0x0D, 9]);
     pdu.extend_from_slice(&[0x30; 25]);
     let advert = parse(&pdu, Some(38)).unwrap();
-    assert_eq!(advert.kind, BlePdu::AdvNonconnInd);
+    assert_eq!(advert.kind, PduKind::AdvNonconnInd);
     assert!(!advert.is_extended());
     assert_eq!(advert.sender.unwrap().text(), "C0:11:22:33:44:55");
     let (counter, message) = remote_id_payload(advert.data).unwrap();

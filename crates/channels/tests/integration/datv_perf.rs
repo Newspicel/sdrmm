@@ -3,9 +3,8 @@
 use num_complex::Complex;
 use sdrmm_channels::DatvParams;
 use sdrmm_channels::DatvStandard;
-use sdrmm_channels::{
-    ChannelCtx, ChannelOutputs, Dvbs2Modulation as Modulation, Dvbs2Rate as Rate, synth,
-};
+use sdrmm_channels::{Dvbs2Modulation as Modulation, Dvbs2Rate as Rate, synth};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_modem_test_support::ber::perf::measure_throughput;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
@@ -37,7 +36,7 @@ fn settings(standard: DatvStandard) -> ChannelSettings {
 }
 
 fn drive(
-    rx: &mut dyn sdrmm_channels::ChannelRx,
+    rx: &mut dyn sdrmm_decoder::Channel,
     iq: &[Complex<f32>],
     outputs: &mut ChannelOutputs,
 ) -> u64 {
@@ -48,7 +47,7 @@ fn drive(
         for status in outputs
             .events
             .iter()
-            .filter_map(sdrmm_wire::DecoderEvent::read::<sdrmm_channels::BroadcastStatus>)
+            .filter_map(sdrmm_wire::DecoderEvent::read::<sdrmm_decoder::broadcast::BroadcastStatus>)
         {
             frames_ok = frames_ok.max(u64::from(status.frames_ok));
         }
@@ -57,9 +56,9 @@ fn drive(
 }
 
 fn measure(mode: &'static str, standard: DatvStandard, iq: &[Complex<f32>]) -> Row {
-    let input_rate = sdrmm_channels::input_rate(&settings(standard).params);
+    let input_rate = sdrmm_decoder::input_rate(&settings(standard).params);
     let ctx = ChannelCtx { input_rate };
-    let mut rx = sdrmm_channels::create(ctx, &settings(standard)).expect("a DATV receiver");
+    let mut rx = sdrmm_decoder::create(ctx, &settings(standard)).expect("a DATV receiver");
     let mut outputs = ChannelOutputs::default();
     let frames_ok = drive(rx.as_mut(), iq, &mut outputs);
     assert!(

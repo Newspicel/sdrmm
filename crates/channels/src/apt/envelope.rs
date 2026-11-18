@@ -1,12 +1,10 @@
+use sdrmm_dsp::SampleHistory;
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, FmDemod, Highpass, RealDecimator, design_lowpass};
 
-use super::{
-    geometry::{DEVIATION_HZ, SUBCARRIER_HZ},
-    track::Track,
-};
+use super::geometry::{DEVIATION_HZ, SUBCARRIER_HZ};
 
 pub(crate) const DECIMATION: usize = 5;
 pub(crate) const CHUNK: usize = 6_000;
@@ -65,7 +63,7 @@ impl Envelope {
         self.step = 0;
     }
 
-    pub(crate) fn process(&mut self, iq: &[Complex<f32>], track: &mut Track) {
+    pub(crate) fn process(&mut self, iq: &[Complex<f32>], track: &mut SampleHistory) {
         self.fm.process(iq, &mut self.freq);
         self.audio.process(&self.freq, &mut self.decimated);
         self.dc.process(&mut self.decimated);
@@ -84,7 +82,6 @@ impl Envelope {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::synth;
 
     const RATE: f64 = 60_000.0;
 
@@ -96,11 +93,11 @@ mod tests {
 
     #[test]
     fn a_steady_subcarrier_reads_its_amplitude_through_a_carrier_offset() {
-        let audio = synth::tone_audio(SUBCARRIER_HZ, 0.6, RATE, 60_000);
-        let mut iq = synth::fm_modulate(&audio, DEVIATION_HZ, RATE);
-        synth::shift(&mut iq, 3_000.0, RATE);
+        let audio = sdrmm_modem::synth::tone_audio(SUBCARRIER_HZ, 0.6, RATE, 60_000);
+        let mut iq = sdrmm_modem::synth::fm_modulate(&audio, DEVIATION_HZ, RATE);
+        sdrmm_modem::synth::shift(&mut iq, 3_000.0, RATE);
         let mut envelope = Envelope::new(RATE);
-        let mut track = Track::new();
+        let mut track = SampleHistory::new(crate::apt::TRACK_CAPACITY);
         for chunk in iq.chunks(CHUNK) {
             envelope.process(chunk, &mut track);
         }

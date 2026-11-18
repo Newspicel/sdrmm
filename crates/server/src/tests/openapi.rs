@@ -170,7 +170,6 @@ fn every_new_route_is_in_the_contract() {
     for schema in [
         "ArrayStatus",
         "ArrayTuneRequest",
-        "RadarUpdate",
         "PhonesResponse",
         "PairingOffer",
         "MissionsResponse",

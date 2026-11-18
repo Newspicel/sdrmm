@@ -1,0 +1,16 @@
+[package]
+name = "sdrmm-crypto"
+description = "Ciphers, hashes and key text formats for sdr-- decoders"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+sha2.workspace = true

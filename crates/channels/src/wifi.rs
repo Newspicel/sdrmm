@@ -1,9 +1,7 @@
-use crate::airtime::{
-    DEFAULT_WIFI_MARGIN_DB, WifiOccupancyParams, airtime_form, wifi_occupancy_kind,
-};
-use crate::registry::Native;
-use sdrmm_wire::{KindSpec, SettingField};
-pub(crate) mod mac;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::{KindSpec, SettingField, airtime_form};
+mod model;
+pub use model::*;
 mod occupancy;
 
 pub use self::occupancy::WifiOccupancyChannel;
@@ -25,3 +23,6 @@ pub(crate) fn wifi_occupancy_form() -> Vec<SettingField> {
 fn wifi_occupancy_kinds() -> Vec<KindSpec> {
     vec![wifi_occupancy_kind()]
 }
+
+#[cfg(test)]
+pub(crate) mod fixture;

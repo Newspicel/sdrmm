@@ -13,7 +13,7 @@ const RATE: f64 = 2_048_000.0;
 const CHUNK: usize = 2_048;
 const LEAD_SECONDS: f64 = 0.1;
 const LISTENERS: usize = 2;
-const RETUNE_EVERY_FRAMES: u64 = sdrmm_channels::AUDIO_RATE as u64 / 4;
+const RETUNE_EVERY_FRAMES: u64 = sdrmm_decoder::AUDIO_RATE as u64 / 4;
 const PATIENCE: Duration = Duration::from_secs(60);
 const STALL: Duration = Duration::from_secs(1);
 const FRAME: u64 = sdrmm_engine::audio::OPUS_FRAME_SAMPLES as u64;
@@ -45,7 +45,7 @@ impl Pace {
 
     fn allowed_samples(&self) -> u64 {
         self.heard().map_or(0, |frames| {
-            ((frames as f64 / f64::from(sdrmm_channels::AUDIO_RATE) + LEAD_SECONDS) * RATE) as u64
+            ((frames as f64 / f64::from(sdrmm_decoder::AUDIO_RATE) + LEAD_SECONDS) * RATE) as u64
         })
     }
 

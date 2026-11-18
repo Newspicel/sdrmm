@@ -8,12 +8,13 @@ use sdrmm_wire::{ChannelDescriptor, WorkspaceExport};
 static DESCRIPTORS: OnceLock<Vec<ChannelDescriptor>> = OnceLock::new();
 
 fuzz_target!(|data: &[u8]| {
+    sdrmm_channels::builtin::install();
     let Ok(mut export) = serde_json::from_slice::<WorkspaceExport>(data) else {
         return;
     };
     let _ = export.validate();
     export.snapshot.graph.settle_arrays();
-    let _ = export.validate_against(DESCRIPTORS.get_or_init(sdrmm_channels::descriptors));
+    let _ = export.validate_against(DESCRIPTORS.get_or_init(sdrmm_decoder::descriptors));
     export.forget_absent_nodes();
     let Ok(round) = serde_json::to_vec(&export) else {
         return;

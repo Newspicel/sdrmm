@@ -1,6 +1,9 @@
+pub mod ad;
 pub mod band;
 mod channel;
 mod coded;
+mod front;
+pub mod pdu;
 mod receiver;
 mod track;
 pub mod transmit;
@@ -15,6 +18,7 @@ use crate::{
 
 pub use self::{
     channel::{channel_index, rf_channel_at, rf_channel_hz},
+    front::{Front, FrontError},
     receiver::Lane,
     whitener::Whitener,
 };
@@ -22,6 +26,10 @@ pub use self::{
 pub const SYMBOL_RATE_HZ: f64 = 1_000_000.0;
 pub const SPS: usize = 4;
 pub const RATE_HZ: f64 = SYMBOL_RATE_HZ * SPS as f64;
+/// Half the passband a one channel front filters to.
+pub const CHANNEL_HALF_PASSBAND_HZ: f64 = RATE_HZ * 0.55 / 2.0;
+/// The rate that holds every channel of a band window.
+pub const BAND_RATE_HZ: f64 = 20_000_000.0;
 pub const DEVIATION_HZ: f64 = 250_000.0;
 pub const ACCESS_ADDRESS: u32 = 0x8E89_BED6;
 pub const HEADER_BYTES: usize = 2;

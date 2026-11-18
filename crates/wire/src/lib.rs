@@ -17,6 +17,7 @@ pub mod doctor;
 pub mod encoder;
 pub mod event_output;
 pub mod filter;
+pub mod form;
 pub mod frame;
 pub mod fusion;
 pub mod geo;
@@ -53,8 +54,8 @@ pub mod tools;
 pub mod transmit;
 pub mod trunk;
 pub use trunk::{
-    AUTO_TRUNK_PROTOCOL, MAX_TRUNK_TALKGROUPS, TrunkKind, TrunkScheme, TrunkSite, TrunkSpec,
-    TrunkTalkgroups,
+    AUTO_TRUNK_PROTOCOL, MAX_TRUNK_TALKGROUPS, TrunkCallSettings, TrunkKind, TrunkScheme,
+    TrunkSite, TrunkSpec, TrunkTalkgroups,
 };
 pub mod units;
 pub mod workspace;
@@ -87,8 +88,8 @@ pub use bandplan::{
 pub use channel::{
     BandMiss, CallGate, ChannelBand, ChannelDescriptor, ChannelHealth, ChannelInfo, ChannelParams,
     ChannelSettings, ChannelStatus, ClickProfile, Condition, Control, DEFAULT_FREQUENCY_HZ,
-    DEFAULT_IF_NOTCH_WIDTH_HZ, DecoderFamily, DecoderSettings, IfFilter, IfNotch, LanePick,
-    MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ, MAX_IF_NOTCHES, MAX_SQUELCH_AUTO_MARGIN_DB,
+    DEFAULT_IF_NOTCH_WIDTH_HZ, DecoderFamily, DecoderSettings, FilterSpec, IfFilter, IfNotch,
+    LanePick, MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ, MAX_IF_NOTCHES, MAX_SQUELCH_AUTO_MARGIN_DB,
     MIN_IF_NOTCH_WIDTH_HZ, MIN_IF_PASSBAND_HZ, MIN_SQUELCH_AUTO_MARGIN_DB, NumberSpec, ParamChoice,
     ParamOption, PresetOption, RETIRED_CHANNEL_TYPES, SettingChoice, SettingField, Squelch,
     retired_channel_type,
@@ -109,13 +110,16 @@ pub use cps::{
     TimeSlot, Tone, UsbMatch,
 };
 pub use decode::{
-    ANY_MODULATION, BroadcastData, Capability, CodeStyle, DecodedRecord, DecoderEvent,
-    DvChannelDefinition, DvFrame, DvFrameKind, DvSlotActivity, EventCatalog, EventContract,
-    EventKind, EventKindEntry, FeedEncoder, FeedEntry, FeedSpec, HzRange, IdentFeatures,
-    IdentReport, IdentSignal, KindCodec, KindSet, KindSpec, KindView, Lifetime,
-    MAX_VOICE_KEY_DIGITS, MAX_VOICE_KEYS, Modulation, NO_CHANNEL, ProtocolMatch, Sideband,
-    SignalMeasure, SignalSignature, SignalTrial, SiteNaming, SortKey, Symbol, Vendor, VoiceKey,
-    catalog, install_catalog, modulation_label, platform_kinds,
+    AIRTIME_REPORT_MS, AMATEUR_VU, ANY_MODULATION, AirtimeSpan, BroadcastData, Capability,
+    ChirpSweep, CodeStyle, DecodedRecord, DecoderEvent, DvChannelDefinition, DvFrame, DvFrameKind,
+    DvSlotActivity, EventCatalog, EventContract, EventKind, EventKindEntry, FeedEncoder, FeedEntry,
+    FeedSpec, FrameSync, HzRange, IdentFeatures, IdentReport, IdentSignal, KindCodec, KindSet,
+    KindSpec, KindView, LAND_MOBILE, Lifetime, MAX_AIRTIME_MARGIN_DB, MAX_NAVAID_REPORT_MS,
+    MAX_VOICE_KEY_DIGITS, MAX_VOICE_KEYS, MIN_AIRTIME_MARGIN_DB, MIN_NAVAID_REPORT_MS, Modulation,
+    NO_CHANNEL, PagerPayload, ProtocolMatch, Sideband, SignalMeasure, SignalSignature, SignalTrial,
+    SiteNaming, SortKey, Symbol, SyncPulse, ToneSquelchStatus, Vendor, VoiceKey, airtime_form,
+    catalog, check_airtime_margin, default_navaid_report_ms, default_pager_bandwidth_hz,
+    install_catalog, modulation_label, platform_kinds,
 };
 pub use device::{
     Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendEntry,
@@ -165,23 +169,21 @@ pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use note::{MAX_NOTE_LEN, NoteNode};
 pub use patch::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
-    BEAM_PORT, BEARING_PORT, BasebandRecorderNode, BeamformerNode, CONTROL_PORT, ChannelAddr,
-    ChannelNode, CorrelatorNode, DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ, DEFAULT_SIGNAL_MAP_OFFSET_HZ,
-    DEFAULT_TRUNK_PROBES, DecoderLogNode, DeviceNode, DeviceRef, DfNode, EVENTS_PORT, Face,
-    FaceSize, Feed, Held, Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire,
-    MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_MONITORS_PER_RADIO, MAX_NODES,
-    MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_SPEAKER_OUTPUT_LEN, MAX_STREAMS,
-    MAX_TRUNK_CHANNEL_MAP, MAX_TRUNK_PROBES, MAX_TRUNK_SEARCH_CANDIDATES, MAX_TRUNK_SEARCH_RANGES,
-    MIN_TRUNK_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind, NodeProblem, NodeTypeInfo,
-    POSITION_PORT, PassiveRadarNode, PatchCatalog, PatchEdge, PatchError, PatchGraph, PatchNode,
-    Payload, Picks, PolarimeterNode, PortDirection, PortRef, PortRepeat, PortSpec, PortType,
-    PortTypeInfo, Position, ProblemSource, RACK_COLS, RACK_ROWS, RADAR_TRUTH_PORT, RADAR_TX_PORT,
-    REFUSALS, RackCell, RackLayout, RackSlot, Reach, RecorderNode, Refusal, RefusedEdge,
-    ResolveCtx, ResolvedEdge, ResolvedNode, ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs,
-    STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalMapNode, Size, SpatialSpectrumNode,
-    SpeakerNode, StitchNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkChannelEntry,
-    TrunkDiscovery, TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports,
-    generator_key, port_index, port_lane, port_stream, stream_port,
+    BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelAddr, ChannelNode,
+    DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ, DEFAULT_SIGNAL_MAP_OFFSET_HZ, DEFAULT_TRUNK_PROBES,
+    DecoderLogNode, DeviceNode, DeviceRef, EVENTS_PORT, Face, FaceSize, Feed, Held, Hue, HuntNode,
+    IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_MONITORS_PER_RADIO,
+    MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_SPEAKER_OUTPUT_LEN,
+    MAX_STREAMS, MAX_TRUNK_CHANNEL_MAP, MAX_TRUNK_PROBES, MAX_TRUNK_SEARCH_CANDIDATES,
+    MAX_TRUNK_SEARCH_RANGES, MIN_TRUNK_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind,
+    NodeProblem, NodeTypeInfo, POSITION_PORT, PatchCatalog, PatchEdge, PatchError, PatchGraph,
+    PatchNode, Payload, Picks, PortDirection, PortRef, PortRepeat, PortSpec, PortType,
+    PortTypeInfo, Position, ProblemSource, RACK_COLS, RACK_ROWS, REFUSALS, RackCell, RackLayout,
+    RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx, ResolvedEdge, ResolvedNode,
+    ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT, ScannerNode, SignalMapNode,
+    Size, SpeakerNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkChannelEntry, TrunkDiscovery,
+    TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports, generator_key,
+    port_index, port_lane, port_stream, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -205,24 +207,14 @@ pub use presence::{
     POINTER_BURST, POINTER_RATE_HZ, Peer, Pointer, author_hue, peer_name, valid_author,
 };
 pub use processor::{
-    ProcessorParams, ProcessorReading,
-    beamformer::{
-        Adaptation, BeamMode, BeamformerParams, BeamformerReading, LaneWeight, NoiseModel,
-        SteerSource,
-    },
-    correlator::{Baseline, CorrelatorParams, CorrelatorReading},
-    df::{DfAlgorithm, DfParams, DfPeak, DfReading, SourceRule, UlaSide},
-    plugin::{
-        ArrayNeeds, PluginParams, PluginReading, PluginReadout, ProcessorNode, ProcessorType,
-        ReadoutSpec, install_processor_types, processor_type, processor_types,
-    },
-    polarimeter::{Hand, PolarimeterParams, PolarimeterReading},
-    spatial::{SpatialMethod, SpatialPeak, SpatialReading, SpatialSpectrumParams},
-    stitch::{StitchBlend, StitchLane, StitchParams, StitchReading},
+    ArrayNeeds, ProcessorNode, ProcessorParams, ProcessorPort, ProcessorReading, ProcessorType,
+    ReadoutSpec,
+    df::{DfAlgorithm, DfPeak, DfReading},
+    install_processor_types, processor_type, processor_types,
     view::{
-        ActionSpec, BearingView, Cell, EllipseView, Flag, Headline, Layer, Mark, MarkShape, Needle,
-        NeedleWeight, PatternView, ProcessorAction, ProcessorFacets, ProcessorView, SurfaceView,
-        TableRow, TableView, ViewSpec,
+        ActionSpec, BearingView, Cell, EllipseView, Flag, Headline, LaneWeight, Layer, Mark,
+        MarkShape, Needle, NeedleWeight, PatternView, ProcessorAction, ProcessorFacets,
+        ProcessorView, SurfaceView, TableRow, TableView, ViewSpec,
     },
 };
 pub use propagation::{
@@ -232,11 +224,9 @@ pub use propagation::{
     MIN_REFLECTION_HEIGHT_KM, PropagationNode,
 };
 pub use radar::{
-    AoaState, CfarKind, CfarParams, CfarWindow, ClutterMethod, ClutterParams, DopplerWindow,
-    GpuUse, Illuminator, PassiveRadarParams, RadarAoa, RadarAxes, RadarDetection, RadarFix,
-    RadarGeometry, RadarHealth, RadarProblem, RadarSite, RadarSites, RadarTrack, RadarTrackEvent,
-    RadarTrailPoint, RadarUpdate, ReferenceCleaning, ReferenceHealth, ReferenceMode,
-    SurveillanceSet, TrackChange, TrackMatch, TrackState, TrackTruth, TrackerParams,
+    AoaState, RadarAoa, RadarAxes, RadarDetection, RadarFix, RadarGeometry, RadarHealth,
+    RadarProblem, RadarSite, RadarSites, RadarTrack, RadarTrackEvent, RadarTrailPoint, RadarUpdate,
+    ReferenceHealth, ReferenceMode, TrackChange, TrackMatch, TrackState, TrackTruth,
 };
 pub use rest::{
     AnnotationError, ApiError, ApplyTemplateRequest, AudioRecordingInfo, AudioRecordingsResponse,

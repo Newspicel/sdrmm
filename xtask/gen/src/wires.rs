@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 
 use sdrmm_wire::{
     EventKind, KindSet, Multi, NodeCategory, NodeTypeInfo, PatchCatalog, Payload, Picks,
-    PortDirection, PortRepeat, PortSpec,
+    PortDirection, PortRepeat, PortSpec, ProcessorType,
 };
 
 const LISTED_KINDS: usize = 6;
@@ -25,7 +25,22 @@ pub(crate) fn page(catalog: &PatchCatalog) -> String {
     ] {
         nodes(&mut out, catalog, category);
     }
+    processors(&mut out, catalog);
     out
+}
+
+fn processors(out: &mut String, catalog: &PatchCatalog) {
+    out.push_str(
+        "\n## Processors\n\nWhat a Processor node runs, and the ports each type gives it.\n",
+    );
+    for kind in &catalog.processors {
+        processor_section(out, kind);
+    }
+}
+
+fn processor_section(out: &mut String, kind: &ProcessorType) {
+    let _ = write!(out, "\n### {}\n\n{}\n", kind.name, kind.summary);
+    port_table(out, &kind.port_specs());
 }
 
 fn port_types(out: &mut String, catalog: &PatchCatalog) {
@@ -78,14 +93,20 @@ const fn heading(category: NodeCategory) -> &'static str {
 
 fn node_section(out: &mut String, node: &NodeTypeInfo) {
     let _ = write!(out, "\n### {}\n\n{}\n", node.name, node.summary);
-    if node.picks == Some(Picks::Decoder) {
-        out.push_str("\nPorts follow the decoder the node runs.\n");
+    match node.picks {
+        Some(Picks::Decoder) => out.push_str("\nPorts follow the decoder the node runs.\n"),
+        Some(Picks::Processor) => out.push_str("\nPorts follow the processor the node runs.\n"),
+        _ => {}
     }
-    if node.ports.is_empty() {
+    port_table(out, &node.ports);
+}
+
+fn port_table(out: &mut String, ports: &[PortSpec]) {
+    if ports.is_empty() {
         return;
     }
     out.push_str("\n| Port | Way | Type | Carries | Wires |\n|---|---|---|---|---|\n");
-    for port in &node.ports {
+    for port in ports {
         let _ = writeln!(
             out,
             "| `{}` | {} | {} | {} | {} |",
@@ -173,7 +194,8 @@ mod tests {
 
     #[test]
     fn every_port_and_port_type_says_what_it_carries() {
-        sdrmm_channels::registry::init();
+        sdrmm_channels::builtin::install();
+        sdrmm_array::builtin::install();
         let catalog = PatchCatalog::build();
         for info in &catalog.port_types {
             assert!(info.note.is_some(), "{} has no note", info.name);
@@ -192,7 +214,8 @@ mod tests {
 
     #[test]
     fn the_page_names_every_node_port_type_and_kind() {
-        sdrmm_channels::registry::init();
+        sdrmm_channels::builtin::install();
+        sdrmm_array::builtin::install();
         let catalog = PatchCatalog::build();
         let page = page(&catalog);
         for node in &catalog.nodes {

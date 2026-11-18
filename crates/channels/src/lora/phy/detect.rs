@@ -1,7 +1,7 @@
 use num_complex::Complex;
 use sdrmm_dsp::math::special::gamma::gamma_q;
 
-use super::chirp::{Dechirper, fraction_of};
+use sdrmm_modem::spread::css::{Dechirper, fraction_of};
 
 /// Search windows whose energies are summed before a preamble is called. A preamble too weak to
 /// clear a threshold in each window still piles up in one pair of bins over several.

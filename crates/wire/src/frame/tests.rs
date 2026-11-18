@@ -541,3 +541,21 @@ fn typescript_frames_include_the_new_kinds() {
     }
     assert!(!ts.contains("rangeStepUs"));
 }
+
+#[test]
+fn a_surface_slot_takes_an_encoded_frame_of_its_kind() {
+    let sent = SurfaceFrame::RangeDoppler(RangeDopplerOwned {
+        stream_id: 0,
+        ..range_doppler()
+    });
+    let bytes = sent.encode(0).expect("encodes");
+    let mut slot = SurfaceFrame::RangeDoppler(RangeDopplerOwned {
+        cells: Vec::with_capacity(4_096),
+        ..RangeDopplerOwned::default()
+    });
+    slot.assign(&bytes).expect("a range-Doppler frame");
+    assert_eq!(slot, sent);
+    let mut other = SurfaceFrame::SpatialSpectrum(spatial());
+    assert!(other.assign(&bytes).is_err());
+    assert_eq!(other, SurfaceFrame::SpatialSpectrum(spatial()));
+}

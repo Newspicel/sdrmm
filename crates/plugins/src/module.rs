@@ -85,7 +85,7 @@ impl PluginModule {
         instantiate(&self.name, &self.module, &self.linker)
     }
 
-    /// A decoder control call on the shared instance: JSON in, JSON reply out.
+    /// A control call on the shared instance: JSON in, JSON reply out.
     pub(crate) fn call<T: DeserializeOwned>(
         &self,
         op: Op,
@@ -115,11 +115,16 @@ fn check_parts(module: &Module, manifest: &PluginManifest) -> Result<(), String>
     if manifest.is_empty() {
         return Err("brings no decoder, encoder or processor".to_owned());
     }
-    if manifest.decoder.is_some() {
+    if let Some(decoder) = &manifest.decoder {
         check_exports(module, &decoder::REQUIRED, "decodes")?;
+        check_exports(module, &[export::CALL], "decodes")?;
+        if decoder.descriptor.trunking.is_some() {
+            return Err("declares trunking, which a plugin cannot run yet".to_owned());
+        }
     }
     if manifest.encoder.is_some() {
         check_exports(module, &encoder::export::ALL, "encodes")?;
+        check_exports(module, &[export::CALL], "encodes")?;
     }
     if !manifest.kinds.is_empty() {
         check_exports(module, &[export::PRESENT], "declares event kinds")?;
@@ -210,7 +215,7 @@ impl Guest {
 
     fn call<T: DeserializeOwned>(&mut self, op: Op, input: &impl Serialize) -> Result<T, String> {
         let call: TypedFunc<(i32, u32, u32), i64> =
-            typed(&self.instance, &mut self.store, decoder::CALL)?;
+            typed(&self.instance, &mut self.store, export::CALL)?;
         let bytes = serde_json::to_vec(input).map_err(|error| error.to_string())?;
         let (ptr, len) = self.write(&bytes)?;
         self.store.set_epoch_deadline(CALL_BUDGET);
@@ -249,6 +254,19 @@ impl Guest {
         let (ptr, len) = self.write(&bytes)?;
         self.store.set_epoch_deadline(CALL_BUDGET);
         func.call(&mut self.store, (first, ptr, len))
+            .map_err(|error| error.to_string())
+    }
+
+    /// Calls `func(json)` with `value` as JSON in a guest buffer.
+    pub(crate) fn call_with_json(
+        &mut self,
+        func: &TypedFunc<(u32, u32), i32>,
+        value: &impl Serialize,
+    ) -> Result<i32, String> {
+        let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+        let (ptr, len) = self.write(&bytes)?;
+        self.store.set_epoch_deadline(CALL_BUDGET);
+        func.call(&mut self.store, (ptr, len))
             .map_err(|error| error.to_string())
     }
 

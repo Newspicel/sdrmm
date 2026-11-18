@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, ChannelRx};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
 use sdrmm_modem_test_support::ber::perf::{
     CALIBRATION_BENCH, PerfBaseline, compare_perf, host_id, load_baselines, missing_host_baseline,
     rows_for_host, save_baselines,
@@ -42,11 +42,11 @@ struct Row {
 fn searching_signal(rate: f64) -> Vec<Complex<f32>> {
     let len = (rate * SURVEY_SECONDS) as usize;
     let mut iq = vec![Complex::new(0.0f32, 0.0); len.max(BLOCK)];
-    sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
     iq
 }
 
-fn drive(rx: &mut dyn ChannelRx, iq: &[Complex<f32>], outputs: &mut ChannelOutputs) {
+fn drive(rx: &mut dyn Channel, iq: &[Complex<f32>], outputs: &mut ChannelOutputs) {
     for block in iq.chunks(BLOCK) {
         outputs.reset();
         rx.process(block, outputs);
@@ -55,12 +55,12 @@ fn drive(rx: &mut dyn ChannelRx, iq: &[Complex<f32>], outputs: &mut ChannelOutpu
 
 fn survey() -> Vec<Row> {
     let mut rows = Vec::new();
-    for descriptor in sdrmm_channels::descriptors() {
-        let settings = sdrmm_channels::default_settings(&descriptor.type_id)
+    for descriptor in sdrmm_decoder::descriptors() {
+        let settings = sdrmm_decoder::default_settings(&descriptor.type_id)
             .expect("every registered channel has defaults");
         let rate = descriptor.input_rate_hz;
         let ctx = ChannelCtx { input_rate: rate };
-        let mut rx = sdrmm_channels::create(ctx, &settings)
+        let mut rx = sdrmm_decoder::create(ctx, &settings)
             .unwrap_or_else(|error| panic!("{} cannot be measured: {error}", descriptor.type_id));
         let seconds = match descriptor.type_id.as_str() {
             "ft8" => 15.0,
@@ -70,7 +70,7 @@ fn survey() -> Vec<Row> {
             _ => SURVEY_SECONDS,
         };
         let mut iq = vec![Complex::new(0.0, 0.0); ((rate * seconds) as usize).max(BLOCK)];
-        sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+        sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
         let mut outputs = ChannelOutputs::default();
         drive(rx.as_mut(), &iq, &mut outputs);
         let msamples_per_s = measure_throughput(
@@ -118,7 +118,7 @@ fn survey_every_channel_search_path() {
             row.realtime_factor
         );
     }
-    assert_eq!(rows.len(), sdrmm_channels::descriptors().len());
+    assert_eq!(rows.len(), sdrmm_decoder::descriptors().len());
     let measured = baselines(&rows);
     assert_eq!(
         committed
@@ -191,16 +191,16 @@ fn write_perf_baseline() {
 
 #[test]
 fn the_cw_skimmer_allocates_nothing_while_it_searches_an_empty_band() {
-    let settings = sdrmm_channels::default_settings("cw_skimmer").expect("settings");
-    let descriptor = sdrmm_channels::descriptors()
+    let settings = sdrmm_decoder::default_settings("cw_skimmer").expect("settings");
+    let descriptor = sdrmm_decoder::descriptors()
         .into_iter()
         .find(|descriptor| descriptor.type_id == "cw_skimmer")
         .expect("descriptor");
     let rate = descriptor.input_rate_hz;
     let mut rx =
-        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let mut iq = vec![Complex::new(0.0, 0.0); (rate as usize).max(BLOCK)];
-    sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
     let mut outputs = ChannelOutputs::default();
     for _ in 0..4 {
         drive(rx.as_mut(), &iq, &mut outputs);
@@ -210,12 +210,12 @@ fn the_cw_skimmer_allocates_nothing_while_it_searches_an_empty_band() {
 
 #[test]
 fn the_stanag_identifier_allocates_nothing_while_it_analyses_windows() {
-    let settings = sdrmm_channels::default_settings("stanag").expect("settings");
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let settings = sdrmm_decoder::default_settings("stanag").expect("settings");
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut rx =
-        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let mut iq = vec![Complex::new(0.0, 0.0); (rate * 3.0) as usize];
-    sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, NOISE_AMPLITUDE);
     let mut outputs = ChannelOutputs::default();
     drive(rx.as_mut(), &iq, &mut outputs);
     assert_no_alloc("stanag", || drive(rx.as_mut(), &iq, &mut outputs));
@@ -226,14 +226,14 @@ fn the_stanag_identifier_allocates_nothing_while_it_analyses_windows() {
 #[test]
 fn analog_channels_allocate_nothing_after_warmup_and_exceed_realtime() {
     for type_id in ["am", "nfm", "wfm", "ssb"] {
-        let settings = sdrmm_channels::default_settings(type_id).expect("settings");
-        let descriptor = sdrmm_channels::descriptors()
+        let settings = sdrmm_decoder::default_settings(type_id).expect("settings");
+        let descriptor = sdrmm_decoder::descriptors()
             .into_iter()
             .find(|descriptor| descriptor.type_id == type_id)
             .expect("descriptor");
         let rate = descriptor.input_rate_hz;
         let mut rx =
-            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+            sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
         let iq = searching_signal(rate);
         let mut outputs = ChannelOutputs::default();
         for _ in 0..4 {
@@ -250,10 +250,10 @@ fn analog_channels_allocate_nothing_after_warmup_and_exceed_realtime() {
 
 #[test]
 fn lora_allocates_nothing_while_every_spreading_factor_searches() {
-    let settings = sdrmm_channels::default_settings("lora").expect("settings");
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let settings = sdrmm_decoder::default_settings("lora").expect("settings");
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut rx =
-        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let iq = searching_signal(rate);
     let mut outputs = ChannelOutputs::default();
     for _ in 0..4 {
@@ -279,9 +279,9 @@ fn gsm_allocates_nothing_while_it_tracks_a_quiet_cell() {
     let iq = cell.modulate();
     let settings = ChannelSettings {
         frequency_hz: 1_847_800_000.0,
-        ..sdrmm_channels::default_settings("gsm").expect("settings")
+        ..sdrmm_decoder::default_settings("gsm").expect("settings")
     };
-    let mut rx = sdrmm_channels::create(
+    let mut rx = sdrmm_decoder::create(
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
@@ -305,7 +305,7 @@ fn remote_id_settings(link: RemoteIdLink) -> ChannelSettings {
     ChannelSettings {
         params: ChannelParams::new("remote_id", &RemoteIdParams { link })
             .expect("remote_id settings"),
-        ..sdrmm_channels::default_settings("remote_id").expect("settings")
+        ..sdrmm_decoder::default_settings("remote_id").expect("settings")
     }
 }
 
@@ -317,7 +317,8 @@ fn aux_without_remote_id() -> Vec<u8> {
 }
 
 fn busy_bluetooth(rate: f64, spread: bool) -> Vec<Complex<f32>> {
-    use sdrmm_channels::synth::remote_id::{BlePhy, bluetooth, ext_adv_pdu};
+    use sdrmm_channels::synth::remote_id::{BlePhy, ext_adv_pdu};
+    use sdrmm_modem::ble::transmit::rf_packet as bluetooth;
     let mut ibeacon = vec![0x42, 20, 6, 5, 4, 3, 2, 0xC1];
     ibeacon.extend([13, 0xFF, 0x4C, 0x00, 0x02, 0x15, 1, 2, 3, 4, 5, 6, 7, 8]);
     let mut bursts = vec![
@@ -327,7 +328,7 @@ fn busy_bluetooth(rate: f64, spread: bool) -> Vec<Complex<f32>> {
     ];
     if spread {
         let mut aux = bluetooth(&aux_without_remote_id(), 9, BlePhy::CodedS8, rate);
-        sdrmm_channels::synth::shift(&mut aux, -6e6, rate);
+        sdrmm_modem::synth::shift(&mut aux, -6e6, rate);
         bursts.push(aux);
     }
     busy(bursts, rate)
@@ -351,13 +352,13 @@ fn busy_wifi(rate: f64) -> Vec<Complex<f32>> {
 
 fn busy(bursts: Vec<Vec<Complex<f32>>>, rate: f64) -> Vec<Complex<f32>> {
     let gap = (200e-6 * rate) as usize;
-    let mut iq = sdrmm_channels::synth::silence(gap);
+    let mut iq = sdrmm_modem::synth::silence(gap);
     for mut burst in bursts {
-        sdrmm_channels::synth::scale(&mut burst, 0.3);
+        sdrmm_modem::synth::scale(&mut burst, 0.3);
         iq.append(&mut burst);
-        iq.extend(sdrmm_channels::synth::silence(gap));
+        iq.extend(sdrmm_modem::synth::silence(gap));
     }
-    sdrmm_channels::synth::add_noise(&mut iq, 0xB05E, 0.02);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xB05E, 0.02);
     iq
 }
 
@@ -369,9 +370,9 @@ fn remote_id_allocates_nothing_on_a_busy_channel_without_remote_id() {
         RemoteIdLink::Wifi,
     ] {
         let settings = remote_id_settings(link);
-        let rate = sdrmm_channels::input_rate(&settings.params);
+        let rate = sdrmm_decoder::input_rate(&settings.params);
         let mut rx =
-            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+            sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
         let iq = match link {
             RemoteIdLink::Wifi => busy_wifi(rate),
             _ => busy_bluetooth(rate, link == RemoteIdLink::BluetoothBand),
@@ -391,9 +392,9 @@ fn remote_id_allocates_nothing_while_every_link_searches() {
         RemoteIdLink::Wifi,
     ] {
         let settings = remote_id_settings(link);
-        let rate = sdrmm_channels::input_rate(&settings.params);
+        let rate = sdrmm_decoder::input_rate(&settings.params);
         let mut rx =
-            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+            sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
         let iq = searching_signal(rate);
         let mut outputs = ChannelOutputs::default();
         for _ in 0..4 {
@@ -408,11 +409,11 @@ fn ble_allocates_nothing_once_every_device_is_known() {
     for link in [BleLink::Channel, BleLink::Band] {
         let settings = ChannelSettings {
             params: ChannelParams::new("ble", &BleParams { link }).expect("ble settings"),
-            ..sdrmm_channels::default_settings("ble").expect("settings")
+            ..sdrmm_decoder::default_settings("ble").expect("settings")
         };
         let rate = link.input_rate_hz();
         let mut rx =
-            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+            sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
         let iq = busy_bluetooth(rate, link == BleLink::Band);
         let mut outputs = ChannelOutputs::default();
         drive(rx.as_mut(), &iq, &mut outputs);
@@ -442,7 +443,7 @@ fn airtime_settings(type_id: &str, span: AirtimeSpan) -> ChannelSettings {
     };
     ChannelSettings {
         params,
-        ..sdrmm_channels::default_settings(type_id).expect("settings")
+        ..sdrmm_decoder::default_settings(type_id).expect("settings")
     }
 }
 
@@ -452,11 +453,11 @@ fn airtime_decoders_allocate_nothing_and_keep_up_at_every_span() {
         for span in [AirtimeSpan::Mhz20, AirtimeSpan::Mhz40, AirtimeSpan::Mhz80] {
             let settings = airtime_settings(type_id, span);
             let rate = span.sample_rate_hz();
-            let mut rx = sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings)
+            let mut rx = sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings)
                 .expect("receiver");
             let mut iq = busy_wifi(rate);
             iq.resize((rate * 0.02) as usize, Complex::new(0.0, 0.0));
-            sdrmm_channels::synth::add_noise(&mut iq, 0x5EED, 0.02);
+            sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, 0.02);
             let mut outputs = ChannelOutputs::default();
             for _ in 0..8 {
                 drive(rx.as_mut(), &iq, &mut outputs);
@@ -478,10 +479,10 @@ fn airtime_decoders_allocate_nothing_and_keep_up_at_every_span() {
 #[test]
 fn measurement_channels_allocate_nothing_between_reports() {
     for type_id in ["noise_figure", "per", "sid"] {
-        let settings = sdrmm_channels::default_settings(type_id).expect("settings");
-        let rate = sdrmm_channels::input_rate(&settings.params);
+        let settings = sdrmm_decoder::default_settings(type_id).expect("settings");
+        let rate = sdrmm_decoder::input_rate(&settings.params);
         let mut rx =
-            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+            sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
         let iq = searching_signal(rate);
         let mut outputs = ChannelOutputs::default();
         for _ in 0..2 {
@@ -494,10 +495,10 @@ fn measurement_channels_allocate_nothing_between_reports() {
 
 #[test]
 fn ism_sensors_allocate_nothing_while_listening_to_noise() {
-    let settings = sdrmm_channels::default_settings("ism").expect("settings");
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let settings = sdrmm_decoder::default_settings("ism").expect("settings");
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut rx =
-        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let iq = searching_signal(rate);
     let mut outputs = ChannelOutputs::default();
     drive(rx.as_mut(), &iq, &mut outputs);
@@ -508,10 +509,10 @@ fn ism_sensors_allocate_nothing_while_listening_to_noise() {
 #[test]
 fn packet_decoders_allocate_nothing_while_listening_to_noise() {
     for type_id in ["aprs", "bss"] {
-        let settings = sdrmm_channels::default_settings(type_id).expect("settings");
-        let rate = sdrmm_channels::input_rate(&settings.params);
+        let settings = sdrmm_decoder::default_settings(type_id).expect("settings");
+        let rate = sdrmm_decoder::input_rate(&settings.params);
         let mut rx =
-            sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+            sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
         let iq = searching_signal(rate);
         let mut outputs = ChannelOutputs::default();
         drive(rx.as_mut(), &iq, &mut outputs);
@@ -522,10 +523,10 @@ fn packet_decoders_allocate_nothing_while_listening_to_noise() {
 
 #[test]
 fn wmbus_allocates_nothing_while_listening_to_noise() {
-    let settings = sdrmm_channels::default_settings("wmbus").expect("settings");
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let settings = sdrmm_decoder::default_settings("wmbus").expect("settings");
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut rx =
-        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let iq = searching_signal(rate);
     let mut outputs = ChannelOutputs::default();
     drive(rx.as_mut(), &iq, &mut outputs);
@@ -536,10 +537,10 @@ fn wmbus_allocates_nothing_while_listening_to_noise() {
 #[test]
 fn tetra_allocates_nothing_while_it_follows_an_idle_cell() {
     use sdrmm_channels::synth::tetra::{Cell, Downlink};
-    let settings = sdrmm_channels::default_settings("tetra").expect("settings");
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let settings = sdrmm_decoder::default_settings("tetra").expect("settings");
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut rx =
-        sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
     let mut downlink = Downlink::new(Cell::default());
     for _ in 0..8 {
         downlink.idle();

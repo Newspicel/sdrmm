@@ -4,7 +4,7 @@ use crate::lora::MeshtasticNeighbor;
 use super::ports;
 use super::proto::{each_field, repeated_fixed32, repeated_varint};
 use super::telemetry::telemetry;
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 const DEGREES_SCALE: f64 = 1e7;
 const SNR_SCALE: f32 = 4.0;

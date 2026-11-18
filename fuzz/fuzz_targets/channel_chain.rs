@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_wire::ChannelDescriptor;
 
 const MAX_SAMPLES: usize = 1 << 16;
@@ -12,7 +12,7 @@ const MAX_SAMPLES: usize = 1 << 16;
 static BY_TYPE_ID: OnceLock<Vec<ChannelDescriptor>> = OnceLock::new();
 
 fn by_type_id() -> Vec<ChannelDescriptor> {
-    let mut sorted = sdrmm_channels::descriptors();
+    let mut sorted = sdrmm_decoder::descriptors();
     sorted.sort_unstable_by(|left, right| left.type_id.cmp(&right.type_id));
     sorted
 }
@@ -38,6 +38,7 @@ fn samples(bytes: &[u8]) -> Vec<Complex<f32>> {
 }
 
 fuzz_target!(|data: &[u8]| {
+    sdrmm_channels::builtin::install();
     let split = data
         .iter()
         .position(|byte| *byte == 0)
@@ -54,7 +55,7 @@ fuzz_target!(|data: &[u8]| {
     let ctx = ChannelCtx {
         input_rate: descriptor.input_rate_hz,
     };
-    let Ok(mut channel) = sdrmm_channels::create(ctx, settings) else {
+    let Ok(mut channel) = sdrmm_decoder::create(ctx, settings) else {
         return;
     };
     let mut out = ChannelOutputs::default();

@@ -3,6 +3,7 @@ mod differential;
 mod manchester;
 mod nrz;
 mod pair;
+mod three_of_six;
 
 pub use biphase::{BiphaseDecoder, BiphaseEncoder, BiphasePair, BiphaseVariant, biphase_decode};
 pub use differential::{
@@ -13,6 +14,7 @@ pub use manchester::{
 };
 pub use nrz::{NrziConvention, NrziDecoder, NrziEncoder, nrz_decode, nrz_encode};
 pub use pair::{Alignment, PairDecode};
+pub use three_of_six::{Nibble, three_of_six_decode, three_of_six_encode};
 
 #[cfg(test)]
 mod tests;

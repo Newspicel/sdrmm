@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 
-use sdrmm_channels::ChannelError;
+use sdrmm_decoder::ChannelError;
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
     AudioProcessing, AudioRoute, ChannelDescriptor, ChannelInfo, ChannelLevel, DeviceSetStatus,
@@ -153,8 +153,8 @@ impl Engine {
             .ok_or(EngineError::ChannelNotFound(ch, ds))?;
         Ok(FxSource {
             pcm: handle.sinks.pcm_tx.subscribe(),
-            channels: sdrmm_channels::audio_channels(&info.settings.params),
-            profile: sdrmm_channels::click_profile(&info.settings.params),
+            channels: sdrmm_decoder::audio_channels(&info.settings.params),
+            profile: sdrmm_decoder::click_profile(&info.settings.params),
             capacity: crate::audio::pcm_channel_cap(sample_rate_of(&state.settings)),
         })
     }
@@ -296,7 +296,7 @@ impl Engine {
 
     #[must_use]
     pub fn encoder_types(&self) -> Vec<sdrmm_wire::EncoderDescriptor> {
-        sdrmm_channels::encoder::encoders()
+        sdrmm_decoder::encoder::encoders()
     }
 
     pub fn start_scan(

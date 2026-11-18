@@ -3,11 +3,13 @@
 //!
 //! Payloads travel in a buffer from `sdrmm_alloc`: audio as little-endian `f32` samples, a frame
 //! as its bytes. `sdrmm_encoder_generate` leaves interleaved little-endian `f32` I/Q in a buffer the
-//! guest keeps, and returns its pointer and sample count packed like every other reply.
+//! guest keeps, and returns its pointer and sample count packed like every other reply. Its width
+//! and its message forms go through `sdrmm_call` as [`super::Op::Width`] and
+//! [`super::Op::Compose`].
 
 /// Guest exports, by name.
 pub mod export {
-    /// `(rate: f64, settings_ptr: u32, settings_len: u32) -> handle: i32`
+    /// `(settings_ptr: u32, settings_len: u32) -> handle: i32`
     pub const OPEN: &str = "sdrmm_encoder_open";
     /// `(handle: i32, kind: u32, ptr: u32, len: u32) -> i32`
     pub const SUBMIT: &str = "sdrmm_encoder_submit";

@@ -6,7 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use sdrmm_channels::{Decoder, array_processor::processor_plugin, registry};
+use sdrmm_array::processor_plugin;
+use sdrmm_decoder::{Decoder, registry};
 use sdrmm_plugins::PluginDir;
 
 mod common;
@@ -16,18 +17,20 @@ const PROCESSOR_ID: &str = "reload_meter";
 
 fn write(dir: &Path, name: &str) {
     let manifest = format!(
-        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"{TYPE_ID}","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{{"type_id":"{PROCESSOR_ID}","name":"{name}"}}}}"#
+        r#"{{"abi":4,"decoder":{{"descriptor":{{"type_id":"{TYPE_ID}","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{{"type_id":"{PROCESSOR_ID}","name":"{name}"}}}}"#
     );
     let text = common::wat_text(common::ABI, &manifest, "i32.const 0", common::ARRAY_EXPORTS);
     std::fs::write(dir.join("watch.wasm"), text).unwrap_or_else(|error| panic!("{error}"));
 }
 
 fn installed() -> Option<Arc<dyn Decoder>> {
+    sdrmm_channels::builtin::install();
     registry().find(TYPE_ID).cloned()
 }
 
 #[test]
 fn a_reload_names_the_plugins_a_changed_file_rebuilt() {
+    sdrmm_channels::builtin::install();
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("reload");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("{error}"));

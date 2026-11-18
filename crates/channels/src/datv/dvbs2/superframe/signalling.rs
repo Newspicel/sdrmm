@@ -1,11 +1,11 @@
 use num_complex::Complex;
-use sdrmm_dsp::word_msb;
+use sdrmm_dsp::{coding::fec::TailBitingViterbi, word_msb};
 
 use super::super::pl;
 
 const POLYNOMIALS: [u8; 5] = [0b10101, 0b10111, 0b11011, 0b11111, 0b11001];
-const STATES: usize = 16;
 const MAX_BITS: usize = 16;
+const CODE: TailBitingViterbi<'static, 16, MAX_BITS> = TailBitingViterbi::new(&POLYNOMIALS);
 pub const SOF: [bool; 20] = {
     let word = 0x9D564u32;
     let mut out = [false; 20];
@@ -36,84 +36,13 @@ pub fn soft(symbol: Complex<f32>) -> f32 {
     (symbol * pl::pilot_symbol().conj()).re
 }
 
-const fn output(register: u8) -> u8 {
-    let mut word = 0u8;
-    let mut index = 0;
-    while index < 5 {
-        word = word << 1 | ((register & POLYNOMIALS[index]).count_ones() % 2) as u8;
-        index += 1;
-    }
-    word
-}
-
 pub fn convolve(bits: &[bool], out: &mut [bool]) {
-    let count = bits.len();
-    for i in 0..count {
-        let register = (0..5).fold(0u8, |word, delay| {
-            word << 1 | u8::from(bits[(i + count - delay) % count])
-        });
-        let word = output(register);
-        for (j, bit) in out[5 * i..5 * i + 5].iter_mut().enumerate() {
-            *bit = word >> (4 - j) & 1 == 1;
-        }
-    }
-}
-
-fn branch(soft: &[f32], register: u8) -> f32 {
-    let word = output(register);
-    soft.iter()
-        .enumerate()
-        .map(|(j, &value)| {
-            if word >> (4 - j) & 1 == 1 {
-                -value
-            } else {
-                value
-            }
-        })
-        .sum()
-}
-
-fn run(soft: &[f32], count: usize, start: usize, bits: &mut [bool]) -> f32 {
-    let mut metric = [f32::NEG_INFINITY; STATES];
-    let mut history = [[0u8; STATES]; MAX_BITS];
-    metric[start] = 0.0;
-    for (step, row) in history.iter_mut().enumerate().take(count) {
-        let mut next = [f32::NEG_INFINITY; STATES];
-        for (state, &value) in metric.iter().enumerate() {
-            if value == f32::NEG_INFINITY {
-                continue;
-            }
-            for bit in 0..2u8 {
-                let register = bit << 4 | state as u8;
-                let target = usize::from(register >> 1);
-                let candidate = value + branch(&soft[5 * step..5 * step + 5], register);
-                if candidate > next[target] {
-                    next[target] = candidate;
-                    row[target] = state as u8;
-                }
-            }
-        }
-        metric = next;
-    }
-    let mut state = start;
-    for step in (0..count).rev() {
-        bits[step] = state >> 3 & 1 == 1;
-        state = usize::from(history[step][state]);
-    }
-    metric[start]
+    CODE.encode(bits, out);
 }
 
 pub fn viterbi(soft: &[f32], bits: &mut [bool]) -> f32 {
     let count = bits.len().min(MAX_BITS);
-    let mut best = f32::NEG_INFINITY;
-    let mut trial = [false; MAX_BITS];
-    for start in 0..STATES {
-        let metric = run(soft, count, start, &mut trial);
-        if metric > best {
-            best = metric;
-            bits[..count].copy_from_slice(&trial[..count]);
-        }
-    }
+    let best = CODE.decode(soft, &mut bits[..count]);
     let total: f32 = soft[..5 * count].iter().map(|value| value.abs()).sum();
     best / total.max(1e-12)
 }

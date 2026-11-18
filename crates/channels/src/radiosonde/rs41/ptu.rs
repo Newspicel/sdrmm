@@ -7,6 +7,7 @@ pub(crate) const REF_RESISTOR_HIGH: usize = 65;
 pub(crate) const TEMPERATURE_POLY: usize = 77;
 pub(crate) const TEMPERATURE_CAL: usize = 89;
 pub(crate) const HUMIDITY_CAL: usize = 117;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const SONDE_TYPE: usize = 0x218;
 pub(crate) const PRESSURE_FLAG: usize = 0x21F;
 pub(crate) const PRESSURE_SCALE_INDEX: usize = 24;
@@ -162,6 +163,7 @@ pub(crate) fn humidity_cold_compensation(celsius: f64) -> f64 {
     factor
 }
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) fn humidity_ratio(humidity_cal: f64, humidity_pct: f64, celsius: f64) -> f64 {
     let raw = humidity_pct / humidity_cold_compensation(celsius) + celsius / 5.5;
     (raw / 100.0 + HUMIDITY_OFFSET) * humidity_cal / HUMIDITY_GAIN

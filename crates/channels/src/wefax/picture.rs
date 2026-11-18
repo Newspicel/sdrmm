@@ -1,8 +1,8 @@
 use crate::wefax::WefaxIoc;
 use crate::wefax::WefaxLpm;
 
-use super::track::Track;
-use crate::VideoPicture;
+use sdrmm_decoder::VideoPicture;
+use sdrmm_dsp::SampleHistory;
 
 pub(super) const MAX_LINES: u16 = 4_000;
 pub(super) const MAX_WIDTH: usize = 1_810;
@@ -66,7 +66,7 @@ impl Picture {
         self.line_start(line) + self.period
     }
 
-    pub(super) fn scan_line(&mut self, track: &Track) {
+    pub(super) fn scan_line(&mut self, track: &SampleHistory) {
         let start = self.line_start(self.line);
         let step = self.period / self.width as f64;
         let base = usize::from(self.line) * self.width;

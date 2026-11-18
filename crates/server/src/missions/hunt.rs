@@ -59,7 +59,7 @@ pub(super) fn hunt(scene: &Scene<'_>, node: &str, settings: &HuntNode) -> Built 
 }
 
 fn target(device_set: u32, info: &ChannelInfo, channel_node: String) -> ChannelTarget {
-    let (low, high) = sdrmm_channels::occupied_band(&info.settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&info.settings.params);
     ChannelTarget {
         device_set,
         channel: info.id,

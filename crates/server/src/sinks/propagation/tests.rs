@@ -38,7 +38,6 @@ fn observation(key: &str, control: LatLon) -> Observation {
 }
 
 fn ft8(text: &str) -> DecodedRecord {
-    sdrmm_channels::registry::init();
     DecodedRecord {
         origin: Some(EventOrigin {
             node: "ft8".to_owned(),

@@ -7,9 +7,10 @@ use std::{
 };
 
 use num_complex::Complex;
+use sdrmm_channels::DmrChannel;
 use sdrmm_channels::DmrParams;
-use sdrmm_channels::NativeChannel;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, ChannelRx, DmrChannel};
+use sdrmm_decoder::NativeChannel;
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 const AIR_RATE_HZ: f64 = 48_000.0;
@@ -66,7 +67,7 @@ fn channel() -> DmrChannel {
         },
         ChannelSettings {
             params: ChannelParams::new("dmr", &DmrParams::default()).expect("dmr settings"),
-            ..sdrmm_channels::default_settings("dmr").unwrap()
+            ..sdrmm_decoder::default_settings("dmr").unwrap()
         },
     )
     .unwrap()
@@ -118,4 +119,10 @@ fn a_decoded_call_stays_inside_its_real_time_and_allocation_budget() {
         "{bytes:.0} allocated bytes per second of air, budget {MAX_ALLOC_BYTES_PER_SECOND:.0}; \
          a filter bank or table is being rebuilt instead of reset"
     );
+}
+
+/// Every test in this binary runs against the built-in decoders, installed once before main.
+#[ctor::ctor(unsafe)]
+fn install_for_tests() {
+    sdrmm_channels::builtin::install();
 }

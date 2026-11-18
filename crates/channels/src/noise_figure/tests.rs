@@ -1,15 +1,13 @@
-use crate::NativeChannel;
 use crate::noise_figure::NoiseFigureParams;
 use crate::noise_figure::NoiseFigureReport;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{NoiseFigureChannel, RATE, levels::Pair, noise_factor};
-use crate::{
-    ChannelCtx, ChannelOutputs, ChannelRx,
-    synth::noise_figure::{self, switched},
-    testutil::settings,
-};
+use crate::synth::noise_figure::{self, switched};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_decoder_test_support::settings;
 
 fn tuned(enr_db: f32) -> ChannelSettings {
     settings(

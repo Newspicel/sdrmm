@@ -1,13 +1,15 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod envelope;
 pub(crate) mod geometry;
 mod picture;
 mod sync;
 mod telemetry;
-mod track;
 
 use std::sync::LazyLock;
 
@@ -15,17 +17,17 @@ use envelope::{CHUNK, Envelope, track_rate};
 use geometry::LINE_SECONDS;
 use num_complex::Complex;
 use picture::Picture;
-use sdrmm_dsp::{Decimator, design_lowpass};
+use sdrmm_dsp::SampleHistory;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use sync::{Acquisition, LineClock, SyncDetector};
-use track::Track;
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    NativeChannel, check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, DecodedImage, NativeChannel,
+    check_input_rate,
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 60_000.0;
+pub(crate) const TRACK_CAPACITY: usize = 1 << 16;
 const FILTER_TAPS: usize = 127;
 const LOST_SYNC_LIMIT: u16 = 16;
 const MIN_KEPT_LINES: usize = 16;
@@ -51,16 +53,13 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
+pub(crate) fn channel_filter() -> FilterSpec {
     let (_, half) = occupied_band();
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
-        1,
-    ))
+    FilterSpec::lowpass(FILTER_TAPS, half)
 }
 
 fn params(settings: &ChannelSettings) -> Result<AptParams, ChannelError> {
-    crate::settings_of::<AptParams>(settings)
+    sdrmm_decoder::settings_of::<AptParams>(settings)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,7 +71,7 @@ enum Ending {
 
 pub struct AptChannel {
     envelope: Envelope,
-    track: Track,
+    track: SampleHistory,
     detector: SyncDetector,
     acquisition: Acquisition,
     clock: LineClock,
@@ -181,7 +180,7 @@ impl AptChannel {
         }));
         out.video.push(picture.clone());
         out.images.push(DecodedImage {
-            source: SOURCE,
+            source: SOURCE.into(),
             mode: self.picture.mode(),
             complete,
             lines: picture.height,
@@ -209,7 +208,7 @@ impl NativeChannel for AptChannel {
         let line = LINE_SECONDS * rate;
         Ok(Self {
             envelope: Envelope::new(ctx.input_rate),
-            track: Track::new(),
+            track: SampleHistory::new(TRACK_CAPACITY),
             detector: SyncDetector::new(rate),
             acquisition: Acquisition::default(),
             clock: LineClock::new(line),
@@ -223,7 +222,7 @@ impl NativeChannel for AptChannel {
     }
 }
 
-impl ChannelRx for AptChannel {
+impl Channel for AptChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.keep_partial = params(&settings)?.keep_partial;
         Ok(())
@@ -248,11 +247,15 @@ impl ChannelRx for AptChannel {
 }
 
 pub(crate) fn apt_decoder() -> Native<AptParams> {
-    Native::new::<AptChannel>(|_| occupied_band())
+    let decoder = Native::new::<AptChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(137_100_000.0)
         .form(apt_form)
-        .kinds(apt_kinds)
+        .kinds(apt_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn apt_form() -> Vec<SettingField> {
@@ -266,5 +269,7 @@ fn apt_kinds() -> Vec<KindSpec> {
     vec![crate::apt::apt_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

@@ -696,8 +696,8 @@ async fn a_decoded_frame_reports_its_lanes_absolute_frequency() {
         seal: None,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1_200, 4_500.0, PAGING_RATE);
-    synth::shift(&mut iq, PAGING_OFFSET_HZ, PAGING_RATE);
-    iq.extend(synth::silence(PAGING_RATE as usize));
+    sdrmm_modem::synth::shift(&mut iq, PAGING_OFFSET_HZ, PAGING_RATE);
+    iq.extend(sdrmm_modem::synth::silence(PAGING_RATE as usize));
 
     let mut registry = DeviceRegistry::new();
     registry.register(10, Box::new(PagingDriver { iq: Arc::new(iq) }));

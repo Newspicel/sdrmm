@@ -59,3 +59,23 @@ impl EventContract for MorseText {
 impl sdrmm_wire::DecoderSettings for MorseParams {
     const TYPE_ID: &'static str = "morse";
 }
+
+#[cfg(test)]
+mod model_tests {
+    use sdrmm_wire::present::{Unit, number};
+
+    use super::*;
+
+    #[test]
+    fn morse_adds_its_speed() {
+        let morse = MorseText {
+            text: "CQ".to_owned(),
+            wpm: 18.4,
+        }
+        .present(&MorseText::KIND);
+        assert_eq!(
+            morse.field("Speed"),
+            number(Some(18.4_f32), Unit::Wpm, 0).as_ref()
+        );
+    }
+}

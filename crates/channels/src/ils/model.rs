@@ -1,8 +1,8 @@
 use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec};
 use serde::{Deserialize, Serialize};
 
-use crate::vor::default_navaid_report_ms;
 use sdrmm_wire::EventKind;
+use sdrmm_wire::default_navaid_report_ms;
 
 use sdrmm_wire::labelled;
 use sdrmm_wire::present::EventPayload;

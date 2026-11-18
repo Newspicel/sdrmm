@@ -13,6 +13,7 @@ mod generators;
 mod pictures;
 mod place;
 mod preroll;
+mod processors;
 mod refused;
 mod silent_events;
 mod sources;
@@ -36,6 +37,7 @@ const STEPS: &[Step] = &[
     tx::drop_tx_wires,
     clip_wires::drop_clip_wires,
     silent_events::drop_silent_event_wires,
+    processors::processors_become_processor_nodes,
     refused::drop_refused_edges,
 ];
 
@@ -45,9 +47,11 @@ const ONCE: &[(&str, Step)] = &[
     ("step:split_kraken_banks", banks::split_kraken_banks),
 ];
 
-/// Registers the decoders first, so a step only drops an event kind no decoder offers.
+/// Installs the built-in decoders and processors first, so a step only drops an event kind no
+/// decoder offers or a wire no processor port takes.
 pub(super) fn run(snapshot: &mut Value) -> Vec<WorkspaceNoticeKind> {
-    sdrmm_channels::registry::init();
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     STEPS.iter().flat_map(|step| step(snapshot)).collect()
 }
 

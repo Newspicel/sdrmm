@@ -1,4 +1,4 @@
-use sdrmm_channels::array_processor::descriptor_for;
+use sdrmm_array::descriptor;
 use sdrmm_engine::EngineError;
 use sdrmm_wire::{ControlAck, ControlCommand, NodeActed, NodeAction, ProcessorAction, SweepJob};
 
@@ -83,7 +83,7 @@ fn processor(state: &AppState, node: &str, action: ProcessorAction) -> Result<()
     let takes = node_of(&resolved, node)?
         .body
         .processor_params()
-        .and_then(|params| descriptor_for(&params))
+        .and_then(|params| descriptor(params.type_id()))
         .is_some_and(|descriptor| descriptor.takes(action));
     if !takes {
         return Err(takes_no_such_action(node));

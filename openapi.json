@@ -5804,13 +5804,6 @@
           }
         }
       },
-      "Adaptation": {
-        "type": "string",
-        "enum": [
-          "nlms",
-          "rls"
-        ]
-      },
       "Admit": {
         "type": "string",
         "enum": [
@@ -6674,15 +6667,6 @@
             "$ref": "#/components/schemas/AntennaPoint"
           }
         }
-      },
-      "AoaState": {
-        "type": "string",
-        "enum": [
-          "off",
-          "ready",
-          "phase_unknown",
-          "one_lane"
-        ]
       },
       "ApiError": {
         "type": "object",
@@ -8351,6 +8335,22 @@
           }
         }
       },
+      "BandKeys": {
+        "type": "object",
+        "description": "The settings keys a processor keeps its band in: an offset from the array centre and a\nwidth, both in hertz.",
+        "required": [
+          "offset",
+          "width"
+        ],
+        "properties": {
+          "offset": {
+            "type": "string"
+          },
+          "width": {
+            "type": "string"
+          }
+        }
+      },
       "BandLane": {
         "type": "object",
         "required": [
@@ -8691,295 +8691,6 @@
           "recording": {
             "type": "boolean",
             "default": false
-          }
-        }
-      },
-      "Baseline": {
-        "type": "object",
-        "required": [
-          "a",
-          "b",
-          "delay_ns",
-          "coherence"
-        ],
-        "properties": {
-          "a": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "azimuth_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "b": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "coherence": {
-            "type": "number",
-            "format": "float"
-          },
-          "delay_ns": {
-            "type": "number",
-            "format": "float"
-          },
-          "length_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "phase_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "snr_db": {
-            "type": "number",
-            "format": "float"
-          }
-        }
-      },
-      "BeamMode": {
-        "type": "string",
-        "enum": [
-          "mrc",
-          "das",
-          "mvdr",
-          "lcmv",
-          "gsc",
-          "canceller",
-          "cma"
-        ]
-      },
-      "BeamformerNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/BeamformerParams"
-          }
-        }
-      },
-      "BeamformerParams": {
-        "type": "object",
-        "properties": {
-          "adaptation": {
-            "$ref": "#/components/schemas/Adaptation",
-            "default": "nlms"
-          },
-          "auto_nulls": {
-            "type": "boolean",
-            "default": false
-          },
-          "bandwidth_hz": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "default": 200000.0
-          },
-          "carry_over": {
-            "type": "number",
-            "format": "float",
-            "default": 0.699999988079071
-          },
-          "crossfade_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 20,
-            "minimum": 0
-          },
-          "forget": {
-            "type": "number",
-            "format": "float",
-            "default": 0.9990000128746033
-          },
-          "loading": {
-            "type": "number",
-            "format": "float",
-            "default": 0.10000000149011612
-          },
-          "main_lane": {
-            "type": "integer",
-            "format": "int32",
-            "default": 0,
-            "minimum": 0
-          },
-          "mode": {
-            "$ref": "#/components/schemas/BeamMode",
-            "default": "mrc"
-          },
-          "noise": {
-            "$ref": "#/components/schemas/NoiseModel",
-            "default": "measured"
-          },
-          "nulls_deg": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "double"
-            },
-            "default": []
-          },
-          "offset_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 0.0
-          },
-          "reference_lanes": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            },
-            "default": []
-          },
-          "steer": {
-            "$ref": "#/components/schemas/SteerSource",
-            "default": {
-              "kind": "wired"
-            }
-          },
-          "steer_timeout_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 5000,
-            "minimum": 0
-          },
-          "step": {
-            "type": "number",
-            "format": "float",
-            "default": 0.05000000074505806
-          },
-          "taps": {
-            "type": "integer",
-            "format": "int32",
-            "default": 1,
-            "minimum": 0
-          },
-          "update_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 200,
-            "minimum": 0
-          }
-        }
-      },
-      "BeamformerReading": {
-        "type": "object",
-        "required": [
-          "at",
-          "output_db",
-          "nulls_deg",
-          "weights"
-        ],
-        "properties": {
-          "at": {
-            "type": "string"
-          },
-          "band_full": {
-            "type": "boolean"
-          },
-          "cancelled_db": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "diverged": {
-            "type": "boolean"
-          },
-          "loading_used": {
-            "type": "number",
-            "format": "float"
-          },
-          "mode": {
-            "$ref": "#/components/schemas/BeamMode"
-          },
-          "no_steer": {
-            "type": "boolean"
-          },
-          "null_depths_db": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          "nulls_deg": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          "out_center_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "out_rate": {
-            "type": "number",
-            "format": "double"
-          },
-          "output_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "pattern": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          "resets": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "singular": {
-            "type": "boolean"
-          },
-          "sinr_gain_db": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "snr_db": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "steer_age_ms": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          },
-          "steer_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "steer_stale": {
-            "type": "boolean"
-          },
-          "weights": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LaneWeight"
-            }
           }
         }
       },
@@ -9445,123 +9156,6 @@
             ]
           }
         }
-      },
-      "CfarKind": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "ca"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "rank",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "os"
-                ]
-              },
-              "rank": {
-                "type": "number",
-                "format": "float"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "go"
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "CfarParams": {
-        "type": "object",
-        "properties": {
-          "guard_doppler": {
-            "type": "integer",
-            "format": "int32",
-            "default": 1,
-            "minimum": 0
-          },
-          "guard_range": {
-            "type": "integer",
-            "format": "int32",
-            "default": 2,
-            "minimum": 0
-          },
-          "kind": {
-            "$ref": "#/components/schemas/CfarKind",
-            "default": {
-              "kind": "ca"
-            }
-          },
-          "min_doppler_hz": {
-            "type": "number",
-            "format": "float",
-            "default": 5.0
-          },
-          "min_range_km": {
-            "type": "number",
-            "format": "float",
-            "default": 1.0
-          },
-          "min_snr_db": {
-            "type": "number",
-            "format": "float",
-            "default": 8.0
-          },
-          "pfa": {
-            "type": "number",
-            "format": "double",
-            "default": 0.00001
-          },
-          "train_doppler": {
-            "type": "integer",
-            "format": "int32",
-            "default": 4,
-            "minimum": 0
-          },
-          "train_range": {
-            "type": "integer",
-            "format": "int32",
-            "default": 8,
-            "minimum": 0
-          },
-          "window": {
-            "$ref": "#/components/schemas/CfarWindow",
-            "default": "range"
-          }
-        }
-      },
-      "CfarWindow": {
-        "type": "string",
-        "enum": [
-          "range",
-          "plane"
-        ]
       },
       "Channel": {
         "allOf": [
@@ -10239,6 +9833,34 @@
           "fail"
         ]
       },
+      "ChirpSweep": {
+        "type": "object",
+        "description": "A chirp spread spectrum family Signal ID dechirps a sweeping signal against: the sweep\nwidths and the spreading factors, chips per symbol as a power of two, it may use.",
+        "required": [
+          "bandwidths_hz",
+          "min_spreading_factor",
+          "max_spreading_factor"
+        ],
+        "properties": {
+          "bandwidths_hz": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "max_spreading_factor": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "min_spreading_factor": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "ClickProfile": {
         "type": "string",
         "description": "The shape of the impulses a click remover looks for in this decoder's audio.",
@@ -10645,66 +10267,6 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
-          }
-        }
-      },
-      "ClutterMethod": {
-        "type": "string",
-        "enum": [
-          "eca_batch",
-          "eca_sliding",
-          "nlms",
-          "block_nlms",
-          "off"
-        ]
-      },
-      "ClutterParams": {
-        "type": "object",
-        "properties": {
-          "batch_ms": {
-            "type": "number",
-            "format": "float",
-            "default": 50.0
-          },
-          "doppler_taps": {
-            "type": "integer",
-            "format": "int32",
-            "default": 0,
-            "minimum": 0
-          },
-          "extension_ms": {
-            "type": "number",
-            "format": "float",
-            "default": 25.0
-          },
-          "lead": {
-            "type": "integer",
-            "format": "int32",
-            "default": 2,
-            "minimum": 0
-          },
-          "loading": {
-            "type": "number",
-            "format": "float",
-            "default": 0.00009999999747378752
-          },
-          "method": {
-            "$ref": "#/components/schemas/ClutterMethod",
-            "default": "eca_batch"
-          },
-          "reach_km": {
-            "type": "number",
-            "format": "float",
-            "default": 15.0
-          },
-          "step": {
-            "type": "number",
-            "format": "float",
-            "default": 0.05000000074505806
-          },
-          "taper": {
-            "type": "boolean",
-            "default": true
           }
         }
       },
@@ -11252,81 +10814,6 @@
           },
           "target_model": {
             "type": "string"
-          }
-        }
-      },
-      "CorrelatorNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/CorrelatorParams"
-          }
-        }
-      },
-      "CorrelatorParams": {
-        "type": "object",
-        "properties": {
-          "bandwidth_hz": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "default": null
-          },
-          "bins": {
-            "type": "integer",
-            "format": "int32",
-            "default": 1024,
-            "minimum": 0
-          },
-          "channels": {
-            "type": "integer",
-            "format": "int32",
-            "default": 256,
-            "minimum": 0
-          },
-          "integrate_s": {
-            "type": "number",
-            "format": "float",
-            "default": 1.0
-          },
-          "offset_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 0.0
-          },
-          "overlap": {
-            "type": "boolean",
-            "default": false
-          }
-        }
-      },
-      "CorrelatorReading": {
-        "type": "object",
-        "required": [
-          "at",
-          "integrated_s",
-          "baselines"
-        ],
-        "properties": {
-          "at": {
-            "type": "string"
-          },
-          "baselines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Baseline"
-            }
-          },
-          "frames": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "integrated_s": {
-            "type": "number",
-            "format": "float"
           }
         }
       },
@@ -13034,16 +12521,6 @@
           }
         }
       },
-      "DfAlgorithm": {
-        "type": "string",
-        "enum": [
-          "bartlett",
-          "capon",
-          "music",
-          "root_music",
-          "esprit"
-        ]
-      },
       "DfEstimate": {
         "type": "object",
         "required": [
@@ -13205,313 +12682,6 @@
                 "type": "null"
               }
             ]
-          }
-        }
-      },
-      "DfNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/DfParams"
-          }
-        }
-      },
-      "DfParams": {
-        "type": "object",
-        "properties": {
-          "algorithm": {
-            "$ref": "#/components/schemas/DfAlgorithm",
-            "default": "music"
-          },
-          "azimuth_step_deg": {
-            "type": "number",
-            "format": "double",
-            "default": 1.0
-          },
-          "bandwidth_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 20000.0
-          },
-          "carry_over": {
-            "type": "number",
-            "format": "float",
-            "default": 0.5
-          },
-          "elevation": {
-            "type": "boolean",
-            "default": false
-          },
-          "forward_backward": {
-            "type": "boolean",
-            "default": false
-          },
-          "loading": {
-            "type": "number",
-            "format": "float",
-            "default": 0.0010000000474974513
-          },
-          "max_peaks": {
-            "type": "integer",
-            "format": "int32",
-            "default": 2,
-            "minimum": 0
-          },
-          "offset_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 0.0
-          },
-          "report_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 500,
-            "minimum": 0
-          },
-          "smoothing": {
-            "type": "integer",
-            "format": "int32",
-            "default": 0,
-            "minimum": 0
-          },
-          "source_rule": {
-            "$ref": "#/components/schemas/SourceRule",
-            "default": "dominance"
-          },
-          "sources": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "default": null,
-            "minimum": 0
-          },
-          "squelch_db": {
-            "type": "number",
-            "format": "float",
-            "default": 6.0
-          },
-          "station_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "ula_side": {
-            "$ref": "#/components/schemas/UlaSide",
-            "default": "both"
-          },
-          "yaw_gate_dps": {
-            "type": "number",
-            "format": "float",
-            "default": 20.0
-          }
-        }
-      },
-      "DfPeak": {
-        "type": "object",
-        "required": [
-          "relative_deg",
-          "power_db",
-          "confidence",
-          "sigma_deg"
-        ],
-        "properties": {
-          "confidence": {
-            "type": "number",
-            "format": "float"
-          },
-          "elevation_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "fit": {
-            "type": "number",
-            "format": "float"
-          },
-          "mirror_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "mirror_true_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "power_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "relative_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "sigma_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "true_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          }
-        }
-      },
-      "DfReading": {
-        "type": "object",
-        "required": [
-          "at",
-          "peaks",
-          "pseudospectrum",
-          "sources",
-          "sources_auto",
-          "squelched",
-          "aliasing"
-        ],
-        "properties": {
-          "algorithm": {
-            "$ref": "#/components/schemas/DfAlgorithm"
-          },
-          "aliasing": {
-            "type": "boolean"
-          },
-          "aperture_wavelengths": {
-            "type": "number",
-            "format": "float"
-          },
-          "at": {
-            "type": "string"
-          },
-          "azimuth_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "eig_ratio_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "eigenvalues_db": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          "fit": {
-            "type": "number",
-            "format": "float"
-          },
-          "freq_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "gated_blocks": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "heading_sigma_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "lambda12_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "likelihood": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          "likelihood_true": {
-            "type": "boolean"
-          },
-          "mirror": {
-            "type": "boolean"
-          },
-          "mode_aliasing": {
-            "type": "boolean"
-          },
-          "peaks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DfPeak"
-            }
-          },
-          "pseudospectrum": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          },
-          "rotating": {
-            "type": "boolean"
-          },
-          "singular": {
-            "type": "boolean"
-          },
-          "snapshots": {
-            "type": "number",
-            "format": "float"
-          },
-          "snr_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "sources": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "sources_auto": {
-            "type": "boolean"
-          },
-          "spacing_ratio": {
-            "type": "number",
-            "format": "float"
-          },
-          "span_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "squelched": {
-            "type": "boolean"
-          },
-          "station": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/LatLon"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "table_out_of_range": {
-            "type": "boolean"
           }
         }
       },
@@ -13761,14 +12931,6 @@
             "type": "string"
           }
         }
-      },
-      "DopplerWindow": {
-        "type": "string",
-        "enum": [
-          "hann",
-          "blackman_harris",
-          "rectangular"
-        ]
       },
       "DraggedNode": {
         "type": "object",
@@ -15133,6 +14295,58 @@
           }
         }
       },
+      "FrameSync": {
+        "type": "object",
+        "description": "A frame sync word Signal ID searches a keyed FSK signal's symbols for, so a match is proven\nby the framing and not only by the waveform.",
+        "required": [
+          "symbol_rate_hz",
+          "deviation_hz",
+          "pulse",
+          "bits",
+          "tolerance",
+          "patterns",
+          "min_hits"
+        ],
+        "properties": {
+          "bits": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sync word length.",
+            "minimum": 0
+          },
+          "deviation_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "min_hits": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Sync words a search window must hold before the signal counts as found.",
+            "minimum": 0
+          },
+          "patterns": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          "pulse": {
+            "$ref": "#/components/schemas/SyncPulse"
+          },
+          "symbol_rate_hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "tolerance": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bit errors a sync word may carry and still count.",
+            "minimum": 0
+          }
+        }
+      },
       "FrequencyRange": {
         "type": "object",
         "required": [
@@ -15356,13 +14570,6 @@
           }
         }
       },
-      "GpuUse": {
-        "type": "string",
-        "enum": [
-          "auto",
-          "off"
-        ]
-      },
       "GroundPlaneParams": {
         "type": "object",
         "properties": {
@@ -15393,14 +14600,6 @@
             "type": "string"
           }
         }
-      },
-      "Hand": {
-        "type": "string",
-        "enum": [
-          "right",
-          "left",
-          "linear"
-        ]
       },
       "HeadingSource": {
         "type": "string",
@@ -15830,76 +15029,6 @@
           }
         }
       },
-      "Illuminator": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "fm"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "dab"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "bandwidth_hz",
-              "kind"
-            ],
-            "properties": {
-              "bandwidth_hz": {
-                "type": "number",
-                "format": "double"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "dvbt_partial"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "bandwidth_hz",
-              "kind"
-            ],
-            "properties": {
-              "bandwidth_hz": {
-                "type": "number",
-                "format": "double"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "custom"
-                ]
-              }
-            }
-          }
-        ]
-      },
       "InvertedVParams": {
         "type": "object",
         "properties": {
@@ -16194,6 +15323,7 @@
       },
       "LaneWeight": {
         "type": "object",
+        "description": "The amplitude and phase a beam puts on one lane.",
         "required": [
           "amplitude_db",
           "phase_deg"
@@ -19171,132 +18301,6 @@
             ],
             "properties": {
               "data": {
-                "$ref": "#/components/schemas/DfNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "df"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/BeamformerNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "beamformer"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/PassiveRadarNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "passive_radar"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/StitchNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "stitch"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/SpatialSpectrumNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "spatial_spectrum"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/CorrelatorNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "correlator"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/PolarimeterNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "polarimeter"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
                 "$ref": "#/components/schemas/ProcessorNode"
               },
               "kind": {
@@ -19456,13 +18460,6 @@
           "rotator",
           "aim",
           "sky_scan",
-          "df",
-          "beamformer",
-          "passive_radar",
-          "stitch",
-          "spatial_spectrum",
-          "correlator",
-          "polarimeter",
           "processor",
           "triangulation",
           "bearing_fix",
@@ -19535,17 +18532,6 @@
               "$ref": "#/components/schemas/PortSpec"
             }
           },
-          "processor": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ProcessorFacets",
-                "description": "What a built-in processor draws and offers."
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "role": {
             "$ref": "#/components/schemas/Role"
           },
@@ -19572,13 +18558,6 @@
             "format": "float"
           }
         }
-      },
-      "NoiseModel": {
-        "type": "string",
-        "enum": [
-          "measured",
-          "white"
-        ]
       },
       "NoiseSource": {
         "type": "string",
@@ -20029,130 +19008,6 @@
           }
         }
       },
-      "PassiveRadarNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/PassiveRadarParams"
-          }
-        }
-      },
-      "PassiveRadarParams": {
-        "type": "object",
-        "properties": {
-          "aoa": {
-            "type": "boolean",
-            "default": true
-          },
-          "assumed_altitude_m": {
-            "type": "number",
-            "format": "float",
-            "default": 8000.0
-          },
-          "cfar": {
-            "$ref": "#/components/schemas/CfarParams",
-            "default": {
-              "guard_doppler": 1,
-              "guard_range": 2,
-              "kind": {
-                "kind": "ca"
-              },
-              "min_doppler_hz": 5.0,
-              "min_range_km": 1.0,
-              "min_snr_db": 8.0,
-              "pfa": 0.00001,
-              "train_doppler": 4,
-              "train_range": 8,
-              "window": "range"
-            }
-          },
-          "clutter": {
-            "$ref": "#/components/schemas/ClutterParams",
-            "default": {
-              "batch_ms": 50.0,
-              "doppler_taps": 0,
-              "extension_ms": 25.0,
-              "lead": 2,
-              "loading": 0.00009999999747378752,
-              "method": "eca_batch",
-              "reach_km": 15.0,
-              "step": 0.05000000074505806,
-              "taper": true
-            }
-          },
-          "cpi_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 500,
-            "minimum": 0
-          },
-          "gpu": {
-            "$ref": "#/components/schemas/GpuUse",
-            "default": "auto"
-          },
-          "illuminator": {
-            "$ref": "#/components/schemas/Illuminator",
-            "default": {
-              "kind": "fm"
-            }
-          },
-          "max_range_km": {
-            "type": "number",
-            "format": "float",
-            "default": 80.0
-          },
-          "max_speed_mps": {
-            "type": "number",
-            "format": "float",
-            "default": 400.0
-          },
-          "offset_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 0.0
-          },
-          "overlap": {
-            "type": "number",
-            "format": "float",
-            "default": 0.0
-          },
-          "reference": {
-            "$ref": "#/components/schemas/ReferenceCleaning",
-            "default": {
-              "kind": "cma",
-              "step": 0.0010000000474974513,
-              "taps": 16
-            }
-          },
-          "reference_element": {
-            "type": "integer",
-            "format": "int32",
-            "default": 0,
-            "minimum": 0
-          },
-          "surveillance": {
-            "$ref": "#/components/schemas/SurveillanceSet",
-            "default": {
-              "kind": "all_others"
-            }
-          },
-          "tracker": {
-            "$ref": "#/components/schemas/TrackerParams",
-            "default": {
-              "coast_looks": 10,
-              "confirm_hits": 3,
-              "confirm_window": 5,
-              "gate": 11.800000190734863,
-              "jerk": 5.0,
-              "max_accel_mps2": 30.0
-            }
-          },
-          "window": {
-            "$ref": "#/components/schemas/DopplerWindow",
-            "default": "hann"
-          }
-        }
-      },
       "PatchApplyReport": {
         "type": "object",
         "required": [
@@ -20260,7 +19115,7 @@
             "items": {
               "$ref": "#/components/schemas/ProcessorType"
             },
-            "description": "Array processors the loaded plugins bring."
+            "description": "Array processors, built in and from plugins."
           }
         }
       },
@@ -21004,67 +19859,6 @@
           }
         }
       },
-      "PluginReading": {
-        "type": "object",
-        "description": "What a plugin processor reported. Built once per type with every readout in place, so a\nreport only writes numbers.",
-        "required": [
-          "type_id"
-        ],
-        "properties": {
-          "error": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why the processor stopped, once it has."
-          },
-          "health": {
-            "$ref": "#/components/schemas/ChannelHealth"
-          },
-          "readouts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PluginReadout"
-            }
-          },
-          "type_id": {
-            "type": "string"
-          }
-        }
-      },
-      "PluginReadout": {
-        "type": "object",
-        "description": "One declared readout and its latest value.",
-        "required": [
-          "key",
-          "label",
-          "unit",
-          "digits"
-        ],
-        "properties": {
-          "digits": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "key": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "unit": {
-            "$ref": "#/components/schemas/Unit"
-          },
-          "value": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          }
-        }
-      },
       "Pointer": {
         "type": "object",
         "properties": {
@@ -21089,131 +19883,6 @@
             "items": {
               "type": "string"
             }
-          }
-        }
-      },
-      "PolarimeterNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/PolarimeterParams"
-          }
-        }
-      },
-      "PolarimeterParams": {
-        "type": "object",
-        "properties": {
-          "average_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 500,
-            "minimum": 0
-          },
-          "bandwidth_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 20000.0
-          },
-          "crossfade_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 20,
-            "minimum": 0
-          },
-          "flip_hand": {
-            "type": "boolean",
-            "default": false
-          },
-          "h_lane": {
-            "type": "integer",
-            "format": "int32",
-            "default": 0,
-            "minimum": 0
-          },
-          "matched": {
-            "type": "boolean",
-            "default": true
-          },
-          "offset_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 0.0
-          },
-          "report_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 250,
-            "minimum": 0
-          },
-          "v_lane": {
-            "type": "integer",
-            "format": "int32",
-            "default": 1,
-            "minimum": 0
-          }
-        }
-      },
-      "PolarimeterReading": {
-        "type": "object",
-        "required": [
-          "at",
-          "i_db",
-          "q",
-          "u",
-          "v",
-          "degree",
-          "angle_deg",
-          "ellipticity_deg"
-        ],
-        "properties": {
-          "angle_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "at": {
-            "type": "string"
-          },
-          "degree": {
-            "type": "number",
-            "format": "float"
-          },
-          "ellipticity_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "hand": {
-            "$ref": "#/components/schemas/Hand"
-          },
-          "i_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "out_center_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "out_rate": {
-            "type": "number",
-            "format": "double"
-          },
-          "q": {
-            "type": "number",
-            "format": "float"
-          },
-          "snr_db": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "u": {
-            "type": "number",
-            "format": "float"
-          },
-          "v": {
-            "type": "number",
-            "format": "float"
           }
         }
       },
@@ -22052,7 +20721,7 @@
       },
       "ProcessorNode": {
         "type": "object",
-        "description": "A patch node running a plugin processor.",
+        "description": "A patch node running an array processor.",
         "properties": {
           "processor_type": {
             "type": "string"
@@ -22060,153 +20729,168 @@
           "settings": {}
         }
       },
-      "ProcessorReading": {
+      "ProcessorPort": {
         "oneOf": [
           {
             "type": "object",
+            "description": "Events of the kinds the type emits.",
             "required": [
-              "reading",
-              "type"
+              "port"
             ],
             "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/DfReading"
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "type": {
+              "port": {
                 "type": "string",
                 "enum": [
-                  "df"
+                  "events"
                 ]
               }
             }
           },
           {
             "type": "object",
+            "description": "A live bearing out, to steer another processor.",
             "required": [
-              "reading",
-              "type"
+              "port"
             ],
             "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/BeamformerReading"
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "type": {
+              "port": {
                 "type": "string",
                 "enum": [
-                  "beamformer"
+                  "bearing"
                 ]
               }
             }
           },
           {
             "type": "object",
+            "description": "A live bearing in to steer at.",
             "required": [
-              "reading",
-              "type"
+              "port"
             ],
             "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/RadarUpdate"
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
-              "type": {
+              "port": {
                 "type": "string",
                 "enum": [
-                  "passive_radar"
+                  "steer"
                 ]
               }
             }
           },
           {
             "type": "object",
+            "description": "A lane of IQ the processor writes.",
             "required": [
-              "reading",
-              "type"
+              "name",
+              "port"
             ],
             "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/StitchReading"
+              "name": {
+                "type": "string"
               },
-              "type": {
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "port": {
                 "type": "string",
                 "enum": [
-                  "stitch"
+                  "lane"
                 ]
               }
             }
           },
           {
             "type": "object",
+            "description": "A position the processor reads, such as where a transmitter stands.",
             "required": [
-              "reading",
-              "type"
+              "name",
+              "port"
             ],
             "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/SpatialReading"
+              "name": {
+                "type": "string"
               },
-              "type": {
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "port": {
                 "type": "string",
                 "enum": [
-                  "spatial_spectrum"
+                  "position"
                 ]
               }
             }
           },
           {
             "type": "object",
+            "description": "Decoded tracks the processor reads.",
             "required": [
-              "reading",
-              "type"
+              "name",
+              "port"
             ],
             "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/CorrelatorReading"
+              "name": {
+                "type": "string"
               },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "correlator"
+              "note": {
+                "type": [
+                  "string",
+                  "null"
                 ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "reading",
-              "type"
-            ],
-            "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/PolarimeterReading"
               },
-              "type": {
+              "port": {
                 "type": "string",
                 "enum": [
-                  "polarimeter"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "reading",
-              "type"
-            ],
-            "properties": {
-              "reading": {
-                "$ref": "#/components/schemas/PluginReading"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "plugin"
+                  "tracks"
                 ]
               }
             }
           }
-        ]
+        ],
+        "description": "A port a processor declares, resolved against the event catalog each time it is read."
+      },
+      "ProcessorReading": {
+        "type": "object",
+        "description": "What a processor reported: its type id and its own reading.",
+        "required": [
+          "type",
+          "reading"
+        ],
+        "properties": {
+          "reading": {
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "type": {
+            "type": "string"
+          }
+        }
       },
       "ProcessorStatus": {
         "type": "object",
@@ -22303,6 +20987,17 @@
           "name"
         ],
         "properties": {
+          "band": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BandKeys",
+                "description": "The settings keys that hold the band it listens to, when it narrows the array itself."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "defaults": {
             "description": "What a fresh node starts on."
           },
@@ -22312,6 +21007,9 @@
               "$ref": "#/components/schemas/EventKind"
             },
             "description": "Kinds of the events it emits, each one the plugin declares."
+          },
+          "face": {
+            "$ref": "#/components/schemas/Face"
           },
           "facets": {
             "$ref": "#/components/schemas/ProcessorFacets"
@@ -22332,11 +21030,25 @@
           "needs": {
             "$ref": "#/components/schemas/ArrayNeeds"
           },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProcessorPort"
+            },
+            "description": "Ports beside the array input, in the order its face shows them."
+          },
           "readouts": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReadoutSpec"
             }
+          },
+          "resolved_ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortSpec"
+            },
+            "description": "Every port of a node of this type, resolved when the catalog is built."
           },
           "settings": {
             "type": "array",
@@ -22723,340 +21435,6 @@
           }
         ]
       },
-      "RadarAoa": {
-        "type": "object",
-        "required": [
-          "azimuth_deg",
-          "sigma_deg",
-          "quality"
-        ],
-        "properties": {
-          "azimuth_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "bearing_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "mirror_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "quality": {
-            "type": "number",
-            "format": "float"
-          },
-          "sigma_deg": {
-            "type": "number",
-            "format": "float"
-          }
-        }
-      },
-      "RadarAxes": {
-        "type": "object",
-        "required": [
-          "sample_rate_hz",
-          "carrier_hz",
-          "range_step_m",
-          "gates",
-          "doppler_step_hz",
-          "doppler_rows",
-          "batches",
-          "cpi_ms",
-          "hop_ms",
-          "lanes"
-        ],
-        "properties": {
-          "batches": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "carrier_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "cpi_ms": {
-            "type": "number",
-            "format": "float"
-          },
-          "doppler_rows": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "doppler_step_hz": {
-            "type": "number",
-            "format": "float"
-          },
-          "gates": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "hop_ms": {
-            "type": "number",
-            "format": "float"
-          },
-          "lanes": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "range_step_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "sample_rate_hz": {
-            "type": "number",
-            "format": "double"
-          }
-        }
-      },
-      "RadarDetection": {
-        "type": "object",
-        "required": [
-          "range_km",
-          "doppler_hz",
-          "range_rate_mps",
-          "snr_db",
-          "cells"
-        ],
-        "properties": {
-          "aoa": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/RadarAoa"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "cells": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "doppler_hz": {
-            "type": "number",
-            "format": "float"
-          },
-          "range_km": {
-            "type": "number",
-            "format": "float"
-          },
-          "range_rate_mps": {
-            "type": "number",
-            "format": "float"
-          },
-          "snr_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "track_id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "RadarFix": {
-        "type": "object",
-        "required": [
-          "lat",
-          "lon",
-          "alt_m",
-          "major_m",
-          "minor_m",
-          "orientation_deg"
-        ],
-        "properties": {
-          "alt_from_truth": {
-            "type": "boolean"
-          },
-          "alt_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "lat": {
-            "type": "number",
-            "format": "double"
-          },
-          "lon": {
-            "type": "number",
-            "format": "double"
-          },
-          "major_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "minor_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "orientation_deg": {
-            "type": "number",
-            "format": "float"
-          }
-        }
-      },
-      "RadarGeometry": {
-        "type": "object",
-        "required": [
-          "receiver",
-          "transmitter",
-          "baseline_km"
-        ],
-        "properties": {
-          "baseline_km": {
-            "type": "number",
-            "format": "float"
-          },
-          "heading_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "receiver": {
-            "$ref": "#/components/schemas/RadarSite"
-          },
-          "transmitter": {
-            "$ref": "#/components/schemas/RadarSite"
-          }
-        }
-      },
-      "RadarHealth": {
-        "type": "object",
-        "required": [
-          "suppression_db",
-          "unsuppressed_groups",
-          "dropped_samples",
-          "dropped_cpis",
-          "discarded_cpis",
-          "dropped_reports",
-          "lagged_updates",
-          "truncated_detections",
-          "dropped_tracks",
-          "gpu_failures",
-          "load",
-          "front_load",
-          "compute_ms",
-          "noise_floor_db",
-          "gpu",
-          "threads",
-          "aoa",
-          "reference"
-        ],
-        "properties": {
-          "aoa": {
-            "$ref": "#/components/schemas/AoaState"
-          },
-          "cfar_looks": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "compute_ms": {
-            "type": "number",
-            "format": "float"
-          },
-          "discarded_cpis": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "dropped_cpis": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "dropped_reports": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "dropped_samples": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "dropped_tracks": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "front_load": {
-            "type": "number",
-            "format": "float"
-          },
-          "gpu": {
-            "type": "boolean"
-          },
-          "gpu_failures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "lagged_updates": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "load": {
-            "type": "number",
-            "format": "float"
-          },
-          "noise_floor_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "range_correlation": {
-            "type": "number",
-            "format": "float"
-          },
-          "reference": {
-            "$ref": "#/components/schemas/ReferenceHealth"
-          },
-          "suppression_db": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          "table_out_of_range": {
-            "type": "boolean"
-          },
-          "threads": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "truncated_detections": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "unsuppressed_groups": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
       "RadarMission": {
         "type": "object",
         "required": [
@@ -23106,342 +21484,6 @@
                 "type": "null"
               }
             ]
-          }
-        }
-      },
-      "RadarProblem": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "no_array"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "no_transmitter"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "no_receiver"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "no_heading"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "phase_unknown"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "table_out_of_range"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "overloaded"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "reference_lost"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "detail",
-              "kind"
-            ],
-            "properties": {
-              "detail": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "refused"
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "RadarSite": {
-        "type": "object",
-        "required": [
-          "lat",
-          "lon",
-          "altitude_m"
-        ],
-        "properties": {
-          "altitude_m": {
-            "type": "number",
-            "format": "double"
-          },
-          "lat": {
-            "type": "number",
-            "format": "double"
-          },
-          "lon": {
-            "type": "number",
-            "format": "double"
-          }
-        }
-      },
-      "RadarTrack": {
-        "type": "object",
-        "required": [
-          "id",
-          "state",
-          "range_km",
-          "range_rate_mps",
-          "doppler_hz",
-          "accel_mps2",
-          "range_sigma_m",
-          "rate_sigma_mps",
-          "snr_db",
-          "looks",
-          "misses",
-          "trail"
-        ],
-        "properties": {
-          "accel_mps2": {
-            "type": "number",
-            "format": "float"
-          },
-          "aoa": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/RadarAoa"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "doppler_hz": {
-            "type": "number",
-            "format": "float"
-          },
-          "fix": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/RadarFix"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "looks": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "misses": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "range_km": {
-            "type": "number",
-            "format": "float"
-          },
-          "range_rate_mps": {
-            "type": "number",
-            "format": "float"
-          },
-          "range_sigma_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "rate_sigma_mps": {
-            "type": "number",
-            "format": "float"
-          },
-          "snr_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "state": {
-            "$ref": "#/components/schemas/TrackState"
-          },
-          "trail": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RadarTrailPoint"
-            }
-          },
-          "truth": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/TrackMatch"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        }
-      },
-      "RadarTrailPoint": {
-        "type": "object",
-        "required": [
-          "range_km",
-          "doppler_hz"
-        ],
-        "properties": {
-          "doppler_hz": {
-            "type": "number",
-            "format": "float"
-          },
-          "range_km": {
-            "type": "number",
-            "format": "float"
-          }
-        }
-      },
-      "RadarUpdate": {
-        "type": "object",
-        "required": [
-          "seq",
-          "at",
-          "axes",
-          "detections",
-          "tracks",
-          "truth",
-          "health"
-        ],
-        "properties": {
-          "at": {
-            "type": "string"
-          },
-          "axes": {
-            "$ref": "#/components/schemas/RadarAxes"
-          },
-          "detections": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RadarDetection"
-            }
-          },
-          "geometry": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/RadarGeometry"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "health": {
-            "$ref": "#/components/schemas/RadarHealth"
-          },
-          "problems": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RadarProblem"
-            }
-          },
-          "seq": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "tracks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RadarTrack"
-            }
-          },
-          "truth": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TrackTruth"
-            }
           }
         }
       },
@@ -24091,97 +22133,6 @@
             }
           }
         }
-      },
-      "ReferenceCleaning": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "off"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "taps",
-              "step",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "cma"
-                ]
-              },
-              "step": {
-                "type": "number",
-                "format": "float"
-              },
-              "taps": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "dab_remod"
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "ReferenceHealth": {
-        "type": "object",
-        "required": [
-          "mode",
-          "locked",
-          "quality_db",
-          "fallback_frames"
-        ],
-        "properties": {
-          "fallback_frames": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "locked": {
-            "type": "boolean"
-          },
-          "mode": {
-            "$ref": "#/components/schemas/ReferenceMode"
-          },
-          "quality_db": {
-            "type": "number",
-            "format": "float"
-          }
-        }
-      },
-      "ReferenceMode": {
-        "type": "string",
-        "enum": [
-          "raw",
-          "cma",
-          "dab_remod"
-        ]
       },
       "RenamePhoneRequest": {
         "type": "object",
@@ -26254,11 +24205,11 @@
                   },
                   "status": {
                     "$ref": "#/components/schemas/ChannelStatus",
-                    "description": "Readouts and health derived from `reading`, for any face to show."
+                    "description": "Readouts and health the processor derives from `reading`, for any face to show."
                   },
                   "view": {
                     "$ref": "#/components/schemas/ProcessorView",
-                    "description": "What `reading` puts on the face, derived from it."
+                    "description": "What the processor puts on the face from `reading`."
                   }
                 }
               },
@@ -26918,6 +24869,16 @@
               }
             ]
           },
+          "chirp": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChirpSweep"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "deviation_hz": {
             "oneOf": [
               {
@@ -26963,6 +24924,16 @@
               {
                 "$ref": "#/components/schemas/HzRange",
                 "description": "The useful OFDM symbol length."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sync": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FrameSync"
               },
               {
                 "type": "null"
@@ -27299,149 +25270,6 @@
           },
           "field": {
             "type": "string"
-          }
-        }
-      },
-      "SourceRule": {
-        "type": "string",
-        "enum": [
-          "dominance",
-          "mdl"
-        ]
-      },
-      "SpatialMethod": {
-        "type": "string",
-        "enum": [
-          "bartlett",
-          "capon",
-          "music"
-        ]
-      },
-      "SpatialPeak": {
-        "type": "object",
-        "required": [
-          "freq_hz",
-          "bearing_deg",
-          "db"
-        ],
-        "properties": {
-          "bearing_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "db": {
-            "type": "number",
-            "format": "float"
-          },
-          "freq_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "true_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          }
-        }
-      },
-      "SpatialReading": {
-        "type": "object",
-        "required": [
-          "at",
-          "peaks"
-        ],
-        "properties": {
-          "at": {
-            "type": "string"
-          },
-          "azimuth_deg": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "dropped_frames": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "frames": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "peaks": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SpatialPeak"
-            }
-          }
-        }
-      },
-      "SpatialSpectrumNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/SpatialSpectrumParams"
-          }
-        }
-      },
-      "SpatialSpectrumParams": {
-        "type": "object",
-        "properties": {
-          "average_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 300,
-            "minimum": 0
-          },
-          "azimuth_step_deg": {
-            "type": "number",
-            "format": "double",
-            "default": 2.0
-          },
-          "bandwidth_hz": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double",
-            "default": null
-          },
-          "bins": {
-            "type": "integer",
-            "format": "int32",
-            "default": 1024,
-            "minimum": 0
-          },
-          "columns": {
-            "type": "integer",
-            "format": "int32",
-            "default": 256,
-            "minimum": 0
-          },
-          "method": {
-            "$ref": "#/components/schemas/SpatialMethod",
-            "default": "bartlett"
-          },
-          "offset_hz": {
-            "type": "number",
-            "format": "double",
-            "default": 0.0
-          },
-          "report_ms": {
-            "type": "integer",
-            "format": "int32",
-            "default": 100,
-            "minimum": 0
-          },
-          "span_db": {
-            "type": "number",
-            "format": "float",
-            "default": 30.0
           }
         }
       },
@@ -27848,162 +25676,6 @@
           }
         }
       },
-      "SteerSource": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "wired"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "azimuth_deg",
-              "kind"
-            ],
-            "properties": {
-              "azimuth_deg": {
-                "type": "number",
-                "format": "double"
-              },
-              "elevation_deg": {
-                "type": "number",
-                "format": "double"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "fixed"
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "StitchBlend": {
-        "type": "string",
-        "enum": [
-          "snr",
-          "equal"
-        ]
-      },
-      "StitchLane": {
-        "type": "object",
-        "required": [
-          "lane",
-          "center_hz",
-          "noise_eq_db"
-        ],
-        "properties": {
-          "center_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "coherence": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "lane": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "noise_eq_db": {
-            "type": "number",
-            "format": "float"
-          },
-          "phase_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "spur_bins": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "StitchNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/StitchParams"
-          }
-        }
-      },
-      "StitchParams": {
-        "type": "object",
-        "properties": {
-          "blend": {
-            "$ref": "#/components/schemas/StitchBlend",
-            "default": "snr"
-          },
-          "flatten": {
-            "type": "boolean",
-            "default": true
-          },
-          "match_phase": {
-            "type": "boolean",
-            "default": true
-          },
-          "noise_equalise": {
-            "type": "boolean",
-            "default": true
-          },
-          "spur_reject": {
-            "type": "boolean",
-            "default": true
-          }
-        }
-      },
-      "StitchReading": {
-        "type": "object",
-        "required": [
-          "at",
-          "center_hz",
-          "span_hz",
-          "lanes"
-        ],
-        "properties": {
-          "at": {
-            "type": "string"
-          },
-          "center_hz": {
-            "type": "number",
-            "format": "double"
-          },
-          "dropped_blocks": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "lanes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StitchLane"
-            }
-          },
-          "no_overlap": {
-            "type": "boolean"
-          },
-          "span_hz": {
-            "type": "number",
-            "format": "double"
-          }
-        }
-      },
       "StreamKind": {
         "type": "string",
         "enum": [
@@ -28174,44 +25846,6 @@
             }
           }
         }
-      },
-      "SurveillanceSet": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "all_others"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "mask",
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "mask"
-                ]
-              },
-              "mask": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              }
-            }
-          }
-        ]
       },
       "SurveyAction": {
         "type": "string",
@@ -28516,6 +26150,61 @@
       "Symbol": {
         "type": "string",
         "description": "The icon an entity of a kind wears on the map."
+      },
+      "SyncPulse": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Root raised cosine 4FSK on the dibit levels +1, +3, -1, -3, with roll-off `alpha`.",
+            "required": [
+              "alpha",
+              "shape"
+            ],
+            "properties": {
+              "alpha": {
+                "type": "number",
+                "format": "double"
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "c4fm"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Gaussian 2FSK: `pulse_span` symbols of transmit pulse, `matched_span` of receive filter.",
+            "required": [
+              "bt",
+              "pulse_span",
+              "matched_span",
+              "shape"
+            ],
+            "properties": {
+              "bt": {
+                "type": "number",
+                "format": "double"
+              },
+              "matched_span": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "pulse_span": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "shape": {
+                "type": "string",
+                "enum": [
+                  "gaussian"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The frequency pulse a keyed FSK signal is shaped with."
       },
       "SyncState": {
         "type": "string",
@@ -28983,132 +26672,6 @@
               "null"
             ],
             "format": "double"
-          }
-        }
-      },
-      "TrackMatch": {
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "properties": {
-          "callsign": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
-            "type": "string"
-          }
-        }
-      },
-      "TrackState": {
-        "type": "string",
-        "enum": [
-          "confirmed",
-          "coasting"
-        ]
-      },
-      "TrackTruth": {
-        "type": "object",
-        "required": [
-          "id",
-          "range_km",
-          "doppler_hz",
-          "bearing_deg",
-          "lat",
-          "lon",
-          "altitude_m",
-          "age_s",
-          "in_view"
-        ],
-        "properties": {
-          "age_s": {
-            "type": "number",
-            "format": "float"
-          },
-          "altitude_m": {
-            "type": "number",
-            "format": "float"
-          },
-          "bearing_deg": {
-            "type": "number",
-            "format": "float"
-          },
-          "callsign": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "doppler_hz": {
-            "type": "number",
-            "format": "float"
-          },
-          "id": {
-            "type": "string"
-          },
-          "in_view": {
-            "type": "boolean"
-          },
-          "lat": {
-            "type": "number",
-            "format": "double"
-          },
-          "lon": {
-            "type": "number",
-            "format": "double"
-          },
-          "range_km": {
-            "type": "number",
-            "format": "float"
-          },
-          "track_id": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "TrackerParams": {
-        "type": "object",
-        "properties": {
-          "coast_looks": {
-            "type": "integer",
-            "format": "int32",
-            "default": 10,
-            "minimum": 0
-          },
-          "confirm_hits": {
-            "type": "integer",
-            "format": "int32",
-            "default": 3,
-            "minimum": 0
-          },
-          "confirm_window": {
-            "type": "integer",
-            "format": "int32",
-            "default": 5,
-            "minimum": 0
-          },
-          "gate": {
-            "type": "number",
-            "format": "float",
-            "default": 11.800000190734863
-          },
-          "jerk": {
-            "type": "number",
-            "format": "float",
-            "default": 5.0
-          },
-          "max_accel_mps2": {
-            "type": "number",
-            "format": "float",
-            "default": 30.0
           }
         }
       },
@@ -29951,14 +27514,6 @@
         "enum": [
           "auto",
           "manual"
-        ]
-      },
-      "UlaSide": {
-        "type": "string",
-        "enum": [
-          "both",
-          "front",
-          "back"
         ]
       },
       "UnboundReason": {

@@ -13,7 +13,7 @@ pub(super) fn drop_refused_edges(snapshot: &mut Value) -> Vec<WorkspaceNoticeKin
         return Vec::new();
     };
     let ctx = ResolveCtx {
-        descriptors: Some(&sdrmm_channels::descriptors()),
+        descriptors: Some(&sdrmm_decoder::descriptors()),
         live: None,
     };
     let (_, mut refused) = resolve::compile_draft(&graph, &ctx);

@@ -90,7 +90,7 @@ impl Engine {
                 reset_state: false,
             },
         );
-        let has_audio = sdrmm_channels::descriptor(&type_id).is_some_and(|d| d.has_audio);
+        let has_audio = sdrmm_decoder::descriptor(&type_id).is_some_and(|d| d.has_audio);
         let orphaned: Vec<ChannelAudioRecording> = if has_audio {
             state.rearm_audio_recording(id, stream);
             Vec::new()

@@ -6,6 +6,7 @@ use sdrmm_wire::{
 };
 
 use super::*;
+use sdrmm_array::passive_radar::PassiveRadarParams;
 
 fn node(id: &str, body: NodeBody) -> PatchNode {
     PatchNode {
@@ -86,7 +87,7 @@ fn from(source: Option<&str>, event: DecoderEvent) -> DecodedRecord {
 }
 
 fn routes(graph: &PatchGraph) -> EventRoutes {
-    let descriptors = &sdrmm_channels::descriptors();
+    let descriptors = &sdrmm_decoder::descriptors();
     let ctx = sdrmm_wire::ResolveCtx {
         descriptors: Some(descriptors),
         live: None,
@@ -236,14 +237,20 @@ fn only_decoders_wired_into_adsb_feed_truth() {
             filter("quiet", EventFilterNode::default()),
             node(
                 "radar",
-                NodeBody::PassiveRadar(sdrmm_wire::PassiveRadarNode::default()),
+                crate::tests::processor_node(&PassiveRadarParams::default()),
             ),
             node("chat", NodeBody::DecoderLog(Default::default())),
         ],
         edges: vec![
-            wire(("wired", "events"), ("radar", sdrmm_wire::RADAR_TRUTH_PORT)),
+            wire(
+                ("wired", "events"),
+                ("radar", sdrmm_array::passive_radar::TRUTH_PORT),
+            ),
             edge("filtered", "quiet"),
-            wire(("quiet", "events"), ("radar", sdrmm_wire::RADAR_TRUTH_PORT)),
+            wire(
+                ("quiet", "events"),
+                ("radar", sdrmm_array::passive_radar::TRUTH_PORT),
+            ),
             edge("logged", "chat"),
         ],
     };

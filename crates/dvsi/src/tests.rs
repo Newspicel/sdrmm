@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::chip::{
+use sdrmm_codec::voice::chip::{
     CHIP_FRAME_SAMPLES, ChipFrame, ChipHealth, ChipLink, ChipRate, ChipSpeech,
     MAX_CHIP_FRAME_BYTES, VocoderChips,
 };

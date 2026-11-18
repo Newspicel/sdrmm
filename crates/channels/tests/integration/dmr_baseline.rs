@@ -5,10 +5,9 @@ use crate::common::{
     baseline_path, dmr_entry, dmr_params, find_uw, recovered_symbols, uw_dibits, uw_recent_first,
 };
 use num_complex::Complex;
-use sdrmm_channels::NativeChannel;
-use sdrmm_channels::{
-    ChannelCtx, ChannelOutputs, ChannelRx, DmrChannel, channel_filter, synth::dv as tg,
-};
+use sdrmm_channels::{DmrChannel, synth as tg};
+use sdrmm_decoder::NativeChannel;
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs, channel_filter};
 use sdrmm_modem::cpm::{KnownSymbols, TIMING_BW_BURST, TIMING_BW_CONTINUOUS};
 use sdrmm_modem_test_support::ber::{
     Curve,
@@ -46,9 +45,9 @@ fn steady_link() -> Link {
         modulate: Box::new(|bits| {
             let mut symbols: Vec<u8> = alternating(STEADY_PREAMBLE).collect();
             symbols.extend(uw_dibits());
-            symbols.extend(tg::dibits(bits));
+            symbols.extend(sdrmm_modem::synth::dibits(bits));
             symbols.extend(alternating(STEADY_TAIL));
-            tg::c4fm(&symbols, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA)
+            sdrmm_modem::synth::c4fm(&symbols, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA)
         }),
         demodulate: Box::new(|wave| {
             let sliced = slice_all(&recovered_symbols(wave, true, TIMING_BW_BURST));
@@ -109,7 +108,7 @@ impl BurstRecipe {
         let mut symbols: Vec<u8> =
             alternating(frame * self.payload_frames + self.content()).collect();
         let uw = uw_dibits();
-        let dibits = tg::dibits(payload);
+        let dibits = sdrmm_modem::synth::dibits(payload);
         for p in 0..self.payload_frames {
             let base = frame * (p + 1);
             symbols[base..base + UW_SYMBOLS].copy_from_slice(&uw);
@@ -139,7 +138,7 @@ impl BurstRecipe {
             modulate: Box::new(move |bits| {
                 let mut wave =
                     vec![Complex::default(); recipe.lead_frames() * recipe.frame_symbols() * SPS];
-                wave.extend(tg::c4fm(
+                wave.extend(sdrmm_modem::synth::c4fm(
                     &recipe.symbols(bits),
                     RATE,
                     BAUD,
@@ -348,7 +347,7 @@ fn both_chains_round_trip_near_their_floor_at_high_ebn0() {
 fn a_continuous_stream_at_the_continuous_operating_point_beats_the_phase0_floor() {
     let mut rng = Rng::new(0x5eed);
     let sent: Vec<u8> = (0..20_000).map(|_| (rng.next_u64() & 3) as u8).collect();
-    let wave = tg::c4fm(&sent, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA);
+    let wave = sdrmm_modem::synth::c4fm(&sent, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA);
     let got = slice_all(&recovered_symbols(&wave, true, TIMING_BW_CONTINUOUS));
     let (delay, _) = (0..64usize)
         .map(|d| {

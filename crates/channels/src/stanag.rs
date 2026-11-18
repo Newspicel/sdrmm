@@ -1,4 +1,5 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
 mod model;
 pub use model::*;
@@ -10,16 +11,15 @@ mod spectrum;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, FirC, Nco, design_lowpass};
+use sdrmm_dsp::{Decimator, Nco, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use classify::Verdict;
 use lags::Lags;
 use preamble::{Preamble, PreambleSearch};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 use spectrum::{Occupancy, Spectrum};
 
 const INPUT_RATE_HZ: f64 = 9_600.0;
@@ -48,7 +48,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<StanagParams, ChannelError> {
-    let params: StanagParams = crate::settings_of(settings)?;
+    let params: StanagParams = sdrmm_decoder::settings_of(settings)?;
     if !(MIN_STANAG_WINDOW_S..=MAX_STANAG_WINDOW_S).contains(&params.window_s) {
         return Err(ChannelError::InvalidSettings(format!(
             "window must be {MIN_STANAG_WINDOW_S}..={MAX_STANAG_WINDOW_S} s, got {}",
@@ -62,13 +62,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (PASSBAND_LOW_HZ, PASSBAND_HIGH_HZ)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    let half_width = (PASSBAND_HIGH_HZ - PASSBAND_LOW_HZ) / 2.0;
-    let center = f64::midpoint(PASSBAND_HIGH_HZ, PASSBAND_LOW_HZ);
-    ChannelFilter::Sideband(FirC::from_lowpass(
-        &design_lowpass(PASSBAND_TAPS, half_width / INPUT_RATE_HZ),
-        center / INPUT_RATE_HZ,
-    ))
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::band(PASSBAND_TAPS, PASSBAND_LOW_HZ, PASSBAND_HIGH_HZ)
 }
 
 fn window_len(params: StanagParams) -> usize {
@@ -243,7 +238,7 @@ impl NativeChannel for StanagChannel {
     }
 }
 
-impl ChannelRx for StanagChannel {
+impl Channel for StanagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params != self.params {
@@ -317,5 +312,7 @@ fn stanag_kinds() -> Vec<KindSpec> {
     vec![crate::stanag::stanag_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

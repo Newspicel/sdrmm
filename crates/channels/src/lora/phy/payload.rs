@@ -1,17 +1,21 @@
 use crate::lora::LoraCodingRate;
 use crate::lora::LoraIntegrity;
+use sdrmm_modem::spread::css::Slope;
 
 use super::{
     Frame,
-    chirp::Slope,
     code::{
         HEADER_NIBBLES, HEADER_PARITY_BITS, HEADER_SYMBOLS, Header, Shape, block_symbol, dewhiten,
-        diagonal, hamming_encode, low_data_rate, payload_crc, received_crc,
+        low_data_rate, payload_crc, received_crc,
     },
     filter::Window,
     receiver::{Settings, Tools},
     ring::Ring,
-    soft::{MAX_BITS, Statistics, decode_codeword},
+    soft::{MAX_BITS, Statistics},
+};
+use sdrmm_dsp::coding::{
+    fec::hamming::{codeword_len, decode_nibble_soft, encode_nibble},
+    interleave::diagonal,
 };
 
 const TRACK_RATIO: f32 = 10.0;
@@ -240,29 +244,31 @@ impl Lock {
         parity_bits: u8,
         nibbles: &mut Vec<u8>,
     ) {
-        let columns = super::code::codeword_len(parity_bits);
+        let columns = codeword_len(parity_bits);
         let mut codeword = [0.0f32; 8];
         for row in 0..rows {
             for (column, llr) in codeword[..columns].iter_mut().enumerate() {
                 let symbol = first_symbol + column;
                 *llr = llrs[symbol * MAX_BITS + diagonal(row, column, rows)];
             }
-            let decision = decode_codeword(&codeword[..columns], parity_bits);
+            let decision = decode_nibble_soft(&codeword[..columns], parity_bits);
             self.corrected += u32::from(decision.corrected);
             nibbles.push(decision.nibble);
         }
     }
 
-    fn header_nibbles(&mut self, settings: &Settings, llrs: &[f32]) -> Vec<u8> {
+    fn header_nibbles(&mut self, settings: &Settings, llrs: &[f32], nibbles: &mut Vec<u8>) {
         let rows = usize::from(settings.spreading_factor) - 2;
-        let mut nibbles = Vec::with_capacity(rows);
-        self.decode_block(llrs, 0, rows, HEADER_PARITY_BITS, &mut nibbles);
-        nibbles
+        nibbles.clear();
+        self.decode_block(llrs, 0, rows, HEADER_PARITY_BITS, nibbles);
     }
 
-    fn read_header(&mut self, settings: &Settings, tools: &Tools) -> Option<Plan> {
-        let nibbles = self.header_nibbles(settings, &tools.llrs);
-        let header = Header::parse(&nibbles)?;
+    fn read_header(&mut self, settings: &Settings, tools: &mut Tools) -> Option<Plan> {
+        let mut nibbles = std::mem::take(&mut tools.nibbles);
+        self.header_nibbles(settings, &tools.llrs, &mut nibbles);
+        let header = Header::parse(&nibbles);
+        tools.nibbles = nibbles;
+        let header = header?;
         let shape = Shape {
             spreading_factor: settings.spreading_factor,
             coding_rate: header.coding_rate,
@@ -275,20 +281,23 @@ impl Lock {
         })
     }
 
-    fn nibbles(&mut self, settings: &Settings, tools: &Tools, plan: Plan) -> Vec<u8> {
+    fn nibbles(&mut self, settings: &Settings, tools: &mut Tools, plan: Plan) {
         self.corrected = 0;
-        let mut nibbles = self.header_nibbles(settings, &tools.llrs);
+        let mut nibbles = std::mem::take(&mut tools.nibbles);
+        self.header_nibbles(settings, &tools.llrs, &mut nibbles);
         let parity = plan.shape.coding_rate.parity_bits();
         let mut symbol = HEADER_SYMBOLS;
         while symbol + plan.shape.columns() <= plan.total {
             self.decode_block(&tools.llrs, symbol, plan.shape.rows(), parity, &mut nibbles);
             symbol += plan.shape.columns();
         }
-        nibbles
+        tools.nibbles = nibbles;
     }
 
-    fn finish(&mut self, settings: &Settings, tools: &Tools, plan: Plan) -> Finished {
-        let decoded = self.nibbles(settings, tools, plan);
+    fn finish(&mut self, settings: &Settings, tools: &mut Tools, plan: Plan) -> Finished {
+        self.nibbles(settings, tools, plan);
+        let tools = &*tools;
+        let decoded = &tools.nibbles;
         let skip = if settings.implicit_header.is_none() {
             HEADER_NIBBLES.min(decoded.len())
         } else {
@@ -296,11 +305,12 @@ impl Lock {
         };
         let nibbles = &decoded[skip..];
         let length = usize::from(plan.header.length);
-        let payload = dewhiten(nibbles, length);
+        let mut payload = Vec::with_capacity(length);
+        dewhiten(nibbles, length, &mut payload);
         let integrity = if !plan.header.crc {
             LoraIntegrity::NoCrc
         } else if received_crc(nibbles, length) == Some(payload_crc(&payload))
-            && self.tail_holds(settings, tools, plan, &decoded)
+            && self.tail_holds(settings, tools, plan, decoded)
         {
             LoraIntegrity::CrcOk
         } else {
@@ -341,7 +351,7 @@ impl Lock {
         let parity = plan.shape.coding_rate.parity_bits();
         let mut codewords = [0u8; MAX_BITS];
         for (codeword, &nibble) in codewords.iter_mut().zip(&decoded[first..]) {
-            *codeword = hamming_encode(nibble, parity);
+            *codeword = encode_nibble(nibble, parity);
         }
         let chips = Self::chips(settings);
         let floor = ABSENT_SHARE * self.statistics.amplitude * self.statistics.amplitude;

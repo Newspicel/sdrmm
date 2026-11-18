@@ -24,7 +24,7 @@ struct Band {
 
 impl Band {
     fn new(bit: usize, settings: &sdrmm_wire::ChannelSettings) -> Self {
-        let (low, high) = sdrmm_channels::occupied_band(&settings.params);
+        let (low, high) = sdrmm_decoder::occupied_band(&settings.params);
         Self {
             bit,
             frequency: settings.frequency_hz,

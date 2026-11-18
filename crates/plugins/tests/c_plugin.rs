@@ -4,9 +4,9 @@
 use std::{path::Path, process::Command};
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, Decoder};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs, Decoder};
 use sdrmm_plugins::{PluginModule, WasmDecoder, plugin_kinds};
-use sdrmm_wire::EventKind;
+use sdrmm_wire::{EventKind, FilterSpec};
 
 fn build() -> std::sync::Arc<PluginModule> {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -39,8 +39,12 @@ fn a_c_plugin_logs_a_burst_once_and_reports_lock() {
         WasmDecoder::of(&module).unwrap_or_else(|| panic!("the plugin declares a decoder"));
     assert_eq!(decoder.descriptor().type_id, "burst");
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
+    assert_eq!(
+        decoder.filter(&settings.params).ok(),
+        Some(FilterSpec::lowpass(65, 6_000.0))
+    );
     let mut channel = decoder
-        .create_rx(
+        .open(
             ChannelCtx {
                 input_rate: 48_000.0,
             },

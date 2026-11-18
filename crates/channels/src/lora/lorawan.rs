@@ -12,8 +12,8 @@ use crate::lora::LorawanFrame;
 
 use crate::lora::LorawanMessageType;
 
-use crate::crypto::{self, Aes};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
+use sdrmm_crypto::{self as crypto, Aes};
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use synth::{join_request, uplink};

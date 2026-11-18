@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use sdrmm_array::{Reading, Settings, df::DfParams};
 use sdrmm_device::{DeviceDriver, DeviceError, DeviceRegistry, SdrDevice};
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{
@@ -14,8 +15,7 @@ use sdrmm_device_virtual::{
 use sdrmm_engine::{ArrayEvent, ArraySpec, Engine, LaneRef, ProcessorSpec};
 use sdrmm_wire::{
     ArrayGeometry, ArrayNode, ArrayStatus, CalPhase, DeviceBackend, DeviceInfo, DeviceSettings,
-    ProcessorParams, ProcessorReading, ProcessorStatus, SyncState, Winding,
-    processor::df::DfParams,
+    ProcessorParams, ProcessorStatus, SyncState, Winding,
 };
 use tokio::sync::broadcast::{self, error::TryRecvError};
 
@@ -224,6 +224,11 @@ pub fn kraken_array(ds: u32) -> ArraySpec {
     )
 }
 
+/// `settings` as a spec carries them.
+pub fn wire<S: Settings>(settings: &S) -> ProcessorParams {
+    sdrmm_array::wire_params(settings).expect("settings serialize")
+}
+
 pub fn processor(node: &str, params: ProcessorParams) -> ProcessorSpec {
     ProcessorSpec {
         node: node.to_owned(),
@@ -235,7 +240,7 @@ pub fn processor(node: &str, params: ProcessorParams) -> ProcessorSpec {
 }
 
 pub fn df(node: &str) -> ProcessorSpec {
-    processor(node, ProcessorParams::Df(DfParams::default()))
+    processor(node, wire(&DfParams::default()))
 }
 
 pub fn wait_for<T>(what: &str, timeout: Duration, mut found: impl FnMut() -> Option<T>) -> T {
@@ -338,7 +343,7 @@ pub fn next_reading(
     events: &mut broadcast::Receiver<ArrayEvent>,
     node: &str,
     timeout: Duration,
-) -> Arc<ProcessorReading> {
+) -> Arc<Reading> {
     wait_for(&format!("a reading from {node}"), timeout, || {
         loop {
             match events.try_recv() {

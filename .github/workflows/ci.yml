@@ -47,9 +47,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: rustup show
-      - run: python3 crates/modem-test-support/scripts/dvbs2_spec_check.py --cache "$RUNNER_TEMP/etsi" --dvbs2 crates/channels/src/datv/dvbs2
-      - run: python3 crates/modem-test-support/scripts/s2x_tables.py --cache "$RUNNER_TEMP/etsi" --out crates/channels/src/datv/dvbs2 --check
-      - run: python3 crates/modem-test-support/scripts/dvbt_tables.py --cache "$RUNNER_TEMP/etsi" --out crates/channels/src/datv/dvbt --check
+      - run: python3 crates/modem-test-support/scripts/dvbs2_spec_check.py --cache "$RUNNER_TEMP/etsi" --frame crates/channels/src/datv/dvbs2/frame.rs --ldpc crates/modem/src/dvb/ldpc/tables
+      - run: python3 crates/modem-test-support/scripts/s2x_tables.py --cache "$RUNNER_TEMP/etsi" --points crates/channels/src/datv/dvbs2/s2x --tables crates/modem/src/dvb/ldpc/tables --check
+      - run: python3 crates/modem-test-support/scripts/dvbt_tables.py --cache "$RUNNER_TEMP/etsi" --out crates/channels/src/dvbt --check
 
   performance:
     name: Performance gates (ubuntu)

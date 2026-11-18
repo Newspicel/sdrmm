@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use num_complex::Complex;
 use rustfft::FftPlanner;
-use sdrmm_channels::ChannelFilter;
+use sdrmm_decoder::ChannelFilter;
 use sdrmm_dsp::{Ddc, FmDemod, FracResampler};
 
 use super::{
@@ -435,6 +435,7 @@ mod tests {
 
     #[test]
     fn a_real_signal_is_written_as_its_samples() {
+        sdrmm_channels::builtin::install();
         let dir = std::env::temp_dir().join(format!("sdrmm-convert-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("dir");
         let path = dir.join("real.wav");

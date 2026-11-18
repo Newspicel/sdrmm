@@ -6,7 +6,7 @@ use std::{
 };
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelFront, ChannelOutputs, create, input_rate};
+use sdrmm_decoder::{ChannelCtx, ChannelFront, ChannelOutputs, create, input_rate};
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 const USAGE: &str = "usage: decode_iq <cf32_le file> <rate> <center Hz> <channel Hz> <type> \
@@ -22,11 +22,12 @@ struct Args {
 }
 
 fn args() -> Result<Args, Box<dyn Error>> {
+    sdrmm_channels::builtin::install();
     let args: Vec<_> = env::args().collect();
     if !(6..=9).contains(&args.len()) {
         return Err(USAGE.into());
     }
-    let mut settings = sdrmm_channels::default_settings(&args[5]).ok_or("unknown channel type")?;
+    let mut settings = sdrmm_decoder::default_settings(&args[5]).ok_or("unknown channel type")?;
     if let Some(json) = args.get(6).filter(|json| !json.is_empty()) {
         let tagged = serde_json::json!({ "type": args[5], "settings": serde_json::from_str::<serde_json::Value>(json)? });
         settings.params = serde_json::from_value::<ChannelParams>(tagged)?;
@@ -66,6 +67,7 @@ fn read_samples(
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    sdrmm_channels::builtin::install();
     let args = args()?;
     let channel_rate = input_rate(&args.settings.params);
     let mut decoder = create(

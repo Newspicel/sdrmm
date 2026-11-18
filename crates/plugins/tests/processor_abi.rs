@@ -3,10 +3,10 @@
 
 use std::{sync::Arc, time::Instant};
 
-use sdrmm_channels::{
-    ChannelError,
-    array_processor::{ProcessorFactory, ProcessorFaults, create_processor, install_processors},
+use sdrmm_array::{
+    ProcessorFactory, ProcessorFaults, create_processor, install_plugins, parse_params,
 };
+use sdrmm_decoder::ChannelError;
 use sdrmm_plugins::{PluginModule, WasmProcessors};
 use sdrmm_wire::{
     ProcessorParams,
@@ -19,13 +19,13 @@ mod common;
 use common::array::{Rig, lanes};
 
 const HEADER_AT: u32 = 40_000;
-const VALUES_AT: u32 = 40_100;
-const EVENTS_AT: u32 = 40_200;
+const VALUES_AT: u32 = 40_200;
+const EVENTS_AT: u32 = 40_300;
 const EVENTS: &str = r#"[{"kind":"probe","data":{"n":1}}]"#;
 
 fn manifest(processor: &str) -> String {
     format!(
-        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"probe_rx","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{processor}}}"#
+        r#"{{"abi":4,"decoder":{{"descriptor":{{"type_id":"probe_rx","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{processor}}}"#
     )
 }
 
@@ -48,6 +48,7 @@ fn header() -> ArrayHeader {
         events_ptr: EVENTS_AT,
         events_len: EVENTS.len() as u32,
         truncated: 3,
+        ..ArrayHeader::default()
     }
 }
 
@@ -66,6 +67,7 @@ fn exports(process: &str) -> String {
   (func (export "sdrmm_array_retune") (param i32 i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_array_reset") (param i32 i32))
   (func (export "sdrmm_array_input") (param i32 i32 i32) (result i32) i32.const 16384)
+  (func (export "sdrmm_array_context") (param i32) (result i32) i32.const 12288)
   (func (export "sdrmm_array_process") (param i32 i32 i32) (result i32)
     {process})
   (func (export "sdrmm_array_close") (param i32))"#,
@@ -137,10 +139,11 @@ fn lanes_in_readouts_health_and_events_out() {
 #[test]
 fn a_loaded_processor_runs_by_its_type_and_refuses_too_few_lanes() {
     let factory = factory("probe-lanes", &format!("i32.const {HEADER_AT}"));
-    let params = ProcessorParams::Plugin(factory.kind().params(serde_json::Value::Null));
     let kind = factory.kind().clone();
-    install_processors(vec![Arc::new(factory)]).unwrap_or_else(|error| panic!("{error}"));
+    install_plugins(vec![Arc::new(factory)]).unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(processor_type(&kind.type_id), Some(kind.clone()));
+    let params = parse_params(&ProcessorParams::bare(&kind.type_id))
+        .unwrap_or_else(|error| panic!("{error}"));
     let pair = Rig::new(&kind, 2);
     assert!(create_processor(&pair.ctx(), &params).is_ok());
     let single = Rig::new(&kind, 1);
@@ -181,4 +184,88 @@ fn a_processor_stuck_in_a_loop_stops_with_a_visible_error() {
         "a stopped processor returns at once"
     );
     assert!(!tally.report);
+}
+
+#[test]
+fn a_processor_reading_positions_or_tracks_is_refused() {
+    let positioned = METER.replace(
+        r#""max_lanes":4"#,
+        r#""max_lanes":4,"ports":[{"port":"position","name":"tx"}]"#,
+    );
+    let error = refusal(load(
+        "positioned",
+        &positioned,
+        &exports(&format!("i32.const {HEADER_AT}")),
+    ));
+    assert!(error.contains("positions or tracks"), "{error}");
+}
+
+#[test]
+fn a_processor_with_actions_must_export_them() {
+    let acting = METER.replace(
+        r#""max_lanes":4"#,
+        r#""max_lanes":4,"facets":{"actions":[{"action":"clear_tracks","label":"Clear","title":"Forget"}]}"#,
+    );
+    let error = refusal(load(
+        "acting",
+        &acting,
+        &exports(&format!("i32.const {HEADER_AT}")),
+    ));
+    assert!(error.contains("sdrmm_array_action"), "{error}");
+}
+
+const STEERED_AT: u32 = 41_000;
+const LANE_AT: u32 = 41_200;
+
+/// A header that also steers and writes two samples to its lane.
+fn steering() -> String {
+    let lane: Vec<u8> = [0.5f32, -0.5, 1.0, 2.0]
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect();
+    let header = ArrayHeader {
+        steer: 1,
+        steer_relative_deg: 33.0,
+        steer_true_deg: f32::NAN,
+        steer_sigma_deg: 2.0,
+        lane_ptr: [LANE_AT, 0],
+        lane_samples: [2, 0],
+        ..header()
+    };
+    format!(
+        r#"(data (i32.const {STEERED_AT}) "{header}")
+  (data (i32.const {LANE_AT}) "{lane}")"#,
+        header = escaped(&header.to_bytes()),
+        lane = escaped(&lane),
+    )
+}
+
+#[test]
+fn a_steer_and_a_lane_come_out_with_the_report() {
+    let laned = METER.replace(
+        r#""max_lanes":4"#,
+        r#""max_lanes":4,"ports":[{"port":"bearing"},{"port":"lane","name":"out"}]"#,
+    );
+    let module = load(
+        "probe-steer",
+        &laned,
+        &format!(
+            "{}\n  {}",
+            exports(&format!("i32.const {STEERED_AT}")),
+            steering()
+        ),
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let factory = WasmProcessors::of(&module).unwrap_or_else(|| panic!("a processor"));
+    let mut rig = Rig::new(factory.kind(), 2);
+    let mut processor = rig
+        .open(&factory, serde_json::Value::Null)
+        .unwrap_or_else(|error| panic!("opens: {error}"));
+    let tally = rig.run(processor.as_mut(), &lanes(&[0.0, 0.0], 64));
+    assert!(tally.report);
+    let steer = rig.steer.unwrap_or_else(|| panic!("a steer"));
+    assert_eq!((steer.relative_deg, steer.true_deg), (33.0, None));
+    let samples = rig.lanes[0].samples();
+    assert_eq!(samples.len(), 2);
+    assert_eq!((samples[1].re, samples[1].im), (1.0, 2.0));
 }

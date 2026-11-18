@@ -15,6 +15,18 @@ export function catalogBody(kind: NodeKind): NodeBody {
   return structuredClone(entryOf(kind).default_body);
 }
 
+/** A processor node running `typeId` on the defaults the catalog lists for it. */
+export function processorBody(typeId: string): NodeBody {
+  const type = CATALOG.processors?.find((entry) => entry.type_id === typeId);
+  if (type === undefined) {
+    throw new Error(`the catalog has no processor ${typeId}`);
+  }
+  return {
+    kind: "processor",
+    data: { processor_type: typeId, settings: structuredClone(type.defaults ?? {}) },
+  };
+}
+
 export function catalogShape(kind: NodeKind): Pick<NodeTypeInfo, "role" | "face"> {
   const { role, face } = entryOf(kind);
   return { role, face };

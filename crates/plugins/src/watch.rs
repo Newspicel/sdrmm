@@ -8,9 +8,9 @@ use std::{
 };
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use sdrmm_channels::{
+use sdrmm_array::{ProcessorFactory, install_plugins as install_processors, processor_refusal};
+use sdrmm_decoder::{
     Decoder,
-    array_processor::{ProcessorFactory, install_processors, processor_refusal},
     encoder::{Encoder, encoder_refusal, install_encoders},
     install_plugin_kinds, install_plugins, plugin_refusal,
 };

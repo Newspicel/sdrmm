@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use sdrmm_channels::chip::{ChipRate, ChipSpeech};
+use sdrmm_codec::voice::chip::{ChipRate, ChipSpeech};
 
 use crate::{
     ChipError,

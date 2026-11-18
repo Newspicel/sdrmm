@@ -4,16 +4,17 @@ use futures::StreamExt;
 use sdrmm_engine::ArrayEvent;
 use sdrmm_wire::{
     ArrayCalRecord, ArrayCalSource, ArrayGain, ArrayNode, ArrayOrientation, ArrayStatus, Attitude,
-    BeamformerNode, CalSourceKind, ChannelNode, DeviceBackend, DeviceNode, DeviceRef, DfNode,
-    FusionGridOwned, GpsNode, HeadingSource, LaneKey, LaneSolution, NodeBody, PassiveRadarNode,
-    PatchApplyReport, PatchEdge, PatchGraph, PatchNode, PatchRefusal, PortRef, Position,
-    PositionFix, PositionSource, ProcessorReading, RackLayout, RadarTrackEvent, RadarUpdate,
-    ServerEvent, SurfaceFrame, TrackChange, WorkspaceNoticeKind, WorkspaceSnapshot,
+    CalSourceKind, ChannelNode, DeviceBackend, DeviceNode, DeviceRef, FusionGridOwned, GpsNode,
+    HeadingSource, LaneKey, LaneSolution, NodeBody, PatchApplyReport, PatchEdge, PatchGraph,
+    PatchNode, PatchRefusal, PortRef, Position, PositionFix, PositionSource, RackLayout,
+    RadarTrackEvent, RadarUpdate, ServerEvent, SurfaceFrame, TrackChange, WorkspaceNoticeKind,
+    WorkspaceSnapshot,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use super::*;
 use crate::array::{self, ArrayWiring};
+use sdrmm_array::passive_radar::PassiveRadarParams;
 
 const WAIT: Duration = Duration::from_secs(10);
 const RADIO: &str = "radio";
@@ -263,8 +264,14 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
     graph.nodes.extend([
         radio("quad", "array4"),
         node("second", NodeBody::Array(ArrayNode::default())),
-        node("df1", NodeBody::Df(DfNode::default())),
-        node("df2", NodeBody::Df(DfNode::default())),
+        node(
+            "df1",
+            crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+        ),
+        node(
+            "df2",
+            crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+        ),
     ]);
     graph
         .edges
@@ -319,9 +326,10 @@ async fn processors_bind_to_the_array_they_are_wired_from() {
 async fn removing_a_processor_node_stops_it_without_an_apply() {
     let (app, state) = test_router_with_state();
     let mut graph = kraken_graph(ArrayNode::default());
-    graph
-        .nodes
-        .push(node("df", NodeBody::Df(DfNode::default())));
+    graph.nodes.push(node(
+        "df",
+        crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+    ));
     graph.edges.push(wire((ARRAY, "array"), ("df", "array")));
     let report = put_and_apply(&app, graph.clone()).await;
     assert!(report.refused.is_empty(), "{:?}", report.refused);
@@ -338,7 +346,10 @@ async fn removing_a_processor_node_stops_it_without_an_apply() {
 fn beam_graph(listened: bool) -> PatchGraph {
     let mut graph = kraken_graph(ArrayNode::default());
     graph.nodes.extend([
-        node("bf", NodeBody::Beamformer(BeamformerNode::default())),
+        node(
+            "bf",
+            crate::tests::processor_node(&sdrmm_array::beamformer::BeamformerParams::default()),
+        ),
         node(
             "voice",
             NodeBody::Channel(ChannelNode {
@@ -881,7 +892,7 @@ fn radar_graph() -> PatchGraph {
     let mut graph = kraken_graph(ArrayNode::default());
     graph.nodes.push(node(
         "radar",
-        NodeBody::PassiveRadar(PassiveRadarNode::default()),
+        crate::tests::processor_node(&PassiveRadarParams::default()),
     ));
     graph.edges.push(wire((ARRAY, "array"), ("radar", "array")));
     graph
@@ -936,7 +947,7 @@ async fn processor_reports_and_surfaces_are_forwarded() {
         }],
         ..RadarUpdate::default()
     };
-    let reading = ProcessorReading::PassiveRadar(update);
+    let reading = crate::tests::radar_reading(update);
 
     let reported = array::handle(
         &state,
@@ -956,10 +967,9 @@ async fn processor_reports_and_surfaces_are_forwarded() {
                 ..
             }) = events.recv().await
                 && node == "radar"
-                && matches!(
-                    &*sent,
-                    ProcessorReading::PassiveRadar(done) if done.seq == 3 && done.events.is_empty()
-                )
+                && sent
+                    .parse::<RadarUpdate>()
+                    .is_ok_and(|done| done.seq == 3 && done.events.is_empty())
             {
                 return;
             }
@@ -1065,9 +1075,10 @@ async fn a_rewired_array_keeps_its_live_tune() {
 async fn switching_workspaces_stops_the_old_arrays() {
     let (app, state) = test_router_with_state();
     let mut graph = radar_graph();
-    graph
-        .nodes
-        .push(node("df1", NodeBody::Df(DfNode::default())));
+    graph.nodes.push(node(
+        "df1",
+        crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+    ));
     graph.edges.push(wire((ARRAY, "array"), ("df1", "array")));
     put_and_apply(&app, graph).await;
     assert!(status_of(&state, ARRAY).is_some());

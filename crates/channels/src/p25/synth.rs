@@ -1,0 +1,325 @@
+use crate::p25::{DATA_DIBITS, DATA_ORDER, DATA_STEPS, DATA_TRELLIS, reed_solomon};
+use blip25_vocoder::fullrate::frame::encode_frame;
+use num_complex::Complex;
+use sdrmm_dsp::{CyclicCode, ParityCode, crc16_msb};
+use sdrmm_modem::synth::{AUDIO_HZ, Render, Signal};
+
+use crate::p25::privacy::{CipherKey, FRAMES_PER_SUPERFRAME, SUPERFRAME_BYTES, frame_offset};
+use sdrmm_codec::voice::{full_frame, pack_full, unpack_full};
+use sdrmm_crypto::message_indicator::next_message_indicator;
+use sdrmm_modem::synth::{bits, c4fm, dibits, filler};
+
+const CLEAR: Sync = Sync {
+    algorithm: 0x80,
+    key_id: 0x1234,
+    mi: 0x0123_4567_89AB_CDEF,
+};
+
+/// An encryption sync as the header and each LDU2 carry it.
+#[derive(Clone, Copy)]
+struct Sync {
+    algorithm: u8,
+    key_id: u16,
+    mi: u64,
+}
+
+const BAUD: f64 = 4_800.0;
+const DEVIATION_HZ: f64 = 1_944.0;
+const RRC_ALPHA: f64 = 0.2;
+const SYNC: u64 = 0x5575_F5FF_77FF;
+
+fn frame_bits(duid: u8) -> usize {
+    match duid {
+        0x0 => 792,
+        0x3 => 144,
+        0x7 => 720,
+        0xF => 432,
+        _ => 1_728,
+    }
+}
+
+#[must_use]
+pub fn transmission(nac: u16, rate: f64) -> Vec<Complex<f32>> {
+    transmission_inner(nac, None, CLEAR, rate)
+}
+
+#[must_use]
+#[allow(dead_code)]
+pub(crate) fn transmission_with_voice(
+    nac: u16,
+    voice: &[[[bool; 144]; 9]; 2],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    transmission_inner(nac, Some(voice), CLEAR, rate)
+}
+
+#[must_use]
+pub fn encrypted_transmission(
+    nac: u16,
+    voice: &[[[bool; 144]; 9]; 2],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let sync = Sync {
+        algorithm: 0x84,
+        ..CLEAR
+    };
+    transmission_inner(nac, Some(voice), sync, rate)
+}
+
+/// A call of whole superframes enciphered with `key` (ADP, DES-OFB or AES by its length): the
+/// header starts it at `mi`, and each LDU2 names the next superframe's MI, the LFSR's next step.
+/// `voice` holds the clear coded frames, 18 per superframe.
+#[must_use]
+pub fn keyed_transmission(
+    nac: u16,
+    key_id: u16,
+    key: &str,
+    mi: u64,
+    voice: &[[bool; 144]],
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let cipher = CipherKey::parse(key).unwrap_or_else(|| panic!("{key:?} is no P25 key"));
+    let mut sync = Sync {
+        algorithm: cipher.algorithm(),
+        key_id,
+        mi,
+    };
+    let mut symbols = dibits(&filler(400, 31));
+    symbols.extend(frame(nac, 0x0, None, sync));
+    for superframe in voice.as_chunks::<FRAMES_PER_SUPERFRAME>().0 {
+        let enciphered = encipher(&cipher, sync.mi, superframe);
+        let (first, second) = enciphered.split_at(9);
+        symbols.extend(frame(nac, 0x5, first.try_into().ok(), sync));
+        sync.mi = next_message_indicator(sync.mi);
+        symbols.extend(frame(nac, 0xA, second.try_into().ok(), sync));
+    }
+    symbols.extend(dibits(&filler(400, 89)));
+    symbols.extend(frame(nac, 0x3, None, sync));
+    symbols.extend(dibits(&filler(200, 37)));
+    c4fm(&symbols, rate, BAUD, DEVIATION_HZ, RRC_ALPHA)
+}
+
+fn encipher(cipher: &CipherKey, mi: u64, voice: &[[bool; 144]]) -> Vec<[bool; 144]> {
+    let mut stream = [0u8; SUPERFRAME_BYTES];
+    cipher.superframe(mi, &mut stream);
+    voice
+        .iter()
+        .enumerate()
+        .map(|(index, coded)| {
+            let dibits: [u8; 72] =
+                std::array::from_fn(|i| u8::from(coded[2 * i]) << 1 | u8::from(coded[2 * i + 1]));
+            let mut bytes = pack_full(&full_frame(&dibits).info);
+            for (byte, key) in bytes.iter_mut().zip(&stream[frame_offset(index)..]) {
+                *byte ^= key;
+            }
+            let air = encode_frame(&unpack_full(&bytes));
+            std::array::from_fn(|i| air[i / 2] >> (1 - i % 2) & 1 == 1)
+        })
+        .collect()
+}
+
+fn transmission_inner(
+    nac: u16,
+    voice: Option<&[[[bool; 144]; 9]; 2]>,
+    sync: Sync,
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let mut symbols = dibits(&filler(400, 31));
+    for (index, duid) in [0x0u8, 0x5, 0xA, 0x3].into_iter().enumerate() {
+        let voice = match index {
+            1 => voice.map(|frames| &frames[0]),
+            2 => voice.map(|frames| &frames[1]),
+            _ => None,
+        };
+        if duid == 0x3 {
+            symbols.extend(dibits(&filler(400, 89)));
+        }
+        symbols.extend(frame(nac, duid, voice, sync));
+    }
+    symbols.extend(dibits(&filler(200, 37)));
+    c4fm(&symbols, rate, BAUD, DEVIATION_HZ, RRC_ALPHA)
+}
+
+#[must_use]
+pub fn trunking(nac: u16, rate: f64) -> Vec<Complex<f32>> {
+    let mut symbols = dibits(&filler(400, 41));
+    symbols.extend(frame(nac, 0x7, None, CLEAR));
+    symbols.extend(dibits(&filler(200, 43)));
+    c4fm(&symbols, rate, BAUD, DEVIATION_HZ, RRC_ALPHA)
+}
+
+fn frame(nac: u16, duid: u8, voice: Option<&[[bool; 144]; 9]>, sync: Sync) -> Vec<u8> {
+    const IMBE_OFFSETS: [usize; 9] = [0, 72, 164, 256, 348, 440, 532, 624, 712];
+    let total = frame_bits(duid);
+    let status_count = total.saturating_sub(70).div_ceil(72);
+    let logical_len = total - status_count * 2;
+    let mut body = bits(SYNC, 48);
+    body.extend(bits(
+        CyclicCode::BCH_63_16.encode(u32::from(nac) << 4 | u32::from(duid & 0x0F)),
+        64,
+    ));
+    body.extend(filler(
+        logical_len.saturating_sub(body.len()),
+        47 + u32::from(duid),
+    ));
+    if let Some(voice) = voice {
+        for (&offset, frame) in IMBE_OFFSETS.iter().zip(voice) {
+            let start = 48 + 64 + offset * 2;
+            body[start..start + 144].copy_from_slice(frame);
+        }
+    }
+    match duid {
+        0x0 => insert_hdu(&mut body, sync),
+        0x5 => insert_signalling(&mut body, &ldu1_symbols(sync.algorithm != CLEAR.algorithm)),
+        0xA => insert_signalling(&mut body, &ldu2_symbols(sync)),
+        0x7 => insert_tsbk(&mut body),
+        _ => {}
+    }
+
+    let mut out = Vec::with_capacity(total);
+    let mut read = 0;
+    while out.len() < total {
+        if out.len() >= 70 && (out.len() - 70) % 72 == 0 {
+            out.push(false);
+            out.push(true);
+        } else {
+            out.push(body[read]);
+            read += 1;
+        }
+    }
+    assert_eq!(read, body.len());
+    dibits(&out)
+}
+
+fn insert_hdu(frame: &mut [bool], sync: Sync) {
+    let mut info = Vec::new();
+    info.extend(bits(sync.mi, 64));
+    info.extend(bits(0x12, 8));
+    info.extend(bits(0, 8));
+    info.extend(bits(u64::from(sync.algorithm), 8));
+    info.extend(bits(u64::from(sync.key_id), 16));
+    info.extend(bits(0x1201, 16));
+    let data = six_bit_symbols(&info);
+    let codeword = rs_encode(&data, 16);
+    let mut coded = Vec::with_capacity(648);
+    for symbol in codeword {
+        coded.extend(bits(CyclicCode::GOLAY_18_6.encode(u32::from(symbol)), 18));
+    }
+    frame[112..112 + coded.len()].copy_from_slice(&coded);
+}
+
+fn ldu1_symbols(encrypted: bool) -> Vec<u8> {
+    let mut lc = bits(0, 16);
+    lc.extend(bits(u64::from(encrypted) << 6, 8));
+    lc.extend(bits(0, 8));
+    lc.extend(bits(0x1201, 16));
+    lc.extend(bits(0xABCDEF, 24));
+    rs_encode(&six_bit_symbols(&lc), 12)
+}
+
+fn ldu2_symbols(sync: Sync) -> Vec<u8> {
+    let mut info = bits(sync.mi, 64);
+    info.extend(bits(0x12, 8));
+    info.extend(bits(u64::from(sync.algorithm), 8));
+    info.extend(bits(u64::from(sync.key_id), 16));
+    rs_encode(&six_bit_symbols(&info), 8)
+}
+
+fn rs_encode(data: &[u8], parity: usize) -> Vec<u8> {
+    let mut codeword = Vec::with_capacity(data.len() + parity);
+    reed_solomon(parity).encode(data, &mut codeword);
+    codeword
+}
+
+fn insert_signalling(frame: &mut [bool], symbols: &[u8]) {
+    const OFFSETS: [usize; 9] = [0, 72, 164, 256, 348, 440, 532, 624, 712];
+    let mut coded = Vec::with_capacity(240);
+    for &symbol in symbols {
+        let mut word = [false; 10];
+        for (index, bit) in word[..6].iter_mut().enumerate() {
+            *bit = symbol >> (5 - index) & 1 != 0;
+        }
+        ParityCode::HAMMING_10_6.encode(&mut word);
+        coded.extend(word);
+    }
+    for (chunk, voice_index) in coded.as_slice().as_chunks::<40>().0.iter().zip(1usize..=6) {
+        let start = 112 + (OFFSETS[voice_index] + 72) * 2;
+        frame[start..start + 40].copy_from_slice(chunk);
+    }
+}
+
+fn insert_tsbk(frame: &mut [bool]) {
+    let mut payload = bits(2, 2);
+    payload.extend(bits(0, 6));
+    payload.extend(bits(0, 8));
+    payload.extend(bits(0, 8));
+    payload.extend(bits(0x1234, 16));
+    payload.extend(bits(0x1201, 16));
+    payload.extend(bits(0xABCDEF, 24));
+    let bytes: Vec<u8> = payload
+        .as_slice()
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|byte| {
+            byte.iter()
+                .fold(0u8, |value, &bit| value << 1 | u8::from(bit))
+        })
+        .collect();
+    let crc = crc16_msb(0x1021, 0, &bytes) ^ 0xFFFF;
+    payload.extend(bits(u64::from(crc), 16));
+    let coded = trellis_encode(&payload);
+    frame[112..308].copy_from_slice(&coded);
+}
+
+fn trellis_encode(payload: &[bool]) -> Vec<bool> {
+    let mut inputs = [0u8; DATA_STEPS];
+    for (input, pair) in inputs.iter_mut().zip(payload.as_chunks::<2>().0) {
+        *input = u8::from(pair[0]) << 1 | u8::from(pair[1]);
+    }
+    let mut steps = [[0u8; 2]; DATA_STEPS];
+    DATA_TRELLIS.encode(&inputs, &mut steps);
+    let mut air = [0u8; DATA_DIBITS];
+    DATA_ORDER.scatter(steps.as_flattened(), &mut air);
+    air.iter()
+        .flat_map(|&dibit| [dibit & 2 != 0, dibit & 1 != 0])
+        .collect()
+}
+
+fn six_bit_symbols(data: &[bool]) -> Vec<u8> {
+    data.as_chunks::<6>()
+        .0
+        .iter()
+        .map(|symbol| {
+            symbol
+                .iter()
+                .fold(0u8, |value, &bit| value << 1 | u8::from(bit))
+        })
+        .collect()
+}
+
+/// The signals a generator offers for this decoder.
+pub(crate) static SIGNALS: &[Signal] = &[Signal {
+    id: "p25",
+    label: "P25 voice",
+    rate_hz: AUDIO_HZ,
+    render: Render::Always(p25),
+}];
+
+fn p25() -> Vec<Complex<f32>> {
+    transmission(0x293, AUDIO_HZ)
+}
+
+/// The reference captures the fixtures are written from.
+pub(crate) static RECIPES: &[sdrmm_modem::synth::Recipe] = &[sdrmm_modem::synth::Recipe {
+    stem: "p25_calls_48k",
+    rate: sdrmm_modem::synth::AUDIO_HZ,
+    note: "p25 channel at 0 Hz -> NAC 293, talkgroup 4609 from unit 11259375, eight calls",
+    iq: || {
+        Ok(sdrmm_modem::synth::spaced(
+            (0..8).map(|_| transmission(0x125, sdrmm_modem::synth::AUDIO_HZ)),
+            0.3,
+            sdrmm_modem::synth::AUDIO_HZ,
+        ))
+    },
+}];

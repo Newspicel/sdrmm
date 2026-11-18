@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::FmDemod;
+use sdrmm_dsp::{FmDemod, MovingAverage, demod::sync::CrossingClock};
 
 pub(crate) const RATE: f64 = 48_000.0;
 pub(super) const CHUNK: usize = 4_096;
@@ -34,75 +34,17 @@ impl FrontEnd {
     }
 }
 
-struct Boxcar {
-    ring: [f32; BOXCAR_MAX],
-    len: usize,
-    pos: usize,
-    sum: f64,
-}
-
-impl Boxcar {
-    fn new(len: usize) -> Self {
-        Self {
-            ring: [0.0; BOXCAR_MAX],
-            len: len.clamp(1, BOXCAR_MAX),
-            pos: 0,
-            sum: 0.0,
-        }
-    }
-
-    fn push(&mut self, x: f32) -> f32 {
-        self.sum += f64::from(x) - f64::from(self.ring[self.pos]);
-        self.ring[self.pos] = x;
-        self.pos = (self.pos + 1) % self.len;
-        (self.sum / self.len as f64) as f32
-    }
-}
-
-struct ClockRecovery {
-    step: f64,
-    phase: f64,
-    prev: f32,
-}
-
-impl ClockRecovery {
-    fn new(baud: f64) -> Self {
-        Self {
-            step: baud / RATE,
-            phase: 0.0,
-            prev: 0.0,
-        }
-    }
-
-    fn push(&mut self, x: f32) -> Option<f32> {
-        let start = self.phase;
-        let mut next = start + self.step;
-        if (self.prev < 0.0) != (x < 0.0) {
-            let frac = f64::from(self.prev / (self.prev - x));
-            let crossing = start + self.step * frac;
-            next -= TIMING_GAIN * (crossing - crossing.round());
-        }
-        let symbol = (start < 0.5 && next >= 0.5).then(|| {
-            let frac = ((0.5 - start) / (next - start)) as f32;
-            self.prev + (x - self.prev) * frac
-        });
-        self.phase = next.rem_euclid(1.0);
-        self.prev = x;
-        symbol
-    }
-}
-
 pub(super) struct SymbolClock {
-    boxcar: Boxcar,
-    clock: ClockRecovery,
+    boxcar: MovingAverage,
+    clock: CrossingClock,
 }
 
 impl SymbolClock {
     pub(super) fn new(baud: f64, smoothing: f64) -> Self {
         let samples = (RATE / baud * smoothing).round() as usize;
         Self {
-            boxcar: Boxcar::new(samples),
-            clock: ClockRecovery::new(baud),
+            boxcar: MovingAverage::new(samples.clamp(1, BOXCAR_MAX)),
+            clock: CrossingClock::new(RATE, baud, TIMING_GAIN),
         }
     }
 

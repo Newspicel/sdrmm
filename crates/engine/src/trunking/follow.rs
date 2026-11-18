@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use sdrmm_channels::TrunkGrant;
+use sdrmm_decoder::TrunkGrant;
 use sdrmm_wire::{ChannelSettings, DvFrame, DvFrameKind, StateScope};
 
 use super::{
@@ -155,12 +155,7 @@ impl Follower {
         if self.backing_off(&key, grant.freq_hz) {
             return;
         }
-        let params = match (carrier.trunking.follow)(
-            grant.slot,
-            carrier.ignore_crc,
-            &carrier.keys,
-            carrier.vocoder.as_deref(),
-        ) {
+        let params = match (carrier.trunking.follow)(grant.slot, &carrier.calls) {
             Ok(params) => params,
             Err(error) => {
                 self.fail(key, grant, error.to_string());

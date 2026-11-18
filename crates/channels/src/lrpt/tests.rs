@@ -1,7 +1,6 @@
 use crate::lrpt::LrptImage;
 use crate::lrpt::LrptMode;
 use crate::lrpt::LrptParams;
-use crate::nfm::NfmParams;
 use num_complex::Complex;
 use sdrmm_wire::ChannelParams;
 
@@ -12,14 +11,12 @@ use super::{
     link::{PairMap, VCDU_BYTES, VcduHeader, conv_code},
     *,
 };
-use crate::{
-    VideoPicture,
-    synth::{
-        self,
-        lrpt::{Cadu, DEFAULT_APIDS, QUALITY, Scene, cadus, encode_mcus, modulate, packets},
-    },
-    testutil::{at_snr, complex_noise, settings},
+use crate::synth::{
+    self,
+    lrpt::{Cadu, DEFAULT_APIDS, QUALITY, Scene, cadus, encode_mcus, modulate, packets},
 };
+use sdrmm_decoder::VideoPicture;
+use sdrmm_decoder_test_support::{at_snr, complex_noise, settings};
 
 const RATE: f64 = INPUT_RATE_HZ;
 const BLOCKS: [usize; 5] = [4_096, 1, 997, 65_536, 12_288];
@@ -64,7 +61,7 @@ fn run(chan: &mut LrptChannel, iq: &[Complex<f32>], lens: &[usize], received: &m
 }
 
 fn with_tail(mut iq: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
-    iq.extend(synth::silence((2.5 * RATE) as usize));
+    iq.extend(sdrmm_modem::synth::silence((2.5 * RATE) as usize));
     iq
 }
 
@@ -142,7 +139,7 @@ fn noise_and_doppler_still_decode() {
     ] {
         let (scene, frames) = scene_cadus(&DEFAULT_APIDS, 2);
         let mut iq = modulate(mode, &frames, RATE);
-        synth::shift(&mut iq, doppler, RATE);
+        sdrmm_modem::synth::shift(&mut iq, doppler, RATE);
         let iq = with_tail(at_snr(&iq, 3.0, 9));
         let (image, event) = single(decode(mode, &iq, &BLOCKS));
         assert_eq!(image.lines, 16, "{mode:?}");
@@ -207,7 +204,12 @@ fn a_retune_closes_the_picture_as_partial() {
     run(&mut chan, &iq[..iq.len() * 3 / 5], &BLOCKS, &mut received);
     assert!(received.images.is_empty());
     chan.retuned();
-    run(&mut chan, &synth::silence(4_096), &BLOCKS, &mut received);
+    run(
+        &mut chan,
+        &sdrmm_modem::synth::silence(4_096),
+        &BLOCKS,
+        &mut received,
+    );
     let (image, _) = single(received);
     assert!(!image.complete);
     assert!(image.lines > 0 && image.lines < 32);
@@ -218,7 +220,7 @@ fn wrong_params_and_rates_are_rejected() {
     assert!(
         LrptChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("nfm")),
         )
         .is_err()
     );
@@ -232,12 +234,7 @@ fn wrong_params_and_rates_are_rejected() {
         .is_err()
     );
     let mut chan = channel(LrptMode::Qpsk72);
-    assert!(
-        chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
-        ))
-        .is_err()
-    );
+    assert!(chan.apply(settings(ChannelParams::bare("nfm"))).is_err());
 }
 
 fn coded_soft(frames: &[Cadu]) -> Vec<i16> {

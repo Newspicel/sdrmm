@@ -1,18 +1,19 @@
-use crate::broadcast_media::{SYSTEM_READOUT, TRANSMISSION_MODE_READOUT};
-use crate::registry::Native;
+use sdrmm_decoder::broadcast::{SYSTEM_READOUT, TRANSMISSION_MODE_READOUT};
+use sdrmm_decoder::registry::Native;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod channel;
+mod data;
 pub mod fic;
 pub mod fig;
-pub mod mode;
 pub mod msc;
-pub mod ofdm;
-pub(crate) mod pacer;
 pub(crate) mod packet;
 pub(crate) mod pad;
+mod plus;
 pub mod protection;
 pub(crate) mod prs;
 pub mod superframe;
@@ -20,6 +21,19 @@ pub(crate) mod sync;
 
 pub use channel::{DabChannel, channel_filter, occupied_band};
 
+pub(crate) const TRANSMISSION_MODES: [DabTransmissionMode; 4] = [
+    DabTransmissionMode::I,
+    DabTransmissionMode::Ii,
+    DabTransmissionMode::Iii,
+    DabTransmissionMode::Iv,
+];
+
+/// Energy dispersal: x^9 + x^5 + 1 from all ones.
+pub(crate) const DISPERSAL: sdrmm_dsp::PrbsSpec = sdrmm_dsp::PrbsSpec {
+    stages: 9,
+    taps: 0x110,
+    seed: 0x1FF,
+};
 const DAB_BANDS: &[HzRange] = &[HzRange::mhz(174.0, 240.0), HzRange::mhz(1_452.0, 1_492.0)];
 
 fn dab_signatures() -> Vec<SignalSignature> {
@@ -36,13 +50,17 @@ fn dab_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn dab_decoder() -> Native<DabParams> {
-    Native::new::<DabChannel>(|_| occupied_band())
+    let decoder = Native::new::<DabChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .audio_channels(|_| 2)
         .home(227_360_000.0)
         .signatures(dab_signatures)
         .form(dab_form)
-        .kinds(dab_kinds)
+        .kinds(dab_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn dab_form() -> Vec<SettingField> {
@@ -61,11 +79,14 @@ pub(crate) fn dab_form() -> Vec<SettingField> {
         )
         .title("DAB transmission mode")
         .quiet(DabTransmissionMode::Auto),
-        crate::broadcast_media::service_field("service_id", f64::from(u32::MAX)),
+        sdrmm_decoder::broadcast::service_field("service_id", f64::from(u32::MAX)),
     ]
 }
 
 /// The service picker the running decoder fills from its status.
 fn dab_kinds() -> Vec<KindSpec> {
-    vec![crate::broadcast_media::broadcast_kind()]
+    vec![sdrmm_decoder::broadcast::broadcast_kind()]
 }
+
+#[cfg(test)]
+pub(crate) mod fixture;

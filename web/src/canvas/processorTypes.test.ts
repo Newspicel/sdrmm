@@ -40,7 +40,11 @@ describe("plugin processor types", () => {
     expect(items.filter((item) => item.kind === "processor")).toEqual([
       expect.objectContaining({ id: "processor:lane_meter", typeId: "lane_meter" }),
     ]);
-    const bare = paletteGroups(CATALOG, []).flatMap((group) => group.items);
-    expect(bare.some((item) => item.kind === "processor")).toBe(false);
+    const none = paletteGroups({ ...CATALOG, processors: [] }, []).flatMap((group) => group.items);
+    expect(none.some((item) => item.kind === "processor")).toBe(false);
+    const built = paletteGroups(CATALOG, []).flatMap((group) => group.items);
+    expect(built.filter((item) => item.kind === "processor").map((item) => item.typeId)).toEqual(
+      (CATALOG.processors ?? []).map((type) => type.type_id),
+    );
   });
 });

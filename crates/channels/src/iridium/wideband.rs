@@ -11,7 +11,7 @@ use super::CHANNEL_RATE;
 use super::decode::Reassembly;
 use super::ira::IridiumFrame;
 use super::receiver::{Heard, WindowDemod, reassemble};
-use crate::ChannelError;
+use sdrmm_decoder::ChannelError;
 
 pub const USABLE_FRACTION: f64 = 0.4;
 const LEAD: u64 = 12;

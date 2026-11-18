@@ -8,12 +8,11 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::Consumer;
-use sdrmm_channels::array_processor::{MAX_LANES, Pose};
+use sdrmm_array::{MAX_LANES, Params, Pose, df::DfParams};
 use sdrmm_device::{GapScope, LaneEvent, LaneMark};
 use sdrmm_test_support::assert_no_alloc;
 use sdrmm_wire::{
-    ArrayCalSource, ArrayFailure, ArrayOrientation, ArrayStatus, CalPhase, DfParams, ProcessorGate,
-    ProcessorParams, SyncState,
+    ArrayCalSource, ArrayFailure, ArrayOrientation, ArrayStatus, CalPhase, ProcessorGate, SyncState,
 };
 
 use super::*;
@@ -22,7 +21,10 @@ use crate::array::{
     capture::{CaptureKind, CaptureRequest, CaptureStart, SolveSummary},
     host::{
         ProcessorHost,
-        tests::{BANDED, Heard, TALKER, Talk, Talker, Taps, WIDE, frame, plan, talker_host, taps},
+        tests::{
+            Heard, Talk, Talker, Taps, banded, deep_laned, frame, plan, talker_descriptor,
+            talker_host, taps, wide,
+        },
     },
     tap::{TapPort, TapWriter},
 };
@@ -142,13 +144,13 @@ impl Rig {
         &mut self,
         node: &str,
         talk: Talk,
-        descriptor: &'static ProcessorDescriptorRef,
+        descriptor: sdrmm_array::Descriptor,
     ) -> Consumer<Heard> {
         let (talker, log) = Talker::new(talk);
         let host = ProcessorHost::with_processor(
             plan(
                 node,
-                ProcessorParams::Df(DfParams::default()),
+                Params::new(DfParams::default()),
                 &self.taps.sinks,
                 self.frame.lanes(),
             ),
@@ -171,8 +173,6 @@ impl Rig {
         status
     }
 }
-
-type ProcessorDescriptorRef = sdrmm_channels::array_processor::ProcessorDescriptor;
 
 fn drain(log: &mut Consumer<Heard>) -> Vec<Heard> {
     std::iter::from_fn(|| log.pop().ok()).collect()
@@ -314,7 +314,7 @@ fn the_block_pose_is_read_at_the_capture_instant() {
     };
     frame.in_flight = RATE as u64;
     let mut rig = rig(2, frame);
-    let mut log = rig.talker("df", Talk::default(), &TALKER);
+    let mut log = rig.talker("df", Talk::default(), talker_descriptor());
     let now = i64::try_from(sdrmm_device::now_ns()).expect("fits");
     let pose = |host_ns: i64, heading: f64| PoseSample {
         host_ns,
@@ -347,13 +347,13 @@ fn the_block_pose_is_read_at_the_capture_instant() {
 fn the_corrector_is_skipped_without_a_wideband_host() {
     let mut rig = rig(2, frame(2));
     rig.board.set_sync(SyncState::Locked);
-    let mut banded = rig.talker("band", Talk::default(), &BANDED);
+    let mut banded = rig.talker("band", Talk::default(), banded());
     rig.noise(3 * BLOCK);
     rig.settle();
     let heard = drain(&mut banded);
     assert!(!heard.is_empty());
     assert!(heard.iter().all(|block| !block.corrected));
-    let mut wide = rig.talker("wide", Talk::default(), &WIDE);
+    let mut wide = rig.talker("wide", Talk::default(), wide());
     rig.noise(3 * BLOCK);
     rig.settle();
     let wide_heard = drain(&mut wide);
@@ -378,7 +378,7 @@ fn the_corrector_is_skipped_without_a_wideband_host() {
 fn heard_through(staged: bool) -> Vec<Heard> {
     let mut rig = rig_with(2, frame(2), staged);
     rig.board.set_sync(SyncState::Locked);
-    let mut wide = rig.talker("wide", Talk::default(), &WIDE);
+    let mut wide = rig.talker("wide", Talk::default(), wide());
     rig.noise(4 * BLOCK);
     let mut heard = Vec::new();
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -436,7 +436,7 @@ fn the_array_dc_blocker_runs_only_when_a_member_manages_dc() {
     let mut frame = frame(2);
     frame.dc_block = true;
     let mut rig = rig(2, frame);
-    let mut log = rig.talker("df", Talk::default(), &TALKER);
+    let mut log = rig.talker("df", Talk::default(), talker_descriptor());
     for _ in 0..6 {
         rig.write(BLOCK, |_, _| Complex::new(0.3, 0.2));
         rig.settle();
@@ -453,7 +453,7 @@ fn the_dc_blocker_holds_its_estimate_through_a_noise_window() {
     let mut frame = frame(2);
     frame.dc_block = true;
     let mut rig = rig(2, frame);
-    let mut log = rig.talker("df", Talk::default(), &TALKER);
+    let mut log = rig.talker("df", Talk::default(), talker_descriptor());
     for _ in 0..8 {
         rig.write(BLOCK, |_, _| offset);
         rig.settle();
@@ -511,9 +511,9 @@ fn step_does_not_allocate_after_warmup() {
             lanes: false,
             surface: false,
         },
-        &WIDE,
+        wide(),
     );
-    let mut beam = rig.talker("beam", Talk::default(), &TALKER);
+    let mut beam = rig.talker("beam", Talk::default(), talker_descriptor());
     #[cfg(feature = "probe")]
     let _lane = probe::two_probes(&mut rig);
     rig.send(Command::Capture {
@@ -585,7 +585,7 @@ fn a_new_capture_request_replaces_one_still_waiting_for_noise() {
 #[test]
 fn overflowing_notes_count_and_force_a_realign() {
     let mut rig = rig(2, frame(2));
-    let mut log = rig.talker("df", Talk::default(), &TALKER);
+    let mut log = rig.talker("df", Talk::default(), talker_descriptor());
     rig.noise(BLOCK);
     rig.settle();
     for _ in 0..70 {
@@ -721,7 +721,7 @@ fn a_retune_mark_makes_a_solved_phase_stale() {
 #[test]
 fn a_new_rate_holds_every_host_until_it_is_rebuilt() {
     let mut rig = rig(2, frame(2));
-    let mut log = rig.talker("df", Talk::default(), &TALKER);
+    let mut log = rig.talker("df", Talk::default(), talker_descriptor());
     rig.noise(2 * BLOCK);
     rig.settle();
     assert!(!drain(&mut log).is_empty());
@@ -745,7 +745,7 @@ fn a_failed_retune_holds_the_host_until_a_rebuilt_one_replaces_it() {
         refuse_retune: true,
         ..Talk::default()
     };
-    let mut old = rig.talker("df", refusing, &TALKER);
+    let mut old = rig.talker("df", refusing, talker_descriptor());
     rig.noise(2 * BLOCK);
     rig.settle();
     assert!(!drain(&mut old).is_empty());
@@ -770,12 +770,13 @@ fn a_failed_retune_holds_the_host_until_a_rebuilt_one_replaces_it() {
     let (talker, mut rebuilt) = Talker::new(Talk::default());
     let mut replan = plan(
         "df",
-        ProcessorParams::Df(DfParams::default()),
+        Params::new(DfParams::default()),
         &rig.taps.sinks,
         moved.lanes(),
     );
     replan.stats = stats.clone();
-    let host = ProcessorHost::with_processor(replan, &moved, &TALKER, talker).expect("host");
+    let host =
+        ProcessorHost::with_processor(replan, &moved, talker_descriptor(), talker).expect("host");
     stats.replacing.store(true, Ordering::Release);
     assert!(!stats.rebuild_due());
     rig.send(Command::ReplaceHost { host });
@@ -791,7 +792,7 @@ fn a_failed_retune_holds_the_host_until_a_rebuilt_one_replaces_it() {
 #[test]
 fn a_lost_lane_gates_every_host_on_sync() {
     let mut rig = rig(2, frame(2));
-    let _log = rig.talker("df", Talk::default(), &TALKER);
+    let _log = rig.talker("df", Talk::default(), talker_descriptor());
     rig.send(Command::LanesLost { slots: vec![1] });
     rig.noise(BLOCK);
     rig.settle();
@@ -835,8 +836,7 @@ fn a_panicking_aggregator_is_reported_as_stopped() {
 
 #[cfg(feature = "probe")]
 mod probe {
-    use sdrmm_channels::array_processor::probe::{ProbeBlock, take_probe_log};
-    use sdrmm_wire::processor::ProbeParams;
+    use sdrmm_array::probe::{ProbeBlock, ProbeParams, take_probe_log};
 
     use super::*;
     use crate::{array::host::HostPlan, runtime::VirtualLaneSink};
@@ -847,12 +847,7 @@ mod probe {
         probe: ProbeParams,
         sinks: Vec<Option<VirtualLaneSink>>,
     ) -> Box<ProcessorHost> {
-        let mut plan: HostPlan = plan(
-            node,
-            ProcessorParams::Probe(probe),
-            &rig.taps.sinks,
-            rig.frame.lanes(),
-        );
+        let mut plan: HostPlan = plan(node, Params::new(probe), &rig.taps.sinks, rig.frame.lanes());
         plan.sinks = sinks;
         let built = ProcessorHost::build(plan, &rig.frame).expect("probe host");
         assert!(built.dedicated.is_none());
@@ -958,7 +953,7 @@ mod probe {
         assert_eq!(first.applies, 0);
         rig.send(Command::ApplyParams {
             node: "probe-apply".to_owned(),
-            params: Box::new(ProcessorParams::Probe(ProbeParams {
+            params: Box::new(Params::new(ProbeParams {
                 time: false,
                 ..params
             })),
@@ -1087,16 +1082,6 @@ fn a_replug_mid_burst_leaves_no_stale_window_behind() {
     );
 }
 
-static LANE_OUT: ProcessorDescriptorRef = ProcessorDescriptorRef {
-    lane_ports: &["out"],
-    lane_format: |_, ctx, _| sdrmm_channels::array_processor::LaneFormat {
-        center_hz: ctx.center_hz,
-        sample_rate: ctx.sample_rate,
-        capacity: 1 << 16,
-    },
-    ..TALKER
-};
-
 fn noise_at(lane: usize, at: u64) -> Complex<f32> {
     let phase = (at as f32 * 0.37 + lane as f32).sin();
     Complex::new(0.1 * phase, 0.05 * (at as f32 * 0.11).cos())
@@ -1113,16 +1098,16 @@ fn a_lane_output_keeps_the_array_index_when_correction_starts() {
     });
     let mut plan = plan(
         "lanes",
-        ProcessorParams::Df(DfParams::default()),
+        Params::new(DfParams::default()),
         &rig.taps.sinks,
         rig.frame.lanes(),
     );
     plan.sinks = vec![Some(sink)];
-    let host = ProcessorHost::with_processor(plan, &rig.frame, &LANE_OUT, talker).expect("host");
+    let host = ProcessorHost::with_processor(plan, &rig.frame, deep_laned(), talker).expect("host");
     rig.send(Command::ReplaceHost { host });
     rig.noise(3 * BLOCK);
     rig.settle();
-    let _wide = rig.talker("wide", Talk::default(), &WIDE);
+    let _wide = rig.talker("wide", Talk::default(), wide());
     rig.noise(3 * BLOCK);
     rig.settle();
     assert!(rig.aggregator.correcting);

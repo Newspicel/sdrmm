@@ -30,11 +30,87 @@ impl Deemphasis {
     }
 }
 
+/// The gain [`Deemphasis`] gives a tone at `hz`.
+#[must_use]
+pub fn deemphasis_gain(rate: f64, tau_us: f32, hz: f64) -> f32 {
+    let pole = f64::from(one_pole_coeff(rate, f64::from(tau_us) * SECONDS_PER_US));
+    let kept = 1.0 - pole;
+    let turn = std::f64::consts::TAU * hz / rate;
+    (pole / (1.0 - kept * turn.cos()).hypot(kept * turn.sin())) as f32
+}
+
+/// The inverse of [`Deemphasis`], lifting highs at 6 dB per octave, scaled to unity gain at
+/// `reference_hz`. Non-finite input is read as silence.
+#[derive(Clone, Debug)]
+pub struct Preemphasis {
+    kept: f32,
+    scale: f32,
+    previous: f32,
+}
+
+impl Preemphasis {
+    #[must_use]
+    pub fn new(rate: f64, tau_us: f32, reference_hz: f64) -> Self {
+        let pole = one_pole_coeff(rate, f64::from(tau_us) * SECONDS_PER_US);
+        Self {
+            kept: 1.0 - pole,
+            scale: deemphasis_gain(rate, tau_us, reference_hz) / pole,
+            previous: 0.0,
+        }
+    }
+
+    pub fn process(&mut self, samples: &mut [f32]) {
+        if !self.previous.is_finite() {
+            self.previous = 0.0;
+        }
+        for s in samples {
+            let sample = if s.is_finite() { *s } else { 0.0 };
+            *s = self.scale * (sample - self.kept * self.previous);
+            self.previous = sample;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::f32::consts::FRAC_1_SQRT_2;
 
     use super::*;
+
+    fn tone_gain(rate: f64, hz: f64, mut filter: impl FnMut(&mut [f32])) -> f32 {
+        let mut audio: Vec<f32> = (0..48_000)
+            .map(|n| (std::f64::consts::TAU * hz * f64::from(n) / rate).sin() as f32)
+            .collect();
+        filter(&mut audio);
+        let tail = &audio[24_000..];
+        (tail.iter().map(|v| v * v).sum::<f32>() / tail.len() as f32 * 2.0).sqrt()
+    }
+
+    #[test]
+    fn preemphasis_is_flat_at_its_reference_and_undoes_deemphasis() {
+        let rate = 48_000.0;
+        let mut lift = Preemphasis::new(rate, 750.0, 1_000.0);
+        let at_reference = tone_gain(rate, 1_000.0, |audio| lift.process(audio));
+        assert!((at_reference - 1.0).abs() < 0.01, "{at_reference}");
+        for hz in [300.0, 1_000.0, 3_000.0] {
+            let mut lift = Preemphasis::new(rate, 750.0, 1_000.0);
+            let mut fall = Deemphasis::new(rate, 750.0);
+            let fall_gain = deemphasis_gain(rate, 750.0, 1_000.0);
+            let paired = tone_gain(rate, hz, |audio| {
+                lift.process(audio);
+                fall.process(audio);
+            }) / fall_gain;
+            assert!((paired - 1.0).abs() < 0.02, "{hz} Hz: {paired}");
+        }
+    }
+
+    #[test]
+    fn a_non_finite_sample_is_read_as_silence() {
+        let mut lift = Preemphasis::new(48_000.0, 750.0, 1_000.0);
+        let mut audio = [f32::NAN, 0.5, f32::INFINITY, 0.0];
+        lift.process(&mut audio);
+        assert!(audio.iter().all(|s| s.is_finite()));
+    }
     use crate::testutil::{real_tone, rms_r};
 
     fn deemphasis_gain(rate: f64, tau_us: f32, freq_hz: f64) -> f32 {

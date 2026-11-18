@@ -2,7 +2,7 @@
 //! the type byte, the type, then fields, each an identifier byte and its data. Packets end in
 //! a parity field, `0x2F` and the XOR of every byte after the start byte up to it.
 
-use sdrmm_channels::chip::{CHIP_FRAME_SAMPLES, ChipRate, ChipSpeech};
+use sdrmm_codec::voice::chip::{CHIP_FRAME_SAMPLES, ChipRate, ChipSpeech};
 
 use crate::ChipError;
 

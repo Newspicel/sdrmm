@@ -22,7 +22,8 @@ export function useAddNode(): AddNode {
       return;
     }
     const id = newNodeId(kind, nodeIds(workspace.graph));
-    const node = { id, position: at ?? placeNode(workspace.graph, kind), ...body } as PatchNode;
+    const fresh = { id, position: { x: 0, y: 0 }, ...body } as PatchNode;
+    const node = { ...fresh, position: at ?? placeNode(workspace.graph, fresh) };
     workspace.edit((snapshot) => ({ ...snapshot, graph: addNode(snapshot.graph, node) }));
     workspace.select(id);
     if (opensDevice(kind)) {

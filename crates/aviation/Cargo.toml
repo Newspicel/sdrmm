@@ -1,0 +1,27 @@
+[package]
+name = "sdrmm-aviation"
+description = "ACARS, ARINC 622 and CPDLC parsing shared by the aviation datalink decoders"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+sdrmm-dsp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+flate2.workspace = true
+
+[dev-dependencies]
+sdrmm-test-support = { workspace = true, features = ["xng"] }
+xng-acars.workspace = true
+xng-types.workspace = true

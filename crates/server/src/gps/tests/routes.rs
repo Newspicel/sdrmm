@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    ChannelNode, DeviceBackend, DeviceNode, DeviceRef, GpsNode, NodeBody, PassiveRadarNode,
-    PatchEdge, PatchGraph, PatchNode, PortRef, Position, PositionFix, PositionSource, RecorderNode,
-    WorkspaceSnapshot,
+    ChannelNode, DeviceBackend, DeviceNode, DeviceRef, GpsNode, NodeBody, PatchEdge, PatchGraph,
+    PatchNode, PortRef, Position, PositionFix, PositionSource, RecorderNode, WorkspaceSnapshot,
 };
 
 use super::super::routes::{PositionTarget, push};
 use super::*;
+use sdrmm_array::passive_radar::PassiveRadarParams;
 
 fn node(id: &str, body: NodeBody) -> PatchNode {
     PatchNode {
@@ -61,7 +61,7 @@ fn bench() -> (Arc<Engine>, PatchGraph, u32, u32) {
     registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));
     let engine = Engine::with_registry(registry, None);
     let set = engine.create_device_set("virtual:band").expect("radio");
-    let settings = sdrmm_channels::default_settings("adsb").expect("adsb");
+    let settings = sdrmm_decoder::default_settings("adsb").expect("adsb");
     let channel = engine
         .add_channel_for(set, 0, settings, Some("planes"))
         .expect("channel");
@@ -87,7 +87,10 @@ fn bench() -> (Arc<Engine>, PatchGraph, u32, u32) {
                 }),
             ),
             node("rec", NodeBody::Recorder(RecorderNode::default())),
-            node("radar", NodeBody::PassiveRadar(PassiveRadarNode::default())),
+            node(
+                "radar",
+                crate::tests::processor_node(&PassiveRadarParams::default()),
+            ),
         ],
         edges: vec![
             wire(("dev", "iq"), ("planes", "iq")),
@@ -165,7 +168,7 @@ fn the_radar_transmitter_reads_the_fix_of_its_wired_position() {
     let resolved = app.resolved.current();
     let tx = resolved
         .patch
-        .first_feed("radar", sdrmm_wire::RADAR_TX_PORT)
+        .first_feed("radar", sdrmm_array::passive_radar::TX_PORT)
         .expect("the tx input is fed");
     let fix = app.gps.fix(&tx.source).expect("the tx source has a fix");
     assert!((fix.latitude - 52.0).abs() < 1e-9);

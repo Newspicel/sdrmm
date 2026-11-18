@@ -3,11 +3,9 @@ use crate::ism::IsmIntegrity;
 use crate::ism::IsmMessage;
 use crate::ism::IsmModulation;
 
-use super::{
-    bits::{Bits, hex},
-    devices,
-    slicer::Timing,
-};
+use sdrmm_crypto::hex_string as hex;
+
+use super::{bits::Bits, devices, slicer::Timing};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Outcome {

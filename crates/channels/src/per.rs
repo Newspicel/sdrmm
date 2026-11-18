@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod count;
 pub(crate) mod frame;
@@ -8,14 +11,13 @@ pub(crate) mod frame;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, SyncDetector, design_lowpass};
+use sdrmm_dsp::{BitSync, FmDemod, RealDecimator, SyncDetector};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use count::Count;
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 const RATE: f64 = 96_000.0;
 const CHANNEL_TAPS: usize = 63;
@@ -44,7 +46,7 @@ fn half_band_hz(baud: PerBaud) -> f64 {
 }
 
 fn params(settings: &ChannelSettings) -> Result<PerParams, ChannelError> {
-    let params: PerParams = crate::settings_of(settings)?;
+    let params: PerParams = sdrmm_decoder::settings_of(settings)?;
     if (MIN_PER_PAYLOAD_BYTES..=MAX_PER_PAYLOAD_BYTES).contains(&params.payload_bytes) {
         Ok(params)
     } else {
@@ -60,11 +62,8 @@ pub(crate) fn occupied_band(params: PerParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: PerParams) -> ChannelFilter {
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half_band_hz(params.baud) / RATE),
-        1,
-    ))
+pub(crate) fn channel_filter(params: PerParams) -> FilterSpec {
+    FilterSpec::lowpass(CHANNEL_TAPS, half_band_hz(params.baud))
 }
 
 struct Demod {
@@ -181,7 +180,7 @@ impl NativeChannel for PerChannel {
     }
 }
 
-impl ChannelRx for PerChannel {
+impl Channel for PerChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params != self.params {
@@ -227,10 +226,14 @@ impl ChannelRx for PerChannel {
 }
 
 pub(crate) fn per_decoder() -> Native<PerParams> {
-    Native::new::<PerChannel>(|p| occupied_band(*p))
+    let decoder = Native::new::<PerChannel>(|p| occupied_band(*p))
         .filter(|p| Ok(channel_filter(*p)))
         .form(per_form)
-        .kinds(per_kinds)
+        .kinds(per_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn per_form() -> Vec<SettingField> {
@@ -255,5 +258,7 @@ fn per_kinds() -> Vec<KindSpec> {
     vec![per_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

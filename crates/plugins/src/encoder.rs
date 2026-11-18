@@ -3,10 +3,11 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
-use sdrmm_channels::encoder::{Encoder, EncoderError, EncoderParams, Modulator, TxPayload};
+use sdrmm_decoder::encoder::{Encoder, EncoderError, EncoderParams, Modulator, TxPayload};
 use sdrmm_wire::{
     EncoderDescriptor, EncoderInput,
     plugin::{
+        Op,
         encoder::{PayloadKind, export},
         unpack,
     },
@@ -62,20 +63,21 @@ impl Encoder for WasmEncoder {
         )?))
     }
 
-    /// A message encoder gets the filled form as UTF-8 JSON in a frame.
     fn compose(&self, message: &serde_json::Value) -> Result<TxPayload, EncoderError> {
         let type_id = &self.descriptor.type_id;
         if self.descriptor.input != EncoderInput::Message {
             return Err(EncoderError::NoMessages(type_id.clone()));
         }
-        serde_json::to_vec(message)
-            .map(TxPayload::Frame)
-            .map_err(|error| EncoderError::message(type_id, error.to_string()))
+        self.module
+            .call(Op::Compose, message)
+            .map_err(|reason| EncoderError::message(type_id, reason))
     }
 
     fn width_hz(&self, params: &EncoderParams) -> Result<f64, EncoderError> {
         self.check_type(params)?;
-        Ok(self.descriptor.bandwidth_hz)
+        self.module
+            .call(Op::Width, &params.settings)
+            .map_err(|reason| EncoderError::settings(&self.descriptor.type_id, reason))
     }
 }
 
@@ -100,11 +102,9 @@ impl WasmModulator {
         let type_id = descriptor.type_id.clone();
         let refused = |reason: String| EncoderError::settings(&type_id, reason);
         let mut guest = module.instantiate().map_err(refused)?;
-        let open: TypedFunc<(f64, u32, u32), i32> =
+        let open: TypedFunc<(u32, u32), i32> =
             typed(&guest.instance, &mut guest.store, export::OPEN).map_err(refused)?;
-        let handle = guest
-            .call_json(&open, descriptor.rate_hz, settings)
-            .map_err(refused)?;
+        let handle = guest.call_with_json(&open, settings).map_err(refused)?;
         if handle < 0 {
             return Err(refused(guest.last_error()));
         }

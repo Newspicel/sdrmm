@@ -1,30 +1,30 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod ad;
 mod beacon;
 mod names;
-pub(crate) mod pdu;
 mod repeats;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_modem::ble::{self as phy, Lane, Packet, Sink, band::Band};
+use sdrmm_modem::ble::{
+    self as phy, Front, Packet, Sink,
+    pdu::{self, Adi, AdvPdu},
+};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use self::{
     ad::Fields,
-    pdu::AdvPdu,
     repeats::{Fnv, Repeats},
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
-    datalink,
-};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 
-const PASSBAND: f64 = 0.55;
 const REPEAT_HOLD_S: f64 = 1.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
@@ -40,7 +40,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<BleParams, ChannelError> {
-    crate::settings_of::<BleParams>(settings)
+    sdrmm_decoder::settings_of::<BleParams>(settings)
 }
 
 pub(crate) fn occupied_band(link: BleLink) -> (f64, f64) {
@@ -48,13 +48,10 @@ pub(crate) fn occupied_band(link: BleLink) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(link: BleLink) -> ChannelFilter {
+pub(crate) fn channel_filter(link: BleLink) -> FilterSpec {
     match link {
-        BleLink::Channel => {
-            let rate = link.input_rate_hz();
-            datalink::channel_filter(rate, rate * PASSBAND / 2.0)
-        }
-        BleLink::Band => ChannelFilter::Passthrough,
+        BleLink::Channel => FilterSpec::channel(phy::CHANNEL_HALF_PASSBAND_HZ),
+        BleLink::Band => FilterSpec::Passthrough,
     }
 }
 
@@ -67,56 +64,12 @@ pub(crate) fn wire_phy(phy: phy::BlePhy) -> BlePhy {
     }
 }
 
-fn invalid(error: impl std::fmt::Display) -> ChannelError {
-    ChannelError::InvalidSettings(error.to_string())
-}
-
-pub(crate) enum Front {
-    Channel(Box<Lane>),
-    Band(Box<Band>),
-}
-
-impl Front {
-    pub(crate) fn new(link: BleLink, frequency_hz: f64) -> Result<Self, ChannelError> {
-        Ok(match link {
-            BleLink::Channel => {
-                let rf = phy::rf_channel_at(frequency_hz).ok_or_else(|| {
-                    ChannelError::InvalidSettings(format!(
-                        "{:.3} MHz is not a Bluetooth channel: 2402 to 2480 MHz in 2 MHz steps",
-                        frequency_hz / 1e6
-                    ))
-                })?;
-                Self::Channel(Box::new(
-                    Lane::new(Some(rf), phy::channel_index(rf)).map_err(invalid)?,
-                ))
-            }
-            BleLink::Band => Self::Band(Box::new(
-                Band::new(link.input_rate_hz(), frequency_hz).map_err(invalid)?,
-            )),
-        })
+pub(crate) fn front(link: BleLink, frequency_hz: f64) -> Result<Front, ChannelError> {
+    match link {
+        BleLink::Channel => Front::channel(frequency_hz),
+        BleLink::Band => Front::band(frequency_hz),
     }
-
-    pub(crate) fn reset(&mut self) {
-        match self {
-            Self::Channel(lane) => lane.reset(),
-            Self::Band(band) => band.reset(),
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn rejected(&self) -> u32 {
-        match self {
-            Self::Channel(lane) => lane.rejected(),
-            Self::Band(band) => band.rejected(),
-        }
-    }
-
-    pub(crate) fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
-        match self {
-            Self::Channel(lane) => lane.process(iq, sink),
-            Self::Band(band) => band.process(iq, sink),
-        }
-    }
+    .map_err(|error| ChannelError::InvalidSettings(error.to_string()))
 }
 
 pub struct BleChannel {
@@ -137,14 +90,14 @@ impl NativeChannel for BleChannel {
         Ok(Self {
             link: params.link,
             frequency_hz: settings.frequency_hz,
-            front: Front::new(params.link, settings.frequency_hz)?,
+            front: front(params.link, settings.frequency_hz)?,
             repeats: Repeats::new((phy::RATE_HZ * REPEAT_HOLD_S) as u64),
             unreadable: 0,
         })
     }
 }
 
-impl ChannelRx for BleChannel {
+impl Channel for BleChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.link.input_rate_hz() != self.link.input_rate_hz() {
@@ -153,7 +106,7 @@ impl ChannelRx for BleChannel {
             ));
         }
         if params.link != self.link || settings.frequency_hz != self.frequency_hz {
-            self.front = Front::new(params.link, settings.frequency_hz)?;
+            self.front = front(params.link, settings.frequency_hz)?;
             self.repeats.reset();
             self.unreadable = 0;
             self.link = params.link;
@@ -204,7 +157,7 @@ impl Sink for EventSink<'_> {
     }
 }
 
-fn adi(pdu: &AdvPdu<'_>) -> Option<BleAdi> {
+fn adi(pdu: &AdvPdu<'_>) -> Option<Adi> {
     pdu.extended.and_then(|extended| extended.adi)
 }
 
@@ -243,11 +196,11 @@ pub(crate) fn advert(
 ) -> BleAdvert {
     let extended = pdu.extended.unwrap_or_default();
     BleAdvert {
-        pdu: pdu.kind,
+        pdu: pdu.kind.into(),
         phy: wire_phy(packet.phy),
         channel: packet.rf.map(phy::channel_index),
-        address: pdu.sender.map(pdu::Party::wire),
-        target: pdu.target.map(pdu::Party::wire),
+        address: pdu.sender.map(wire_address),
+        target: pdu.target.map(wire_address),
         level_dbfs: packet.level_dbfs,
         repeats,
         name: fields.name,
@@ -258,19 +211,23 @@ pub(crate) fn advert(
         manufacturer: fields.manufacturer,
         beacon: fields.beacon,
         uri: fields.uri,
-        adi: extended.adi,
-        aux: extended.aux,
-        data: ad::hex(pdu.data),
+        adi: extended.adi.map(Into::into),
+        aux: extended.aux.map(Into::into),
+        data: sdrmm_crypto::hex_string(pdu.data),
     }
 }
 
 pub(crate) fn ble_decoder() -> Native<BleParams> {
-    Native::new::<BleChannel>(|p: &BleParams| occupied_band(p.link))
+    let decoder = Native::new::<BleChannel>(|p: &BleParams| occupied_band(p.link))
         .filter(|p| Ok(channel_filter(p.link)))
         .input_rate(|p| p.link.input_rate_hz())
         .home(2_426_000_000.0)
         .form(ble_form)
-        .kinds(ble_kinds)
+        .kinds(ble_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn ble_form() -> Vec<SettingField> {
@@ -284,5 +241,7 @@ fn ble_kinds() -> Vec<KindSpec> {
     vec![crate::ble::ble_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

@@ -10,7 +10,7 @@ use std::f64::consts::TAU;
 
 pub use biquad::Biquad;
 pub use dc_blocker::DcBlocker;
-pub use deemphasis::Deemphasis;
+pub use deemphasis::{Deemphasis, Preemphasis, deemphasis_gain};
 pub use highpass::Highpass;
 pub use iq_dc_blocker::IqDcBlocker;
 pub use one_pole::ComplexOnePole;

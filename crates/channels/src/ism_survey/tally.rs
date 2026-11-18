@@ -1,10 +1,11 @@
-use crate::airtime::AirtimeSpan;
-use crate::airtime::IsmKind;
-use crate::airtime::IsmKindLoad;
-use crate::airtime::SURVEY_CENTRES;
-use sdrmm_dsp::{math::fastmath::fast_power_db, measure::airtime::Burst};
-
-use crate::airtime::{bin_offset_hz, fft_len, frame_s};
+use super::IsmKind;
+use super::IsmKindLoad;
+use super::SURVEY_CENTRES;
+use sdrmm_dsp::{
+    math::fastmath::fast_power_db,
+    measure::airtime::{Burst, bin_offset_hz, fft_len, frame_s},
+};
+use sdrmm_wire::AirtimeSpan;
 
 const MHZ: f64 = 1e6;
 const SLOTS: usize = 128;
@@ -85,7 +86,7 @@ impl Tally {
     pub(crate) fn new(frequency_hz: f64, span: AirtimeSpan) -> Self {
         Self {
             frequency_hz,
-            len: fft_len(span),
+            len: fft_len(span.sample_rate_hz()),
             base_mhz: ((frequency_hz - span.sample_rate_hz() / 2.0) / MHZ).floor(),
             kinds: [Kind::EMPTY; IsmKind::ALL.len()],
             kind_coverage: std::array::from_fn(|_| Coverage::new()),

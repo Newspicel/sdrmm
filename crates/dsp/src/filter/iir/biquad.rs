@@ -43,6 +43,21 @@ impl Biquad {
         (w0.cos(), w0.sin(), alpha)
     }
 
+    /// A section from normalized coefficients: `b` the feedforward taps, `a` the feedback
+    /// taps a1 and a2 with a0 = 1.
+    #[must_use]
+    pub const fn from_coefficients(b: [f32; 3], a: [f32; 2]) -> Self {
+        Self {
+            b0: b[0],
+            b1: b[1],
+            b2: b[2],
+            a1: a[0],
+            a2: a[1],
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+
     #[must_use]
     pub fn lowpass(rate: f64, freq_hz: f64, q: f64) -> Self {
         assert!(rate > 0.0, "rate must be positive");
@@ -82,17 +97,22 @@ impl Biquad {
         self.z2 = 0.0;
     }
 
+    /// Filters a block in place, first clearing a state a non-finite input left behind.
     pub fn process(&mut self, samples: &mut [f32]) {
         if !(self.z1.is_finite() && self.z2.is_finite()) {
             self.reset();
         }
         for s in samples {
-            let x = *s;
-            let y = self.b0 * x + self.z1;
-            self.z1 = self.b1 * x - self.a1 * y + self.z2;
-            self.z2 = self.b2 * x - self.a2 * y;
-            *s = y;
+            *s = self.run(*s);
         }
+    }
+
+    /// Filters one sample, for loops that feed the output back.
+    pub fn run(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.z1;
+        self.z1 = self.b1 * x - self.a1 * y + self.z2;
+        self.z2 = self.b2 * x - self.a2 * y;
+        y
     }
 }
 
@@ -109,6 +129,17 @@ mod tests {
         let mut x = real_tone(freq_hz / rate, n);
         filter.process(&mut x);
         rms_r(&x[n / 2..]) / FRAC_1_SQRT_2
+    }
+
+    #[test]
+    fn a_sample_at_a_time_matches_a_block() {
+        let mut block = Biquad::from_coefficients([0.2, 0.4, 0.2], [-0.5, 0.25]);
+        let mut single = block;
+        let mut samples = [1.0, 0.0, -1.0, 0.5, 0.25];
+        let one_by_one = samples.map(|x| single.run(x));
+        block.process(&mut samples);
+        assert_eq!(samples, one_by_one);
+        assert_eq!(one_by_one[0], 0.2);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::default_true;
+use sdrmm_decoder::default_true;
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::labelled;

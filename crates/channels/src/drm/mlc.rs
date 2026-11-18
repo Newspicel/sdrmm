@@ -1,13 +1,22 @@
 use num_complex::Complex;
-use sdrmm_dsp::{ConvCode, DAB_DISPERSAL, Prbs, Soft};
+use sdrmm_dsp::{ConvCode, Prbs, PrbsSpec, Soft};
 
-use super::coding::{LevelDecoder, MOTHER, Plan, Qam, encode_level, permutation};
+#[cfg(any(test, feature = "synth"))]
+use super::coding::Qam;
+use super::coding::{LevelDecoder, MOTHER, Plan, encode_level, permutation};
+
+/// Energy dispersal: x^9 + x^5 + 1 from all ones.
+const DISPERSAL: PrbsSpec = PrbsSpec {
+    stages: 9,
+    taps: 0x110,
+    seed: 0x1FF,
+};
 
 const TARGET_SOFT: f32 = 24.0;
 const MAX_SOFT: f32 = 127.0;
 
 pub fn disperse(bits: &mut [bool]) {
-    Prbs::new(DAB_DISPERSAL).apply_bits(bits);
+    Prbs::new(DISPERSAL).apply_bits(bits);
 }
 
 fn metric(x: f32, levels: usize, level: usize, known: u8) -> f32 {
@@ -157,6 +166,7 @@ impl MlcDecoder {
     }
 }
 
+#[cfg(any(test, feature = "synth"))]
 #[must_use]
 pub fn point(qam: Qam, bits: &[u8]) -> f32 {
     let levels = qam.levels();

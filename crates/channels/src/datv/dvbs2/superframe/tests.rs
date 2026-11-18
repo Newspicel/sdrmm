@@ -2,20 +2,18 @@ use super::{
     synth::{Codes, Dwell, Options, Plframe, Transmitter},
     *,
 };
-use crate::{
-    datv::{
-        dvbs::PACKET,
-        dvbs2::{
-            frame::{ModCod, Modulation},
-            ldpc::{Frame, Rate},
-            receiver::{Dvbs2Decoder, Dvbs2Encoder, Dvbs2Output},
-            vlsnr::Carrier,
-            xfec::Xfec,
-        },
-    },
-    testutil::realtime_budget,
+use crate::datv::dvbs2::{
+    frame::{ModCod, Modulation},
+    receiver::{Dvbs2Decoder, Dvbs2Encoder, Dvbs2Output},
+    vlsnr::Carrier,
+    xfec::Xfec,
 };
 use coding::Coding;
+use sdrmm_decoder_test_support::realtime_budget;
+use sdrmm_modem::dvb::{
+    PACKET,
+    ldpc::{Frame, Rate},
+};
 
 mod formats;
 
@@ -201,7 +199,7 @@ fn legacy_and_extended_payloads_cross_superframe_boundaries_with_both_pilot_sett
     ] {
         for pilots in [false, true] {
             let mut encoder = Dvbs2Encoder::new(modcod, false, false).unwrap();
-            let packets = vec![crate::datv::ts::null_packet(); encoder.capacity()];
+            let packets = vec![sdrmm_modem::mpegts::null_packet(); encoder.capacity()];
             let mut payload = Vec::new();
             assert!(encoder.frame(&packets, &mut payload));
             payload.clear();
@@ -234,7 +232,7 @@ fn legacy_and_extended_payloads_cross_superframe_boundaries_with_both_pilot_sett
                 decoded
                     .packets
                     .iter()
-                    .all(|packet| packet == &crate::datv::ts::null_packet())
+                    .all(|packet| packet == &sdrmm_modem::mpegts::null_packet())
             );
             assert_eq!(decoder.superframe_format(), Some(code));
         }
@@ -267,7 +265,7 @@ fn very_low_snr_superframes_use_ninety_symbol_pilots_and_short_frame_padding() {
         let mut encoder = VlSnrEncoder::new(mode).unwrap();
         encoder.superframes(true);
         let mut payload = Vec::new();
-        let packets = vec![crate::datv::ts::null_packet(); encoder.capacity()];
+        let packets = vec![sdrmm_modem::mpegts::null_packet(); encoder.capacity()];
         assert!(encoder.frame(&packets, &mut payload));
         payload.clear();
         assert!(encoder.frame(&packets, &mut payload));
@@ -284,7 +282,7 @@ fn very_low_snr_superframes_use_ninety_symbol_pilots_and_short_frame_padding() {
             output
                 .packets
                 .iter()
-                .all(|packet| packet == &crate::datv::ts::null_packet())
+                .all(|packet| packet == &sdrmm_modem::mpegts::null_packet())
         );
     }
 }

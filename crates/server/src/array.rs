@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::array_processor::descriptor_for;
+use sdrmm_array::descriptor;
 use sdrmm_engine::{ArraySpec, EngineError, LaneRef, ProcessorSpec};
 use sdrmm_wire::{
     ARRAY_PORT, ArrayCalRecord, ArrayCalSource, ArrayFailure, ArrayNode, ArrayOrientation,
@@ -449,15 +449,14 @@ pub(crate) fn release(state: &AppState, resolved: &Resolved) {
 fn wired_lane_ports(patch: &ResolvedPatch, node: &PatchNode) -> Vec<String> {
     node.body
         .lane_outputs()
-        .iter()
+        .into_iter()
         .filter(|port| !patch.reaches(&node.id, port).is_empty())
-        .map(|port| (*port).to_owned())
         .collect()
 }
 
 fn surface_kind(body: &NodeBody) -> Option<StreamKind> {
     let params = body.processor_params()?;
-    descriptor_for(&params)?.surface
+    descriptor(params.type_id())?.surface()
 }
 
 pub(crate) fn reconcile(

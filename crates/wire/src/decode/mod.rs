@@ -1,20 +1,28 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+mod airtime;
 mod broadcast;
 mod ident;
+mod navaid;
+mod pager;
 mod platform;
 mod registry;
 mod signature;
+mod squelch;
 #[cfg(test)]
 pub(crate) mod test_kinds;
 mod voice;
 
+pub use airtime::*;
 pub use broadcast::*;
 pub use ident::*;
+pub use navaid::*;
+pub use pager::*;
 pub use platform::*;
 pub use registry::*;
 pub use signature::*;
+pub use squelch::*;
 pub use voice::*;
 
 pub const NO_CHANNEL: u32 = u32::MAX;

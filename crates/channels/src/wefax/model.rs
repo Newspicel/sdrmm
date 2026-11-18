@@ -1,4 +1,4 @@
-use crate::default_true;
+use sdrmm_decoder::default_true;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
@@ -158,6 +158,24 @@ impl sdrmm_wire::DecoderSettings for WefaxParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
+
+    #[test]
+    fn empty_settings_take_the_defaults() {
+        assert_eq!(
+            serde_json::from_str::<WefaxParams>("{}").unwrap(),
+            WefaxParams::default()
+        );
+    }
+
+    #[test]
+    fn a_picture_names_no_station() {
+        let picture: WefaxPicture = serde_json::from_str(
+            r#"{"seq":1,"ioc":"ioc576","lpm":"lpm120","width":1809,"lines":1200,"complete":true,"duration_ms":600000}"#,
+        )
+        .expect("picture fixture");
+        assert_eq!(picture.present(&EventKind::named("wefax")).entity, None);
+    }
+
     use sdrmm_wire::present::text_of;
 
     #[test]

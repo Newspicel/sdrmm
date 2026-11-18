@@ -2,7 +2,7 @@ use crate::lora::LoraKey;
 use crate::lora::LorawanMessageType;
 
 use super::{Keys, decode, join_request, mac, uplink};
-use crate::crypto::{self, Aes};
+use sdrmm_crypto::{self as crypto, Aes};
 
 const NWK_S_KEY: &str = "44024241ed4ce9a68c6a8bc055233fd3";
 const APP_S_KEY: &str = "ec925802ae430ca77fd3dd73cb2cc588";
@@ -29,7 +29,7 @@ fn session(dev_addr: &str) -> Keys {
 
 fn app_key_text(key: &[u8; 16]) -> Keys {
     Keys::new(&[LoraKey::LorawanAppKey {
-        app_key: crate::datalink::hex(key),
+        app_key: sdrmm_crypto::hex_string(key),
     }])
     .unwrap()
 }
@@ -159,7 +159,7 @@ fn join_accepts_decrypt_with_the_app_key() {
     let locked = decode(&payload, &app_key_text(&[9; 16])).unwrap();
     assert_eq!(locked.mic_ok, Some(false));
     assert_eq!(locked.dev_addr, None);
-    assert_eq!(locked.mic, crate::datalink::hex(&payload[29..]));
+    assert_eq!(locked.mic, sdrmm_crypto::hex_string(&payload[29..]));
     assert_eq!(decode(&payload, &Keys::default()).unwrap().mic_ok, None);
 }
 

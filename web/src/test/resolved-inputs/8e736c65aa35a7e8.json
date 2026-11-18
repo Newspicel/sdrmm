@@ -1,0 +1,75 @@
+{
+  "name": "8e736c65aa35a7e8",
+  "test": "a surface face > offers a frame toggle over a bearing surface",
+  "graph": {
+    "nodes": [
+      {
+        "id": "arr",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "proc",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "processor",
+        "data": {
+          "processor_type": "spatial_spectrum",
+          "settings": {
+            "average_ms": 300,
+            "azimuth_step_deg": 2,
+            "bins": 1024,
+            "columns": 256,
+            "method": "bartlett",
+            "offset_hz": 0,
+            "report_ms": 100,
+            "span_db": 30
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "arr",
+          "port": "array"
+        },
+        "to": {
+          "node": "proc",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

@@ -1,11 +1,11 @@
 use crate::apt::AvhrrChannel;
+use sdrmm_dsp::SampleHistory;
 
 use super::{
     geometry::{LINE_WORDS, Side, WEDGE_LINES},
     telemetry::{self, Calibration},
-    track::Track,
 };
-use crate::VideoPicture;
+use sdrmm_decoder::VideoPicture;
 
 pub(crate) const MAX_LINES: usize = 2_400;
 const RAW_SCALE: f32 = 16_384.0;
@@ -70,7 +70,7 @@ impl Picture {
         self.lines >= MAX_LINES
     }
 
-    pub(crate) fn store_line(&mut self, track: &Track, start: f64, len: f64, synced: bool) {
+    pub(crate) fn store_line(&mut self, track: &SampleHistory, start: f64, len: f64, synced: bool) {
         if self.full() {
             return;
         }
@@ -78,7 +78,7 @@ impl Picture {
         let row = &mut self.raw[line * LINE_WORDS..(line + 1) * LINE_WORDS];
         let word = len / LINE_WORDS as f64;
         for (index, value) in row.iter_mut().enumerate() {
-            *value = quantize(track.at(start + (index as f64 + 0.5) * word));
+            *value = quantize(track.interpolate(start + (index as f64 + 0.5) * word));
         }
         for side in [Side::A, Side::B] {
             for &value in &row[side.image()] {
@@ -180,7 +180,7 @@ mod tests {
     fn without_telemetry_the_picture_stretches_its_histogram() {
         let mut picture = Picture::new();
         picture.begin(0.0);
-        let mut track = Track::new();
+        let mut track = SampleHistory::new(crate::apt::TRACK_CAPACITY);
         for k in 0..20_000 {
             track.push(0.2 + 0.6 * (k % 7) as f32 / 6.0);
         }
@@ -206,7 +206,7 @@ mod tests {
     fn a_full_picture_stops_taking_lines() {
         let mut picture = Picture::new();
         picture.begin(0.0);
-        let track = Track::new();
+        let track = SampleHistory::new(crate::apt::TRACK_CAPACITY);
         for _ in 0..MAX_LINES + 3 {
             picture.store_line(&track, 0.0, 6_000.0, false);
         }

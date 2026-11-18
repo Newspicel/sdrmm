@@ -1,8 +1,6 @@
-use sdrmm_dsp::crc16_msb;
-
 use super::*;
 
-fn packet(address: u16, continuity: u8, flags: u8, data: &[u8]) -> Vec<u8> {
+pub(in crate::dab) fn packet(address: u16, continuity: u8, flags: u8, data: &[u8]) -> Vec<u8> {
     let length = (data.len() + 5).div_ceil(24) * 24;
     let mut bytes = vec![
         ((length / 24 - 1) as u8) << 6 | (continuity & 3) << 4 | flags << 2 | (address >> 8) as u8,
@@ -11,7 +9,7 @@ fn packet(address: u16, continuity: u8, flags: u8, data: &[u8]) -> Vec<u8> {
     ];
     bytes.extend_from_slice(data);
     bytes.resize(length - 2, 0);
-    bytes.extend_from_slice(&(!crc16_msb(0x1021, 0xffff, &bytes)).to_be_bytes());
+    sdrmm_dsp::push_crc16_genibus(&mut bytes);
     bytes
 }
 
@@ -34,7 +32,7 @@ fn frame(data: &[u8]) -> Vec<u8> {
     while bytes.len() < APPLICATION {
         bytes.extend(packet(0, 0, 3, &[]));
     }
-    let rs = ReedSolomon::new(DVB_PRIMITIVE, 0, 16);
+    let rs = ReedSolomon::new(GF256_PRIMITIVE, 0, 16);
     let mut parity = [0u8; 198];
     for row in 0..12 {
         let data: Vec<u8> = (0..188).map(|col| bytes[col * 12 + row]).collect();
@@ -137,7 +135,7 @@ fn ip_data_groups_strip_headers_and_reassemble_reordered_segments() {
     let group = |index: u8, last: bool, part: &[u8]| {
         let mut bytes = vec![0x70, 0, if last { 128 } else { 0 }, index, 0x12, 0x12, 0x34];
         bytes.extend_from_slice(part);
-        bytes.extend_from_slice(&(!crc16_msb(0x1021, 0xffff, &bytes)).to_be_bytes());
+        sdrmm_dsp::push_crc16_genibus(&mut bytes);
         bytes
     };
     let mut events = Vec::new();

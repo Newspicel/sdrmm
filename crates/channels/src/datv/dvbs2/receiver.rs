@@ -17,7 +17,7 @@ use super::{
     vlsnr::{self, Carrier, Piece, VlMode, VlSnrCodec},
     xfec::Xfec,
 };
-use crate::datv::dvbs::PACKET;
+use sdrmm_modem::dvb::PACKET;
 
 const LOCK_COHERENCE: f32 = 0.75;
 const FLYWHEEL_COHERENCE: f32 = 0.3;
@@ -210,6 +210,7 @@ pub struct Dvbs2Decoder {
     block_phases: Vec<f32>,
     coarse: CoarseFrequency,
     llrs: Vec<f32>,
+    ordered: Vec<f32>,
     bits: Vec<bool>,
     searched: usize,
     frequency: f32,
@@ -247,6 +248,7 @@ impl Dvbs2Decoder {
             block_phases: Vec::with_capacity(1 << 12),
             coarse: CoarseFrequency::new(),
             llrs: Vec::new(),
+            ordered: Vec::new(),
             bits: Vec::new(),
             searched: 0,
             frequency: 0.0,
@@ -723,7 +725,7 @@ impl Dvbs2Decoder {
         self.good = 0;
     }
 
-    fn deliver(&mut self, data: &super::bb::BaseBandData, out: &mut Dvbs2Output) {
+    fn deliver(&mut self, data: &sdrmm_modem::dvb::bb::BaseBandData, out: &mut Dvbs2Output) {
         self.stream = Some(data.header.kind);
         self.isi = (!data.header.single).then_some(data.header.isi);
         if !data.header.single {
@@ -805,12 +807,17 @@ impl Dvbs2Decoder {
         };
         self.llrs.clear();
         demodulate(&self.payload, &codec.constellation, NOISE, &mut self.llrs);
-        let ordered = super::s2x::mode(modcod.index).map_or_else(
-            || deinterleave(&self.llrs, modcod.modulation, modcod.rate),
-            |mode| mode.deinterleave(&self.llrs),
-        );
+        match super::s2x::mode(modcod.index) {
+            Some(mode) => mode.deinterleave(&self.llrs, &mut self.ordered),
+            None => deinterleave(
+                &self.llrs,
+                modcod.modulation,
+                modcod.rate,
+                &mut self.ordered,
+            ),
+        }
         self.bits.clear();
-        let Some(iterations) = codec.ldpc.decode(&ordered, &mut self.bits) else {
+        let Some(iterations) = codec.ldpc.decode(&self.ordered, &mut self.bits) else {
             self.fail();
             return;
         };
@@ -867,7 +874,7 @@ impl Default for Dvbs2Decoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datv::dvbs::SYNC;
+    use sdrmm_modem::dvb::SYNC;
 
     fn transport(count: usize, seed: u32) -> Vec<[u8; PACKET]> {
         let mut state = seed | 1;
@@ -922,7 +929,7 @@ mod tests {
 
     #[test]
     fn transport_reassembly_handles_partial_packets_and_frames_without_a_sync_byte() {
-        use super::super::bb::{self, BaseBandHeader};
+        use sdrmm_modem::dvb::bb::{self, BaseBandHeader};
         let mode = ModCod::find(Modulation::Qpsk, Rate::R1_2).unwrap();
         let mut encoder = Dvbs2Encoder::new(mode, true, false).unwrap();
         let packets = transport(11, 63917);
@@ -1286,7 +1293,7 @@ mod tests {
             let modcod = ModCod::find(modulation, rate).expect("a catalogued mode");
             let mut encoder = Dvbs2Encoder::new(modcod, false, true).expect("a supported mode");
             if let Some(previous) = sent.last() {
-                encoder.carry = super::super::bb::crc8(&previous[1..]);
+                encoder.carry = sdrmm_modem::dvb::bb::crc8(&previous[1..]);
             }
             let packets = transport(encoder.capacity(), seed);
             seed += 2;

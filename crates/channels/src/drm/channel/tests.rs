@@ -5,8 +5,8 @@ use std::{
 
 use sdrmm_wire::ChannelParams;
 
-use crate::broadcast_media::latest_status;
 use crate::drm::DrmMode;
+use sdrmm_decoder::broadcast::latest_status;
 
 use super::*;
 use crate::{
@@ -15,8 +15,8 @@ use crate::{
         self,
         drm::{Config, defaults, multipath, music, talk},
     },
-    testutil::{at_snr, realtime_budget},
 };
+use sdrmm_decoder_test_support::{at_snr, realtime_budget};
 
 fn settings(mode: DrmMode, bandwidth_hz: f64, service: Option<u8>) -> ChannelSettings {
     ChannelSettings {
@@ -95,7 +95,7 @@ fn a_mode_b_multiplex_names_its_services_and_plays_the_first() {
     let out = run(&mut channel, &iq);
     let status = status(&out);
     assert!(status.locked, "{status:?}");
-    assert_eq!(status.system, BroadcastSystem::Drm30);
+    assert_eq!(status.system, "drm30");
     assert_eq!(status.services.len(), 2, "{status:?}");
     assert_eq!(status.services[0].label, "Rust Wave");
     assert_eq!(status.services[1].label, "Rust Talk");
@@ -150,7 +150,7 @@ fn mode_a_survives_noise_offset_and_echoes_with_unequal_protection() {
             (0.0011, Complex::new(0.0, 0.45)),
         ],
     );
-    synth::shift(&mut echoed, 137.0, INPUT_RATE_HZ);
+    sdrmm_modem::synth::shift(&mut echoed, 137.0, INPUT_RATE_HZ);
     let iq = at_snr(&echoed, 26.0, 11);
     let mut channel = channel(DrmMode::Drm30, None);
     let out = run(&mut channel, &iq);
@@ -207,7 +207,7 @@ fn mode_d_locks_when_time_references_stray_from_the_table() {
             (0.0024, Complex::new(-0.3, 0.5)),
         ],
     );
-    synth::shift(&mut echoed, -420.0, INPUT_RATE_HZ);
+    sdrmm_modem::synth::shift(&mut echoed, -420.0, INPUT_RATE_HZ);
     let iq = at_snr(&echoed, 24.0, 3);
     let mut channel = channel(DrmMode::Drm30, None);
     let out = run(&mut channel, &iq);
@@ -227,13 +227,13 @@ fn drm_plus_decodes_with_noise_offset_and_echoes() {
             (0.00008, Complex::new(-0.4, 0.2)),
         ],
     );
-    synth::shift(&mut echoed, -1_234.0, INPUT_RATE_HZ);
+    sdrmm_modem::synth::shift(&mut echoed, -1_234.0, INPUT_RATE_HZ);
     let iq = at_snr(&echoed, 22.0, 5);
     let mut channel = channel(DrmMode::Auto, None);
     let out = run(&mut channel, &iq);
     let status = status(&out);
     assert!(status.locked, "{status:?}");
-    assert_eq!(status.system, BroadcastSystem::DrmPlus);
+    assert_eq!(status.system, "drm_plus");
     assert_eq!(status.code_rate.as_deref(), Some("16-QAM 0.5"));
     assert!(
         (status.frequency_error_hz + 1_234.0).abs() < 10.0,
@@ -248,7 +248,7 @@ fn drm_plus_decodes_with_noise_offset_and_echoes() {
 fn a_burst_of_interference_surfaces_as_errors() {
     let mut iq = synth::drm::signal(two_services(Robustness::B), 7).expect("a synthetic signal");
     let start = iq.len() / 2;
-    let burst = crate::testutil::complex_noise(3, 2.0, 60_000);
+    let burst = sdrmm_decoder_test_support::complex_noise(3, 2.0, 60_000);
     for (sample, noise) in iq[start..start + burst.len()].iter_mut().zip(burst) {
         *sample += noise;
     }
@@ -264,7 +264,7 @@ fn a_burst_of_interference_surfaces_as_errors() {
 #[test]
 fn noise_never_locks() {
     let mut channel = channel(DrmMode::Auto, None);
-    let iq = crate::testutil::complex_noise(7, 0.5, 2 * INPUT_RATE_HZ as usize);
+    let iq = sdrmm_decoder_test_support::complex_noise(7, 0.5, 2 * INPUT_RATE_HZ as usize);
     never_locks(&mut channel, &iq);
 }
 
@@ -289,7 +289,7 @@ fn never_locks(channel: &mut DrmChannel, iq: &[Complex<f32>]) {
 #[test]
 fn a_drifting_sample_clock_keeps_timing() {
     let clean = synth::drm::signal(defaults(Robustness::B), 8).expect("a synthetic signal");
-    let iq = synth::resample(&clean, INPUT_RATE_HZ, INPUT_RATE_HZ * (1.0 + 40e-6));
+    let iq = sdrmm_modem::synth::resample(&clean, INPUT_RATE_HZ, INPUT_RATE_HZ * (1.0 + 40e-6));
     let mut channel = channel(DrmMode::Drm30, None);
     let out = run(&mut channel, &iq);
     let status = status(&out);

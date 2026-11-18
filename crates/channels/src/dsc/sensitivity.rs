@@ -1,8 +1,8 @@
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
+use sdrmm_decoder::link::DataLinkMessage;
 
 use super::equivalence::{CALLS, offset_transmission, run_ours, run_xng};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 type Decode = fn(&[Complex<f32>], usize) -> Vec<DataLinkMessage>;
 
@@ -98,9 +98,13 @@ fn decodes_where_xng_cannot() {
 fn noise_false_alarms() {
     let minutes = env_or("DSC_NOISE_MINUTES", 10usize);
     let mut iq = vec![Complex::new(0.0, 0.0); minutes * 60 * 8_000];
-    crate::testutil::add_awgn(&mut iq, 1.0, 77);
+    sdrmm_decoder_test_support::add_awgn(&mut iq, 1.0, 77);
     let mut filtered = Vec::new();
-    super::channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(&iq, &mut filtered);
     for (name, decode) in [("xng", run_xng as Decode), ("ours", run_ours)] {
         let messages = decode(&filtered, 4_096);
         let valid = messages.iter().filter(|m| m.crc_ok).count();

@@ -8,7 +8,12 @@ import type {
   PatchNode,
   PortSpec,
 } from "../lib/types";
-import { catalogBody, channelPortsNamed, CATALOG as REAL_CATALOG } from "../test/catalog";
+import {
+  catalogBody,
+  channelPortsNamed,
+  processorBody,
+  CATALOG as REAL_CATALOG,
+} from "../test/catalog";
 import { portName, resolvedNodeOf, resolvedPatch, resolvedPort } from "../test/resolved";
 import {
   addEdge,
@@ -532,20 +537,24 @@ function laneInputs(graph: PatchGraph, lanes: number): string[] {
     .map((spec) => portLabel(spec.name, ports));
 }
 
+function running(type: string): PatchNode {
+  return { id: type, position: { x: 0, y: 0 }, ...processorBody(type) };
+}
+
 describe("arrays", () => {
   it("labels the resolved lane inputs from one", () => {
     expect(laneInputs(lanesWired([]), 1)).toEqual(["lane"]);
     expect(laneInputs(lanesWired([0, 1]), 3)).toEqual(["lane1", "lane2", "lane3"]);
   });
 
-  it("sizes new processor kinds", () => {
+  it("sizes a processor node by the face its type declares", () => {
     expect(nodeSize("array")).toEqual({ w: 460 });
-    expect(nodeSize("passive_radar")).toEqual({ w: 560, h: 540 });
-    expect(isResizable("spatial_spectrum")).toBe(true);
-    expect(isResizable("polarimeter")).toBe(false);
-    expect(nodeMinSize("passive_radar", []).w).toBe(420);
-    expect(nodeMinSize("spatial_spectrum", [])).toEqual({ w: 400, h: 300 });
-    expect(nodeMinSize("correlator", [])).toEqual({ w: 380, h: 340 });
+    expect(nodeSize(running("passive_radar"))).toEqual({ w: 560, h: 540 });
+    expect(isResizable(running("spatial_spectrum"))).toBe(true);
+    expect(isResizable(running("polarimeter"))).toBe(false);
+    expect(nodeMinSize(running("passive_radar"), []).w).toBe(420);
+    expect(nodeMinSize(running("spatial_spectrum"), [])).toEqual({ w: 400, h: 300 });
+    expect(nodeMinSize(running("correlator"), [])).toEqual({ w: 380, h: 340 });
   });
 });
 

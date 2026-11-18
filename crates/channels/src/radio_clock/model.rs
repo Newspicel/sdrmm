@@ -127,7 +127,6 @@ mod model_tests {
     use sdrmm_wire::DecoderEvent;
 
     use super::*;
-    use crate::gnss::GnssFrame;
 
     fn field<'a>(view: &'a Presentation, label: &str) -> Option<&'a FieldValue> {
         view.fields
@@ -137,8 +136,7 @@ mod model_tests {
     }
 
     #[test]
-    fn clock_and_gnss_summaries_keep_the_measurements_used_by_the_live_log() {
-        crate::registry::init();
+    fn a_clock_summary_keeps_the_measurements_used_by_the_live_log() {
         let clock = DecoderEvent::of(&RadioClockFrame {
             standard: RadioClockStandard::Dcf77,
             datetime: "2026-08-15T12:34:00+02:00".to_owned(),
@@ -150,22 +148,6 @@ mod model_tests {
         });
         assert_eq!(clock.present().summary, "DCF77 · 2026-08-15T12:34:00+02:00");
         assert_eq!(clock.present().entity.as_deref(), Some("DCF77"));
-
-        let gnss = DecoderEvent::of(&GnssFrame {
-            prn: 7,
-            doppler_hz: 1_000.0,
-            code_phase_chips: 158.34,
-            cn0_db_hz: 44.5,
-            subframe: None,
-            tow_seconds: None,
-            week: None,
-            words: Vec::new(),
-        });
-        assert_eq!(
-            gnss.present().summary,
-            "GPS PRN 7 · +1000 Hz · 44.5 dB-Hz · acquired"
-        );
-        assert_eq!(gnss.present().entity.as_deref(), Some("GPS-7"));
     }
 
     #[test]

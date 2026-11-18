@@ -6,6 +6,7 @@ use sdrmm_dsp::SyncDetector;
 use super::RATE;
 
 pub(crate) const PREAMBLE_BYTE: u8 = 0xAB;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const PREAMBLE_BYTES: usize = 16;
 const SYNC_BYTES: u32 = 4;
 const SYNC_TOLERANCE: u32 = 2;

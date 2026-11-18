@@ -10,11 +10,13 @@ publish = false
 
 [features]
 denoise-models = ["dep:sdrmm-wire", "dep:reqwest", "dep:sha2"]
+xng = ["dep:serde_json"]
 
 [dependencies]
 sdrmm-wire = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["blocking"], optional = true }
 sha2 = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 
 [lints]
 workspace = true

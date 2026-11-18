@@ -82,7 +82,7 @@ impl CircuitReceiver {
         match event {
             CChannelEvent::SignalUnit(su) => Some(CircuitEvent::SignalUnit {
                 kind: su_type_name(su[0]),
-                details: json!({ "channel": "c-channel", "su": crate::datalink::hex(su) }),
+                details: json!({ "channel": "c-channel", "su": sdrmm_crypto::hex_string(su) }),
             }),
             CChannelEvent::Voice(_) => {
                 let gap = (VOICE_GAP_SECONDS * INPUT_RATE) as u64;

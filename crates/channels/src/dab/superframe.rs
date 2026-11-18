@@ -1,6 +1,6 @@
-use sdrmm_dsp::{DVB_PRIMITIVE, ReedSolomon, crc16_msb};
+use sdrmm_dsp::{GF256_PRIMITIVE, ReedSolomon, crc16_genibus_ok, crc16_msb};
 
-use crate::AUDIO_RATE;
+use sdrmm_decoder::AUDIO_RATE;
 
 pub const FRAMES: usize = 5;
 pub const CIF_AUDIO_FRAMES: usize = AUDIO_RATE as usize * 24 / 1_000;
@@ -16,9 +16,7 @@ pub fn firecode(header: &[u8]) -> u16 {
 
 #[must_use]
 pub fn au_crc_ok(au: &[u8]) -> bool {
-    au.len() > 2
-        && !crc16_msb(0x1021, 0xFFFF, &au[..au.len() - 2])
-            == u16::from_be_bytes([au[au.len() - 2], au[au.len() - 1]])
+    au.len() > 2 && crc16_genibus_ok(au)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -174,7 +172,7 @@ impl SuperframeAssembler {
     #[must_use]
     pub fn new(frame_bytes: usize) -> Option<Self> {
         (frame_bytes > 0 && (FRAMES * frame_bytes).is_multiple_of(CODEWORD)).then(|| Self {
-            reed_solomon: ReedSolomon::new(DVB_PRIMITIVE, 0, CODEWORD - DATA),
+            reed_solomon: ReedSolomon::new(GF256_PRIMITIVE, 0, CODEWORD - DATA),
             frame_bytes,
             window: Vec::with_capacity(FRAMES * frame_bytes),
             repaired: Vec::with_capacity(FRAMES * frame_bytes),
@@ -271,7 +269,7 @@ impl SuperframeBuilder {
     #[must_use]
     pub fn new(frame_bytes: usize) -> Option<Self> {
         (frame_bytes > 0 && (FRAMES * frame_bytes).is_multiple_of(CODEWORD)).then(|| Self {
-            reed_solomon: ReedSolomon::new(DVB_PRIMITIVE, 0, CODEWORD - DATA),
+            reed_solomon: ReedSolomon::new(GF256_PRIMITIVE, 0, CODEWORD - DATA),
             frame_bytes,
         })
     }
@@ -328,7 +326,7 @@ impl SuperframeBuilder {
 fn write_unit(slot: &mut [u8], payload: &[u8]) {
     let end = slot.len();
     slot[..payload.len()].copy_from_slice(payload);
-    let crc = !crc16_msb(0x1021, 0xFFFF, &slot[..end - 2]);
+    let crc = sdrmm_dsp::crc16_genibus(&slot[..end - 2]);
     slot[end - 2..].copy_from_slice(&crc.to_be_bytes());
 }
 

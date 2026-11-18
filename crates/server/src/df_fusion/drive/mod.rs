@@ -1,14 +1,13 @@
 use num_complex::Complex;
-use sdrmm_channels::array_processor::{
+use sdrmm_array::{
     ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, GeoFix, OutputSlots, Pose,
     ProcessorOutput, create_processor, geometry_of,
 };
 use sdrmm_dsp::array::manifold::Direction;
 use sdrmm_dsp::scene::{ArrayScene, HeadingTrack, SceneCopy, SceneSignal, SceneSource};
 use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, Attitude, Coherence, DfBearing, DfEstimate, DfParams,
-    HeadingSource, NavTarget, PositionFix, ProcessorParams, ProcessorReading, TriangulationParams,
-    Winding, geo, geo::Enu, geo::LatLon,
+    ArrayGeometry, ArrayTuningMode, Attitude, Coherence, DfBearing, DfEstimate, HeadingSource,
+    NavTarget, PositionFix, TriangulationParams, Winding, geo, geo::Enu, geo::LatLon,
 };
 
 use super::NodeFusion;
@@ -224,7 +223,7 @@ struct Rig {
     centers: Vec<f64>,
     scene: ArrayScene,
     processor: Box<dyn ArrayProcessor>,
-    report: Option<ProcessorReading>,
+    report: Option<sdrmm_array::Reading>,
     bearings: Vec<DfBearing>,
     unix_ns: u64,
 }
@@ -245,11 +244,11 @@ impl Rig {
         )
         .with_noise_db(0.0)
         .with_seed(11);
-        let df = DfParams {
+        let df = sdrmm_array::df::DfParams {
             offset_hz: OFFSET_HZ,
             bandwidth_hz: BANDWIDTH_HZ,
             report_ms: REPORT_MS,
-            ..DfParams::default()
+            ..sdrmm_array::df::DfParams::default()
         };
         let processor = {
             let ctx = ArrayCtx {
@@ -265,14 +264,14 @@ impl Rig {
                 tuning: ArrayTuningMode::Together,
                 max_block: BLOCK,
             };
-            create_processor(&ctx, &ProcessorParams::Df(df)).expect("a df processor")
+            create_processor(&ctx, &sdrmm_array::Params::new(df)).expect("a df processor")
         };
         Self {
             centers,
             scene,
             processor,
-            report: ProcessorReading::empty("df"),
-            bearings: vec![sdrmm_channels::df::reserved_bearing(8); 2],
+            report: sdrmm_array::descriptor("df").and_then(|descriptor| descriptor.reading()),
+            bearings: vec![sdrmm_array::df::reserved_bearing(8); 2],
             unix_ns: START_NS,
         }
     }

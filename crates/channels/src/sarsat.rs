@@ -1,7 +1,10 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod demod;
 pub(crate) mod message;
@@ -9,17 +12,16 @@ pub(crate) mod message;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass};
+use sdrmm_dsp::SyncDetector;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use demod::{BIT_RATE, PHASE_DEVIATION, PREAMBLE_S};
 use demod::{Demod, RATE, Search};
 use message::{Bits, LONG_BITS, PDF1_BITS, SHORT_BITS};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) const BIT_SYNC_BITS: usize = 15;
@@ -142,7 +144,7 @@ pub struct SarsatChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<SarsatParams, ChannelError> {
-    crate::settings_of::<SarsatParams>(settings)
+    sdrmm_decoder::settings_of::<SarsatParams>(settings)
 }
 
 fn check_params(params: &SarsatParams) -> Result<(), ChannelError> {
@@ -164,13 +166,9 @@ pub(crate) fn occupied_band(params: &SarsatParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &SarsatParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: &SarsatParams) -> Result<FilterSpec, ChannelError> {
     check_params(params)?;
-    let half = params.bandwidth_hz / 2.0;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / RATE),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, params.bandwidth_hz / 2.0))
 }
 
 impl SarsatChannel {
@@ -309,7 +307,7 @@ impl NativeChannel for SarsatChannel {
     }
 }
 
-impl ChannelRx for SarsatChannel {
+impl Channel for SarsatChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         check_params(&params)?;
@@ -363,13 +361,17 @@ fn sarsat_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn sarsat_decoder() -> Native<SarsatParams> {
-    Native::new::<SarsatChannel>(occupied_band)
+    let decoder = Native::new::<SarsatChannel>(occupied_band)
         .filter(channel_filter)
         .home(406_034_000.0)
         .signatures(sarsat_signatures)
         .trial(sarsat_trial)
         .form(sarsat_form)
-        .kinds(sarsat_kinds)
+        .kinds(sarsat_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn sarsat_form() -> Vec<SettingField> {
@@ -380,5 +382,7 @@ fn sarsat_kinds() -> Vec<KindSpec> {
     vec![crate::sarsat::sarsat_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

@@ -1,0 +1,531 @@
+use sdrmm_wire::{Modulation, Sideband};
+
+use super::{detect::Band, features::Waveform};
+
+const KEYED_DUTY: f32 = 0.9;
+const KEYED_DEPTH_DB: f32 = 15.0;
+const KEYED_GAP: f32 = 0.15;
+const AMPLITUDE_MODULATED: f32 = 0.18;
+const CARRIER_LINE_DB: f32 = 12.0;
+const SIDEBAND_SKEW: f32 = 0.45;
+const CARRIER_BANDWIDTH_HZ: f64 = 2_500.0;
+const CARRIER_SPREAD_HZ: f64 = 100.0;
+const PHASE_LINE_DB: f32 = 10.0;
+const FLAT_SPECTRUM: f32 = 0.55;
+const FM_SPREAD_HZ: f64 = 200.0;
+const FM_SPREAD_FRACTION: f64 = 0.02;
+const FREQUENCY_NOISE_MARGIN: f64 = 1.5;
+const LEVEL_SEPARATION: f64 = 0.7;
+const MAX_SHIFT_INDEX: f64 = 12.0;
+const DWELL_VALLEY: f32 = 0.25;
+const NO_CLOCK_FIRMNESS: f32 = 0.5;
+const STEADY_RIPPLE: f32 = 1e-3;
+const SNR_FLOOR_DB: f32 = 3.0;
+const SNR_TRUSTED_DB: f32 = 18.0;
+const OFDM_STRENGTH: f32 = 0.05;
+const OFDM_STRENGTH_SPAN: f32 = 0.15;
+const OFDM_ENVELOPE: f32 = 0.2;
+const OFDM_ENVELOPE_MAX: f32 = 0.8;
+const OFDM_DUTY: f32 = 0.9;
+
+#[derive(Clone, Copy)]
+pub struct Verdict {
+    pub modulation: Modulation,
+    pub confidence: f32,
+    pub sideband: Option<Sideband>,
+}
+
+fn firmness(value: f32, threshold: f32, span: f32) -> f32 {
+    ((value - threshold) / span).clamp(0.0, 1.0)
+}
+
+fn steady_snr_db(waveform: &Waveform) -> f32 {
+    let ripple = waveform.envelope_variation.max(STEADY_RIPPLE);
+    -10.0 * (2.0 * ripple * ripple).log10()
+}
+
+fn quality(snr_db: f32) -> f32 {
+    ((snr_db - SNR_FLOOR_DB) / (SNR_TRUSTED_DB - SNR_FLOOR_DB)).clamp(0.15, 1.0)
+}
+
+fn amplitude_modulation(waveform: &Waveform) -> f32 {
+    (waveform.envelope_variation.powi(2) - waveform.noise_variation.powi(2))
+        .max(0.0)
+        .sqrt()
+}
+
+fn swept(waveform: &Waveform) -> bool {
+    waveform
+        .symbol_rate_hz
+        .is_some_and(|rate| waveform.deviation_hz > rate * MAX_SHIFT_INDEX)
+}
+
+fn shift_levels(band: &Band, waveform: &Waveform, modulated: f32) -> Option<u8> {
+    let levels @ (2 | 4 | 8) = waveform.frequency_levels else {
+        return None;
+    };
+    if swept(waveform) {
+        return None;
+    }
+    let parted = if levels == 2 {
+        waveform.level_valley <= DWELL_VALLEY
+    } else {
+        waveform.level_valley <= DWELL_VALLEY
+            || waveform
+                .symbol_rate_hz
+                .is_some_and(|rate| rate >= 2.0 * waveform.deviation_hz)
+    };
+    let separated = parted
+        && waveform.deviation_hz >= waveform.frequency_spread_hz * LEVEL_SEPARATION
+        && waveform.frequency_spread_hz > band.bandwidth_hz * FM_SPREAD_FRACTION
+        && modulated <= AMPLITUDE_MODULATED;
+    separated.then_some(levels)
+}
+
+fn keyed(waveform: &Waveform) -> bool {
+    waveform.duty < KEYED_DUTY
+        && waveform.on_off_db > KEYED_DEPTH_DB
+        && waveform.keying_gap <= KEYED_GAP
+}
+
+fn swings(band: &Band, waveform: &Waveform) -> bool {
+    waveform.frequency_spread_hz > FM_SPREAD_HZ.max(band.bandwidth_hz * FM_SPREAD_FRACTION)
+}
+
+/// A four-phase line. A slotted PSK carrier such as TETRA also correlates at its slot length like
+/// a cyclic prefix, so without a measured guard this line outweighs the prefix.
+fn quadrature_line(waveform: &Waveform) -> bool {
+    waveform.quartic_line_db > PHASE_LINE_DB && waveform.quartic_line_db > waveform.square_line_db
+}
+
+pub fn classify(band: &Band, waveform: &Waveform) -> Verdict {
+    let snr_db = band.snr_db.max(steady_snr_db(waveform));
+    let quality = quality(snr_db);
+    let settle = |modulation, firmness: f32| Verdict {
+        modulation,
+        confidence: ((0.5 + 0.5 * firmness) * quality).clamp(0.0, 1.0),
+        sideband: None,
+    };
+    let modulated = amplitude_modulation(waveform);
+
+    if waveform.ofdm_symbol_us.is_some()
+        && (waveform.ofdm_guard_us.is_some() || !quadrature_line(waveform))
+        && (OFDM_ENVELOPE..=OFDM_ENVELOPE_MAX).contains(&waveform.envelope_variation)
+        && (waveform.duty >= OFDM_DUTY || waveform.ofdm_guard_us.is_some())
+    {
+        return settle(
+            Modulation::Ofdm,
+            firmness(waveform.ofdm_strength, OFDM_STRENGTH, OFDM_STRENGTH_SPAN),
+        );
+    }
+
+    if let Some(levels) = shift_levels(band, waveform, modulated) {
+        let firm = firmness(snr_db, SNR_FLOOR_DB, 15.0)
+            * if waveform.symbol_rate_hz.is_some() {
+                1.0
+            } else {
+                NO_CLOCK_FIRMNESS
+            };
+        return settle(
+            match levels {
+                8 => Modulation::Fsk8,
+                4 => Modulation::Fsk4,
+                _ => Modulation::Fsk2,
+            },
+            firm,
+        );
+    }
+
+    if keyed(waveform) {
+        return settle(
+            Modulation::Ook,
+            firmness(waveform.on_off_db, KEYED_DEPTH_DB, 20.0),
+        );
+    }
+
+    if modulated <= AMPLITUDE_MODULATED {
+        if band.bandwidth_hz < CARRIER_BANDWIDTH_HZ
+            && waveform.frequency_spread_hz
+                < CARRIER_SPREAD_HZ.max(waveform.frequency_noise_hz * FREQUENCY_NOISE_MARGIN)
+        {
+            return settle(Modulation::Carrier, 1.0);
+        }
+        if swings(band, waveform) {
+            return settle(Modulation::Fm, firmness(snr_db, SNR_FLOOR_DB, 20.0));
+        }
+    } else {
+        if band.carrier_db > CARRIER_LINE_DB {
+            return settle(
+                Modulation::Am,
+                firmness(band.carrier_db, CARRIER_LINE_DB, 12.0),
+            );
+        }
+        if band.skew.abs() > SIDEBAND_SKEW {
+            return Verdict {
+                sideband: sideband_of(band),
+                ..settle(
+                    Modulation::Ssb,
+                    firmness(band.skew.abs(), SIDEBAND_SKEW, 0.6),
+                )
+            };
+        }
+    }
+
+    if quadrature_line(waveform) {
+        return settle(
+            Modulation::Psk4,
+            firmness(waveform.quartic_line_db, PHASE_LINE_DB, 15.0),
+        );
+    }
+    if waveform.square_line_db > PHASE_LINE_DB {
+        return settle(
+            Modulation::Psk2,
+            firmness(waveform.square_line_db, PHASE_LINE_DB, 15.0),
+        );
+    }
+
+    if modulated > AMPLITUDE_MODULATED {
+        return settle(Modulation::Am, 0.0);
+    }
+    if band.flatness > FLAT_SPECTRUM {
+        return settle(
+            Modulation::NoiseLike,
+            firmness(band.flatness, FLAT_SPECTRUM, 0.3),
+        );
+    }
+    settle(Modulation::Unknown, 0.0)
+}
+
+fn sideband_of(band: &Band) -> Option<Sideband> {
+    if band.center_hz.abs() < band.bandwidth_hz * 0.3 {
+        return None;
+    }
+    Some(if band.center_hz > 0.0 {
+        Sideband::Usb
+    } else {
+        Sideband::Lsb
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn band(bandwidth_hz: f64) -> Band {
+        Band {
+            center_hz: 0.0,
+            bandwidth_hz,
+            snr_db: 25.0,
+            carrier_db: 3.0,
+            flatness: 0.3,
+            skew: 0.0,
+            peak_hz: 0.0,
+        }
+    }
+
+    fn steady() -> Waveform {
+        Waveform {
+            duty: 1.0,
+            on_off_db: 1.0,
+            ..Waveform::default()
+        }
+    }
+
+    #[test]
+    fn four_frequency_levels_are_four_level_keying() {
+        let w = Waveform {
+            frequency_levels: 4,
+            deviation_hz: 1_944.0,
+            frequency_spread_hz: 1_400.0,
+            symbol_rate_hz: Some(4_800.0),
+            ..steady()
+        };
+        let verdict = classify(&band(12_500.0), &w);
+        assert_eq!(verdict.modulation, Modulation::Fsk4);
+        assert!(verdict.confidence > 0.7, "{}", verdict.confidence);
+    }
+
+    #[test]
+    fn a_tone_at_broadcast_deviation_is_analog_fm_not_four_level_keying() {
+        let w = Waveform {
+            frequency_levels: 4,
+            deviation_hz: 31_370.0,
+            frequency_spread_hz: 24_484.0,
+            level_valley: 0.74,
+            symbol_rate_hz: Some(1_998.0),
+            ..steady()
+        };
+        let mut b = band(192_000.0);
+        b.carrier_db = 49.7;
+        b.flatness = 0.0;
+        assert_eq!(classify(&b, &w).modulation, Modulation::Fm);
+    }
+
+    #[test]
+    fn a_slow_pager_at_a_wide_shift_is_still_two_level_keying() {
+        let w = Waveform {
+            frequency_levels: 2,
+            deviation_hz: 4_500.0,
+            frequency_spread_hz: 4_500.0,
+            level_valley: 0.02,
+            symbol_rate_hz: Some(512.0),
+            ..steady()
+        };
+        assert_eq!(classify(&band(16_000.0), &w).modulation, Modulation::Fsk2);
+    }
+
+    #[test]
+    fn a_deeply_keyed_carrier_is_on_off_keying() {
+        let w = Waveform {
+            duty: 0.4,
+            on_off_db: 40.0,
+            frequency_levels: 1,
+            ..Waveform::default()
+        };
+        assert_eq!(classify(&band(20_000.0), &w).modulation, Modulation::Ook);
+    }
+
+    #[test]
+    fn the_envelope_of_bare_noise_is_not_keying() {
+        let w = Waveform {
+            duty: 0.75,
+            on_off_db: 16.0,
+            keying_gap: 1.0,
+            envelope_variation: 0.52,
+            noise_variation: 0.52,
+            frequency_levels: 1,
+            ..Waveform::default()
+        };
+        assert_ne!(classify(&band(20_000.0), &w).modulation, Modulation::Ook);
+    }
+
+    #[test]
+    fn amplitude_over_a_carrier_is_am() {
+        let w = Waveform {
+            envelope_variation: 0.4,
+            ..steady()
+        };
+        let mut b = band(9_000.0);
+        b.carrier_db = 25.0;
+        assert_eq!(classify(&b, &w).modulation, Modulation::Am);
+    }
+
+    #[test]
+    fn a_lopsided_band_with_no_carrier_is_sideband() {
+        let w = Waveform {
+            envelope_variation: 0.5,
+            ..steady()
+        };
+        let mut b = band(2_700.0);
+        b.skew = 0.9;
+        b.center_hz = 1_400.0;
+        let verdict = classify(&b, &w);
+        assert_eq!(verdict.modulation, Modulation::Ssb);
+        assert_eq!(verdict.sideband, Some(Sideband::Usb));
+    }
+
+    #[test]
+    fn a_shift_is_not_amplitude_modulated_by_the_noise_on_it() {
+        let w = Waveform {
+            envelope_variation: 0.22,
+            noise_variation: 0.24,
+            frequency_levels: 2,
+            frequency_spread_hz: 4_800.0,
+            deviation_hz: 4_500.0,
+            level_valley: 0.1,
+            ..steady()
+        };
+        let mut b = band(12_500.0);
+        b.snr_db = 16.0;
+        b.carrier_db = 25.0;
+        assert_eq!(classify(&b, &w).modulation, Modulation::Fsk2);
+    }
+
+    #[test]
+    fn amplitude_over_the_noise_is_still_amplitude_modulation() {
+        let w = Waveform {
+            envelope_variation: 0.38,
+            noise_variation: 0.16,
+            ..steady()
+        };
+        let mut b = band(9_000.0);
+        b.snr_db = 20.0;
+        b.carrier_db = 25.0;
+        assert_eq!(classify(&b, &w).modulation, Modulation::Am);
+    }
+
+    #[test]
+    fn bumps_inside_a_continuum_are_not_a_shift() {
+        let w = Waveform {
+            frequency_levels: 2,
+            frequency_spread_hz: 2_000.0,
+            deviation_hz: 600.0,
+            level_valley: 0.9,
+            ..steady()
+        };
+        assert_eq!(classify(&band(12_500.0), &w).modulation, Modulation::Fm);
+    }
+
+    #[test]
+    fn a_clockless_shift_is_reported_less_confidently_than_a_clocked_one() {
+        let w = Waveform {
+            frequency_levels: 2,
+            frequency_spread_hz: 4_800.0,
+            deviation_hz: 4_500.0,
+            level_valley: 0.1,
+            ..steady()
+        };
+        let clocked = Waveform {
+            symbol_rate_hz: Some(1_200.0),
+            ..w
+        };
+        let b = band(12_500.0);
+        assert_eq!(classify(&b, &w).modulation, Modulation::Fsk2);
+        assert!(classify(&b, &w).confidence < classify(&b, &clocked).confidence);
+    }
+
+    #[test]
+    fn a_bare_narrow_line_is_a_carrier_not_bpsk() {
+        let w = Waveform {
+            frequency_levels: 1,
+            frequency_spread_hz: 4.0,
+            square_line_db: 40.0,
+            quartic_line_db: 38.0,
+            ..steady()
+        };
+        assert_eq!(classify(&band(400.0), &w).modulation, Modulation::Carrier);
+    }
+
+    #[test]
+    fn noisy_carriers_are_not_fm() {
+        for noise in [0.2, 0.4, 0.6] {
+            let mut iq = sdrmm_modem_test_support::noise::complex_noise(83, noise, 5_000);
+            for sample in &mut iq {
+                *sample += num_complex::Complex::new(1.0, 0.0);
+            }
+            let mut b = band(1_250.0);
+            b.snr_db = 15.2;
+            b.carrier_db = 25.0;
+            let w = super::super::features::Meter::new()
+                .measure(&super::super::features::Zoom { rate: 5_000.0, iq }, &b);
+            assert_eq!(classify(&b, &w).modulation, Modulation::Carrier, "{w:?}");
+        }
+    }
+
+    #[test]
+    fn a_clockless_two_humped_continuum_is_analog_fm() {
+        let w = Waveform {
+            frequency_levels: 2,
+            frequency_spread_hz: 26_000.0,
+            deviation_hz: 28_000.0,
+            level_valley: 0.36,
+            ..steady()
+        };
+        assert_eq!(classify(&band(130_000.0), &w).modulation, Modulation::Fm);
+    }
+
+    #[test]
+    fn a_wide_frequency_continuum_is_analog_fm() {
+        let w = Waveform {
+            frequency_levels: 1,
+            frequency_spread_hz: 2_500.0,
+            ..steady()
+        };
+        assert_eq!(classify(&band(12_500.0), &w).modulation, Modulation::Fm);
+    }
+
+    #[test]
+    fn confidence_follows_the_signal_to_noise_ratio() {
+        let shift = |ripple: f32| Waveform {
+            frequency_levels: 2,
+            frequency_spread_hz: 2_000.0,
+            deviation_hz: 2_000.0,
+            symbol_rate_hz: Some(9_600.0),
+            envelope_variation: ripple,
+            noise_variation: ripple,
+            ..steady()
+        };
+        let mut weak = band(12_500.0);
+        weak.snr_db = 4.0;
+        let strong = band(12_500.0);
+        assert_eq!(classify(&weak, &shift(0.45)).modulation, Modulation::Fsk2);
+        assert!(
+            classify(&weak, &shift(0.45)).confidence < classify(&strong, &shift(0.04)).confidence
+        );
+    }
+
+    #[test]
+    fn a_cyclic_prefix_makes_it_ofdm_whatever_the_envelope_does() {
+        let w = Waveform {
+            envelope_variation: 0.5,
+            duty: 0.99,
+            frequency_levels: 3,
+            frequency_spread_hz: 40_000.0,
+            ofdm_symbol_us: Some(1_000.0),
+            ofdm_guard_us: Some(246.0),
+            ofdm_strength: 0.18,
+            ..steady()
+        };
+        let mut b = band(192_000.0);
+        b.flatness = 0.9;
+        let verdict = classify(&b, &w);
+        assert_eq!(verdict.modulation, Modulation::Ofdm);
+        assert!(verdict.confidence > 0.7, "{}", verdict.confidence);
+    }
+
+    #[test]
+    fn a_measured_guard_makes_it_ofdm_through_its_envelope_peaks() {
+        let w = Waveform {
+            envelope_variation: 0.26,
+            duty: 0.55,
+            ofdm_symbol_us: Some(21_333.0),
+            ofdm_guard_us: Some(5_333.0),
+            ofdm_strength: 0.2,
+            square_line_db: 12.8,
+            quartic_line_db: 6.9,
+            ..steady()
+        };
+        assert_eq!(classify(&band(11_000.0), &w).modulation, Modulation::Ofdm);
+    }
+
+    #[test]
+    fn a_slot_period_without_a_guard_does_not_hide_a_phase_line() {
+        let w = Waveform {
+            envelope_variation: 0.23,
+            symbol_rate_hz: Some(18_000.0),
+            ofdm_symbol_us: Some(14_167.0),
+            ofdm_strength: 0.2,
+            square_line_db: 20.0,
+            quartic_line_db: 30.0,
+            ..steady()
+        };
+        assert_eq!(classify(&band(24_000.0), &w).modulation, Modulation::Psk4);
+    }
+
+    #[test]
+    fn eight_frequency_levels_are_eight_level_keying() {
+        let w = Waveform {
+            frequency_levels: 8,
+            deviation_hz: 22.0,
+            frequency_spread_hz: 15.0,
+            level_valley: 0.1,
+            symbol_rate_hz: Some(6.25),
+            ..steady()
+        };
+        assert_eq!(classify(&band(60.0), &w).modulation, Modulation::Fsk8);
+    }
+
+    #[test]
+    fn a_constant_envelope_is_never_ofdm_whatever_correlates() {
+        let w = Waveform {
+            frequency_levels: 4,
+            deviation_hz: 1_944.0,
+            frequency_spread_hz: 1_400.0,
+            symbol_rate_hz: Some(4_800.0),
+            ofdm_symbol_us: Some(30_000.0),
+            ofdm_strength: 0.3,
+            ..steady()
+        };
+        assert_eq!(classify(&band(12_500.0), &w).modulation, Modulation::Fsk4);
+    }
+}

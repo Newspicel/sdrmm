@@ -1,5 +1,6 @@
+use sdrmm_modem::spread::css::{Slope, wrap};
+
 use super::{
-    chirp::{Slope, wrap},
     drift::{Clock, DriftFit, Prior},
     filter::Window,
     payload::{Lock, Start},

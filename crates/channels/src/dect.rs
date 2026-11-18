@@ -1,12 +1,14 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{ANY_MODULATION, HzRange, SignalSignature};
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod bfield;
 pub(crate) mod burst;
 mod capabilities;
-pub(crate) mod g726;
 mod identity;
 pub(crate) mod mac;
 mod station;
@@ -17,15 +19,12 @@ use std::sync::LazyLock;
 
 use burst::{Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
 };
 use wideband::Wideband;
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
-};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 
 const CHANNEL_TAPS: usize = 63;
 
@@ -108,13 +107,10 @@ pub(crate) fn occupied_band(params: DectParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: DectParams) -> ChannelFilter {
+pub(crate) fn channel_filter(params: DectParams) -> FilterSpec {
     match params.span {
-        DectSpan::Carrier => ChannelFilter::Symmetric(Decimator::new(
-            &design_lowpass(CHANNEL_TAPS, OCCUPIED_BANDWIDTH_HZ / 2.0 / INPUT_RATE_HZ),
-            1,
-        )),
-        DectSpan::Band => ChannelFilter::Passthrough,
+        DectSpan::Carrier => FilterSpec::lowpass(CHANNEL_TAPS, OCCUPIED_BANDWIDTH_HZ / 2.0),
+        DectSpan::Band => FilterSpec::Passthrough,
     }
 }
 
@@ -137,7 +133,7 @@ impl NativeChannel for DectChannel {
     }
 }
 
-impl ChannelRx for DectChannel {
+impl Channel for DectChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         let rebuilt = params.span != self.params.span
@@ -203,13 +199,17 @@ fn dect_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn dect_decoder() -> Native<DectParams> {
-    Native::new::<DectChannel>(|p| occupied_band(*p))
+    let decoder = Native::new::<DectChannel>(|p| occupied_band(*p))
         .filter(|p| Ok(channel_filter(*p)))
         .input_rate(|p| input_rate(*p))
         .home(1_897_344_000.0)
         .signatures(dect_signatures)
         .form(dect_form)
-        .kinds(dect_kinds)
+        .kinds(dect_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn dect_form() -> Vec<SettingField> {
@@ -224,5 +224,7 @@ fn dect_kinds() -> Vec<KindSpec> {
     vec![crate::dect::dect_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

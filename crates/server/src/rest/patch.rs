@@ -29,7 +29,7 @@ pub(super) async fn post_patch_wiring(
     let verdicts = tokio::task::spawn_blocking(move || {
         let live = engine.snapshot();
         let ctx = ResolveCtx {
-            descriptors: Some(&sdrmm_channels::descriptors()),
+            descriptors: Some(&sdrmm_decoder::descriptors()),
             live: Some(&live),
         };
         resolve::wiring(&request.graph, &request.from, &ctx)

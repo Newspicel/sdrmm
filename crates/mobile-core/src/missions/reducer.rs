@@ -7,7 +7,7 @@ use sdrmm_wire::{
     hunt::HuntStatus,
     mission as wire,
     phone::PhoneSelf,
-    processor::ProcessorReading,
+    processor::{ProcessorReading, df::DfReading},
     radar::RadarUpdate,
     survey::SurveyGrid,
     ws::{ServerEvent, StateScope, SurfaceFit, SurfaceRefusal},
@@ -317,7 +317,7 @@ impl Reducer {
             ServerEvent::StateChanged { scope } => self.state_changed(&scope, now_ms),
             ServerEvent::HuntUpdate { device_set, status } => self.hunt(device_set, *status),
             ServerEvent::ProcessorUpdate { node, reading, .. } => {
-                self.reading(&node, *reading, now_ms);
+                self.reading(&node, &reading, now_ms);
             }
             ServerEvent::ArrayUpdate { status } => {
                 let routed = match &mut self.open {
@@ -426,33 +426,27 @@ impl Reducer {
         self.emit(CoreEvent::Hunt { view });
     }
 
-    fn reading(&mut self, node: &str, reading: ProcessorReading, now_ms: i64) {
+    fn reading(&mut self, node: &str, reading: &ProcessorReading, now_ms: i64) {
         let pose = self.pose;
-        let routed = match (&mut self.open, reading) {
-            (
-                Some(Open {
-                    entry,
-                    view: View::Df { drive, .. },
-                    ..
-                }),
-                ProcessorReading::Df(reading),
-            ) if entry.id() == node => {
+        let routed = match &mut self.open {
+            Some(Open {
+                entry,
+                view: View::Df { drive, .. },
+                ..
+            }) if entry.id() == node => reading.parse::<DfReading>().ok().map(|reading| {
                 drive.reading(reading, pose, now_ms);
-                Some(true)
-            }
-            (
-                Some(Open {
-                    entry,
-                    view: View::Radar(radar),
-                    ..
-                }),
-                ProcessorReading::PassiveRadar(update),
-            ) if entry.id() == node => {
+                true
+            }),
+            Some(Open {
+                entry,
+                view: View::Radar(radar),
+                ..
+            }) if entry.id() == node => reading.parse::<RadarUpdate>().ok().map(|update| {
                 radar.update = Some(update);
                 radar.updated_ms = Some(now_ms);
                 radar.stale = false;
-                Some(false)
-            }
+                false
+            }),
             _ => None,
         };
         match routed {

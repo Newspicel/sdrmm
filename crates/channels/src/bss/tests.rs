@@ -5,7 +5,8 @@ use sdrmm_wire::present::EventPayload;
 use sdrmm_wire::{ChannelParams, DecoderEvent};
 
 use super::{frame::parse, *};
-use crate::{synth::silence, testutil::settings};
+use sdrmm_decoder_test_support::settings;
+use sdrmm_modem::synth::silence;
 
 const RATE: f64 = 48_000.0;
 /// Laid out like a VR-N76 frame heard off air: a callsign, a 12-byte location, a text.
@@ -27,8 +28,8 @@ fn keyed(body: &[u8]) -> Vec<Complex<f32>> {
     iq
 }
 
-pub(crate) fn fixture() -> crate::fixtures::Fixture {
-    crate::fixtures::Fixture::new(
+pub(crate) fn fixture() -> crate::builtin::fixtures::Fixture {
+    crate::builtin::fixtures::Fixture::new(
         ChannelParams::new("bss", &BssParams::default()).expect("bss settings"),
         keyed(&hex_bytes(HANDHELD)),
     )
@@ -221,10 +222,12 @@ fn a_bandwidth_past_the_input_rate_is_refused() {
 
 #[test]
 fn hears_every_frame_of_the_generator_signal() {
-    let signal = crate::synth::catalog::CATALOG
-        .find("bss")
-        .expect("a bss signal");
-    let iq = crate::synth::resample(&(signal.render)(), signal.rate_hz, RATE);
+    let signal = &crate::bss::synth::SIGNALS[0];
+    let iq = sdrmm_modem::synth::resample(
+        &signal.rendered().expect("the bss signal renders"),
+        signal.rate_hz,
+        RATE,
+    );
     let mut rx = channel();
     let mut out = ChannelOutputs::default();
     for block in iq.chunks(2_048) {

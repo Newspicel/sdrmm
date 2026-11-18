@@ -1,11 +1,12 @@
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 
-use super::{RATE, StdcDecoder, frame, packet, tests::offair_channel_iq, to_datalink};
-use crate::{
-    datalink::{self, Quality},
-    testutil::add_awgn,
+use super::{
+    RATE, StdcDecoder, StdcMessage as DataLinkMessage, frame, packet, tests::offair_channel_iq,
+    to_datalink,
 };
+use sdrmm_decoder::link::{self, Quality};
+use sdrmm_decoder_test_support::add_awgn;
+use sdrmm_decoder_test_support::xng;
 
 const SYMBOL_RATE: f64 = 1_200.0;
 
@@ -24,8 +25,9 @@ fn xng_datalink(packet: &xng_mode_stdc::packet::StdcPacket) -> DataLinkMessage {
             channel: None,
         },
     );
-    datalink::message(
+    link::message(
         &converted.body,
+        &xng::FIELDS,
         Quality {
             crc_ok: converted.decode.crc_ok,
             fec_corrected: converted.decode.fec_corrected,
@@ -34,6 +36,7 @@ fn xng_datalink(packet: &xng_mode_stdc::packet::StdcPacket) -> DataLinkMessage {
         },
         converted.raw.as_deref(),
     )
+    .in_area(None)
 }
 
 pub(super) fn run_xng(iq: &[Complex<f32>], chunk: usize) -> Vec<DataLinkMessage> {
@@ -88,7 +91,11 @@ pub(super) fn transmission(
     let mut iq = super::modulate::modulate(&symbols, SYMBOL_RATE, RATE, offset_hz, 0.5);
     add_awgn(&mut iq, sigma, seed);
     let mut filtered = Vec::with_capacity(iq.len());
-    super::channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(&iq, &mut filtered);
     filtered
 }
 

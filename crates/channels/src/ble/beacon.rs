@@ -1,6 +1,6 @@
 use crate::ble::BleBeacon;
 
-use super::ad::hex;
+use sdrmm_crypto::hex_string as hex;
 
 const APPLE: u16 = 0x004C;
 const IBEACON: [u8; 2] = [0x02, 0x15];

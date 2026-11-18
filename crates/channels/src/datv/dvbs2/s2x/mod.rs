@@ -5,7 +5,6 @@ use super::{
 
 #[allow(clippy::approx_constant)]
 mod points;
-pub mod tables;
 
 pub struct Mode {
     pub code: u8,
@@ -33,13 +32,16 @@ impl Mode {
         Constellation::from_points(self.points)
     }
 
-    pub fn deinterleave(&self, symbols: &[f32]) -> Vec<f32> {
+    /// Undoes the column interleaver into `out`, reusing its storage frame after frame.
+    pub fn deinterleave(&self, symbols: &[f32], out: &mut Vec<f32>) {
         let length = Frame::of(self.short).length();
+        out.clear();
         if self.modulation == Modulation::Qpsk {
-            return symbols[..length].to_vec();
+            out.extend_from_slice(&symbols[..length]);
+            return;
         }
         let rows = length.div_ceil(self.order.len());
-        let mut out = vec![0.0; length];
+        out.resize(length, 0.0);
         for row in 0..rows {
             for (position, &column) in self.order.iter().enumerate() {
                 let bit = column * rows + row;
@@ -48,7 +50,6 @@ impl Mode {
                 }
             }
         }
-        out
     }
 
     #[cfg(any(test, feature = "synth"))]

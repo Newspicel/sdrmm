@@ -780,7 +780,7 @@ checksum = "eec09acab5c2227aba2e592d431708305bdeb6d507703f6cd8983fb57b6c5ef7"
 dependencies = [
  "base64 0.22.1",
  "cargo-packager-utils",
- "ctor",
+ "ctor 0.2.9",
  "dirs 5.0.1",
  "dunce",
  "flate2",
@@ -805,7 +805,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b43458dd2ee3cdab3f5b105acd80791383b730380c929018701313d7d299d4e8"
 dependencies = [
- "ctor",
+ "ctor 0.2.9",
 ]
 
 [[package]]
@@ -1456,6 +1456,16 @@ checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
 dependencies = [
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "ctor"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea691ed9f36489d087419b8b2ba3ef27d89621380b4178c73e2445a379e4e0f4"
+dependencies = [
+ "link-section",
+ "linktime-proc-macro",
 ]
 
 [[package]]
@@ -3044,6 +3054,18 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "link-section"
+version = "0.19.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d9aae57673c1a235149777a74d152f3210ebd3e3b13346d2cdb6809e566bd3c"
+
+[[package]]
+name = "linktime-proc-macro"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e57c38c1e860fd37c604281cdfb1dd2216977fd76a50f85ba2f388ef3219616"
 
 [[package]]
 name = "linux-raw-sys"
@@ -5267,6 +5289,8 @@ dependencies = [
  "dirs 7.0.0",
  "getrandom 0.4.3",
  "qrcodegen",
+ "sdrmm-array",
+ "sdrmm-channels",
  "sdrmm-device-soapy",
  "sdrmm-engine",
  "sdrmm-plugins",
@@ -5278,20 +5302,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "sdrmm-channels"
+name = "sdrmm-array"
 version = "0.0.0"
 dependencies = [
- "blip25-vocoder",
- "codec2",
- "criterion",
- "ffmpeg-the-third",
- "flate2",
+ "ctor 1.0.14",
  "jiff",
- "mfsk-core",
  "num-complex",
- "realfft",
  "rtrb",
- "sdrmm-channels",
+ "sdrmm-decoder",
  "sdrmm-dsp",
  "sdrmm-modem",
  "sdrmm-modem-test-support",
@@ -5299,12 +5317,51 @@ dependencies = [
  "sdrmm-wire",
  "serde",
  "serde_json",
- "sha2 0.11.1",
- "symphonia-bundle-mp3",
- "symphonia-core",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "sdrmm-aviation"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "sdrmm-dsp",
+ "sdrmm-test-support",
+ "serde",
+ "serde_json",
  "xng-acars",
+ "xng-types",
+]
+
+[[package]]
+name = "sdrmm-channels"
+version = "0.0.0"
+dependencies = [
+ "blip25-vocoder",
+ "codec2",
+ "criterion",
+ "ctor 1.0.14",
+ "jiff",
+ "mfsk-core",
+ "num-complex",
+ "realfft",
+ "rtrb",
+ "sdrmm-aviation",
+ "sdrmm-channels",
+ "sdrmm-codec",
+ "sdrmm-crypto",
+ "sdrmm-decoder",
+ "sdrmm-decoder-test-support",
+ "sdrmm-dsp",
+ "sdrmm-media",
+ "sdrmm-modem",
+ "sdrmm-modem-test-support",
+ "sdrmm-test-support",
+ "sdrmm-wire",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
  "xng-mode-aero",
  "xng-mode-dsc",
  "xng-mode-hfdl",
@@ -5312,6 +5369,20 @@ dependencies = [
  "xng-mode-stdc",
  "xng-mode-vdl2",
  "xng-types",
+]
+
+[[package]]
+name = "sdrmm-codec"
+version = "0.0.0"
+dependencies = [
+ "blip25-vocoder",
+ "codec2",
+ "num-complex",
+ "rtrb",
+ "sdrmm-dsp",
+ "symphonia-bundle-mp3",
+ "symphonia-core",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5323,6 +5394,42 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "sdrmm-crypto"
+version = "0.0.0"
+dependencies = [
+ "sha2 0.11.1",
+]
+
+[[package]]
+name = "sdrmm-decoder"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+ "sdrmm-codec",
+ "sdrmm-dsp",
+ "sdrmm-modem",
+ "sdrmm-modem-test-support",
+ "sdrmm-test-support",
+ "sdrmm-wire",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "sdrmm-decoder-test-support"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+ "sdrmm-decoder",
+ "sdrmm-modem",
+ "sdrmm-modem-test-support",
+ "sdrmm-wire",
+ "serde_json",
+ "xng-types",
 ]
 
 [[package]]
@@ -5339,6 +5446,8 @@ dependencies = [
  "objc2-foundation",
  "opener",
  "rfd",
+ "sdrmm-array",
+ "sdrmm-channels",
  "sdrmm-device-soapy",
  "sdrmm-engine",
  "sdrmm-plugins",
@@ -5623,7 +5732,7 @@ dependencies = [
 name = "sdrmm-dvsi"
 version = "0.0.0"
 dependencies = [
- "sdrmm-channels",
+ "sdrmm-codec",
  "sdrmm-serial",
  "thiserror 2.0.21",
  "tracing",
@@ -5635,13 +5744,16 @@ version = "0.0.0"
 dependencies = [
  "arc-swap",
  "bytemuck",
+ "ctor 1.0.14",
  "jiff",
  "libc",
  "num-complex",
  "opus",
  "pollster",
  "rtrb",
+ "sdrmm-array",
  "sdrmm-channels",
+ "sdrmm-decoder",
  "sdrmm-device",
  "sdrmm-device-aaronia",
  "sdrmm-device-ad936x",
@@ -5661,6 +5773,7 @@ dependencies = [
  "sdrmm-device-spyserver",
  "sdrmm-device-virtual",
  "sdrmm-dsp",
+ "sdrmm-modem",
  "sdrmm-recorder",
  "sdrmm-test-support",
  "sdrmm-wire",
@@ -5690,6 +5803,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-media"
+version = "0.0.0"
+dependencies = [
+ "ffmpeg-the-third",
+ "rtrb",
+ "sdrmm-codec",
+ "sdrmm-decoder",
+ "sdrmm-modem",
+ "sdrmm-modem-test-support",
+]
+
+[[package]]
 name = "sdrmm-mobile-core"
 version = "0.0.0"
 dependencies = [
@@ -5698,6 +5823,8 @@ dependencies = [
  "rcgen",
  "reqwest 0.13.5",
  "rustls",
+ "sdrmm-array",
+ "sdrmm-channels",
  "sdrmm-device",
  "sdrmm-device-virtual",
  "sdrmm-engine",
@@ -5753,6 +5880,11 @@ name = "sdrmm-plugin"
 version = "0.0.0"
 dependencies = [
  "num-complex",
+ "sdrmm-array",
+ "sdrmm-aviation",
+ "sdrmm-codec",
+ "sdrmm-crypto",
+ "sdrmm-decoder",
  "sdrmm-dsp",
  "sdrmm-modem",
  "sdrmm-wire",
@@ -5775,7 +5907,9 @@ dependencies = [
  "dirs 7.0.0",
  "notify",
  "num-complex",
+ "sdrmm-array",
  "sdrmm-channels",
+ "sdrmm-decoder",
  "sdrmm-dsp",
  "sdrmm-wire",
  "serde",
@@ -5814,6 +5948,7 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "axum-server",
+ "ctor 1.0.14",
  "flate2",
  "futures",
  "gethostname",
@@ -5834,14 +5969,18 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "schemars",
+ "sdrmm-array",
  "sdrmm-channels",
+ "sdrmm-codec",
  "sdrmm-cps",
+ "sdrmm-decoder",
  "sdrmm-device",
  "sdrmm-device-recording",
  "sdrmm-device-virtual",
  "sdrmm-dsp",
  "sdrmm-dvsi",
  "sdrmm-engine",
+ "sdrmm-modem",
  "sdrmm-orbit",
  "sdrmm-recorder",
  "sdrmm-serial",
@@ -5875,6 +6014,7 @@ version = "0.0.0"
 dependencies = [
  "reqwest 0.13.5",
  "sdrmm-wire",
+ "serde_json",
  "sha2 0.11.1",
 ]
 
@@ -8863,7 +9003,9 @@ dependencies = [
  "png",
  "resvg",
  "rustfft",
+ "sdrmm-array",
  "sdrmm-channels",
+ "sdrmm-decoder",
  "sdrmm-device",
  "sdrmm-device-ad936x",
  "sdrmm-device-kiwisdr",

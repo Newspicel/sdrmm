@@ -12,16 +12,17 @@ use crate::common::array::{
     Bench, FULL_RATE, KRAKEN, LOCK_WAIT, WAIT, kraken_array, processor, wait_calibrated,
 };
 use num_complex::Complex;
-use sdrmm_channels::passive_radar::{
+use sdrmm_array::GpuUse;
+use sdrmm_array::passive_radar::Illuminator;
+use sdrmm_array::passive_radar::PassiveRadarParams;
+use sdrmm_array::passive_radar::ReferenceCleaning;
+use sdrmm_array::passive_radar::{
     CafBackend, CpiJob, CpiStage, CpuCaf, FrontStage, InLanes, JobSink, RadarCtx,
     RadarPlan as StagePlan, RadarPod, plan,
 };
 use sdrmm_dsp::array::manifold::{Geometry, Winding};
 use sdrmm_engine::{ArrayEvent, Engine};
-use sdrmm_wire::{
-    ArrayGain, ArrayTune, ProcessorParams, ProcessorReading, radar::GpuUse, radar::Illuminator,
-    radar::PassiveRadarParams, radar::RadarUpdate, radar::ReferenceCleaning,
-};
+use sdrmm_wire::{ArrayGain, ArrayTune, radar::RadarUpdate};
 use tokio::sync::broadcast::{self, error::TryRecvError};
 
 type C32 = Complex<f32>;
@@ -262,7 +263,7 @@ fn radar_updates(
         );
         match events.try_recv() {
             Ok(ArrayEvent::Report { processor, reading }) if processor == "radar" => {
-                if let ProcessorReading::PassiveRadar(update) = reading.as_ref() {
+                if let Some(update) = reading.get::<sdrmm_wire::RadarUpdate>() {
                     updates.push(update.clone());
                 }
             }
@@ -284,7 +285,7 @@ struct Pipeline {
 
 fn start_radar(engine: &Arc<Engine>, params: PassiveRadarParams) {
     engine
-        .apply_processor(&processor("radar", ProcessorParams::PassiveRadar(params)))
+        .apply_processor(&processor("radar", crate::common::array::wire(&params)))
         .unwrap();
 }
 

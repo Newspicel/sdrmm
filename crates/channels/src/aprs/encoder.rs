@@ -3,25 +3,26 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Scrambler, crc16_x25};
-use sdrmm_modem::keying::{Burst, TxQueue};
+use sdrmm_dsp::{HdlcFramer, crc16_x25};
+use sdrmm_modem::{
+    keying::{Burst, TxQueue},
+    packet::{
+        AFSK_BAUD, DEVIATION_HZ, G3RUH_BAUD, Keyer, Line,
+        ax25::{self, CALL_LEN},
+    },
+};
 use sdrmm_wire::{Control, SettingField};
 use serde::{Deserialize, Serialize};
 
-use super::{
-    ADDRESS_LEN, AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ, AprsMode, CONTROL_UI, DESCRIPTOR,
-    DEVIATION_HZ, G3RUH_BAUD, MAX_FRAME_BYTES, MIN_FRAME_BYTES, PID_NO_LAYER3,
-};
-use crate::encoder::{
+use super::{AprsMode, DESCRIPTOR, MAX_FRAME_BYTES, MIN_FRAME_BYTES, packet_mode};
+use sdrmm_decoder::encoder::{
     EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload,
 };
 
 const TYPE_ID: &str = "aprs";
 
-const FLAG: u8 = 0x7E;
 pub(super) const PREAMBLE_FLAGS: usize = 24;
 pub(super) const TRAILING_FLAGS: usize = 2;
-const SSID_RESERVED: u8 = 0x60;
 
 pub struct AprsModulator {
     rate: f64,
@@ -36,47 +37,6 @@ pub struct AprsModulator {
     burst: Burst,
 }
 
-pub(super) struct Line {
-    level: bool,
-    scrambler: Option<Scrambler>,
-}
-
-impl Line {
-    pub(super) fn new(mode: AprsMode) -> Self {
-        Self {
-            level: false,
-            scrambler: match mode {
-                AprsMode::Afsk1200 => None,
-                AprsMode::G3ruh9600 => Some(Scrambler::g3ruh()),
-            },
-        }
-    }
-
-    pub(super) fn push(&mut self, bit: bool) -> bool {
-        if !bit {
-            self.level = !self.level;
-        }
-        match self.scrambler.as_mut() {
-            Some(scrambler) => scrambler.push(self.level),
-            None => self.level,
-        }
-    }
-}
-
-enum Keyer {
-    Afsk { tone_phase: f64 },
-    G3ruh,
-}
-
-impl Keyer {
-    fn new(mode: AprsMode) -> Self {
-        match mode {
-            AprsMode::Afsk1200 => Self::Afsk { tone_phase: 0.0 },
-            AprsMode::G3ruh9600 => Self::G3ruh,
-        }
-    }
-}
-
 fn baud(mode: AprsMode) -> f64 {
     match mode {
         AprsMode::Afsk1200 => AFSK_BAUD,
@@ -87,22 +47,7 @@ fn baud(mode: AprsMode) -> f64 {
 impl AprsModulator {
     #[must_use]
     pub fn ui_frame(source: &str, destination: &str, path: &[&str], info: &str) -> Vec<u8> {
-        let mut out = Vec::with_capacity(ADDRESS_LEN * (2 + path.len()) + 2 + info.len());
-        push_address(&mut out, destination, true, false);
-        push_address(&mut out, source, false, path.is_empty());
-        for (i, hop) in path.iter().enumerate() {
-            let repeated = hop.ends_with('*');
-            push_address(
-                &mut out,
-                hop.trim_end_matches('*'),
-                repeated,
-                i + 1 == path.len(),
-            );
-        }
-        out.push(CONTROL_UI);
-        out.push(PID_NO_LAYER3);
-        out.extend_from_slice(info.as_bytes());
-        out
+        ax25::ui_frame(source, destination, path, info.as_bytes())
     }
 
     fn next_level(&mut self) -> Option<bool> {
@@ -111,24 +56,7 @@ impl AprsModulator {
     }
 
     fn modulating(&mut self) -> f32 {
-        let (level, rate) = (self.level, self.rate);
-        match &mut self.keyer {
-            Keyer::Afsk { tone_phase } => {
-                let freq = if level { AFSK_MARK_HZ } else { AFSK_SPACE_HZ };
-                *tone_phase += TAU * freq / rate;
-                if *tone_phase > TAU {
-                    *tone_phase -= TAU;
-                }
-                tone_phase.sin() as f32
-            }
-            Keyer::G3ruh => {
-                if level {
-                    1.0
-                } else {
-                    -1.0
-                }
-            }
-        }
+        self.keyer.next(self.level, self.rate)
     }
 }
 
@@ -161,8 +89,8 @@ impl NativeModulator for AprsModulator {
             rate,
             pending: TxQueue::new(TYPE_ID, baud(mode)),
             staging: Vec::new(),
-            line: Line::new(mode),
-            keyer: Keyer::new(mode),
+            line: Line::new(packet_mode(mode)),
+            keyer: Keyer::new(packet_mode(mode)),
             remaining: 0,
             samples_per_symbol: (rate / baud(mode)) as usize,
             level: false,
@@ -233,51 +161,19 @@ impl Modulator for AprsModulator {
     }
 }
 
-fn push_address(out: &mut Vec<u8>, call: &str, command: bool, last: bool) {
-    let (base, ssid) = match call.split_once('-') {
-        Some((base, ssid)) => (base, ssid.parse::<u8>().unwrap_or(0)),
-        None => (call, 0),
-    };
-    let mut chars = [b' '; ADDRESS_LEN - 1];
-    for (slot, byte) in chars.iter_mut().zip(base.bytes()) {
-        *slot = byte.to_ascii_uppercase();
-    }
-    for c in chars {
-        out.push((c & 0x7F) << 1);
-    }
-    out.push(u8::from(command) << 7 | SSID_RESERVED | (ssid & 0x0F) << 1 | u8::from(last));
-}
-
 pub(super) fn push_flags(bits: &mut Vec<bool>, count: usize) {
-    for _ in 0..count {
-        for i in 0..8 {
-            bits.push(FLAG >> i & 1 == 1);
-        }
-    }
+    HdlcFramer::new().push_flags(bits, count);
 }
 
+/// The frame with its FCS flipped by the bits of `fcs_error`, which only a test sets.
 pub(super) fn push_frame(bits: &mut Vec<bool>, frame: &[u8], fcs_error: u16) {
-    let fcs = (crc16_x25(frame) ^ fcs_error).to_le_bytes();
-    let mut ones = 0u8;
-    for &byte in frame.iter().chain(fcs.iter()) {
-        for i in 0..8 {
-            push_stuffed(bits, byte >> i & 1 == 1, &mut ones);
-        }
-    }
-    push_flags(bits, 1);
-}
-
-pub(super) fn push_stuffed(bits: &mut Vec<bool>, bit: bool, ones: &mut u8) {
-    bits.push(bit);
-    *ones = if bit { *ones + 1 } else { 0 };
-    if *ones == 5 {
-        bits.push(false);
-        *ones = 0;
-    }
+    let mut framer = HdlcFramer::new();
+    framer.push_bytes(bits, frame);
+    framer.push_bytes(bits, &(crc16_x25(frame) ^ fcs_error).to_le_bytes());
+    framer.push_flags(bits, 1);
 }
 
 const MAX_PATH_HOPS: usize = 8;
-const MAX_CALL_LEN: usize = ADDRESS_LEN - 1;
 
 /// One UI frame as the operator writes it.
 #[derive(Debug, serde::Deserialize)]
@@ -308,7 +204,7 @@ fn message_form() -> Vec<SettingField> {
 fn checked_call(call: &str, what: &str) -> Result<(), EncoderError> {
     let (base, ssid) = call.split_once('-').unwrap_or((call, "0"));
     let named = !base.is_empty()
-        && base.len() <= MAX_CALL_LEN
+        && base.len() <= CALL_LEN
         && base.bytes().all(|byte| byte.is_ascii_alphanumeric());
     if named && ssid.parse::<u8>().is_ok_and(|ssid| ssid <= 15) {
         return Ok(());

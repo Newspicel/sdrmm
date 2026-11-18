@@ -1,10 +1,10 @@
 use crate::lora::{LoraImplicitHeader, LoraIntegrity};
 use num_complex::Complex;
+use sdrmm_modem::spread::css::{Dechirper, Slope, wrap};
 
 use super::{
     Frame,
     align::{self, Candidate},
-    chirp::{Dechirper, Slope, wrap},
     detect::{Accumulator, DETECT_WINDOWS, DownHistory, Levels, STEADY_WINDOWS, Sighting},
     filter::Extractor,
     payload::{Advance, Lock, MAX_COLUMNS, max_symbols},
@@ -90,6 +90,7 @@ pub(crate) struct Tools {
     pub samples: Vec<Complex<f32>>,
     pub llrs: Vec<f32>,
     pub tail: Vec<f32>,
+    pub nibbles: Vec<u8>,
 }
 
 pub(crate) struct Receiver {
@@ -120,6 +121,7 @@ impl Receiver {
                 samples: vec![Complex::new(0.0, 0.0); chips],
                 llrs: vec![0.0; max_symbols(settings.spreading_factor) * MAX_BITS],
                 tail: vec![0.0; MAX_COLUMNS * chips],
+                nibbles: Vec::with_capacity(max_symbols(settings.spreading_factor) * MAX_BITS),
             },
             settings,
             cursor: 0,

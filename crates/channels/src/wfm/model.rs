@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::default_true;
+use sdrmm_decoder::default_true;
 
 fn default_deemphasis_us() -> f32 {
     50.0

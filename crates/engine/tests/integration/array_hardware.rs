@@ -12,11 +12,12 @@ use crate::common::array::{calibrated, df, processor_status, status, wait_status
 use crate::kraken::{
     ARRAY, Kraken, RADIUS_M, append_csv, csv_path, env_f64, uca, wrap_deg, write_csv,
 };
+use sdrmm_array::df::DfParams;
 use sdrmm_dsp::array::doa::{dominance_count, mdl_count};
 use sdrmm_engine::{ArrayEvent, Engine, ProcessorSpec};
 use sdrmm_wire::{
     ArrayCal, ArrayCalSource, ArrayFailure, ArrayGain, ArrayStatus, ArrayTuneRequest, CalPhase,
-    DfReading, ProcessorParams, ProcessorReading, SyncState, Winding, processor::df::DfParams,
+    DfReading, SyncState, Winding,
 };
 use tokio::sync::broadcast::{self, error::TryRecvError};
 
@@ -79,7 +80,7 @@ impl Hold {
         loop {
             match events.try_recv() {
                 Ok(ArrayEvent::Report { processor, reading }) if processor == "df" => {
-                    if let ProcessorReading::Df(reading) = reading.as_ref() {
+                    if let Some(reading) = reading.get::<DfReading>() {
                         self.readings.push(reading.clone());
                     }
                 }
@@ -162,8 +163,8 @@ fn df_counts(readings: &[DfReading]) -> String {
 #[cfg(feature = "probe")]
 mod probe {
     use crate::common::array::{processor, wait_for};
-    use sdrmm_channels::array_processor::probe::{ProbeBlock, ProbeLog, take_probe_log};
-    use sdrmm_wire::processor::ProbeParams;
+    use sdrmm_array::probe::ProbeParams;
+    use sdrmm_array::probe::{ProbeBlock, ProbeLog, take_probe_log};
 
     use super::*;
 
@@ -177,7 +178,7 @@ mod probe {
             engine
                 .apply_processor(&processor(
                     "probe",
-                    ProcessorParams::Probe(ProbeParams {
+                    crate::common::array::wire(&ProbeParams {
                         time: true,
                         phase: true,
                         ..ProbeParams::default()
@@ -608,7 +609,7 @@ fn kraken_df_known_bearing() {
         .unwrap();
     engine
         .apply_processor(&ProcessorSpec {
-            params: ProcessorParams::Df(DfParams {
+            params: crate::common::array::wire(&DfParams {
                 offset_hz: DF_OFFSET_HZ,
                 bandwidth_hz: tx.bandwidth_hz,
                 ..DfParams::default()

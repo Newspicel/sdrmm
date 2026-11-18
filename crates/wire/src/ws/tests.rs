@@ -48,14 +48,25 @@ fn server_events_round_trip() {
         ServerEvent::ArrayUpdate {
             status: Box::new(ArrayStatus::default()),
         },
-        ServerEvent::processor_update(
-            "df".to_owned(),
-            ProcessorReading::empty("df").expect("df reading"),
-        ),
-        ServerEvent::processor_update(
-            "radar".to_owned(),
-            ProcessorReading::empty("passive_radar").expect("radar reading"),
-        ),
+        ServerEvent::ProcessorUpdate {
+            node: "df".to_owned(),
+            reading: Box::new(ProcessorReading {
+                type_id: "df".to_owned(),
+                reading: serde_json::to_value(crate::DfReading::default()).expect("df reading"),
+            }),
+            status: Box::default(),
+            view: Box::default(),
+        },
+        ServerEvent::ProcessorUpdate {
+            node: "radar".to_owned(),
+            reading: Box::new(ProcessorReading {
+                type_id: "passive_radar".to_owned(),
+                reading: serde_json::to_value(crate::RadarUpdate::reserved())
+                    .expect("radar reading"),
+            }),
+            status: Box::default(),
+            view: Box::default(),
+        },
         ServerEvent::fusion_update("tri".to_owned(), DfFusionState::default()),
         ServerEvent::SurveyUpdate {
             node: "survey".to_owned(),

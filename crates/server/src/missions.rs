@@ -1,4 +1,4 @@
-use sdrmm_channels::array_processor::{MissionShape, descriptor_for};
+use sdrmm_array::{MissionShape, descriptor};
 use sdrmm_wire::{
     ChannelInfo, DeviceSet, Mission, MissionBody, MissionControl, MissionProblem, MissionWorkspace,
     MissionsResponse, NodeBody, PatchGraph, PatchNode, StateSnapshot, mission::MAX_MISSIONS,
@@ -90,7 +90,7 @@ impl<'a> Scene<'a> {
 }
 
 fn processor_mission(body: &NodeBody) -> Option<MissionShape> {
-    descriptor_for(&body.processor_params()?)?.mission
+    descriptor(body.processor_params()?.type_id())?.mission()
 }
 
 fn is_mission(body: &NodeBody) -> bool {

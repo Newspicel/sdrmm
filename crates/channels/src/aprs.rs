@@ -1,8 +1,11 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod encoder;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub(crate) use encoder::aprs_encoder;
 pub use encoder::{AprsEncoderSettings, AprsModulator};
 pub use model::*;
@@ -11,25 +14,20 @@ mod weather;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass, hdlc_repair};
-pub(crate) use sdrmm_modem::packet::{
-    AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ, DEVIATION_HZ, G3RUH_BAUD,
+use sdrmm_dsp::hdlc_repair;
+use sdrmm_modem::packet::{
+    PacketMode, PacketReceiver, RecentFrames,
+    ax25::{ADDRESS_LEN, CONTROL_PF, CONTROL_UI, PID_NO_LAYER3, carries_pid, decode_address},
 };
-use sdrmm_modem::packet::{PacketMode, PacketReceiver, RecentFrames};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const CHANNEL_TAPS: usize = 65;
 
-pub(crate) const ADDRESS_LEN: usize = 7;
 const MAX_ADDRESSES: usize = 10;
-pub(crate) const CONTROL_UI: u8 = 0x03;
-const CONTROL_PF: u8 = 0x10;
-pub(crate) const PID_NO_LAYER3: u8 = 0xF0;
 
 const MIN_FRAME_BYTES: usize = 2 * ADDRESS_LEN + 1 + 2;
 const MAX_FRAME_BYTES: usize = MAX_ADDRESSES * ADDRESS_LEN + 2 + 256 + 2;
@@ -53,20 +51,23 @@ pub struct AprsChannel {
     recent: RecentFrames,
 }
 
-fn receiver(mode: AprsMode) -> PacketReceiver {
-    let mode = match mode {
+const fn packet_mode(mode: AprsMode) -> PacketMode {
+    match mode {
         AprsMode::Afsk1200 => PacketMode::Afsk1200,
         AprsMode::G3ruh9600 => PacketMode::G3ruh9600,
-    };
+    }
+}
+
+fn receiver(mode: AprsMode) -> PacketReceiver {
     PacketReceiver::new(
-        mode,
+        packet_mode(mode),
         DESCRIPTOR.input_rate_hz,
         &(MIN_FRAME_BYTES..=MAX_FRAME_BYTES),
     )
 }
 
 fn params(settings: &ChannelSettings) -> Result<AprsParams, ChannelError> {
-    crate::settings_of::<AprsParams>(settings)
+    sdrmm_decoder::settings_of::<AprsParams>(settings)
 }
 
 fn check_params(p: &AprsParams) -> Result<(), ChannelError> {
@@ -86,13 +87,10 @@ pub(crate) fn occupied_band(p: &AprsParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &AprsParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &AprsParams) -> Result<FilterSpec, ChannelError> {
     check_params(p)?;
     let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, half))
 }
 
 impl NativeChannel for AprsChannel {
@@ -110,7 +108,7 @@ impl NativeChannel for AprsChannel {
     }
 }
 
-impl ChannelRx for AprsChannel {
+impl Channel for AprsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;
@@ -142,49 +140,6 @@ fn checked_packet(frame: &[u8]) -> Option<(AprsPacket, Vec<u8>)> {
         return None;
     }
     Some((parse_frame(&frame)?, frame))
-}
-
-struct Address {
-    call: String,
-    last: bool,
-    repeated: bool,
-}
-
-fn decode_address(field: &[u8]) -> Option<Address> {
-    let (&ssid_octet, chars) = field.split_last()?;
-    let mut call = String::with_capacity(9);
-    let mut padded = false;
-    for &octet in chars {
-        if octet & 1 != 0 {
-            return None;
-        }
-        let c = char::from(octet >> 1);
-        if c == ' ' {
-            padded = true;
-            continue;
-        }
-        if padded || !c.is_ascii_alphanumeric() {
-            return None;
-        }
-        call.push(c);
-    }
-    if call.is_empty() {
-        return None;
-    }
-    let ssid = ssid_octet >> 1 & 0x0F;
-    if ssid != 0 {
-        call.push('-');
-        call.push_str(&ssid.to_string());
-    }
-    Some(Address {
-        call,
-        last: ssid_octet & 1 != 0,
-        repeated: ssid_octet & 0x80 != 0,
-    })
-}
-
-fn carries_pid(control: u8) -> bool {
-    control & 1 == 0 || control & !CONTROL_PF == CONTROL_UI
 }
 
 fn latin1(bytes: &[u8]) -> String {
@@ -932,13 +887,17 @@ fn aprs_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn aprs_decoder() -> Native<AprsParams> {
-    Native::new::<AprsChannel>(occupied_band)
+    let decoder = Native::new::<AprsChannel>(occupied_band)
         .filter(channel_filter)
         .home(144_800_000.0)
         .signatures(aprs_signatures)
         .trial(aprs_trial)
         .form(aprs_form)
-        .kinds(aprs_kinds)
+        .kinds(aprs_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn aprs_form() -> Vec<SettingField> {
@@ -953,25 +912,24 @@ fn aprs_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
-    use crate::nfm::NfmParams;
     use sdrmm_wire::ChannelParams;
 
     use std::f64::consts::TAU;
 
     use sdrmm_modem::keying::Burst;
 
+    use sdrmm_modem::packet::{AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ, DEVIATION_HZ};
+
     use super::{
-        encoder::{
-            Line, PREAMBLE_FLAGS, TRAILING_FLAGS, compose, push_flags, push_frame, push_stuffed,
-        },
+        encoder::{PREAMBLE_FLAGS, TRAILING_FLAGS, compose, push_flags, push_frame},
         *,
     };
-    use crate::{
-        encoder::{Carries, EncoderError, Modulator, NativeModulator, TxPayload},
-        synth::burst,
-        testutil::settings,
-    };
+    use sdrmm_decoder::encoder::burst;
+    use sdrmm_decoder::encoder::{Carries, EncoderError, Modulator, NativeModulator, TxPayload};
+    use sdrmm_decoder_test_support::settings;
 
     const RATE: f64 = 48_000.0;
 
@@ -1602,7 +1560,7 @@ mod tests {
         push_flags(&mut bits, PREAMBLE_FLAGS);
         push_frame(&mut bits, frame, 0);
         push_flags(&mut bits, TRAILING_FLAGS);
-        let mut line = Line::new(AprsMode::Afsk1200);
+        let mut line = sdrmm_modem::packet::Line::new(PacketMode::Afsk1200);
         let space_gain = 10f64.powf(twist_db / 20.0);
         let norm = space_gain.max(1.0);
         let sps = (RATE / AFSK_BAUD) as usize;
@@ -1648,11 +1606,10 @@ mod tests {
                 let info = format!("!4807.38N/01131.00E>trial {k:04}");
                 let frame = AprsModulator::ui_frame("DL1ABC-9", "APRS", &["WIDE1-1"], &info);
                 let iq = twisted_afsk(&frame, twist_db, sigma, 0x51c0 + k);
-                let ChannelFilter::Symmetric(mut filter) =
-                    channel_filter(&AprsParams::default()).unwrap()
-                else {
-                    unreachable!("aprs selects a symmetric channel")
-                };
+                let mut filter = sdrmm_decoder_test_support::built_filter(
+                    channel_filter(&AprsParams::default()).unwrap(),
+                    DESCRIPTOR.input_rate_hz,
+                );
                 let mut selected = Vec::new();
                 filter.process(&iq, &mut selected);
                 decode(AprsMode::Afsk1200, &selected)
@@ -1688,7 +1645,7 @@ mod tests {
 
     #[test]
     fn noise_alone_produces_no_frames() {
-        let iq = crate::testutil::complex_noise(0x1234_5678, 0.5, 240_000);
+        let iq = sdrmm_decoder_test_support::complex_noise(0x1234_5678, 0.5, 240_000);
         assert!(decode(AprsMode::Afsk1200, &iq).is_empty());
         assert!(decode(AprsMode::G3ruh9600, &iq).is_empty());
     }
@@ -1705,7 +1662,7 @@ mod tests {
                 keyed(AprsMode::G3ruh9600, &position_frame()),
             ),
         ] {
-            crate::synth::add_noise(&mut iq, 0x5eed_1234, 0.4);
+            sdrmm_modem::synth::add_noise(&mut iq, 0x5eed_1234, 0.4);
             assert_position_packet(&only(decode(mode, &iq)));
         }
     }
@@ -1736,13 +1693,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AprsMode::Afsk1200);
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = AprsChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("nfm")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -1823,24 +1778,6 @@ mod tests {
         assert_eq!(frame[20] >> 1 & 0x0F, 1);
         assert_eq!(frame[20] & 0x80, 0x80);
         assert_eq!(&frame[21..], b"\x03\xf0!test");
-    }
-
-    #[test]
-    fn stuffing_breaks_every_run_of_five_ones() {
-        let mut bits = Vec::new();
-        let mut ones = 0;
-        for _ in 0..4 {
-            push_stuffed(&mut bits, true, &mut ones);
-            push_stuffed(&mut bits, true, &mut ones);
-            push_stuffed(&mut bits, true, &mut ones);
-        }
-        let longest = bits
-            .chunk_by(|a, b| a == b)
-            .filter(|run| run[0])
-            .map(<[bool]>::len)
-            .max()
-            .unwrap();
-        assert_eq!(longest, 5);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::chip::{CHIP_FRAME_SAMPLES, ChipEnd, ChipFrame, ChipHealth};
+use sdrmm_codec::voice::chip::{CHIP_FRAME_SAMPLES, ChipEnd, ChipFrame, ChipHealth};
 
 use crate::{
     ChipError,

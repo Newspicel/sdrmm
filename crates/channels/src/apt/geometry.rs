@@ -20,7 +20,9 @@ pub(crate) const RAMP_WEDGES: usize = 8;
 pub(crate) const ZERO_WEDGE: usize = 9;
 pub(crate) const CHANNEL_WEDGE: usize = 16;
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const MINUTE_LINES: usize = 120;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const MARKER_LINES: usize = 2;
 
 const SYNC_CYCLES: usize = 7;
@@ -37,6 +39,7 @@ const fn sync_pattern(period: usize, high: usize) -> [bool; SYNC_WORDS] {
 }
 
 pub(crate) const SYNC_A: [bool; SYNC_WORDS] = sync_pattern(4, 2);
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const SYNC_B: [bool; SYNC_WORDS] = sync_pattern(5, 3);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

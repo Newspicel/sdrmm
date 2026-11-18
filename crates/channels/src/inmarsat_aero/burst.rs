@@ -429,12 +429,12 @@ mod tests {
     fn channel(
         channel: crate::inmarsat_aero::AeroChannel,
     ) -> crate::inmarsat_aero::InmarsatAeroChannel {
-        use crate::{ChannelCtx, NativeChannel};
+        use sdrmm_decoder::{ChannelCtx, NativeChannel};
         crate::inmarsat_aero::InmarsatAeroChannel::new(
             ChannelCtx {
                 input_rate: crate::inmarsat_aero::decoder::INPUT_RATE,
             },
-            crate::testutil::settings(
+            sdrmm_decoder_test_support::settings(
                 sdrmm_wire::ChannelParams::new(
                     "inmarsat_aero",
                     &crate::inmarsat_aero::InmarsatAeroParams { channel },
@@ -449,22 +449,25 @@ mod tests {
     fn the_burst_setting_decodes_t_bursts_through_the_channel() {
         let mut iq = burst_iq(&burst_bits(&t_burst_bytes()), 1200.0, 180.0, 2000, 126.0);
         Noise(0xfeed_f00d_dead_c0de).add(&mut iq, 0.01);
-        let wide =
-            crate::synth::resample(&iq, CHANNEL_RATE, crate::inmarsat_aero::decoder::INPUT_RATE);
+        let wide = sdrmm_modem::synth::resample(
+            &iq,
+            CHANNEL_RATE,
+            crate::inmarsat_aero::decoder::INPUT_RATE,
+        );
         let mut padded = wide;
         padded.extend(std::iter::repeat_n(Complex::new(0.0, 0.0), 48_000));
-        let bursts = crate::testutil::run_events(
+        let bursts = sdrmm_decoder_test_support::run_events(
             &mut channel(crate::inmarsat_aero::AeroChannel::Burst),
             &padded,
         );
         let acars = bursts
             .iter()
-            .filter_map(|event| crate::datalink::read(event, "inmarsat_aero"))
+            .filter_map(|event| sdrmm_decoder::link::read(event, "inmarsat_aero"))
             .find(|message| message.message_type == "acars")
             .expect("ACARS from the T burst");
         assert!(acars.crc_ok);
         assert_eq!(acars.station.as_deref(), Some("VT-ANB"));
-        let forward = crate::testutil::run_events(
+        let forward = sdrmm_decoder_test_support::run_events(
             &mut channel(crate::inmarsat_aero::AeroChannel::P),
             &padded,
         );

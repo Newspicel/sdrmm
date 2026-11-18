@@ -1,0 +1,27 @@
+[package]
+name = "sdrmm-media"
+description = "Plays broadcast audio and video for the decoders, off the DSP thread"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+fuzzing = []
+testing = []
+
+[dependencies]
+sdrmm-decoder.workspace = true
+sdrmm-modem.workspace = true
+sdrmm-codec.workspace = true
+ffmpeg-the-third.workspace = true
+rtrb.workspace = true
+
+[dev-dependencies]
+sdrmm-modem-test-support.workspace = true

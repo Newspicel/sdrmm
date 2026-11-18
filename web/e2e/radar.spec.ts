@@ -43,7 +43,11 @@ function radarBench(): WorkspaceSnapshot {
         node("arr", { kind: "array", data: {} }, { x: 440, y: 0, w: 460, h: 620 }),
         fixed("rx", 52.0, 13.0, -400, 0),
         fixed("tx", 52.1, 13.2, 440, 720),
-        node("radar", { kind: "passive_radar", data: {} }, { x: 960, y: 0, w: 640, h: 760 }),
+        node(
+          "radar",
+          { kind: "processor", data: { processor_type: "passive_radar", settings: {} } },
+          { x: 960, y: 0, w: 640, h: 760 },
+        ),
         node("map", { kind: "map" }, { x: 1660, y: 0, w: 720, h: 560 }),
       ],
       edges: [

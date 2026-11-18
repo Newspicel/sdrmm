@@ -12,7 +12,7 @@ FILES = {"normal.rs": "N", "short.rs": "S", "medium.rs": "M"}
 def rust_tables(folder):
     tables = {}
     for file, size in FILES.items():
-        text = (folder / "tables" / file).read_text()
+        text = (folder / file).read_text()
         for match in re.finditer(r"pub static R(\d+_\d+): \[&\[u16\]; \d+\] = \[(.*?)\n\];", text, re.S):
             rows = [[int(n) for n in re.findall(r"\d+", row)] for row in re.findall(r"&\[([^\]]*)\]", match.group(2))]
             tables[(match.group(1), size)] = rows
@@ -121,12 +121,13 @@ def check_interleaver(s2, source):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cache", type=Path, required=True)
-    parser.add_argument("--dvbs2", type=Path, required=True)
+    parser.add_argument("--frame", type=Path, required=True)
+    parser.add_argument("--ldpc", type=Path, required=True)
     args = parser.parse_args()
     s2 = dvbs2_spec.Standard(args.cache, "s2")
     s2x = dvbs2_spec.Standard(args.cache, "s2x")
-    source = (args.dvbs2 / "frame.rs").read_text()
-    errors = check_ldpc(s2, s2x, args.dvbs2)
+    source = args.frame.read_text()
+    errors = check_ldpc(s2, s2x, args.ldpc)
     errors += check_ratios(dvbs2_spec.ratios(s2, "9:"), rust_ratios(source, "apsk16_radii"), "16APSK")
     errors += check_ratios(dvbs2_spec.ratios(s2, "10:"), rust_ratios(source, "apsk32_radii"), "32APSK")
     errors += check_labels(dvbs2_spec.s2_rings(s2), source)

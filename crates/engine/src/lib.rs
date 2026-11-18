@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::ChannelError;
+use sdrmm_decoder::ChannelError;
 use sdrmm_device::{DeviceError, DeviceRegistry, PlaybackShared};
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::VirtualDriver;
@@ -131,7 +131,7 @@ const TIME_MACHINE_STOP_POLLS: u32 = 200;
 
 #[must_use]
 pub fn channel_types() -> Vec<sdrmm_wire::ChannelDescriptor> {
-    sdrmm_channels::descriptors()
+    sdrmm_decoder::descriptors()
 }
 
 /// Every backend this build drives itself, so the `SoapySDR` driver can hide the radios a native
@@ -185,7 +185,7 @@ pub fn builtin_registry_accelerated(
     let mut registry = DeviceRegistry::new();
     registry.register(
         VIRTUAL_PRIORITY,
-        Box::new(VirtualDriver::for_build().with_signals(&sdrmm_channels::synth::catalog::CATALOG)),
+        Box::new(VirtualDriver::for_build().with_signals(sdrmm_decoder::signal_catalog())),
     );
     registry.register(
         VIRTUAL_PRIORITY,
@@ -292,7 +292,7 @@ pub enum EngineError {
     #[error(transparent)]
     Channel(#[from] ChannelError),
     #[error(transparent)]
-    Encoder(#[from] sdrmm_channels::encoder::EncoderError),
+    Encoder(#[from] sdrmm_decoder::encoder::EncoderError),
     #[error("audio pipeline: {0}")]
     Audio(String),
     #[error("recording: {0}")]
@@ -816,7 +816,7 @@ impl DeviceSetState {
                 .channels
                 .iter()
                 .map(|channel| ChannelInfo {
-                    band: sdrmm_channels::layout(&channel.settings.params)
+                    band: sdrmm_decoder::layout(&channel.settings.params)
                         .ok()
                         .map(|layout| sdrmm_wire::ChannelBand {
                             low_hz: layout.band.0,
@@ -1814,3 +1814,12 @@ fn join_network_writer(writer: JoinHandle<()>) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+/// Every test in this binary runs against the built-in decoders and processors, installed once
+/// before main.
+#[ctor::ctor(unsafe)]
+fn install_for_tests() {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
+}

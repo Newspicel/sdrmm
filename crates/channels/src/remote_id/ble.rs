@@ -1,17 +1,16 @@
-use crate::ble::BlePhy;
 use crate::remote_id::RemoteIdFrame;
 use crate::remote_id::RemoteIdPhy;
 use crate::remote_id::RemoteIdTransport;
-use sdrmm_modem::ble::{Packet, Sink, channel_index};
+use sdrmm_modem::ble::{
+    BlePhy, Packet, Sink,
+    ad::{SERVICE_DATA_16, structures},
+    channel_index, pdu,
+};
 use sdrmm_wire::DecoderEvent;
 
 use super::{
     odid::{APP_CODE, SERVICE_UUID},
     tracker::{Heard, Tracker},
-};
-use crate::ble::{
-    ad::{SERVICE_DATA_16, structures},
-    pdu, wire_phy,
 };
 
 pub(crate) fn remote_id_payload(data: &[u8]) -> Option<(u8, &[u8])> {
@@ -28,9 +27,9 @@ pub(crate) fn remote_id_payload(data: &[u8]) -> Option<(u8, &[u8])> {
 
 fn phy(phy: BlePhy) -> RemoteIdPhy {
     match phy {
-        BlePhy::LeCodedS8 => RemoteIdPhy::LeCodedS8,
-        BlePhy::LeCodedS2 => RemoteIdPhy::LeCodedS2,
-        _ => RemoteIdPhy::Le1m,
+        BlePhy::CodedS8 => RemoteIdPhy::LeCodedS8,
+        BlePhy::CodedS2 => RemoteIdPhy::LeCodedS2,
+        BlePhy::Le1m => RemoteIdPhy::Le1m,
     }
 }
 
@@ -43,7 +42,7 @@ pub(crate) fn frame(packet: &Packet<'_>, tracker: &mut Tracker) -> Option<Remote
         } else {
             RemoteIdTransport::BluetoothLegacy
         },
-        phy: phy(wire_phy(packet.phy)),
+        phy: phy(packet.phy),
         address: advert
             .sender
             .map_or_else(|| "unknown".to_owned(), pdu::Party::text),

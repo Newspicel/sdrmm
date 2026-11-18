@@ -188,12 +188,10 @@ mod tests {
     use super::*;
     use crate::{
         adsb::{INPUT_RATE_HZ, phase_tables, preamble_ok},
-        synth::{
-            add_noise,
-            adsb::{me_identification, squitter, transmission_at_phase},
-        },
+        synth::adsb::{me_identification, squitter, transmission_at_phase},
     };
     use sdrmm_modem::ppm::magnitudes;
+    use sdrmm_modem::synth::add_noise;
 
     #[test]
     fn every_position_a_phase_accepts_survives_the_screen() {

@@ -4,7 +4,8 @@ use std::{
     thread::JoinHandle,
 };
 
-use sdrmm_channels::{AudioChain, ClickProfile, neural_denoise::NeuralDenoiseError};
+use sdrmm_decoder::{AudioChain, ClickProfile};
+use sdrmm_dsp::audio::noise::NeuralDenoiseError;
 use sdrmm_wire::{AudioProcessing, AudioRoute};
 use tokio::sync::{
     broadcast::{self, error::RecvError},
@@ -332,7 +333,7 @@ mod tests {
             .map(|n| {
                 amplitude
                     * (std::f64::consts::TAU * freq_hz * n as f64
-                        / f64::from(sdrmm_channels::AUDIO_RATE))
+                        / f64::from(sdrmm_decoder::AUDIO_RATE))
                     .sin() as f32
             })
             .collect()

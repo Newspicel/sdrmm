@@ -7,15 +7,13 @@ use crate::common::array::{
     dongle_line, kraken_array, kraken_members, lanes, next_reading, processor_status, status,
     truth_residual, uca, wait_calibrated, wait_solve_after, wait_status,
 };
-use sdrmm_wire::{
-    ArrayFailure, ArrayNode, DeviceSettings, ProcessorReading, StreamSettings, SyncState,
-};
+use sdrmm_wire::{ArrayFailure, ArrayNode, DeviceSettings, StreamSettings, SyncState};
 
 fn df_bearing(bench: &Bench) -> f32 {
     let mut events = bench.engine.subscribe_arrays();
     next_reading(&mut events, "df", WAIT);
     let reading = next_reading(&mut events, "df", WAIT);
-    let ProcessorReading::Df(df) = reading.as_ref() else {
+    let Some(df) = reading.get::<sdrmm_wire::DfReading>() else {
         panic!("a direction finder reading: {reading:?}");
     };
     df.peaks.first().map_or(f32::NAN, |peak| peak.relative_deg)
@@ -189,10 +187,11 @@ mod probed {
         ARRAY, Bench, KRAKEN, LOCK_WAIT, RATE, WAIT, kraken_array, processor, processor_status,
         status, wait_calibrated, wait_for, wait_status,
     };
-    use sdrmm_wire::{ArrayFailure, ProcessorParams, processor::ProbeParams};
+    use sdrmm_array::probe::ProbeParams;
+    use sdrmm_wire::{ArrayFailure, ProcessorParams};
 
     fn probe(params: ProbeParams) -> ProcessorParams {
-        ProcessorParams::Probe(params)
+        crate::common::array::wire(&params)
     }
 
     #[test]

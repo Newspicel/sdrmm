@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod stations;
 mod tracker;
@@ -11,9 +14,8 @@ use num_complex::Complex;
 use sdrmm_dsp::measure::airtime::PowerFrames;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 use stations::Station;
 use tracker::Tracker;
@@ -38,7 +40,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<SidParams, ChannelError> {
-    let params: SidParams = crate::settings_of(settings)?;
+    let params: SidParams = sdrmm_decoder::settings_of(settings)?;
     if !(MIN_SID_REPORT_S..=MAX_SID_REPORT_S).contains(&params.report_s) {
         return Err(ChannelError::InvalidSettings(format!(
             "report interval must be {MIN_SID_REPORT_S}..={MAX_SID_REPORT_S} s, got {}",
@@ -60,8 +62,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-USABLE_HALF_HZ, USABLE_HALF_HZ)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Passthrough
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 fn bin_of(offset_hz: f64) -> f64 {
@@ -214,7 +216,7 @@ impl NativeChannel for SidChannel {
     }
 }
 
-impl ChannelRx for SidChannel {
+impl Channel for SidChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         let moved = settings.frequency_hz != self.frequency_hz;
@@ -266,11 +268,15 @@ impl ChannelRx for SidChannel {
 }
 
 pub(crate) fn sid_decoder() -> Native<SidParams> {
-    Native::new::<SidChannel>(|_| occupied_band())
+    let decoder = Native::new::<SidChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(30_000.0)
         .form(sid_form)
-        .kinds(sid_kinds)
+        .kinds(sid_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn sid_form() -> Vec<SettingField> {
@@ -304,5 +310,7 @@ fn sid_kinds() -> Vec<KindSpec> {
     vec![sid_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

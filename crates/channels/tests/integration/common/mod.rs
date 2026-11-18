@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use num_complex::Complex;
 use sdrmm_channels::DmrParams;
-use sdrmm_channels::{channel_filter, synth::dv as tg};
+use sdrmm_decoder::channel_filter;
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping},
     pulse::{self, Norm},
@@ -40,7 +40,7 @@ pub fn dmr_entry() -> CpmParams {
 }
 
 pub fn uw_dibits() -> Vec<u8> {
-    tg::dibits(&tg::bits(UW, 48))
+    sdrmm_modem::synth::dibits(&sdrmm_modem::synth::bits(UW, 48))
 }
 
 pub fn uw_recent_first() -> Vec<u8> {

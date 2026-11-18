@@ -131,7 +131,7 @@ pub(crate) fn state_over(store: Arc<Store>) -> AppState {
         1,
         Box::new(
             sdrmm_device_virtual::VirtualDriver::new()
-                .with_signals(&sdrmm_channels::synth::catalog::CATALOG),
+                .with_signals(sdrmm_decoder::signal_catalog()),
         ),
     );
     let mut state = AppState::new(Engine::with_registry(registry, None), store);
@@ -208,7 +208,7 @@ fn recording_state(dir: &Path) -> AppState {
         1,
         Box::new(
             sdrmm_device_virtual::VirtualDriver::new()
-                .with_signals(&sdrmm_channels::synth::catalog::CATALOG),
+                .with_signals(sdrmm_decoder::signal_catalog()),
         ),
     );
     registry.register(
@@ -1057,4 +1057,17 @@ async fn activate(app: &Router, workspace: i64) {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
+}
+
+/// A node running the processor `S` describes, on `settings`.
+pub(crate) fn processor_node<S: sdrmm_array::Settings>(settings: &S) -> sdrmm_wire::NodeBody {
+    sdrmm_wire::NodeBody::Processor(sdrmm_wire::ProcessorNode {
+        processor_type: S::TYPE_ID.to_owned(),
+        settings: serde_json::to_value(settings).expect("settings serialize"),
+    })
+}
+
+/// A radar reading as the engine hands it on.
+pub(crate) fn radar_reading(update: sdrmm_wire::RadarUpdate) -> sdrmm_array::Reading {
+    sdrmm_array::Reading::new("passive_radar", update)
 }

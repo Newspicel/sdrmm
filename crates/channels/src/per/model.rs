@@ -165,6 +165,34 @@ mod model_tests {
     use super::*;
 
     #[test]
+    fn empty_settings_take_the_defaults() {
+        let per: PerParams = serde_json::from_str("{}").unwrap();
+        assert_eq!(per, PerParams::default());
+        assert_eq!(per.baud.rate(), 9_600.0);
+        assert_eq!(serde_json::to_value(PerBaud::Baud1200).unwrap(), "baud1200");
+    }
+
+    #[test]
+    fn the_summary_leads_with_the_measurement() {
+        let per = PerReport {
+            received: 990,
+            expected: 1_000,
+            missed: 10,
+            per: 0.01,
+            bits: 256_000,
+            bit_errors: 80,
+            ber: Some(3.125e-4),
+            ..PerReport::default()
+        };
+        assert_eq!(per.summary(), "PER 1.00% · 990/1000 · BER 3.1e-4");
+        let clean = PerReport {
+            ber: Some(0.0),
+            ..per.clone()
+        };
+        assert!(clean.summary().ends_with("BER 0"), "{}", clean.summary());
+    }
+
+    #[test]
     fn a_per_report_counts_frames_and_bits() {
         let view = PerReport {
             received: 98,
@@ -192,6 +220,9 @@ mod model_tests {
             per: 0.02,
             ..PerReport::default()
         };
-        crate::testutil::assert_views_hold(&per_kind(), &[sdrmm_wire::DecoderEvent::of(&report)]);
+        sdrmm_decoder_test_support::assert_views_hold(
+            &per_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&report)],
+        );
     }
 }

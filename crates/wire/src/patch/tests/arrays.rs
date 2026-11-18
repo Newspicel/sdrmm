@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     array::{ArrayElement, ArrayGeometry, ArrayNode, MAX_ARRAY_LANES},
     device::Coherence,
-    processor::df::DfParams,
+    processor::{ProcessorNode, ProcessorParams},
 };
 
 fn array(id: &str) -> PatchNode {
@@ -41,6 +41,9 @@ fn pinned(id: &str, backend: crate::DeviceBackend, key: &str) -> PatchNode {
 }
 
 fn body(kind: &str) -> NodeBody {
+    if super::processors::NAMES.contains(&kind) {
+        return super::processors::body(kind);
+    }
     NodeKind::parse(kind).map_or_else(
         || panic!("no default body for {kind}"),
         NodeBody::default_for,
@@ -474,17 +477,7 @@ fn every_catalog_kind_has_a_default_body() {
     assert_eq!(NodeKind::parse("combiner"), None);
     let json = serde_json::to_value(&catalog).expect("catalog json");
     assert_eq!(json["nodes"][0]["default_body"]["kind"], "device");
-    for kind in [
-        "array",
-        "df",
-        "beamformer",
-        "passive_radar",
-        "stitch",
-        "spatial_spectrum",
-        "correlator",
-        "polarimeter",
-        "triangulation",
-    ] {
+    for kind in ["array", "processor", "triangulation"] {
         let entry = catalog
             .nodes
             .iter()
@@ -499,34 +492,24 @@ fn processor_params_follow_the_body() {
     for entry in PatchCatalog::build().nodes {
         let body = &entry.default_body;
         match body.processor_params() {
-            Some(params) if entry.picks == Some(Picks::Processor) => {
-                assert!(body.is_array_processor(), "{}", entry.kind);
-                assert!(
-                    matches!(params, crate::processor::ProcessorParams::Plugin(_)),
-                    "{}",
-                    entry.kind
-                );
-            }
             Some(params) => {
                 assert!(body.is_array_processor(), "{}", entry.kind);
-                assert_eq!(params.type_id(), entry.kind.as_str());
-                assert!(params.valid(), "{}", entry.kind);
+                assert_eq!(entry.picks, Some(Picks::Processor), "{}", entry.kind);
+                assert!(params.problem().is_some(), "a fresh node picks its type");
             }
             None => assert!(!body.is_array_processor(), "{}", entry.kind),
         }
     }
-    let tuned = NodeBody::Df(DfNode {
-        settings: DfParams {
-            report_ms: 250,
-            ..DfParams::default()
-        },
+    let tuned = NodeBody::Processor(ProcessorNode {
+        processor_type: "df".into(),
+        settings: serde_json::json!({"report_ms": 250}),
     });
     assert_eq!(
         tuned.processor_params(),
-        Some(crate::processor::ProcessorParams::Df(DfParams {
-            report_ms: 250,
-            ..DfParams::default()
-        }))
+        Some(ProcessorParams {
+            type_id: "df".into(),
+            settings: serde_json::json!({"report_ms": 250}),
+        })
     );
 }
 
@@ -638,20 +621,6 @@ fn bad_array_and_processor_settings_are_refused() {
     );
     assert!(matches!(tier_none.validate(), Err(PatchError::NodeSettings(id)) if id == "arr"));
 
-    let bad_df = graph(
-        vec![node(
-            "df",
-            NodeBody::Df(DfNode {
-                settings: DfParams {
-                    max_peaks: 0,
-                    ..DfParams::default()
-                },
-            }),
-        )],
-        Vec::new(),
-    );
-    assert!(matches!(bad_df.validate(), Err(PatchError::NodeSettings(id)) if id == "df"));
-
     let mut hunt = HuntNode::default();
     hunt.sweep.beamwidth_deg = 1.0;
     let bad_hunt = graph(vec![node("hunt", NodeBody::Hunt(hunt))], Vec::new());
@@ -679,11 +648,13 @@ fn a_hunt_saved_before_the_sweep_loads_with_the_default_sweep() {
 #[test]
 fn a_processor_body_is_tagged_by_its_type_id() {
     let json = serde_json::to_value(body("spatial_spectrum")).expect("body json");
-    assert_eq!(json["kind"], "spatial_spectrum");
-    assert!(json["data"]["settings"].is_object());
-    let bare: NodeBody =
-        serde_json::from_value(serde_json::json!({ "kind": "passive_radar", "data": {} }))
-            .expect("bare radar");
+    assert_eq!(json["kind"], "processor");
+    assert_eq!(json["data"]["processor_type"], "spatial_spectrum");
+    let bare: NodeBody = serde_json::from_value(serde_json::json!({
+        "kind": "processor",
+        "data": { "processor_type": "passive_radar", "settings": null }
+    }))
+    .expect("bare radar");
     assert_eq!(bare, body("passive_radar"));
 }
 

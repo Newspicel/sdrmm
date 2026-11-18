@@ -19,3 +19,11 @@ mod sources;
 mod transmit;
 mod trunking;
 mod video;
+
+/// Every test in this binary runs against the built-in decoders and processors, installed once
+/// before main.
+#[ctor::ctor(unsafe)]
+fn install_for_tests() {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
+}

@@ -49,7 +49,7 @@ fn oracle_radio(radio: &Radio, channels: &[ChannelInfo]) -> usize {
                     .tunes_itself()
             {
                 centers.extend(channels.iter().flat_map(|channel| {
-                    let (low, high) = sdrmm_channels::occupied_band(&channel.settings.params);
+                    let (low, high) = sdrmm_decoder::occupied_band(&channel.settings.params);
                     [
                         channel.settings.frequency_hz + high - rate / 2.0,
                         channel.settings.frequency_hz + low + rate / 2.0,
@@ -78,7 +78,7 @@ fn oracle_radio(radio: &Radio, channels: &[ChannelInfo]) -> usize {
                         .iter()
                         .filter(|channel| {
                             let (low, high) =
-                                sdrmm_channels::occupied_band(&channel.settings.params);
+                                sdrmm_decoder::occupied_band(&channel.settings.params);
                             let offset = channel.settings.frequency_hz - center;
                             offset + low >= -rate / 2.0 && offset + high <= rate / 2.0
                         })
@@ -459,7 +459,7 @@ fn disjoint_ranges_asymmetric_bands_and_impossible_bandwidths_match_the_oracle()
     )
     .expect("ssb settings");
     let mut wide = decoder("wide", 400e6, &[A, B]);
-    wide.settings.params = sdrmm_channels::default_settings("wfm").unwrap().params;
+    wide.settings.params = sdrmm_decoder::default_settings("wfm").unwrap().params;
     verify_exact(&[upper, lower, wide, decoder("gap", 250e6, &[A])], &[a, b]);
 }
 

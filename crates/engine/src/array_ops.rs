@@ -14,7 +14,7 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use sdrmm_channels::ChannelError;
+use sdrmm_decoder::ChannelError;
 use sdrmm_device::lock;
 use sdrmm_wire::{
     ArrayCal, ArrayCalSource, ArrayFailure, ArrayGain, ArrayTune, PositionFix, ServerEvent,

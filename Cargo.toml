@@ -7,6 +7,7 @@ members = [
     "crates/orbit",
     "crates/modem",
     "crates/modem-test-support",
+    "crates/decoder-test-support",
     "crates/device",
     "crates/device-virtual",
     "crates/device-recording",
@@ -29,7 +30,13 @@ members = [
     "crates/serial",
     "crates/dvsi",
     "crates/iqlink",
+    "crates/crypto",
+    "crates/codec",
+    "crates/aviation",
+    "crates/decoder",
+    "crates/media",
     "crates/channels",
+    "crates/array",
     "crates/plugin-sdk",
     "crates/plugins",
     "crates/plugin-example",
@@ -54,6 +61,7 @@ default-members = [
     "crates/orbit",
     "crates/modem",
     "crates/modem-test-support",
+    "crates/decoder-test-support",
     "crates/device",
     "crates/device-virtual",
     "crates/device-recording",
@@ -76,7 +84,13 @@ default-members = [
     "crates/serial",
     "crates/dvsi",
     "crates/iqlink",
+    "crates/crypto",
+    "crates/codec",
+    "crates/aviation",
+    "crates/decoder",
+    "crates/media",
     "crates/channels",
+    "crates/array",
     "crates/plugin-sdk",
     "crates/plugins",
     "crates/plugin-example",
@@ -110,6 +124,7 @@ sdrmm-dsp = { path = "crates/dsp" }
 sdrmm-orbit = { path = "crates/orbit" }
 sdrmm-modem = { path = "crates/modem" }
 sdrmm-modem-test-support = { path = "crates/modem-test-support" }
+sdrmm-decoder-test-support = { path = "crates/decoder-test-support" }
 sdrmm-device = { path = "crates/device" }
 sdrmm-device-virtual = { path = "crates/device-virtual" }
 sdrmm-device-recording = { path = "crates/device-recording" }
@@ -132,7 +147,13 @@ sdrmm-usb-stream = { path = "crates/usb-stream" }
 sdrmm-serial = { path = "crates/serial" }
 sdrmm-dvsi = { path = "crates/dvsi" }
 sdrmm-iqlink = { path = "crates/iqlink" }
+sdrmm-crypto = { path = "crates/crypto" }
+sdrmm-codec = { path = "crates/codec" }
+sdrmm-decoder = { path = "crates/decoder" }
+sdrmm-aviation = { path = "crates/aviation" }
+sdrmm-media = { path = "crates/media" }
 sdrmm-channels = { path = "crates/channels" }
+sdrmm-array = { path = "crates/array" }
 sdrmm-plugin = { path = "crates/plugin-sdk" }
 sdrmm-plugins = { path = "crates/plugins" }
 sdrmm-cps = { path = "crates/cps" }
@@ -267,6 +288,7 @@ wasmtime = { version = "50", default-features = false, features = ["cranelift", 
 
 # Scoped temp dirs for filesystem tests (SigMF IO, recordings REST); dev-dependency only.
 tempfile = "3"
+ctor = "1.0.14"
 
 criterion = "0.8"
 

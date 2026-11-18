@@ -1,11 +1,9 @@
 use super::*;
-use crate::datv::{
-    dvbs2::{
-        pl,
-        receiver::{Dvbs2Decoder, Dvbs2Encoder, Dvbs2Output},
-    },
-    ts,
+use crate::datv::dvbs2::{
+    pl,
+    receiver::{Dvbs2Decoder, Dvbs2Encoder, Dvbs2Output},
 };
+use sdrmm_modem::mpegts as ts;
 
 #[test]
 fn extended_modes_have_valid_constellations_codes_and_inverse_interleavers() {
@@ -33,8 +31,10 @@ fn extended_modes_have_valid_constellations_codes_and_inverse_interleavers() {
             .iter()
             .map(|&bit| if bit { -1.0 } else { 1.0 })
             .collect();
+        let mut restored = Vec::new();
+        mode.deinterleave(&soft, &mut restored);
         assert_eq!(
-            mode.deinterleave(&soft)
+            restored
                 .iter()
                 .map(|&value| value < 0.0)
                 .collect::<Vec<_>>(),

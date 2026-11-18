@@ -1,7 +1,7 @@
+use sdrmm_dsp::coding::bits::crc_msb_inverted as crc;
 use sdrmm_dsp::word_msb;
 
 use super::{
-    bits::crc,
     coding::{Qam, R1_2, R1_3, R1_4, R2_3, Rate},
     mode::Robustness,
 };
@@ -38,6 +38,7 @@ fn take(bits: &[bool], at: &mut usize, width: usize) -> u32 {
     value
 }
 
+#[cfg(any(test, feature = "synth"))]
 fn put(bits: &mut Vec<bool>, value: u32, width: usize) {
     bits.extend((0..width).rev().map(|shift| value >> shift & 1 == 1));
 }
@@ -63,6 +64,7 @@ impl FacService {
         }
     }
 
+    #[cfg(any(test, feature = "synth"))]
     fn write(&self, bits: &mut Vec<bool>) {
         put(bits, self.id, 24);
         put(bits, u32::from(self.short_id), 2);
@@ -146,6 +148,7 @@ impl Fac {
         })
     }
 
+    #[cfg(any(test, feature = "synth"))]
     #[must_use]
     pub fn encode(&self) -> Vec<bool> {
         let mut bits = Vec::with_capacity(fac_bits(self.plus));
@@ -185,6 +188,7 @@ impl Fac {
         }
     }
 
+    #[cfg(any(test, feature = "synth"))]
     #[must_use]
     pub const fn identity_for(plus: bool, frame: usize) -> (u8, bool) {
         match (plus, frame) {

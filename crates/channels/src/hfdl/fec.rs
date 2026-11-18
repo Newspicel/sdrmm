@@ -1,10 +1,17 @@
+use sdrmm_dsp::{Prbs, PrbsSpec};
+
 pub const SEQUENCE_LEN: usize = 127;
 pub const TRAINING_LEN: usize = 15;
 pub const SEGMENT_SYMBOLS: usize = 30;
 const INTERLEAVER_ROWS: usize = 40;
 const INTERLEAVER_ROW_STEP: usize = 9;
 const SCRAMBLER_CYCLE: usize = 120;
-const SCRAMBLER_SEED: [u8; 15] = [1, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1];
+/// 1 + x + x^15 from the seed 110100101011001, first stage first.
+const SCRAMBLER: PrbsSpec = PrbsSpec {
+    stages: 15,
+    taps: 0x4001,
+    seed: 0x4D4B,
+};
 
 pub const A: [u8; SEQUENCE_LEN] = chips(
     b"0101101110111100011101000101011100000011110110011000100100111001111100100000100011010101001101101001010000101100001100101111111",
@@ -13,7 +20,7 @@ pub const M: [u8; SEQUENCE_LEN] = chips(
     b"0111011011110100010110010111110001000000110011011000111001110101110000100110000010101011010010010100111100100011010100001111111",
 );
 pub const T: [u8; TRAINING_LEN] = chips(b"000100110101111");
-const SCRAMBLE: [u8; SCRAMBLER_CYCLE] = scrambler_cycle();
+const SCRAMBLE: [bool; SCRAMBLER_CYCLE] = scrambler_cycle();
 
 const fn chips<const N: usize>(text: &[u8]) -> [u8; N] {
     let mut out = [0u8; N];
@@ -25,26 +32,19 @@ const fn chips<const N: usize>(text: &[u8]) -> [u8; N] {
     out
 }
 
-const fn scrambler_cycle() -> [u8; SCRAMBLER_CYCLE] {
-    let mut state = SCRAMBLER_SEED;
-    let mut out = [0u8; SCRAMBLER_CYCLE];
+const fn scrambler_cycle() -> [bool; SCRAMBLER_CYCLE] {
+    let mut prbs = Prbs::new(SCRAMBLER);
+    let mut out = [false; SCRAMBLER_CYCLE];
     let mut index = 0;
     while index < SCRAMBLER_CYCLE {
-        let bit = state[0] ^ state[14];
-        let mut shift = 14;
-        while shift > 0 {
-            state[shift] = state[shift - 1];
-            shift -= 1;
-        }
-        state[0] = bit;
-        out[index] = bit;
+        out[index] = prbs.next_bit();
         index += 1;
     }
     out
 }
 
 pub fn scramble_flip(data_symbol: usize) -> bool {
-    SCRAMBLE[data_symbol % SCRAMBLER_CYCLE] == 1
+    SCRAMBLE[data_symbol % SCRAMBLER_CYCLE]
 }
 
 pub fn m1_chip(setting: &Setting, index: usize) -> u8 {

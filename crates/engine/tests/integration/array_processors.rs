@@ -16,14 +16,15 @@ use crate::common::{
     },
     assert_tone_dominates, settle_then_collect_second,
 };
+use sdrmm_array::beamformer::BeamformerParams;
+use sdrmm_array::df::DfParams;
+use sdrmm_array::passive_radar::PassiveRadarParams;
 use sdrmm_channels::NfmParams;
 use sdrmm_device_virtual::{BenchWorld, Emitter, Scene, Waveform, default_devices, default_scene};
 use sdrmm_engine::{ArraySpec, Engine};
 use sdrmm_wire::{
     ArrayCal, ArrayCalSource, ArrayOrientation, ArrayTuneRequest, Attitude, ChannelParams,
-    ChannelSettings, PositionFix, ProcessorGate, ProcessorParams, ProcessorReading,
-    processor::beamformer::BeamformerParams, processor::df::DfParams, processor::df::DfReading,
-    radar::PassiveRadarParams,
+    ChannelSettings, PositionFix, ProcessorGate, processor::df::DfReading,
 };
 
 const BEARING_DEG: f64 = 137.0;
@@ -62,7 +63,7 @@ fn uncalibrated(ds: u32) -> ArraySpec {
 fn beamformer(node: &str) -> sdrmm_engine::ProcessorSpec {
     let mut spec = processor(
         node,
-        ProcessorParams::Beamformer(BeamformerParams::default()),
+        crate::common::array::wire(&BeamformerParams::default()),
     );
     spec.lane_ports = vec!["beam".to_owned()];
     spec
@@ -72,9 +73,9 @@ fn df_reading(
     events: &mut tokio::sync::broadcast::Receiver<sdrmm_engine::ArrayEvent>,
 ) -> DfReading {
     let reading = next_reading(events, "df", WAIT);
-    match reading.as_ref() {
-        ProcessorReading::Df(df) => df.clone(),
-        other => panic!("a direction finder reading: {other:?}"),
+    match reading.get::<DfReading>() {
+        Some(df) => df.clone(),
+        None => panic!("a direction finder reading: {reading:?}"),
     }
 }
 
@@ -154,7 +155,7 @@ fn a_time_only_processor_runs_before_phase_is_solved() {
         .engine
         .apply_processor(&processor(
             "radar",
-            ProcessorParams::PassiveRadar(PassiveRadarParams::default()),
+            crate::common::array::wire(&PassiveRadarParams::default()),
         ))
         .unwrap();
     let running = wait_status(&bench.engine, "the radar to run", LOCK_WAIT, |now| {
@@ -171,17 +172,15 @@ fn a_time_only_processor_runs_before_phase_is_solved() {
     );
     let mut events = bench.engine.subscribe_arrays();
     let reading = next_reading(&mut events, "radar", WAIT);
-    assert!(matches!(
-        reading.as_ref(),
-        ProcessorReading::PassiveRadar(_)
-    ));
+    assert!(reading.get::<sdrmm_wire::RadarUpdate>().is_some());
 }
 
 #[cfg(feature = "probe")]
 #[test]
 fn a_spread_processor_is_gated_on_a_together_array() {
     use crate::common::array::calibrated;
-    use sdrmm_wire::{processor::ProbeParams, processor::stitch::StitchParams};
+    use sdrmm_array::probe::ProbeParams;
+    use sdrmm_array::stitch::StitchParams;
 
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
@@ -190,7 +189,7 @@ fn a_spread_processor_is_gated_on_a_together_array() {
         .engine
         .apply_processor(&processor(
             "spread",
-            ProcessorParams::Probe(ProbeParams {
+            crate::common::array::wire(&ProbeParams {
                 time: true,
                 spread: true,
                 ..ProbeParams::default()
@@ -205,7 +204,7 @@ fn a_spread_processor_is_gated_on_a_together_array() {
         .engine
         .apply_processor(&processor(
             "stitch",
-            ProcessorParams::Stitch(StitchParams::default()),
+            crate::common::array::wire(&StitchParams::default()),
         ))
         .unwrap_err();
     assert_eq!(refused.to_string(), "Needs spread tuning");

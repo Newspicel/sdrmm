@@ -10,7 +10,7 @@ use super::{
     pl::{self, Scrambler, Signalling},
 };
 #[cfg(any(test, feature = "synth"))]
-use crate::datv::dvbs::PACKET;
+use sdrmm_modem::dvb::PACKET;
 
 const CORRECT: usize = 12;
 const NOISE: f32 = 0.25;
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn every_mode_fills_the_symbols_its_set_promises() {
         for mode in CATALOGUE {
-            let code = super::super::ldpc::Ldpc::new(mode.rate, mode.frame)
+            let code = sdrmm_modem::dvb::ldpc::Ldpc::new(mode.rate, mode.frame)
                 .unwrap_or_else(|| panic!("{}", mode.label));
             assert_eq!(
                 code.message(mode.shape),

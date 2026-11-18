@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use super::iip::parse_iip_frame;
 use super::rs::{bytes_of_bits, first_39, iip_crc24, rs6_correct, rs8_correct, symbols6};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 pub fn classify_voice(payload_bits: &[u8]) -> Option<Value> {
     if payload_bits.len() < 312 {

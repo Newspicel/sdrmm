@@ -11,7 +11,6 @@ use blip25_vocoder::halfrate::frame::{
     encode_code_vectors, interleave,
 };
 use num_complex::Complex;
-use sdrmm_channels::synth::dv as tg;
 use sdrmm_modem::cpm::TIMING_BW_BURST;
 use sdrmm_modem_test_support::ber::{
     Curve, CurvePoint,
@@ -55,7 +54,7 @@ fn modulate(frames: &[[u8; DIBITS_PER_FRAME]]) -> Vec<Complex<f32>> {
     symbols.extend(uw_dibits());
     symbols.extend(frames.iter().flatten().copied());
     symbols.extend(alternating(STEADY_TAIL));
-    tg::c4fm(&symbols, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA)
+    sdrmm_modem::synth::c4fm(&symbols, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA)
 }
 
 struct Received {

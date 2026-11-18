@@ -334,6 +334,7 @@ const FAC_E_4: [i32; 11] = [-82, -66, -50, -34, -18, -2, 14, 30, 46, 62, 78];
 const FAC_E_LAST: [i32; 3] = [-90, -74, -58];
 
 impl Robustness {
+    #[cfg(any(test, feature = "synth"))]
     pub const ALL: [Self; 5] = [Self::A, Self::B, Self::C, Self::D, Self::E];
 
     #[must_use]
@@ -408,6 +409,7 @@ impl Robustness {
         }
     }
 
+    #[cfg(any(test, feature = "synth"))]
     #[must_use]
     pub const fn fac_bits(self) -> usize {
         if self.plus() { 116 } else { 72 }

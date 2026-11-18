@@ -4,7 +4,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Channelizer, Nco};
 
 use super::burst::{Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
-use crate::ChannelError;
+use sdrmm_decoder::ChannelError;
 
 const CUTOFF_HZ: f64 = 920_000.0;
 const BIN_MULTIPLE: u8 = 4;

@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_channels::array_processor::MAX_LANES;
+use sdrmm_array::MAX_LANES;
 use sdrmm_device::{GapScope, LaneMark, Uncertainty};
 use sdrmm_wire::{ArrayOrientation, ArrayTuningMode, Coherence};
 

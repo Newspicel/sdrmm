@@ -3,7 +3,7 @@ use crate::wmbus::WmbusRecord;
 use crate::wmbus::WmbusSecurity;
 
 use super::{coding::crc, records};
-use crate::crypto::{self, Aes};
+use sdrmm_crypto::{self as crypto, Aes};
 
 const LINK_ADDRESS: usize = 2;
 const LINK_CI: usize = 10;

@@ -37,14 +37,14 @@ fn cf32(bytes: &[u8]) -> Vec<Complex<f32>> {
             )
         })
         .collect();
-    iq.extend(synth::silence(TAIL));
+    iq.extend(sdrmm_modem::synth::silence(TAIL));
     iq
 }
 
 fn receiver() -> WmbusChannel {
     let settings = ChannelSettings {
         params: ChannelParams::new("wmbus", &WmbusParams::default()).expect("wmbus settings"),
-        ..crate::default_settings("wmbus").unwrap()
+        ..sdrmm_decoder::default_settings("wmbus").unwrap()
     };
     WmbusChannel::new(ChannelCtx { input_rate: RATE }, settings).unwrap()
 }
@@ -74,7 +74,7 @@ fn only(iq: &[Complex<f32>]) -> WmbusMessage {
 }
 
 fn bytes(text: &str) -> Vec<u8> {
-    crate::crypto::hex(text).unwrap()
+    sdrmm_crypto::hex(text).unwrap()
 }
 
 fn volume(message: &WmbusMessage) -> Option<f64> {
@@ -191,8 +191,8 @@ fn a_techem_allocator_decodes_off_air() {
     assert!(message.snr_db > 6.0, "{}", message.snr_db);
 }
 
-pub(crate) fn fixture() -> crate::fixtures::Fixture {
-    crate::fixtures::Fixture::new(
+pub(crate) fn fixture() -> crate::builtin::fixtures::Fixture {
+    crate::builtin::fixtures::Fixture::new(
         ChannelParams::new("wmbus", &WmbusParams::default()).expect("wmbus settings"),
         synthetic(WmbusMode::T, WmbusFormat::A, &WATER_METER),
     )
@@ -200,7 +200,7 @@ pub(crate) fn fixture() -> crate::fixtures::Fixture {
 
 fn synthetic(mode: WmbusMode, format: WmbusFormat, payload: &[u8]) -> Vec<Complex<f32>> {
     let mut iq = synth::wmbus::telegram(mode, format, payload, RATE);
-    iq.extend(synth::silence(TAIL));
+    iq.extend(sdrmm_modem::synth::silence(TAIL));
     iq
 }
 
@@ -229,8 +229,8 @@ fn every_mode_and_format_reads_plain_records() {
 fn a_detuned_noisy_telegram_still_decodes() {
     for offset_hz in [-40_000.0, 40_000.0] {
         let mut iq = synthetic(WmbusMode::T, WmbusFormat::A, &WATER_METER);
-        synth::shift(&mut iq, offset_hz, RATE);
-        synth::add_noise(&mut iq, 7, 0.35);
+        sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
+        sdrmm_modem::synth::add_noise(&mut iq, 7, 0.35);
         let message = only(&iq);
         assert_eq!(volume(&message), Some(123.529));
     }
@@ -250,8 +250,8 @@ fn three_of_six_soft_decisions_repair_a_faded_chip() {
             std::iter::repeat_n(level, per_chip)
         })
         .collect();
-    let mut iq = synth::fm_modulate(&levels, 50_000.0, RATE);
-    iq.extend(synth::silence(TAIL));
+    let mut iq = sdrmm_modem::synth::fm_modulate(&levels, 50_000.0, RATE);
+    iq.extend(sdrmm_modem::synth::silence(TAIL));
     let message = only(&iq);
     assert_eq!(message.corrected, 1);
     assert_eq!(volume(&message), Some(123.529));
@@ -262,8 +262,8 @@ fn a_frame_failing_its_crc_is_counted_not_shown() {
     let mut chips = synth::wmbus::chips(WmbusMode::C, WmbusFormat::A, &WATER_METER);
     let flip = 32 + 32 + 8 * 20;
     chips[flip] = !chips[flip];
-    let mut iq = synth::fsk(&chips, 100_000.0, 50_000.0, RATE);
-    iq.extend(synth::silence(TAIL));
+    let mut iq = sdrmm_modem::synth::fsk(&chips, 100_000.0, 50_000.0, RATE);
+    iq.extend(sdrmm_modem::synth::silence(TAIL));
     let mut rx = receiver();
     assert!(feed(&mut rx, &iq).is_empty());
     assert_eq!(rx.rejected(), 1);
@@ -283,7 +283,7 @@ fn a_key_added_later_opens_the_meter() {
     };
     rx.apply(ChannelSettings {
         params: ChannelParams::new("wmbus", &keys).expect("wmbus settings"),
-        ..crate::default_settings("wmbus").unwrap()
+        ..sdrmm_decoder::default_settings("wmbus").unwrap()
     })
     .unwrap();
     let opened = feed(&mut rx, &iq);
@@ -308,15 +308,15 @@ fn a_malformed_key_is_refused() {
             },
         )
         .expect("wmbus settings"),
-        ..crate::default_settings("wmbus").unwrap()
+        ..sdrmm_decoder::default_settings("wmbus").unwrap()
     };
     assert!(WmbusChannel::new(ChannelCtx { input_rate: RATE }, settings).is_err());
 }
 
 #[test]
 fn noise_alone_decodes_nothing() {
-    let mut iq = synth::silence(400_000);
-    synth::add_noise(&mut iq, 11, 0.5);
+    let mut iq = sdrmm_modem::synth::silence(400_000);
+    sdrmm_modem::synth::add_noise(&mut iq, 11, 0.5);
     let mut rx = receiver();
     assert!(feed(&mut rx, &iq).is_empty());
 }

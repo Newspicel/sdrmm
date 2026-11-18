@@ -55,8 +55,11 @@
         },
         {
           "id": "radar",
-          "kind": "passive_radar",
-          "data": {},
+          "kind": "processor",
+          "data": {
+            "processor_type": "passive_radar",
+            "settings": {}
+          },
           "position": {
             "x": 1040.0,
             "y": 0.0

@@ -897,6 +897,9 @@ mod model_tests {
             level_dbfs: -61.0,
             ..DectFrame::default()
         };
-        crate::testutil::assert_views_hold(&dect_kind(), &[sdrmm_wire::DecoderEvent::of(&frame)]);
+        sdrmm_decoder_test_support::assert_views_hold(
+            &dect_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&frame)],
+        );
     }
 }

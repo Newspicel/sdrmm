@@ -368,7 +368,7 @@ impl Engine {
         let mut best = (0.0, 0);
         for start in first..=last {
             let (mut signal, mut noise, mut late_signal, mut late_noise) = (0.0, 0.0, 0.0, 0.0);
-            for (block, &(offset, pattern)) in protocol.sync.iter().enumerate() {
+            for (block, &(offset, pattern)) in protocol.sync.blocks().iter().enumerate() {
                 for (index, &tone) in pattern.iter().enumerate() {
                     let frame = start + 4 * (offset + index) as isize;
                     if frame < 0 || frame as usize >= frames {
@@ -462,27 +462,14 @@ impl Engine {
     }
 
     fn sync_score(&self, start: isize, probe: &Probe) -> f32 {
-        let mut total = 0.0;
-        for &(first, pattern) in self.protocol.sync {
-            let mut block = Complex::<f32>::default();
-            let mut phase = Complex::new(1.0f32, 0.0);
-            for (index, &tone) in pattern.iter().enumerate() {
-                let samples = self.symbol(start + ((first + index) * BASEBAND_SYMBOL) as isize);
-                let sum: Complex<f32> = samples
-                    .iter()
-                    .zip(&probe.table[usize::from(tone)])
-                    .map(|(sample, twiddle)| sample * twiddle)
-                    .sum();
-                if probe.coherent {
-                    block += sum * phase;
-                    phase *= probe.per_symbol;
-                } else {
-                    total += sum.norm_sqr();
-                }
-            }
-            total += block.norm_sqr();
-        }
-        total
+        let coherent = probe.coherent.then_some(probe.per_symbol);
+        self.protocol.sync.score(coherent, |symbol, tone| {
+            self.symbol(start + (symbol * BASEBAND_SYMBOL) as isize)
+                .iter()
+                .zip(&probe.table[usize::from(tone)])
+                .map(|(sample, twiddle)| sample * twiddle)
+                .sum()
+        })
     }
 
     fn symbol(&self, begin: isize) -> [Complex<f32>; BASEBAND_SYMBOL] {
@@ -577,18 +564,11 @@ impl Engine {
             self.slide(cycles);
             let per_symbol = Complex::from_polar(1.0, -TAU * cycles);
             for start in (first..=last).step_by(WHOLE_WINDOW_STEP) {
-                let mut total = 0.0;
-                for &(offset, pattern) in protocol.sync {
-                    let mut block = Complex::<f32>::default();
-                    let mut phase = Complex::new(1.0f32, 0.0);
-                    for (index, &tone) in pattern.iter().enumerate() {
-                        let at = (start + ((offset + index) * BASEBAND_SYMBOL) as isize)
-                            .rem_euclid(length as isize) as usize;
-                        block += self.sliding[usize::from(tone) * length + at] * phase;
-                        phase *= per_symbol;
-                    }
-                    total += block.norm_sqr();
-                }
+                let total = protocol.sync.score(Some(per_symbol), |symbol, tone| {
+                    let at = (start + (symbol * BASEBAND_SYMBOL) as isize)
+                        .rem_euclid(length as isize) as usize;
+                    self.sliding[usize::from(tone) * length + at]
+                });
                 remember_peak(&mut peaks, (start, steps * eighth, total), eighth);
             }
         }
@@ -665,23 +645,13 @@ impl Engine {
     }
 
     fn osd_distance(&self, sync: usize) -> f32 {
-        let total: usize = self
-            .protocol
-            .sync
-            .iter()
-            .map(|(_, pattern)| pattern.len())
-            .sum();
+        let total = self.protocol.sync.sync_symbols();
         let share = sync as f32 / total as f32 - 1.0 / SYNC_SYMBOL_SHARE as f32;
         OSD_DISTANCE_FLOOR + OSD_DISTANCE_PER_SYNC_SHARE * share
     }
 
     fn min_sync_symbols(&self) -> usize {
-        let total: usize = self
-            .protocol
-            .sync
-            .iter()
-            .map(|(_, pattern)| pattern.len())
-            .sum();
+        let total = self.protocol.sync.sync_symbols();
         total / SYNC_SYMBOL_SHARE
     }
 

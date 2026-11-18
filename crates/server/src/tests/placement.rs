@@ -34,7 +34,7 @@ fn a_failed_move_keeps_the_original_decoder() {
     }
     let settings = ChannelSettings {
         frequency_hz: 100e6,
-        ..sdrmm_channels::default_settings("nfm").unwrap()
+        ..sdrmm_decoder::default_settings("nfm").unwrap()
     };
     let channel = app
         .engine
@@ -93,7 +93,7 @@ fn an_exporting_decoder_is_pinned_until_the_export_stops() {
     let set = app.engine.create_device_set("virtual:band").unwrap();
     let id = app
         .engine
-        .add_channel(set, 0, sdrmm_channels::default_settings("nfm").unwrap())
+        .add_channel(set, 0, sdrmm_decoder::default_settings("nfm").unwrap())
         .unwrap();
     let snapshot = app.engine.snapshot();
     let set = snapshot

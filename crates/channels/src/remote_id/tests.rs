@@ -1,4 +1,3 @@
-use crate::NativeChannel;
 use crate::remote_id::HeightReference;
 use crate::remote_id::RemoteIdFrame;
 use crate::remote_id::RemoteIdLink;
@@ -11,17 +10,13 @@ use crate::remote_id::UaStatus;
 use crate::remote_id::UaType;
 use crate::remote_id::UasIdType;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{RemoteIdChannel, input_rate};
-use crate::{
-    ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, channel_filter,
-    synth::{
-        self,
-        remote_id::{self as tx, BlePhy, WifiPhy},
-    },
-    testutil::{complex_noise, settings},
-};
+use crate::synth::remote_id::{self as tx, BlePhy, WifiPhy};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, channel_filter};
+use sdrmm_decoder_test_support::{complex_noise, settings};
 
 const ADDRESS: [u8; 6] = [0xC2, 0x11, 0x22, 0x33, 0x44, 0x55];
 const WIFI_ADDRESS: [u8; 6] = [0x60, 0x60, 0x1F, 0x12, 0x34, 0x56];
@@ -117,12 +112,12 @@ fn on_air(
     noise: f32,
 ) -> Vec<Complex<f32>> {
     let gap = (300e-6 * rate) as usize;
-    let mut iq = synth::silence(gap);
-    synth::scale(&mut signal, 0.3);
+    let mut iq = sdrmm_modem::synth::silence(gap);
+    sdrmm_modem::synth::scale(&mut signal, 0.3);
     iq.append(&mut signal);
-    iq.extend(synth::silence(gap));
-    synth::shift(&mut iq, offset_hz, rate);
-    synth::add_noise(&mut iq, 7, noise);
+    iq.extend(sdrmm_modem::synth::silence(gap));
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, rate);
+    sdrmm_modem::synth::add_noise(&mut iq, 7, noise);
     iq
 }
 
@@ -136,7 +131,7 @@ fn a_legacy_bluetooth_location_carries_the_remembered_id() {
     {
         let pdu = tx::legacy_pdu(ADDRESS, counter as u8, message);
         iq.extend(on_air(
-            tx::bluetooth(&pdu, 0, BlePhy::Le1m, rate),
+            sdrmm_modem::ble::transmit::rf_packet(&pdu, 0, BlePhy::Le1m, rate),
             rate,
             40e3,
             0.05,
@@ -188,7 +183,12 @@ fn long_range_packs_decode_on_a_data_channel_at_both_coding_rates() {
         (BlePhy::CodedS2, RemoteIdPhy::LeCodedS2),
     ] {
         let pdu = tx::aux_adv_pdu(ADDRESS, 9, &pack());
-        let iq = on_air(tx::bluetooth(&pdu, 9, phy, rate), rate, -60e3, 0.1);
+        let iq = on_air(
+            sdrmm_modem::ble::transmit::rf_packet(&pdu, 9, phy, rate),
+            rate,
+            -60e3,
+            0.1,
+        );
         let frames = decode(RemoteIdLink::Bluetooth, DATA_8_HZ, &iq);
         assert_eq!(frames.len(), 1, "{phy:?} {frames:?}");
         assert_eq!(frames[0].transport, RemoteIdTransport::BluetoothExtended);
@@ -203,7 +203,7 @@ fn a_primary_channel_pointer_carries_no_pack() {
     let rate = RemoteIdLink::Bluetooth.input_rate_hz();
     let pdu = tx::ext_adv_pdu(8, BlePhy::CodedS8);
     let iq = on_air(
-        tx::bluetooth(&pdu, 12, BlePhy::CodedS8, rate),
+        sdrmm_modem::ble::transmit::rf_packet(&pdu, 12, BlePhy::CodedS8, rate),
         rate,
         0.0,
         0.05,
@@ -214,19 +214,19 @@ fn a_primary_channel_pointer_carries_no_pack() {
 #[test]
 fn a_twenty_megahertz_window_hears_every_bluetooth_channel_in_it() {
     let rate = RemoteIdLink::BluetoothBand.input_rate_hz();
-    let mut first = tx::bluetooth(
+    let mut first = sdrmm_modem::ble::transmit::rf_packet(
         &tx::legacy_pdu(ADDRESS, 1, &basic_id()),
         12,
         BlePhy::Le1m,
         rate,
     );
-    let mut second = tx::bluetooth(
+    let mut second = sdrmm_modem::ble::transmit::rf_packet(
         &tx::aux_adv_pdu([0xD0, 1, 2, 3, 4, 5], 2, &pack()),
         9,
         BlePhy::CodedS8,
         rate,
     );
-    synth::shift(&mut second, DATA_8_HZ - CHANNEL_38_HZ, rate);
+    sdrmm_modem::synth::shift(&mut second, DATA_8_HZ - CHANNEL_38_HZ, rate);
     first.resize(second.len(), Complex::new(0.0, 0.0));
     let mixed: Vec<Complex<f32>> = first.iter().zip(&second).map(|(a, b)| a + b).collect();
     let frames = decode(
@@ -245,7 +245,12 @@ fn other_bluetooth_adverts_are_ignored() {
     let mut pdu = vec![0x42, 20];
     pdu.extend(ADDRESS);
     pdu.extend([13, 0xFF, 0x4C, 0x00, 0x02, 0x15, 1, 2, 3, 4, 5, 6, 7, 8]);
-    let iq = on_air(tx::bluetooth(&pdu, 39, BlePhy::Le1m, rate), rate, 0.0, 0.05);
+    let iq = on_air(
+        sdrmm_modem::ble::transmit::rf_packet(&pdu, 39, BlePhy::Le1m, rate),
+        rate,
+        0.0,
+        0.05,
+    );
     assert!(decode(RemoteIdLink::Bluetooth, 2_480e6, &iq).is_empty());
 }
 

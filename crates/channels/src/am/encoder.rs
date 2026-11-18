@@ -7,7 +7,7 @@ use sdrmm_wire::SettingField;
 use serde::{Deserialize, Serialize};
 
 use super::{AUDIO_TAPS, AmParams, BANDWIDTHS_HZ, DESCRIPTOR, MODULATION_DEPTH};
-use crate::{
+use sdrmm_decoder::{
     AUDIO_RATE,
     encoder::{
         EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload, tx_limiter,
@@ -115,13 +115,11 @@ mod tests {
     use sdrmm_wire::{ChannelParams, ChannelSettings};
 
     use super::*;
-    use crate::{
-        ChannelCtx, NativeChannel,
-        am::AmChannel,
-        encoder::Carries,
-        synth::{burst, tone_audio},
-        testutil::{dominant_tone, rms, run_ragged, settings},
-    };
+    use crate::am::AmChannel;
+    use sdrmm_decoder::encoder::burst;
+    use sdrmm_decoder::{ChannelCtx, NativeChannel, encoder::Carries};
+    use sdrmm_decoder_test_support::{dominant_tone, rms, run_ragged, settings};
+    use sdrmm_modem::synth::tone_audio;
 
     const RATE: f64 = 48_000.0;
 

@@ -1,10 +1,9 @@
 use std::sync::{Arc, atomic::AtomicU64};
 
-use sdrmm_channels::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelLayout, ChannelOutputs, ChannelRx, Decoder,
-    install_plugins,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelLayout, ChannelOutputs, Decoder, install_plugins,
 };
-use sdrmm_wire::ChannelDescriptor;
+use sdrmm_wire::{ChannelDescriptor, FilterSpec};
 
 use super::*;
 
@@ -20,7 +19,7 @@ fn processed(version: usize) -> u64 {
 
 struct ProbeRx(usize);
 
-impl ChannelRx for ProbeRx {
+impl Channel for ProbeRx {
     fn apply(&mut self, _settings: ChannelSettings) -> Result<(), ChannelError> {
         Ok(())
     }
@@ -57,11 +56,11 @@ impl Decoder for Probe {
         &self.descriptor
     }
 
-    fn create_rx(
+    fn open(
         &self,
         _ctx: ChannelCtx,
         _settings: &ChannelSettings,
-    ) -> Result<Box<dyn ChannelRx>, ChannelError> {
+    ) -> Result<Box<dyn Channel>, ChannelError> {
         if self.broken {
             return Err(ChannelError::InvalidSettings("broken build".to_owned()));
         }
@@ -76,8 +75,8 @@ impl Decoder for Probe {
         })
     }
 
-    fn filter(&self, _params: &ChannelParams) -> Result<ChannelFilter, ChannelError> {
-        Ok(ChannelFilter::Passthrough)
+    fn filter(&self, _params: &ChannelParams) -> Result<FilterSpec, ChannelError> {
+        Ok(FilterSpec::Passthrough)
     }
 
     fn normalize(&self, params: &ChannelParams) -> Result<ChannelParams, ChannelError> {

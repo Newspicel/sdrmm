@@ -355,8 +355,9 @@ fn coarse_finds_a_lag_under_a_1_khz_cfo() {
 #[test]
 fn processors_never_see_noise_source_samples() {
     use crate::common::array::processor;
-    use sdrmm_channels::array_processor::probe::take_probe_log;
-    use sdrmm_wire::{ProcessorParams, processor::ProbeParams};
+    use sdrmm_array::probe::take_probe_log;
+
+    use sdrmm_array::probe::ProbeParams;
 
     let bench = Bench::new();
     let ds = bench.open(KRAKEN);
@@ -365,7 +366,7 @@ fn processors_never_see_noise_source_samples() {
         .engine
         .apply_processor(&processor(
             "probe",
-            ProcessorParams::Probe(ProbeParams {
+            crate::common::array::wire(&ProbeParams {
                 time: true,
                 ..ProbeParams::default()
             }),

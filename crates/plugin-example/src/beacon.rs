@@ -1,20 +1,41 @@
-//! Beacon: sends frames as two-tone FSK, the transmit half of the example plugin.
+//! Beacon: sends text as two-tone FSK, the transmit half of the example plugin, declared like a
+//! built-in encoder.
 
 use std::collections::VecDeque;
 
 use sdrmm_plugin::{
-    Complex, Encoder, Payload, serde_json,
-    wire::{Control, EncoderDescriptor, EncoderInput, SettingField},
+    Complex, EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload,
+    decoder::encoder::Carries,
+    serde_json::Value,
+    wire::{Control, NumberSpec, SettingField},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::INPUT_RATE_HZ;
+use crate::carrier::INPUT_RATE_HZ;
 
+const TYPE_ID: &str = "beacon";
 /// The mark tone sits this far above the channel frequency, the space tone as far below.
 pub const SHIFT_HZ: f64 = 1_000.0;
-pub const BAUD: f64 = 100.0;
 const AMPLITUDE: f32 = 0.5;
 const MAX_QUEUED_BITS: usize = 8 * 4_096;
+
+const BASE: EncoderBase = EncoderBase {
+    type_id: TYPE_ID,
+    name: "Beacon",
+    summary: "Text as two-tone FSK",
+};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BeaconSettings {
+    pub baud: f64,
+}
+
+impl Default for BeaconSettings {
+    fn default() -> Self {
+        Self { baud: 100.0 }
+    }
+}
 
 /// What the encoder node's message form hands over: the text to key.
 #[derive(Deserialize)]
@@ -22,27 +43,33 @@ struct Message {
     text: String,
 }
 
-/// The octets a frame keys: the text of a filled message form, or the frame as it is.
-fn keyed(frame: &[u8]) -> Vec<u8> {
-    serde_json::from_slice::<Message>(frame)
-        .map_or_else(|_| frame.to_vec(), |message| message.text.into_bytes())
+/// The encoder as the plugin hands it over.
+pub(crate) fn encoder() -> NativeEncoder<BeaconSettings> {
+    NativeEncoder::new::<Beacon>(BASE, width_hz)
+        .form(form)
+        .messages(message_form, compose)
 }
 
-/// The encoder the example declares in its manifest.
-#[must_use]
-pub fn descriptor() -> EncoderDescriptor {
-    EncoderDescriptor {
-        type_id: "beacon".to_owned(),
-        name: "Beacon".to_owned(),
-        summary: "Text as two-tone FSK".to_owned(),
-        rate_hz: INPUT_RATE_HZ,
-        bandwidth_hz: WIDTH_HZ,
-        input: EncoderInput::Message,
-        message: vec![
-            SettingField::new("text", "Text", Control::text("CQ")).title("Text the beacon keys"),
-        ],
-        ..EncoderDescriptor::default()
-    }
+/// The mark and space tones and the keying sidebands around them.
+pub(crate) fn width_hz(settings: &BeaconSettings) -> f64 {
+    2.0 * SHIFT_HZ + 4.0 * settings.baud
+}
+
+fn form() -> Vec<SettingField> {
+    vec![
+        SettingField::new("baud", "Baud", NumberSpec::new(10.0, 300.0, 10.0))
+            .title("Bits keyed per second"),
+    ]
+}
+
+fn message_form() -> Vec<SettingField> {
+    vec![SettingField::new("text", "Text", Control::text("CQ")).title("Text the beacon keys")]
+}
+
+fn compose(message: &Value) -> Result<TxPayload, EncoderError> {
+    let message = Message::deserialize(message)
+        .map_err(|error| EncoderError::message(TYPE_ID, error.to_string()))?;
+    Ok(TxPayload::Frame(message.text.into_bytes()))
 }
 
 pub struct Beacon {
@@ -53,12 +80,29 @@ pub struct Beacon {
     samples_per_bit: usize,
 }
 
-/// The beacon keys at a fixed shift and rate, so it has nothing to set.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct BeaconSettings {}
+impl NativeModulator for Beacon {
+    type Settings = BeaconSettings;
 
-/// The mark and space tones and the keying sidebands around them.
-pub const WIDTH_HZ: f64 = 2.0 * SHIFT_HZ + 4.0 * BAUD;
+    fn rate_hz() -> f64 {
+        INPUT_RATE_HZ
+    }
+
+    fn new(settings: &BeaconSettings) -> Result<Self, EncoderError> {
+        if !(settings.baud.is_finite() && settings.baud > 0.0) {
+            return Err(EncoderError::settings(
+                TYPE_ID,
+                format!("{} baud", settings.baud),
+            ));
+        }
+        Ok(Self {
+            bits: VecDeque::new(),
+            tone_hz: 0.0,
+            left: 0,
+            phase: 0.0,
+            samples_per_bit: (INPUT_RATE_HZ / settings.baud).round() as usize,
+        })
+    }
+}
 
 impl Beacon {
     fn next_bit(&mut self) -> bool {
@@ -78,29 +122,19 @@ impl Beacon {
     }
 }
 
-impl Encoder for Beacon {
-    type Settings = BeaconSettings;
-
-    fn open(rate_hz: f64, _settings: BeaconSettings) -> Result<Self, String> {
-        if rate_hz != INPUT_RATE_HZ {
-            return Err(format!("beacon sends at {INPUT_RATE_HZ} Hz, got {rate_hz}"));
-        }
-        Ok(Self {
-            bits: VecDeque::new(),
-            tone_hz: 0.0,
-            left: 0,
-            phase: 0.0,
-            samples_per_bit: (rate_hz / BAUD).round() as usize,
-        })
-    }
-
-    fn submit(&mut self, payload: Payload<'_>) -> Result<(), String> {
-        let Payload::Frame(frame) = payload else {
-            return Err("beacon sends frames, not audio".to_owned());
+impl Modulator for Beacon {
+    fn submit(&mut self, payload: TxPayload) -> Result<(), EncoderError> {
+        let TxPayload::Frame(bytes) = payload else {
+            return Err(EncoderError::WrongPayload {
+                encoder: TYPE_ID.to_owned(),
+                takes: Carries::Frames,
+            });
         };
-        let bytes = keyed(frame);
         if self.bits.len() + bytes.len() * 8 > MAX_QUEUED_BITS {
-            return Err("beacon backlog full".to_owned());
+            return Err(EncoderError::Refused {
+                encoder: TYPE_ID.to_owned(),
+                reason: "backlog full".to_owned(),
+            });
         }
         self.bits.extend(
             bytes
@@ -125,26 +159,29 @@ impl Encoder for Beacon {
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_plugin::{Encoder, decoder::encoder::EncoderParams, serde_json};
+
     use super::*;
 
     fn beacon() -> Beacon {
-        Beacon::open(INPUT_RATE_HZ, BeaconSettings::default()).expect("opens")
+        Beacon::new(&BeaconSettings::default()).expect("opens")
     }
 
     #[test]
     fn a_frame_keys_one_bit_per_baud() {
         let mut tx = beacon();
-        tx.submit(Payload::Frame(&[0b1000_0000])).expect("queues");
+        tx.submit(TxPayload::Frame(vec![0b1000_0000]))
+            .expect("queues");
         let mut out = vec![Complex::default(); 10_000];
-        let written = tx.generate(&mut out);
-        assert_eq!(written, 8 * 480);
+        assert_eq!(tx.generate(&mut out), 8 * 480);
         assert_eq!(tx.generate(&mut out), 0, "nothing left to send");
     }
 
     #[test]
     fn a_mark_turns_the_phase_forward_and_a_space_back() {
         let mut tx = beacon();
-        tx.submit(Payload::Frame(&[0b1000_0000])).expect("queues");
+        tx.submit(TxPayload::Frame(vec![0b1000_0000]))
+            .expect("queues");
         let mut out = vec![Complex::default(); 960];
         tx.generate(&mut out);
         let turn = |a: Complex<f32>, b: Complex<f32>| (b * a.conj()).arg();
@@ -153,17 +190,20 @@ mod tests {
     }
 
     #[test]
-    fn a_filled_message_form_keys_its_text_and_nothing_else() {
-        let mut tx = beacon();
-        tx.submit(Payload::Frame(br#"{"text":"A"}"#))
-            .expect("queues");
-        let mut out = vec![Complex::default(); 10_000];
-        assert_eq!(tx.generate(&mut out), 8 * 480, "one octet for one letter");
+    fn a_filled_message_form_composes_to_its_text() {
+        let composed = encoder().compose(&serde_json::json!({"text": "A"}));
+        assert!(matches!(composed, Ok(TxPayload::Frame(bytes)) if bytes == b"A"));
     }
 
     #[test]
-    fn audio_and_another_rate_are_refused() {
-        assert!(beacon().submit(Payload::Audio(&[0.0; 4])).is_err());
-        assert!(Beacon::open(96_000.0, BeaconSettings::default()).is_err());
+    fn the_width_follows_the_baud() {
+        let params = EncoderParams::new(TYPE_ID, &BeaconSettings { baud: 50.0 }).expect("params");
+        assert_eq!(encoder().width_hz(&params).expect("a width"), 2_200.0);
+    }
+
+    #[test]
+    fn audio_and_a_dead_baud_are_refused() {
+        assert!(beacon().submit(TxPayload::Audio(vec![0.0; 4])).is_err());
+        assert!(Beacon::new(&BeaconSettings { baud: 0.0 }).is_err());
     }
 }

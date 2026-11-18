@@ -2,7 +2,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Decimator, ReedSolomon, design_lowpass_blackman_harris};
 use serde_json::{Value, json};
 
-use crate::acars::block::{AcarsBlock, parse as parse_acars};
+use sdrmm_aviation::acars::block::{AcarsBlock, parse as parse_acars};
 
 use super::atn::{self, ClnpReassembler, CotpReassembler, X25Reassembler};
 use super::avlc::{AvlcFrame, Control, Payload};
@@ -186,8 +186,8 @@ fn selectivity(cutoff: f64) -> Decimator {
 
 #[cfg(test)]
 mod cotp_pipeline_tests {
-    use super::super::cpdlc;
     use super::*;
+    use sdrmm_aviation::cpdlc::atn as cpdlc;
 
     fn clnp_dt(cotp: &[u8]) -> Vec<u8> {
         let mut b = vec![0x81, 15, 1, 0x3F, 0x1C, 0x00, 0x00, 0x00, 0x00];

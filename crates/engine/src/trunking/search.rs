@@ -255,7 +255,7 @@ fn probe_reach(carrier: &Carrier) -> Option<std::ops::RangeInclusive<u64>> {
     let Ok(watch) = (carrier.trunking.watch)(true) else {
         return None;
     };
-    let (low, high) = sdrmm_channels::occupied_band(&watch);
+    let (low, high) = sdrmm_decoder::occupied_band(&watch);
     let nyquist = carrier.sample_rate / 2.0;
     let lowest = (carrier.center_hz - nyquist - low).max(0.0);
     let highest = carrier.center_hz + nyquist - high;

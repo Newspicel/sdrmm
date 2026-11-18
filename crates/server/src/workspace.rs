@@ -44,7 +44,7 @@ pub(crate) fn adopt_named_devices(engine: &Engine, store: &Store) {
 
 pub(crate) fn resolve(graph: &PatchGraph, state: &StateSnapshot) -> ResolvedPatch {
     let ctx = ResolveCtx {
-        descriptors: Some(&sdrmm_channels::descriptors()),
+        descriptors: Some(&sdrmm_decoder::descriptors()),
         live: Some(state),
     };
     let (mut patch, _) = resolve::compile_draft(graph, &ctx);
@@ -546,7 +546,7 @@ pub(crate) fn channel_settings(
         .filter(|channel| channel.settings.params.type_id() == channel_type)
         .map(|channel| channel.settings.clone())
         .or_else(|| {
-            let mut settings = sdrmm_channels::default_settings(channel_type)?;
+            let mut settings = sdrmm_decoder::default_settings(channel_type)?;
             if let Some(center_hz) = center_hz {
                 settings.frequency_hz = center_hz;
             }

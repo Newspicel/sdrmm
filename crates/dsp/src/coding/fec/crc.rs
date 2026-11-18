@@ -47,6 +47,26 @@ pub fn crc_msb_bits(poly: u32, width: u32, init: u32, bits: impl IntoIterator<It
     })
 }
 
+/// CRC-16/GENIBUS: the CCITT polynomial from all ones, complemented.
+#[must_use]
+pub fn crc16_genibus(data: &[u8]) -> u16 {
+    !crc16_msb(0x1021, 0xFFFF, data)
+}
+
+/// Whether the last two bytes of `frame` are the big-endian CRC-16/GENIBUS of the rest.
+#[must_use]
+pub fn crc16_genibus_ok(frame: &[u8]) -> bool {
+    frame
+        .split_last_chunk::<2>()
+        .is_some_and(|(body, check)| crc16_genibus(body) == u16::from_be_bytes(*check))
+}
+
+/// Appends the big-endian CRC-16/GENIBUS of what `frame` holds.
+pub fn push_crc16_genibus(frame: &mut Vec<u8>) {
+    let crc = crc16_genibus(frame);
+    frame.extend_from_slice(&crc.to_be_bytes());
+}
+
 #[must_use]
 pub fn crc16_msb(poly: u16, init: u16, data: &[u8]) -> u16 {
     crc_msb_bits(poly.into(), 16, init.into(), msb_first(data)) as u16
@@ -151,6 +171,24 @@ mod tests {
         for byte in 0..=u8::MAX {
             assert!(crc4_msb(0x13, 0x0, &[byte]) <= 0x0F);
         }
+    }
+
+    #[test]
+    fn crc16_genibus_matches_catalogue_check_value() {
+        assert_eq!(crc16_genibus(CHECK), 0xD64E);
+    }
+
+    #[test]
+    fn a_genibus_frame_checks_and_catches_a_bit_flip() {
+        let mut frame = CHECK.to_vec();
+        push_crc16_genibus(&mut frame);
+        assert!(crc16_genibus_ok(&frame));
+        for bit in 0..frame.len() * 8 {
+            let mut corrupt = frame.clone();
+            flip_msb_first(&mut corrupt, bit);
+            assert!(!crc16_genibus_ok(&corrupt), "bit {bit}");
+        }
+        assert!(!crc16_genibus_ok(&[0x00]));
     }
 
     #[test]

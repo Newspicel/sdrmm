@@ -9,18 +9,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    channel::{ChannelDescriptor, ChannelStatus, SettingField},
-    decode::{DecoderEvent, EventKind, EventKindEntry},
+    channel::{ChannelDescriptor, ChannelStatus},
+    decode::{DecoderEvent, EventKind, EventKindEntry, FeedEntry, IdentSignal},
     encoder::EncoderDescriptor,
     present::Presentation,
-    processor::plugin::ProcessorType,
+    processor::ProcessorType,
 };
 
 pub mod encoder;
+mod output;
 pub mod processor;
 
+pub use output::{OutputHeader, Picture, PictureImage, plane_code, plane_of, read_pictures};
+
 /// The ABI this server and the SDK speak; a plugin built for any other is refused.
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 4;
 pub const IMPORT_MODULE: &str = "sdrmm";
 
 /// Guest exports every plugin has, by name.
@@ -29,23 +32,49 @@ pub mod export {
     pub const ALLOC: &str = "sdrmm_alloc";
     pub const MANIFEST: &str = "sdrmm_manifest";
     pub const ERROR: &str = "sdrmm_error";
+    /// `(op: i32, ptr: u32, len: u32) -> packed reply: i64`, one of [`super::Op`] with its JSON
+    /// in and a JSON [`super::Reply`] out. A plugin with a decoder or an encoder needs it.
+    pub const CALL: &str = "sdrmm_call";
     /// `(ptr: u32, len: u32) -> packed reply: i64`, a [`super::PresentRequest`] in, a
     /// [`super::PresentReply`] out. Only a plugin that declares event kinds needs it.
     pub const PRESENT: &str = "sdrmm_present";
 }
 
-/// Guest exports of a plugin's decoder, by name.
+/// Guest exports of a plugin's decoder, by name. Settings travel as a JSON
+/// [`crate::ChannelSettings`].
 pub mod decoder {
-    pub const CALL: &str = "sdrmm_call";
+    /// `(rate: f64, ptr: u32, len: u32) -> handle: i32`
     pub const OPEN: &str = "sdrmm_open";
+    /// `(handle: i32, ptr: u32, len: u32) -> i32`
     pub const APPLY: &str = "sdrmm_apply";
+    /// `(handle: i32, samples: u32) -> ptr: u32`, where the next block's I/Q goes.
     pub const INPUT: &str = "sdrmm_input";
+    /// `(handle: i32, samples: u32, flags: u32) -> header_ptr: u32`, flags from
+    /// [`super::process`].
     pub const PROCESS: &str = "sdrmm_process";
-    /// Optional.
-    pub const RETUNED: &str = "sdrmm_retuned";
+    /// `(handle: i32)`
     pub const CLOSE: &str = "sdrmm_close";
+    /// Optional. `(handle: i32)`, after the channel moved.
+    pub const RETUNED: &str = "sdrmm_retuned";
+    /// Optional. `(handle: i32, ptr: u32, len: u32)`, the receiver's position as a JSON
+    /// `Option<PositionFix>`.
+    pub const POSITION: &str = "sdrmm_position";
+    /// Optional. `(handle: i32, unix_ns: i64)`, when the next block's first sample was captured.
+    /// Called only while the source's clock is known.
+    pub const CLOCK: &str = "sdrmm_clock";
+    /// Optional. `(handle: i32, offset_hz: f64)`, where the receiver's LO artifact sits in the
+    /// channel's baseband, NaN once it sits outside.
+    pub const LO_ARTIFACT: &str = "sdrmm_lo_artifact";
+    /// Optional. `(handle: i32) -> i32`, zero when the channel wants nothing while squelched.
+    pub const GATED: &str = "sdrmm_gated";
 
-    pub const REQUIRED: [&str; 6] = [CALL, OPEN, APPLY, INPUT, PROCESS, CLOSE];
+    pub const REQUIRED: [&str; 5] = [OPEN, APPLY, INPUT, PROCESS, CLOSE];
+}
+
+/// Bits of the decoder's `sdrmm_process` flags.
+pub mod process {
+    /// Someone watches the channel's symbols: fill the symbol fields of the header.
+    pub const WANT_SYMBOLS: u32 = 1;
 }
 
 /// Host imports in [`IMPORT_MODULE`], by name: native `dsp` kernels working on guest memory.
@@ -60,20 +89,40 @@ pub mod import {
     pub const KERNEL_DROP: &str = "kernel_drop";
 }
 
-/// Control operations of the decoder's `sdrmm_call(op, ptr, len)`.
+/// Control operations of `sdrmm_call(op, ptr, len)`, each with the JSON it takes and returns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
 pub enum Op {
+    /// Decoder settings in, a [`PluginLayout`] out.
     Layout = 1,
+    /// Decoder settings in, the settings with every default filled in out.
     Normalize = 2,
+    /// Decoder settings in, a [`crate::FilterSpec`] out.
+    Filter = 3,
+    /// A [`TuneRequest`] in, a [`TuneReply`] out.
+    Tune = 4,
+    /// A [`FeedRequest`] in, the frame's bytes out.
+    Feed = 5,
+    /// Encoder settings in, the width in Hz they keep the signal inside out.
+    Width = 6,
+    /// A filled message form in, the payload to submit out.
+    Compose = 7,
 }
 
 impl Op {
+    const ALL: [Self; 7] = [
+        Self::Layout,
+        Self::Normalize,
+        Self::Filter,
+        Self::Tune,
+        Self::Feed,
+        Self::Width,
+        Self::Compose,
+    ];
+
     #[must_use]
     pub fn from_code(code: i32) -> Option<Self> {
-        [Self::Layout, Self::Normalize]
-            .into_iter()
-            .find(|op| *op as i32 == code)
+        Self::ALL.into_iter().find(|op| *op as i32 == code)
     }
 }
 
@@ -107,13 +156,21 @@ impl PluginManifest {
 /// Everything the host needs to list and open a plugin's decoder.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DecoderManifest {
+    /// The completed descriptor, its settings form and defaults included.
     pub descriptor: ChannelDescriptor,
-    /// The settings form a channel of it renders.
+    /// Feed formats the decoder offers, each frame made by [`Op::Feed`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub form: Vec<SettingField>,
-    /// The one frequency the service lives on, where a new channel starts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_hz: Option<f64>,
+    pub feeds: Vec<PluginFeed>,
+}
+
+/// A feed format a plugin decoder offers.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginFeed {
+    #[serde(flatten)]
+    pub entry: FeedEntry,
+    /// Sent to idle clients so they know the feed is alive; empty sends nothing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub heartbeat: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -126,6 +183,27 @@ pub struct PluginLayout {
 
 fn mono() -> u8 {
     1
+}
+
+/// Settings to shape to a signal Signal ID found.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TuneRequest {
+    pub settings: Value,
+    pub signal: IdentSignal,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TuneReply {
+    pub settings: Value,
+    /// How far the channel tunes off the signal centre.
+    pub offset_hz: f64,
+}
+
+/// One event to frame in one of the decoder's feed formats.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FeedRequest {
+    pub format: String,
+    pub event: DecoderEvent,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -162,88 +240,6 @@ impl<T> From<Result<T, String>> for Reply<T> {
 
 pub type PresentReply = Reply<Presentation>;
 
-/// What one `sdrmm_process` call left in guest memory: little-endian `u32` words at the
-/// pointer it returns, in this order.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct OutputHeader {
-    pub audio_ptr: u32,
-    /// Interleaved `f32` samples.
-    pub audio_len: u32,
-    pub audio_rate: u32,
-    /// A JSON array of [`DecoderEvent`]s, empty when none.
-    pub events_ptr: u32,
-    pub events_len: u32,
-    /// A JSON [`ChannelStatus`], empty when unchanged.
-    pub status_ptr: u32,
-    pub status_len: u32,
-    pub rejected: u32,
-    pub skipped: u32,
-}
-
-impl OutputHeader {
-    pub const WORDS: usize = 9;
-    pub const BYTES: usize = Self::WORDS * 4;
-
-    #[must_use]
-    pub fn to_words(self) -> [u32; Self::WORDS] {
-        [
-            self.audio_ptr,
-            self.audio_len,
-            self.audio_rate,
-            self.events_ptr,
-            self.events_len,
-            self.status_ptr,
-            self.status_len,
-            self.rejected,
-            self.skipped,
-        ]
-    }
-
-    #[must_use]
-    pub fn from_words(words: [u32; Self::WORDS]) -> Self {
-        let [
-            audio_ptr,
-            audio_len,
-            audio_rate,
-            events_ptr,
-            events_len,
-            status_ptr,
-            status_len,
-            rejected,
-            skipped,
-        ] = words;
-        Self {
-            audio_ptr,
-            audio_len,
-            audio_rate,
-            events_ptr,
-            events_len,
-            status_ptr,
-            status_len,
-            rejected,
-            skipped,
-        }
-    }
-
-    #[must_use]
-    pub fn to_bytes(self) -> [u8; Self::BYTES] {
-        let mut bytes = [0u8; Self::BYTES];
-        for (chunk, word) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(self.to_words()) {
-            chunk.copy_from_slice(&word.to_le_bytes());
-        }
-        bytes
-    }
-
-    #[must_use]
-    pub fn from_bytes(bytes: [u8; Self::BYTES]) -> Self {
-        let mut words = [0u32; Self::WORDS];
-        for (word, chunk) in words.iter_mut().zip(bytes.as_chunks::<4>().0) {
-            *word = u32::from_le_bytes(*chunk);
-        }
-        Self::from_words(words)
-    }
-}
-
 /// Packs a guest pointer and length into the `i64` a guest export returns.
 #[must_use]
 pub fn pack(ptr: u32, len: u32) -> i64 {
@@ -268,22 +264,6 @@ pub fn read_events(bytes: &[u8]) -> Result<EventBatch, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_header_survives_its_byte_form() {
-        let header = OutputHeader {
-            audio_ptr: 1,
-            audio_len: 2,
-            audio_rate: 48_000,
-            events_ptr: 4,
-            events_len: 5,
-            status_ptr: 6,
-            status_len: 7,
-            rejected: 8,
-            skipped: u32::MAX,
-        };
-        assert_eq!(OutputHeader::from_bytes(header.to_bytes()), header);
-    }
 
     #[test]
     fn a_pointer_and_length_pack_into_one_word() {
@@ -311,6 +291,20 @@ mod tests {
         let back: Reply<u8> = serde_json::from_str(&json).expect("reply parses");
         assert_eq!(back.into_result(), Err("bad".to_owned()));
         assert_eq!(Op::from_code(2), Some(Op::Normalize));
-        assert_eq!(Op::from_code(3), None);
+        assert_eq!(Op::from_code(7), Some(Op::Compose));
+        assert_eq!(Op::from_code(8), None);
+    }
+
+    #[test]
+    fn a_decoder_manifest_carries_its_feeds() {
+        let manifest: DecoderManifest = serde_json::from_value(serde_json::json!({
+            "descriptor": {"type_id": "probe", "name": "Probe", "bandwidth_hz": 1e3, "input_rate_hz": 48e3},
+            "feeds": [{"format": "probe-text", "name": "Probe text", "default_address": "0.0.0.0:3000",
+                "kinds": ["probe"], "heartbeat": [10]}],
+        }))
+        .expect("parses");
+        let feed = &manifest.feeds[0];
+        assert_eq!(feed.entry.format, "probe-text");
+        assert_eq!(feed.heartbeat, b"\n");
     }
 }

@@ -1,23 +1,26 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod acquire;
 mod channel;
-pub mod dvbs;
 pub mod dvbs2;
-pub mod dvbt;
-pub mod ts;
 
 pub use channel::{DatvChannel, channel_filter, input_rate_hz, occupied_band};
 
 pub(crate) fn datv_decoder() -> Native<DatvParams> {
-    Native::new::<DatvChannel>(occupied_band)
+    let decoder = Native::new::<DatvChannel>(occupied_band)
         .filter(channel_filter)
         .input_rate(input_rate_hz)
         .audio_channels(|_| 2)
         .form(datv_form)
-        .kinds(datv_kinds)
+        .kinds(datv_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn datv_form() -> Vec<SettingField> {
@@ -30,7 +33,7 @@ pub(crate) fn datv_form() -> Vec<SettingField> {
             NumberSpec::new(MIN_DATV_SYMBOL_RATE, MAX_DATV_SYMBOL_RATE, 1_000.0).unit("Bd"),
         )
         .title("DATV symbol rate"),
-        crate::broadcast_media::service_field("program", f64::from(u16::MAX)),
+        sdrmm_decoder::broadcast::service_field("program", f64::from(u16::MAX)),
         SettingField::new("roll_off", "Roll-off", Control::choice::<DatvRollOff>())
             .title(
                 "Match the transmitter's filter shape; DVB-S2 signals it in the base band header",
@@ -71,7 +74,7 @@ pub(crate) fn datv_form() -> Vec<SettingField> {
             "FEC",
             Control::choice_showing(
                 DatvCodeRate::Auto,
-                crate::broadcast_media::CODE_RATE_READOUT,
+                sdrmm_decoder::broadcast::CODE_RATE_READOUT,
             ),
         )
         .title("DVB-S code rate")
@@ -82,5 +85,8 @@ pub(crate) fn datv_form() -> Vec<SettingField> {
 
 /// The service picker the running decoder fills from its status.
 fn datv_kinds() -> Vec<KindSpec> {
-    vec![crate::broadcast_media::broadcast_kind()]
+    vec![sdrmm_decoder::broadcast::broadcast_kind()]
 }
+
+#[cfg(test)]
+pub(crate) mod fixture;

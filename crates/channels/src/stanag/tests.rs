@@ -1,17 +1,18 @@
 mod air;
 mod synth;
 
-use crate::NativeChannel;
 use crate::stanag::StanagInterleave;
 use crate::stanag::StanagModem;
 use crate::stanag::StanagParams;
 use crate::stanag::StanagRate;
 use crate::stanag::StanagReport;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::ChannelParams;
 
 use super::{INPUT_RATE_HZ, StanagChannel, channel_filter, preamble::RATES};
-use crate::{ChannelCtx, ChannelOutputs, ChannelRx, testutil::settings};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_decoder_test_support::settings;
 
 const SECONDS: f64 = 6.0;
 const OFFSET_HZ: f64 = 23.4;
@@ -28,7 +29,8 @@ fn channel() -> StanagChannel {
 }
 
 fn run(channel: &mut StanagChannel, iq: &[Complex<f32>]) -> Vec<StanagReport> {
-    let mut filter = channel_filter();
+    let mut filter =
+        sdrmm_decoder_test_support::built_filter(channel_filter(), super::INPUT_RATE_HZ);
     let mut filtered = Vec::new();
     let mut out = ChannelOutputs::default();
     let mut reports = Vec::new();
@@ -249,9 +251,7 @@ fn settings_out_of_range_are_refused() {
         ChannelCtx {
             input_rate: INPUT_RATE_HZ,
         },
-        settings(
-            ChannelParams::new("sid", &crate::sid::SidParams::default()).expect("sid settings"),
-        ),
+        settings(ChannelParams::bare("other")),
     );
     assert!(wrong.is_err());
 }

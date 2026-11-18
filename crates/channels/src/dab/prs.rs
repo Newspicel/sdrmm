@@ -4,7 +4,7 @@ use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
 use sdrmm_dsp::math::fft::Transform;
 
-use super::{mode::Mode, ofdm::reference_symbol_for_mode};
+use sdrmm_modem::ofdm::dab::{Mode, reference_symbol_for_mode};
 
 const MIN_CONFIDENCE: f32 = 0.2;
 const MIN_PEAK_RATIO: f32 = 1.5;
@@ -36,8 +36,8 @@ const LANES: usize = 8;
 impl PrsProbe {
     #[must_use]
     pub fn for_mode(transmission_mode: DabTransmissionMode) -> Self {
-        let mode = Mode::new(transmission_mode);
-        let reference = reference_symbol_for_mode(transmission_mode);
+        let mode = Mode::new(transmission_mode.into());
+        let reference = reference_symbol_for_mode(transmission_mode.into());
         let half = mode.carriers() as i16 / 2;
         let pair = |carrier: i16| carrier != 0 && carrier != -1;
         let steps = (-half..half)
@@ -190,7 +190,7 @@ impl PrsProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dab::mode::TRANSMISSION_MODES, synth};
+    use crate::{dab::TRANSMISSION_MODES, synth};
 
     fn window(
         iq: &[Complex<f32>],
@@ -211,7 +211,7 @@ mod tests {
     #[test]
     fn the_reference_symbol_reveals_integer_offset_and_timing() {
         for transmission in TRANSMISSION_MODES {
-            let mode = Mode::new(transmission);
+            let mode = Mode::new(transmission.into());
             let iq = synth::dab::ensemble_for_mode(transmission, 1).expect("a synthetic signal");
             let mut probe = PrsProbe::for_mode(transmission);
             for (bins, offset) in [(0, 0i32), (3, -5), (-4, -7)] {
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn a_large_offset_is_not_taken_for_its_mirrored_phase_table() {
         let transmission = DabTransmissionMode::I;
-        let mode = Mode::new(transmission);
+        let mode = Mode::new(transmission.into());
         let iq = synth::dab::ensemble_for_mode(transmission, 1).expect("a synthetic signal");
         let mut probe = PrsProbe::for_mode(transmission);
         let start = mode.null + mode.guard - mode.backoff();
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn the_first_path_leads_a_stronger_echo() {
         let transmission = DabTransmissionMode::Ii;
-        let mode = Mode::new(transmission);
+        let mode = Mode::new(transmission.into());
         let clean = synth::dab::ensemble_for_mode(transmission, 1).expect("a synthetic signal");
         let mut echoed = clean.clone();
         for index in 40..echoed.len() {
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn noise_is_not_a_reference_symbol() {
         let mut probe = PrsProbe::for_mode(DabTransmissionMode::Iii);
-        let noise = crate::testutil::complex_noise(5, 1.0, 256);
+        let noise = sdrmm_decoder_test_support::complex_noise(5, 1.0, 256);
         assert_eq!(probe.probe(&noise, -5..=5), None);
     }
 }

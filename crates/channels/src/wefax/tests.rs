@@ -1,4 +1,3 @@
-use crate::nfm::NfmParams;
 use crate::wefax::WefaxIoc;
 use crate::wefax::WefaxLpm;
 use crate::wefax::WefaxParams;
@@ -7,14 +6,9 @@ use num_complex::Complex;
 use sdrmm_wire::ChannelParams;
 
 use super::*;
-use crate::{
-    VideoPicture,
-    synth::{
-        self,
-        wefax::{Chart, Plan, bars, transmission, transmission_with},
-    },
-    testutil::{complex_noise, settings},
-};
+use crate::synth::wefax::{Chart, Plan, bars, transmission, transmission_with};
+use sdrmm_decoder::VideoPicture;
+use sdrmm_decoder_test_support::{complex_noise, settings};
 
 const RATE: f64 = INPUT_RATE_HZ;
 const BLOCKS: [usize; 6] = [4_096, 1, 997, 65_536, 33, 12_288];
@@ -77,7 +71,7 @@ fn run(chan: &mut WefaxChannel, iq: &[Complex<f32>], lens: &[usize]) -> Received
 }
 
 fn tail(ms: f64) -> Vec<Complex<f32>> {
-    synth::silence(samples(ms, RATE) as usize)
+    sdrmm_modem::synth::silence(samples(ms, RATE) as usize)
 }
 
 fn short(ioc: WefaxIoc, chart: &Chart) -> Vec<Complex<f32>> {
@@ -239,7 +233,7 @@ fn phasing_corrects_a_slanted_clock() {
     let column = 900;
     let sent = marked(ioc, 120, column);
     let straight = transmission_with(ioc, WefaxLpm::Lpm240, &sent, RATE, &SHORT);
-    let mut iq = synth::resample(&straight, RATE, RATE * 1.0003);
+    let mut iq = sdrmm_modem::synth::resample(&straight, RATE, RATE * 1.0003);
     iq.extend_from_slice(&tail(1_000.0));
     let image = single(run(&mut channel(fast()), &iq, &BLOCKS));
     assert!(image.complete);
@@ -297,9 +291,10 @@ fn decodes_through_additive_noise() {
     let ioc = WefaxIoc::Ioc576;
     let sent = bars(ioc, LINES);
     let mut iq = short(ioc, &sent);
-    synth::add_noise(&mut iq, 0xabad_1dea, 0.25);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xabad_1dea, 0.25);
     let mut filtered = Vec::new();
-    channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(channel_filter(), super::INPUT_RATE_HZ)
+        .process(&iq, &mut filtered);
     let image = single(run(&mut channel(fast()), &filtered, &BLOCKS));
     assert!(image.complete);
     assert_eq!(image.lines, LINES);
@@ -312,7 +307,8 @@ fn pure_noise_decodes_to_nothing() {
     for seed in [0x1234_5678, 0xdead_beef, 0x0f0f_0f0f] {
         let noise = complex_noise(seed, 0.4, 600_000);
         let mut filtered = Vec::new();
-        channel_filter().process(&noise, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(channel_filter(), super::INPUT_RATE_HZ)
+            .process(&noise, &mut filtered);
         for iq in [&noise, &filtered] {
             let mut chan = channel(fast());
             let received = run(&mut chan, iq, &BLOCKS);
@@ -387,13 +383,11 @@ fn a_second_transmission_follows_the_first() {
 #[test]
 fn mismatched_params_variant_is_rejected() {
     let mut chan = channel(WefaxParams::default());
-    let err = chan.apply(settings(
-        ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-    ));
+    let err = chan.apply(settings(ChannelParams::bare("nfm")));
     assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     let built = WefaxChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+        settings(ChannelParams::bare("nfm")),
     );
     assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
 }

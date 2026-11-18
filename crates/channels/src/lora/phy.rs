@@ -1,5 +1,4 @@
 mod align;
-mod chirp;
 pub(crate) mod code;
 mod detect;
 mod drift;

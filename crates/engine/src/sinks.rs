@@ -116,7 +116,7 @@ impl DeviceSetState {
         let device_rate = self.lane_rate(channel.stream);
         Ok(BasebandPlan {
             stream: channel.stream,
-            sample_rate: sdrmm_channels::input_rate(&channel.settings.params),
+            sample_rate: sdrmm_decoder::input_rate(&channel.settings.params),
             device_rate,
             center_hz: channel.settings.frequency_hz,
             hardware: self.info.label.clone(),

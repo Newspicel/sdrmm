@@ -733,7 +733,7 @@ mod model_tests {
 
     #[test]
     fn the_cell_table_names_fields_a_frame_shows() {
-        crate::testutil::assert_views_hold(
+        sdrmm_decoder_test_support::assert_views_hold(
             &gsm_kind(),
             &[sdrmm_wire::DecoderEvent::of(&system_information())],
         );

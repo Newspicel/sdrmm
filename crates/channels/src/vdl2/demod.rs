@@ -1,12 +1,12 @@
 use std::f32::consts::PI;
 
 use num_complex::Complex;
-use sdrmm_dsp::{ReedSolomon, fast_arg};
+use sdrmm_dsp::{HdlcDeframer, Prbs, ReedSolomon, fast_arg};
 
 use super::avlc::{self, AvlcFrame};
 use super::header::{self, HEADER_BITS};
 use super::interleave::{self, Erasures};
-use super::scramble::Scrambler;
+use super::scramble::scrambler;
 
 pub const SYMBOL_RATE: f64 = 10_500.0;
 
@@ -117,7 +117,7 @@ struct Collecting {
     tracker: Tracker,
     bits: Vec<u8>,
     conf: Vec<f32>,
-    scr: Scrambler,
+    scr: Prbs,
     length: Option<BurstLength>,
 }
 
@@ -147,6 +147,7 @@ pub struct Vdl2Demod {
     noise: f32,
     state: State,
     strategy: &'static Strategy,
+    deframer: HdlcDeframer,
 }
 
 pub struct Burst {
@@ -180,6 +181,7 @@ impl Vdl2Demod {
             state: State::Hunt,
             strategy: &RECOVERY,
             last_rs_fail: f64::NEG_INFINITY,
+            deframer: avlc::deframer(),
         }
     }
 
@@ -307,7 +309,7 @@ impl Vdl2Demod {
             c.conf.push(residual.abs());
             let (x, y, z) = GRAY_INV[idx];
             for b in [x, y, z] {
-                c.bits.push(b ^ c.scr.next_bit());
+                c.bits.push(b ^ u8::from(c.scr.next_bit()));
             }
         }
     }
@@ -343,7 +345,7 @@ impl Vdl2Demod {
             profile,
             bits: Vec::new(),
             conf: Vec::new(),
-            scr: Scrambler::new(),
+            scr: scrambler(),
             length: None,
         })
     }
@@ -368,7 +370,7 @@ impl Vdl2Demod {
                 rs,
                 erasures,
             )?;
-            let frames = avlc::scan(&decoded.bits);
+            let frames = avlc::scan(&mut self.deframer, &decoded.bits);
             (!self.strategy.fcs_arbitrates || !frames.is_empty()).then_some((decoded, frames))
         });
         let Some((decoded, frames)) = decoded else {

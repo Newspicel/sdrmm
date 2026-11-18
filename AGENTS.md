@@ -8,7 +8,12 @@
 
 ## Coding structure
 - Respect crate boundaries: `dsp` has no I/O and no internal deps; `modem` builds reusable
-  modulation algorithms on `dsp`; `channels` pulls no internal crates beyond `dsp`, `modem` and `wire`.
+  modulation algorithms on `dsp`; `codec` (audio codecs, vocoders) builds on `dsp`; `crypto` has
+  no internal deps; `aviation` (ACARS, ARINC 622, CPDLC) builds on `dsp`; `decoder` is the one
+  decoder API, on `dsp`, `modem`, `codec` and `wire`; `media` (native broadcast playout) builds on
+  `decoder`; `channels` pulls no internal crates beyond `dsp`, `modem`, `codec`, `crypto`,
+  `aviation`, `decoder`, `media` and `wire`; `array` (array processors and their registry)
+  builds on `dsp`, `modem`, `decoder` and `wire`, and nothing outside it names a processor.
 - A decoder is one module in `channels` (or one WASM plugin): its settings struct, event
   payloads, presenters and registration live there. Nothing else names it: not `engine`, not
   `server`, not `wire`, not the frontend. Shared behavior is a capability or facet the decoder

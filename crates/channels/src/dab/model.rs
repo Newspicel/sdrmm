@@ -1,3 +1,4 @@
+use sdrmm_modem::ofdm::dab::TransmissionMode;
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::labelled;
@@ -38,6 +39,18 @@ labelled! {
 
 labelled! {
     DabTransmissionMode { Auto => "Auto", I => "I", Ii => "II", Iii => "III", Iv => "IV" }
+}
+
+/// `Auto` builds the mode I chain until a search picks the mode.
+impl From<DabTransmissionMode> for TransmissionMode {
+    fn from(mode: DabTransmissionMode) -> Self {
+        match mode {
+            DabTransmissionMode::Auto | DabTransmissionMode::I => Self::I,
+            DabTransmissionMode::Ii => Self::Ii,
+            DabTransmissionMode::Iii => Self::Iii,
+            DabTransmissionMode::Iv => Self::Iv,
+        }
+    }
 }
 
 impl sdrmm_wire::DecoderSettings for DabParams {

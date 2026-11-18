@@ -1,8 +1,11 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{ChirpSweep, HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{Control, KindSpec, NumberSpec, PresetOption, SettingField};
-use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use serde_json::json;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod lorawan;
 pub(crate) mod meshcore;
@@ -10,12 +13,19 @@ pub(crate) mod meshtastic;
 pub(crate) mod phy;
 mod protocol;
 fn lora_signatures() -> Vec<SignalSignature> {
-    vec![SignalSignature::new(
-        "LoRa",
-        &[Modulation::Chirp],
-        HzRange::new(7_000.0, 550_000.0),
-        "chirps sweeping the whole channel",
-    )]
+    vec![
+        SignalSignature::new(
+            "LoRa",
+            &[Modulation::Chirp],
+            HzRange::new(7_000.0, 550_000.0),
+            "chirps sweeping the whole channel",
+        )
+        .chirp(ChirpSweep {
+            bandwidths_hz: LoraBandwidth::ALL.map(LoraBandwidth::hz).to_vec(),
+            min_spreading_factor: LoraSpreadingFactor::MIN,
+            max_spreading_factor: LoraSpreadingFactor::MAX,
+        }),
+    ]
 }
 
 /// Takes the heard chirp width and, from its symbol rate, the spreading factor.
@@ -31,13 +41,17 @@ fn lora_tune(signal: &sdrmm_wire::IdentSignal, p: &mut LoraParams) -> f64 {
 }
 
 pub(crate) fn lora_decoder() -> Native<LoraParams> {
-    Native::new::<LoraChannel>(occupied_band)
+    let decoder = Native::new::<LoraChannel>(occupied_band)
         .filter(|p| Ok(channel_filter(p)))
         .input_rate(input_rate)
         .signatures(lora_signatures)
         .tune(lora_tune)
         .form(lora_form)
-        .kinds(lora_kinds)
+        .kinds(lora_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 fn meshtastic_preset(label: &str, bandwidth: &str, spreading_factor: &str) -> PresetOption {
@@ -155,6 +169,8 @@ fn lora_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests;
 
 use std::sync::LazyLock;
@@ -164,10 +180,7 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily
 
 use self::phy::{Decoder, Frame, Layout};
 use self::protocol::Keyring;
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel, check_rate,
-    datalink,
-};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 
 pub(crate) const OVERSAMPLING: f64 = 2.0;
 
@@ -194,7 +207,7 @@ pub struct LoraChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<LoraParams, ChannelError> {
-    crate::settings_of::<LoraParams>(settings)
+    sdrmm_decoder::settings_of::<LoraParams>(settings)
 }
 
 pub(crate) fn input_rate(params: &LoraParams) -> f64 {
@@ -208,8 +221,8 @@ pub(crate) fn occupied_band(params: &LoraParams) -> (f64, f64) {
 
 /// None: the decoder band-limits both of its streams itself, a half-band for the search and a
 /// windowed sinc for every symbol it reads, so a filter here would only cost time.
-pub(crate) fn channel_filter(_params: &LoraParams) -> ChannelFilter {
-    ChannelFilter::Passthrough
+pub(crate) fn channel_filter(_params: &LoraParams) -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 fn layout(params: &LoraParams) -> Layout {
@@ -234,7 +247,7 @@ fn event(frame: &Frame, params: &LoraParams, keys: &Keyring) -> DecoderEvent {
         fec_corrected: frame.fec_corrected,
         snr_db: frame.snr_db,
         frequency_error_hz: frame.frequency_error_hz,
-        payload: datalink::hex(&frame.payload),
+        payload: sdrmm_crypto::hex_string(&frame.payload),
         decoded: frame
             .readable()
             .then(|| protocol::interpret(params.protocol, frame.sync_word, &frame.payload, keys))
@@ -259,7 +272,7 @@ impl NativeChannel for LoraChannel {
     }
 }
 
-impl ChannelRx for LoraChannel {
+impl Channel for LoraChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let next = params(&settings)?;
         next.validate().map_err(ChannelError::InvalidSettings)?;

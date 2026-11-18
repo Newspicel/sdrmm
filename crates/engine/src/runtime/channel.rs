@@ -5,9 +5,9 @@ use std::sync::{
 };
 
 use num_complex::Complex;
-use sdrmm_channels::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    if_stage::IfStage,
+use sdrmm_decoder::if_stage::IfStage;
+use sdrmm_decoder::{
+    AUDIO_RATE, Channel, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, DecodedImage,
 };
 use sdrmm_dsp::{LevelMeter, NoiseBlanker, Squelch};
 use sdrmm_wire::{ChannelSettings, ChannelStatus, DecoderEvent, PositionFix};
@@ -155,7 +155,7 @@ pub(crate) struct ChannelHost {
     squelched: bool,
     has_audio: bool,
     audio_rec: Option<AudioTaps>,
-    rx: Box<dyn ChannelRx>,
+    rx: Box<dyn Channel>,
     blanker: Option<NoiseBlanker>,
     if_stage: Option<IfStage>,
     outputs: ChannelOutputs,
@@ -208,17 +208,17 @@ impl ChannelHost {
         decoded: DecodedSink,
     ) -> Result<Box<Self>, ChannelError> {
         let type_id = settings.params.type_id();
-        let descriptor = sdrmm_channels::descriptor(type_id)
+        let descriptor = sdrmm_decoder::descriptor(type_id)
             .ok_or_else(|| ChannelError::UnknownType(type_id.to_owned()))?;
-        let input_rate = sdrmm_channels::input_rate(&settings.params);
+        let input_rate = sdrmm_decoder::input_rate(&settings.params);
         let offset_hz = settings.frequency_hz - center_hz;
-        let (band_low_hz, band_high_hz) = sdrmm_channels::occupied_band(&settings.params);
-        let filter = sdrmm_channels::channel_filter(&settings.params)?;
+        let (band_low_hz, band_high_hz) = sdrmm_decoder::occupied_band(&settings.params);
+        let filter = sdrmm_decoder::channel_filter(&settings.params)?;
         let wide_rate = input_rate * filter.decimation() as f64;
         let ddc = Downconverter::new(device_rate, wide_rate, input_rate, offset_hz)
             .map_err(|e| ChannelError::InvalidSettings(e.to_string()))?;
-        let rx = sdrmm_channels::create(ChannelCtx { input_rate }, settings)?;
-        let audio_channels = sdrmm_channels::audio_channels(&settings.params);
+        let rx = sdrmm_decoder::create(ChannelCtx { input_rate }, settings)?;
+        let audio_channels = sdrmm_decoder::audio_channels(&settings.params);
         let decodes = !descriptor.emits.is_empty();
         let emits_events = decodes && rx.needs_gated_input();
         let mut squelch = Squelch::new(
@@ -1417,7 +1417,7 @@ pub(crate) mod tests {
         for rate in [240_000.0, 8_000_000.0, 20_000_000.0] {
             for kind in ["am", "nfm", "wfm", "ssb"] {
                 let settings =
-                    sdrmm_channels::default_settings(kind).expect("registered analog channel");
+                    sdrmm_decoder::default_settings(kind).expect("registered analog channel");
                 let (pcm_tx, _pcm_rx) = broadcast::channel(128);
                 let media = sinks(pcm_tx, Arc::new(AtomicU64::new(0)));
                 let _iq_rx = media.iq_tx.subscribe();

@@ -8,7 +8,6 @@ use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::*;
-use crate::synth;
 
 macro_rules! fixture {
     ($stem:literal) => {
@@ -43,7 +42,7 @@ fn cu8(bytes: &[u8], decimation: usize) -> Vec<Complex<f32>> {
 fn receiver(unknown: bool) -> IsmChannel {
     let settings = ChannelSettings {
         params: ChannelParams::new("ism", &IsmParams { unknown }).expect("ism settings"),
-        ..crate::default_settings("ism").unwrap()
+        ..sdrmm_decoder::default_settings("ism").unwrap()
     };
     IsmChannel::new(ChannelCtx { input_rate: RATE }, settings).unwrap()
 }
@@ -62,7 +61,7 @@ fn feed(rx: &mut IsmChannel, iq: &[Complex<f32>]) -> Vec<IsmMessage> {
 fn decode(iq: &[Complex<f32>]) -> (Vec<IsmMessage>, u32) {
     let mut rx = receiver(true);
     let mut padded = iq.to_vec();
-    padded.extend(synth::silence(TAIL));
+    padded.extend(sdrmm_modem::synth::silence(TAIL));
     (feed(&mut rx, &padded), rx.rejected())
 }
 
@@ -252,14 +251,14 @@ fn an_unknown_remote_is_shown_only_when_asked() {
     assert!(unknown.short_us.is_some_and(|us| (330..410).contains(&us)));
     let mut quiet = receiver(false);
     let mut padded = iq;
-    padded.extend(synth::silence(TAIL));
+    padded.extend(sdrmm_modem::synth::silence(TAIL));
     assert!(feed(&mut quiet, &padded).is_empty());
 }
 
 #[test]
 fn a_weak_recording_in_added_noise_still_decodes() {
     let mut iq = cu8(fixture!("acurite_609txc_433m92_250k"), 1);
-    synth::add_noise(&mut iq, 0x15A, 0.05);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x15A, 0.05);
     let (messages, _) = decode(&iq);
     assert!(
         messages
@@ -271,8 +270,8 @@ fn a_weak_recording_in_added_noise_still_decodes() {
 
 #[test]
 fn noise_alone_reports_nothing() {
-    let mut iq = synth::silence(4 * RATE as usize);
-    synth::add_noise(&mut iq, 0x5EED, 0.02);
+    let mut iq = sdrmm_modem::synth::silence(4 * RATE as usize);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, 0.02);
     let (messages, rejected) = decode(&iq);
     assert!(messages.is_empty(), "{messages:?}");
     assert_eq!(rejected, 0);
@@ -282,8 +281,8 @@ fn noise_alone_reports_nothing() {
 fn repeats_within_two_seconds_are_reported_once() {
     let burst = cu8(fixture!("generic_remote_433m92_250k"), 1);
     let floor = |len: usize, seed: u32| {
-        let mut iq = synth::silence(len);
-        synth::add_noise(&mut iq, seed, 0.39);
+        let mut iq = sdrmm_modem::synth::silence(len);
+        sdrmm_modem::synth::add_noise(&mut iq, seed, 0.39);
         iq
     };
     let mut iq = burst.clone();
@@ -297,8 +296,8 @@ fn repeats_within_two_seconds_are_reported_once() {
 
 #[test]
 fn foreign_params_are_refused() {
-    let mut settings = crate::default_settings("ism").unwrap();
-    settings.params = crate::default_settings("eot").unwrap().params;
+    let mut settings = sdrmm_decoder::default_settings("ism").unwrap();
+    settings.params = sdrmm_decoder::default_settings("eot").unwrap().params;
     assert!(IsmChannel::new(ChannelCtx { input_rate: RATE }, settings.clone()).is_err());
     let mut rx = receiver(true);
     assert!(rx.apply(settings).is_err());

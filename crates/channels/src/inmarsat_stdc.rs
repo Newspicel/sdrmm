@@ -1,20 +1,19 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{Capability, Hue, KindSpec, SettingField, Symbol};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
-use sdrmm_wire::{KindSpec, SettingField};
 mod model;
 pub use model::*;
 use std::{ops::RangeInclusive, sync::LazyLock};
 
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-    datalink::{self, Quality},
+use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 mod demod;
@@ -56,7 +55,18 @@ pub(crate) fn inmarsat_stdc_form() -> Vec<SettingField> {
 }
 
 fn inmarsat_stdc_kinds() -> Vec<KindSpec> {
-    vec![crate::datalink::inmarsat_stdc_kind()]
+    vec![
+        KindSpec::tagged::<StdcMessage>(
+            EventKind::named("inmarsat_stdc"),
+            "Inmarsat STD-C",
+            "Vessels",
+            Hue::Amber,
+        )
+        .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+        .symbol(Symbol::SHIP)
+        .sighting()
+        .build(),
+    ]
 }
 
 #[cfg(test)]
@@ -90,6 +100,12 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     emits: vec![EventKind::named("inmarsat_stdc")],
     ..ChannelDescriptor::default()
 });
+
+/// Where an STD-C packet keeps its envelope: the mobile earth station that sent it.
+const LINK: Fields = Fields::station(&["mes_id"]);
+
+/// An STD-C message, addressed to the sea area an EGC call names.
+pub type StdcMessage = DataLinkMessage<SeaArea>;
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -246,24 +262,22 @@ impl StdcDecoder {
     }
 }
 
-pub fn to_datalink(packet: &StdcPacket) -> DataLinkMessage {
-    let message = datalink::message(
+pub fn to_datalink(packet: &StdcPacket) -> StdcMessage {
+    link::message(
         &Body::StdC {
             name: packet.name,
             text: packet.text.as_deref(),
             details: &packet.details,
         },
+        &LINK,
         Quality {
             crc_ok: packet.checksum_ok,
             fec_corrected: packet.fec_corrected,
             ..Quality::default()
         },
         Some(&packet.raw),
-    );
-    DataLinkMessage {
-        area: packet.area.clone(),
-        ..message
-    }
+    )
+    .in_area(packet.area.clone())
 }
 
 pub struct InmarsatStdcChannel {
@@ -272,15 +286,15 @@ pub struct InmarsatStdcChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<InmarsatStdcParams, ChannelError> {
-    crate::settings_of::<InmarsatStdcParams>(settings)
+    sdrmm_decoder::settings_of::<InmarsatStdcParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
 
 impl NativeChannel for InmarsatStdcChannel {
@@ -297,7 +311,7 @@ impl NativeChannel for InmarsatStdcChannel {
     }
 }
 
-impl ChannelRx for InmarsatStdcChannel {
+impl Channel for InmarsatStdcChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -311,15 +325,14 @@ impl ChannelRx for InmarsatStdcChannel {
 }
 
 #[cfg(test)]
-pub(crate) use tests::fixture;
-
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests {
     use sdrmm_dsp::Ddc;
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::testutil::{run_events, settings};
+    use sdrmm_decoder_test_support::{run_events, settings};
 
     pub(super) fn bulletin_board_frame() -> Vec<u8> {
         let mut payload = packet::build_packet(&[0x7D, 1, 0x03, 0xE8, 0, 0, 1, 0x10, 0, 0, 0, 0]);
@@ -346,12 +359,12 @@ mod tests {
         iq
     }
 
-    pub(crate) fn fixture() -> crate::fixtures::Fixture {
+    pub(crate) fn fixture() -> crate::builtin::fixtures::Fixture {
         let symbols = bulletin_board_frame();
         let mut bits: Vec<u8> = (0..4_000).map(|index| (index % 2) as u8).collect();
         bits.extend(&symbols);
         bits.extend(&symbols);
-        crate::fixtures::Fixture::new(
+        crate::builtin::fixtures::Fixture::new(
             ChannelParams::new("inmarsat_stdc", &InmarsatStdcParams::default())
                 .expect("inmarsat_stdc settings"),
             modulate::modulate(&bits, 1_200.0, RATE, 0.0, 0.5),
@@ -376,7 +389,11 @@ mod tests {
         let events = run_events(&mut channel, &iq);
         let message = events
             .iter()
-            .filter_map(|event| crate::datalink::read(event, "inmarsat_stdc"))
+            .filter_map(|event| {
+                (event.kind == EventKind::named("inmarsat_stdc"))
+                    .then(|| event.payload::<StdcMessage>())
+                    .flatten()
+            })
             .find(|message| message.crc_ok)
             .expect("bulletin board");
         assert_eq!(message.message_type, "bulletin-board");

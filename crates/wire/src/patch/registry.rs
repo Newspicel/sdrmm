@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, BASEBAND_PORT, BEAM_PORT,
-    BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode,
-    EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory,
-    POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RADAR_TRUTH_PORT,
-    RADAR_TX_PORT, RecorderNode, STEER_PORT, STITCH_WIDE_PORT, ScannerNode, SignalMapNode,
-    SpeakerNode, TRANSMIT_PORT, TriangulationNode, TrunkNode, VIDEO_PORT, input, output,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, BASEBAND_PORT,
+    BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode, EVENTS_PORT,
+    EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory, POSITION_PORT,
+    Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RecorderNode, ScannerNode,
+    SignalMapNode, SpeakerNode, TRANSMIT_PORT, TriangulationNode, TrunkNode, VIDEO_PORT, input,
+    output,
 };
 use crate::{
     aim::AimNode,
@@ -18,10 +18,7 @@ use crate::{
     monitor::SpectrumMonitorNode,
     network::NetworkExportNode,
     note::NoteNode,
-    processor::{
-        plugin::{ProcessorType, processor_type, processor_types},
-        processors,
-    },
+    processor::{ProcessorType, processor_type, processor_types},
     propagation::PropagationNode,
     rotator::RotatorNode,
     satellite::SatelliteNode,
@@ -131,9 +128,6 @@ pub struct NodeTypeInfo {
     /// The form a face renders for this node's settings, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<SettingField>,
-    /// What a built-in processor draws and offers.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub processor: Option<crate::processor::view::ProcessorFacets>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
@@ -143,7 +137,7 @@ pub struct PatchCatalog {
     pub event_kinds: Vec<EventKindEntry>,
     #[serde(default)]
     pub feeds: Vec<crate::decode::FeedEntry>,
-    /// Array processors the loaded plugins bring.
+    /// Array processors, built in and from plugins.
     #[serde(default)]
     pub processors: Vec<ProcessorType>,
 }
@@ -156,7 +150,10 @@ impl PatchCatalog {
             port_types: P::ALL.iter().map(|port_type| port_type.info()).collect(),
             event_kinds: crate::decode::catalog().entries(),
             feeds: crate::decode::catalog().feed_entries(),
-            processors: processor_types().as_ref().clone(),
+            processors: processor_types()
+                .iter()
+                .map(ProcessorType::resolved)
+                .collect(),
         }
     }
 }
@@ -176,7 +173,6 @@ impl NodeKind {
             picks: Picks::of(&default_body),
             default_body,
             settings: self.settings(),
-            processor: self.processor_facets(),
         }
     }
 }
@@ -189,7 +185,6 @@ impl std::fmt::Display for NodeKind {
 
 const ANY_IQ: &[IqOrigin] = IqOrigin::ALL;
 const RADIO_IQ: &[IqOrigin] = &[IqOrigin::Radio];
-const DERIVED_IQ: &[IqOrigin] = &[IqOrigin::Derived];
 const CHANNEL_VERBS: &[ControlVerb] =
     &[ControlVerb::Tune, ControlVerb::Doppler, ControlVerb::Sweep];
 const SWEEP: &[ControlVerb] = &[ControlVerb::Sweep];
@@ -248,51 +243,6 @@ macro_rules! kinds {
         const KINDS: &[EventKind] = &[$(EventKind::$kind),+];
         Accept::Kinds(KINDS)
     }};
-}
-
-macro_rules! port_row {
-    (array_in) => {
-        input(ARRAY_PORT, Payload::Array)
-    };
-    (events_out($note:literal $(, $kind:ident)*)) => {
-        events_out(kinds!($($kind),*)).noted($note)
-    };
-    (bearing_out($note:literal)) => {
-        output(BEARING_PORT, Payload::Bearing).noted($note)
-    };
-    (steer_in($note:literal)) => {
-        input(STEER_PORT, Payload::Bearing).noted($note)
-    };
-    (beam_out($note:literal)) => {
-        output(BEAM_PORT, Payload::iq(DERIVED_IQ)).noted($note)
-    };
-    (wide_out($note:literal)) => {
-        output(STITCH_WIDE_PORT, Payload::iq(DERIVED_IQ)).noted($note)
-    };
-    (tx_in($note:literal)) => {
-        input(RADAR_TX_PORT, Payload::Position).noted($note)
-    };
-    (truth_in($note:literal)) => {
-        input(RADAR_TRUTH_PORT, Payload::events(Accept::Caps(&[Capability::Track])))
-            .many()
-            .takes("tracks")
-            .noted($note)
-    };
-}
-
-macro_rules! lane_outputs {
-    ([$($found:expr),*]) => {
-        &[$($found),*]
-    };
-    ([$($found:expr),*] beam_out $(($($arg:tt)*))? $(, $($rest:tt)*)?) => {
-        lane_outputs!([$($found,)* BEAM_PORT] $($($rest)*)?)
-    };
-    ([$($found:expr),*] wide_out $(($($arg:tt)*))? $(, $($rest:tt)*)?) => {
-        lane_outputs!([$($found,)* STITCH_WIDE_PORT] $($($rest)*)?)
-    };
-    ([$($found:expr),*] $skip:ident $(($($arg:tt)*))? $(, $($rest:tt)*)?) => {
-        lane_outputs!([$($found),*] $($($rest)*)?)
-    };
 }
 
 macro_rules! nodes {
@@ -398,23 +348,7 @@ macro_rules! nodes {
     };
 }
 
-macro_rules! node_registry {
-    (
-        processors: [$((
-            $variant:ident,
-            $type_id:literal,
-            $params:ty,
-            $reading:ty,
-            $node:ident,
-            $name:literal,
-            $summary:literal,
-            $face:expr,
-            $facets:expr,
-            [$($port:ident $(($($arg:tt)*))?),* $(,)?]
-        )),* $(,)?],
-        probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
-    ) => {
-        nodes! {
+nodes! {
             (Device(DeviceNode), "device", Source, "Device",
                 "A radio, a recording or a generator: where a patch starts",
                 Role::OpensRadio, Face::fit(420).dial(), [
@@ -591,13 +525,8 @@ macro_rules! node_registry {
                 iq_in().noted("The lane it measures"),
                 output(CONTROL_PORT, Payload::control(POINT)).one().noted("The rotator to sweep"),
             ]),
-            $(
-                ($variant($node), $type_id, Tool, $name, $summary, Role::Processor, $face, [
-                    $(port_row!($port $(($($arg)*))?)),*
-                ]),
-            )*
-            (Processor(crate::processor::plugin::ProcessorNode), "processor", Tool, "Processor",
-                "An array processor from a plugin", Role::Processor, Face::fit(400), [
+            (Processor(crate::processor::ProcessorNode), "processor", Tool, "Processor",
+                "Runs an array processor", Role::Processor, Face::fit(400), [
                 input(ARRAY_PORT, Payload::Array),
                 events_out(Accept::Any),
             ]),
@@ -631,86 +560,50 @@ macro_rules! node_registry {
             ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
-        }
-    };
 }
 
-macro_rules! processor_nodes {
-    (
-        processors: [$((
-            $variant:ident,
-            $type_id:literal,
-            $params:ty,
-            $reading:ty,
-            $node:ident,
-            $name:literal,
-            $summary:literal,
-            $face:expr,
-            $facets:expr,
-            [$($port:tt)*]
-        )),* $(,)?],
-        probe: ($probe:ident, $probe_id:literal, $probe_params:ty) $(,)?
-    ) => {
-        $(
-            #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-            pub struct $node {
-                #[serde(default)]
-                pub settings: $params,
-            }
-        )*
-
-        impl NodeKind {
-            /// What a built-in processor declares about its face.
-            #[must_use]
-            pub fn processor_facets(self) -> Option<crate::processor::view::ProcessorFacets> {
-                match self {
-                    $(Self::$variant => Some($facets),)*
-                    _ => None,
-                }
-            }
-
-            /// The settings form of a node that carries settings of its own.
-            #[must_use]
-            pub fn settings(self) -> Vec<SettingField> {
-                match self {
-                    $(Self::$variant => <$params>::form(),)*
-                    Self::Triangulation => crate::fusion::TriangulationParams::form(),
-                    Self::Aim => crate::aim::AimParams::form(),
-                    Self::SkyScan => crate::sky_scan::SkyScanParams::form(),
-                    _ => Vec::new(),
-                }
-            }
+impl NodeKind {
+    /// The settings form of a node that carries settings of its own.
+    #[must_use]
+    pub fn settings(self) -> Vec<SettingField> {
+        match self {
+            Self::Triangulation => crate::fusion::TriangulationParams::form(),
+            Self::Aim => crate::aim::AimParams::form(),
+            Self::SkyScan => crate::sky_scan::SkyScanParams::form(),
+            _ => Vec::new(),
         }
-
-        impl NodeBody {
-            #[must_use]
-            pub const fn lane_outputs(&self) -> &'static [&'static str] {
-                match self {
-                    $(Self::$variant(_) => lane_outputs!([] $($port)*),)*
-                    _ => &[],
-                }
-            }
-
-            #[must_use]
-            pub fn processor_params(&self) -> Option<crate::processor::ProcessorParams> {
-                match self {
-                    $(
-                        Self::$variant(node) => Some(crate::processor::ProcessorParams::$variant(
-                            Clone::clone(&node.settings),
-                        )),
-                    )*
-                    Self::Processor(node) => {
-                        Some(crate::processor::ProcessorParams::Plugin(node.params()))
-                    }
-                    _ => None,
-                }
-            }
-        }
-    };
+    }
 }
 
-processors!(processor_nodes);
-processors!(node_registry);
+impl NodeBody {
+    /// What a refusal calls this node: the processor type it runs, or its kind.
+    #[must_use]
+    pub fn name(&self) -> String {
+        match self {
+            Self::Processor(node) => processor_type(&node.processor_type)
+                .map_or_else(|| self.kind().name().to_owned(), |kind| kind.name),
+            _ => self.kind().name().to_owned(),
+        }
+    }
+
+    /// The lanes a processor node writes, in port order.
+    #[must_use]
+    pub fn lane_outputs(&self) -> Vec<String> {
+        match self {
+            Self::Processor(node) => processor_type(&node.processor_type)
+                .map_or_default(|kind| kind.lane_ports().map(str::to_owned).collect()),
+            _ => Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn processor_params(&self) -> Option<crate::processor::ProcessorParams> {
+        match self {
+            Self::Processor(node) => Some(node.params()),
+            _ => None,
+        }
+    }
+}
 
 impl NodeBody {
     #[must_use]
@@ -753,7 +646,9 @@ impl NodeBody {
             Self::SpectrumMonitor(monitor) => {
                 carrying_events(declared, &monitor_kinds(monitor, descriptors))
             }
-            Self::Processor(node) => narrow_processor(declared, &node.processor_type),
+            Self::Processor(node) => {
+                processor_type(&node.processor_type).map_or(declared, |kind| kind.port_specs())
+            }
             Self::EventOutput(node) => carrying_events(declared, &node.target.accepts())
                 .into_iter()
                 .map(|port| match port.port_type {
@@ -839,23 +734,6 @@ fn narrow_channel(
 
 /// A plugin processor's events port carries the kinds its type declares, and goes when it
 /// declares none. A type not loaded keeps every port, so its wires survive a reload.
-fn narrow_processor(declared: Vec<PortSpec>, type_id: &str) -> Vec<PortSpec> {
-    let Some(kind) = processor_type(type_id) else {
-        return declared;
-    };
-    let emitted: KindSet = kind.emits.iter().cloned().collect();
-    declared
-        .into_iter()
-        .filter(|port| !matches!(port.payload, Payload::Events { .. }) || !emitted.is_empty())
-        .map(|port| match port.payload {
-            Payload::Events { .. } => port.carrying(Payload::Events {
-                kinds: emitted.clone(),
-            }),
-            _ => port,
-        })
-        .collect()
-}
-
 fn monitor_kinds(
     monitor: &SpectrumMonitorNode,
     descriptors: Option<&[ChannelDescriptor]>,

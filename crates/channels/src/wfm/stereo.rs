@@ -3,7 +3,7 @@ use std::f64::consts::{FRAC_1_SQRT_2, TAU};
 use num_complex::Complex;
 use sdrmm_dsp::{ComplexOnePole, Decimator, Deemphasis, Nco, Pll, one_pole_coeff};
 
-use crate::AUDIO_RATE;
+use sdrmm_decoder::AUDIO_RATE;
 
 const SUBCARRIER_HZ: f64 = 38_000.0;
 const PILOT_CUTOFF_HZ: f64 = 400.0;
@@ -139,7 +139,7 @@ impl StereoDemux {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{rms, split_stereo, tone_power};
+    use sdrmm_decoder_test_support::{rms, split_stereo, tone_power};
 
     const RATE: f64 = 240_000.0;
     const PILOT_RATE: f64 = 9_600.0;

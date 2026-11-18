@@ -21,9 +21,14 @@ const HOME: LatLon = LatLon {
 };
 
 fn node(id: &str, kind: &str) -> PatchNode {
+    let body = if kind == "df" {
+        crate::tests::processor_node(&sdrmm_array::df::DfParams::default())
+    } else {
+        NodeBody::default_for(NodeKind::parse(kind).expect("a known kind"))
+    };
     PatchNode {
         id: id.to_owned(),
-        body: NodeBody::default_for(NodeKind::parse(kind).expect("a known kind")),
+        body,
         position: Position { x: 0.0, y: 0.0 },
         size: None,
         label: None,

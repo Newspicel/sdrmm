@@ -1,33 +1,32 @@
+use sdrmm_wire::FilterSpec;
 use std::{ops::Range, sync::LazyLock};
 
-use crate::airtime::AIRTIME_REPORT_MS;
-use crate::airtime::WifiBand;
-use crate::airtime::WifiChannelLoad;
-use crate::airtime::WifiOccupancyParams;
-use crate::airtime::WifiOccupancyReport;
+use super::{WifiBand, WifiChannelLoad, WifiOccupancyParams, WifiOccupancyReport};
 use num_complex::Complex;
 use sdrmm_dsp::{
     math::fastmath::fast_power_db,
-    measure::airtime::{PowerFrames, QuietFloor, band_degrees},
-};
-use sdrmm_modem::wifi::channel::{self as plan, Channel, WifiBand as PlanBand};
-use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
-
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    airtime::{
-        self, FLOOR_RISE_DB, REPORT_FRAMES, WARMUP_FRAMES, bins_between, fft_len, gated, threshold,
-        usable_half_hz,
+    measure::airtime::{
+        self as grid, FLOOR_RISE_DB, PowerFrames, QuietFloor, band_degrees, bins_between, fft_len,
+        frames_in, gated, threshold, usable_half_hz, warmup_frames,
     },
-    check_rate,
 };
+use sdrmm_modem::wifi::channel::{self as plan, WifiBand as PlanBand};
+use sdrmm_wire::{
+    AIRTIME_REPORT_MS, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    check_airtime_margin,
+};
+
+const REPORT_FRAMES: u64 = frames_in(AIRTIME_REPORT_MS);
+const WARMUP_FRAMES: u64 = warmup_frames(AIRTIME_REPORT_MS);
+
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "wifi_occupancy".to_owned(),
     name: "Wi-Fi occupancy".to_owned(),
     summary: "Busy time of each Wi-Fi channel, energy only".to_owned(),
     family: DecoderFamily::UTILITY,
-    bandwidth_hz: 2.0 * usable_half_hz(WifiOccupancyParams::default().span),
+    bandwidth_hz: 2.0 * usable_half_hz(WifiOccupancyParams::default().span.sample_rate_hz()),
     input_rate_hz: WifiOccupancyParams::default().span.sample_rate_hz(),
     has_audio: false,
     emits: vec![EventKind::named("wifi_occupancy")],
@@ -35,8 +34,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<WifiOccupancyParams, ChannelError> {
-    let params: WifiOccupancyParams = crate::settings_of(settings)?;
-    airtime::check_margin(params.margin_db)?;
+    let params: WifiOccupancyParams = sdrmm_decoder::settings_of(settings)?;
+    check_airtime_margin(params.margin_db).map_err(ChannelError::InvalidSettings)?;
     Ok(params)
 }
 
@@ -45,15 +44,15 @@ pub(crate) fn input_rate(params: WifiOccupancyParams) -> f64 {
 }
 
 pub(crate) fn occupied_band(params: WifiOccupancyParams) -> (f64, f64) {
-    airtime::occupied_band(params.span)
+    grid::occupied_band(params.span.sample_rate_hz())
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    airtime::channel_filter()
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 struct Lane {
-    channel: Channel,
+    channel: plan::Channel,
     bins: Range<usize>,
     floor: QuietFloor,
     threshold: f32,
@@ -64,7 +63,7 @@ struct Lane {
 }
 
 impl Lane {
-    fn new(channel: Channel, frequency_hz: f64, len: usize) -> Self {
+    fn new(channel: plan::Channel, frequency_hz: f64, len: usize) -> Self {
         let half = plan::OCCUPIED_HZ / 2.0;
         let offset = channel.centre_hz - frequency_hz;
         let bins = bins_between(offset - half, offset + half, len);
@@ -121,8 +120,8 @@ impl Lane {
 }
 
 fn lanes(params: WifiOccupancyParams, frequency_hz: f64) -> Vec<Lane> {
-    let half = usable_half_hz(params.span);
-    let len = fft_len(params.span);
+    let half = usable_half_hz(params.span.sample_rate_hz());
+    let len = fft_len(params.span.sample_rate_hz());
     plan::twenty_mhz_within(frequency_hz - half, frequency_hz + half)
         .map(|channel| Lane::new(channel, frequency_hz, len))
         .collect()
@@ -154,7 +153,7 @@ impl NativeChannel for WifiOccupancyChannel {
         let params = params(&settings)?;
         check_rate(ctx, &DESCRIPTOR, input_rate(params))?;
         Ok(Self {
-            frames: PowerFrames::new(fft_len(params.span)),
+            frames: PowerFrames::new(fft_len(params.span.sample_rate_hz())),
             lanes: lanes(params, settings.frequency_hz),
             frequency_hz: settings.frequency_hz,
             params,
@@ -164,7 +163,7 @@ impl NativeChannel for WifiOccupancyChannel {
     }
 }
 
-impl ChannelRx for WifiOccupancyChannel {
+impl Channel for WifiOccupancyChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.span != self.params.span {

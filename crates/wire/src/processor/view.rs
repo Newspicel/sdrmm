@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{array::ArrayTuningMode, processor::beamformer::LaneWeight, ws::StreamKind};
+use crate::{array::ArrayTuningMode, ws::StreamKind};
 
 /// A widget on a processor face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -157,6 +157,13 @@ pub struct BearingView {
     /// The spread of the first needle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sigma_deg: Option<f32>,
+}
+
+/// The amplitude and phase a beam puts on one lane.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct LaneWeight {
+    pub amplitude_db: f32,
+    pub phase_deg: f32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]

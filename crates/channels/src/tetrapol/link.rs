@@ -1,9 +1,8 @@
-use std::fmt::Write as _;
-
 use crate::tetrapol::TetrapolAddress;
 use crate::tetrapol::TetrapolLogicalChannel;
 use crate::tetrapol::TetrapolMessage;
 use crate::tetrapol::TetrapolPayload;
+use sdrmm_crypto::hex_string as hex;
 use sdrmm_dsp::hdlc_fcs_ok;
 use sdrmm_wire::DecoderEvent;
 
@@ -12,7 +11,7 @@ use super::{
     coding::{BLOCK_BYTES, Block, Decoded},
     message,
 };
-use crate::ChannelOutputs;
+use sdrmm_decoder::ChannelOutputs;
 
 const SUPERFRAME: u64 = 200;
 const HALF_SUPERFRAME: u64 = 100;
@@ -153,13 +152,6 @@ fn fnv(parts: &[&[u8]]) -> u64 {
         .fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01B3)
         })
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut text, byte| {
-        let _ = write!(text, "{byte:02x}");
-        text
-    })
 }
 
 fn du(info: &[u8]) -> Option<Du<'_>> {

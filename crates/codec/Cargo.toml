@@ -1,0 +1,32 @@
+[package]
+name = "sdrmm-codec"
+description = "Audio codecs and vocoders for sdr-- decoders"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+## Offer hardware vocoder chips; the host installs them with `voice::chip::install_vocoder_chips`.
+vocoder-chip = []
+## Encoded tone frames for decoder tests.
+testutil = ["blip25-vocoder/encode"]
+
+[dependencies]
+sdrmm-dsp.workspace = true
+num-complex.workspace = true
+rtrb.workspace = true
+thiserror.workspace = true
+blip25-vocoder.workspace = true
+codec2.workspace = true
+symphonia-core.workspace = true
+symphonia-bundle-mp3.workspace = true
+
+[dev-dependencies]
+blip25-vocoder = { workspace = true, features = ["encode"] }

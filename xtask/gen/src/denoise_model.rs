@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs, path::Path, process::Command, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result, bail, ensure};
-use sdrmm_channels::neural::{
+use sdrmm_dsp::math::neural::{
     Binary, ConvSpec, Graph, Net, Node, Op, Session, Unary, Value, Weights, f16_to_f32, f32_to_f16,
 };
 use sdrmm_wire::{DENOISE_MODELS_PREFIX, DenoiseModel};
@@ -417,7 +417,7 @@ fn parity(mut model: TypedModel, net: &Arc<Net>) -> Result<Parity> {
     let plan = model.into_optimized()?.into_runnable()?;
     let mut runner = plan.spawn()?;
     let mut session = Session::new(Arc::clone(net));
-    let initial = sdrmm_channels::neural_denoise::initial_state(net)?;
+    let initial = sdrmm_dsp::audio::noise::initial_state(net)?;
     let mut state = Tensor::from_shape(&[initial.len()], &initial)?;
     let mut ours_state = initial;
     let spec_len = net.input_len(0).context("spec input")?;

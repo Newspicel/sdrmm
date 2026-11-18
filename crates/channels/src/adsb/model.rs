@@ -1,4 +1,4 @@
-use crate::default_true;
+use sdrmm_decoder::default_true;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
@@ -176,7 +176,6 @@ impl sdrmm_wire::DecoderSettings for AdsbParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
-    use crate::rtty::RttyText;
     use sdrmm_wire::DecodedRecord;
     use sdrmm_wire::DecoderEvent;
     use sdrmm_wire::LatLon;
@@ -200,13 +199,6 @@ mod model_tests {
                 .place
                 .map(|place| (place.at.lat, place.at.lon)),
             Some((52.5, 13.4))
-        );
-        assert_eq!(
-            presented(&DecoderEvent::of(&RttyText {
-                text: "CQ".to_owned()
-            }))
-            .place,
-            None
         );
     }
 
@@ -238,7 +230,7 @@ mod model_tests {
     }
 
     fn presented(event: &DecoderEvent) -> Presentation {
-        sdrmm_wire::EventCatalog::new([adsb_kind(), crate::rtty::rtty_kind()]).present(event)
+        sdrmm_wire::EventCatalog::new([adsb_kind()]).present(event)
     }
 
     #[test]
@@ -346,6 +338,16 @@ mod model_tests {
                 "vertical_rate_fpm": -1088, "squawk": "1000", "lat": 52.52, "lon": 13.405,
             }),
         );
-        crate::testutil::assert_views_hold(&adsb_kind(), &[sample]);
+        sdrmm_decoder_test_support::assert_views_hold(&adsb_kind(), &[sample]);
+    }
+
+    #[test]
+    fn an_aircraft_carries_no_amateur_callsign() {
+        let aircraft = AdsbMessage {
+            icao: "3C6444".to_owned(),
+            callsign: Some("DLH400".to_owned()),
+            ..AdsbMessage::default()
+        };
+        assert_eq!(aircraft.present(&EventKind::named("adsb")).callsign, None);
     }
 }

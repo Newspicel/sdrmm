@@ -256,6 +256,7 @@ impl EventContract for WsprSpot {
 mod model_tests {
     use super::*;
     use sdrmm_wire::DecoderEvent;
+    use sdrmm_wire::present::{Unit, count, number, text};
 
     fn message(text: &str) -> WsjtMessage {
         WsjtMessage {
@@ -335,5 +336,73 @@ mod model_tests {
         assert_eq!(sender("CQ POTA W1AW FN31").as_deref(), Some("W1AW"));
         assert_eq!(sender("W1AW DL1ABC -12").as_deref(), Some("DL1ABC"));
         assert_eq!(sender("CQ"), None);
+    }
+
+    #[test]
+    fn wspr_shows_timing_and_link_measurements() {
+        let view = serde_json::from_value::<WsprSpot>(serde_json::json!({
+            "text": "K1ABC FN42 37", "callsign": "K1ABC", "grid": "FN42", "power_dbm": 37,
+            "snr_db": -21.0, "audio_hz": 1501.25, "time_offset_s": 0.75, "drift_hz": -0.2,
+        }))
+        .unwrap()
+        .present(&EventKind::named("wspr"));
+        assert_eq!(
+            view.labels(),
+            [
+                "Callsign",
+                "Grid",
+                "Power",
+                "SNR",
+                "Audio",
+                "Time offset",
+                "Drift",
+                "Message"
+            ]
+        );
+        assert_eq!(view.field("Power"), number(Some(37), Unit::Dbm, 0).as_ref());
+        assert_eq!(
+            view.field("Time offset"),
+            number(Some(0.75_f32), Unit::Seconds, 2).as_ref()
+        );
+        assert_eq!(view.field("Message"), text(Some("K1ABC FN42 37")).as_ref());
+    }
+
+    #[test]
+    fn ft8_counts_hard_errors() {
+        let view = WsjtMessage {
+            text: "CQ DL1ABC JO62".to_owned(),
+            snr_db: -12.0,
+            audio_hz: 1234.5,
+            time_offset_s: 0.1,
+            hard_errors: 3,
+            slot: None,
+        }
+        .present(&EventKind::named("ft8"));
+        assert_eq!(view.field("Hard errors"), count(Some(3)).as_ref());
+        assert_eq!(
+            view.field("SNR"),
+            number(Some(-12.0_f32), Unit::Db, 0).as_ref()
+        );
+    }
+
+    #[test]
+    fn amateur_spots_carry_a_callsign() {
+        let wspr: WsprSpot = serde_json::from_str(
+            r#"{"text":"DL1ABC JO62 37","callsign":"DL1ABC","grid":"JO62","power_dbm":37,"snr_db":-20.0,"audio_hz":1500.0,"time_offset_s":0.0,"drift_hz":0.0}"#,
+        )
+        .expect("wspr fixture");
+        assert!(wspr.present(&EventKind::named("wspr")).callsign.is_some());
+        for (kind, text) in [("ft8", "CQ DL1ABC JO62"), ("ft4", "W1AW DL1ABC JO62")] {
+            let message = WsjtMessage {
+                text: text.to_owned(),
+                snr_db: -12.0,
+                audio_hz: 1_500.0,
+                time_offset_s: 0.1,
+                hard_errors: 0,
+                slot: None,
+            };
+            let view = message.present(&EventKind::new(kind));
+            assert!(view.callsign.is_some(), "{kind}");
+        }
     }
 }

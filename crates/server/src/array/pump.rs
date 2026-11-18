@@ -1,7 +1,8 @@
 use std::{collections::HashMap, ops::ControlFlow, sync::Arc, time::Duration};
 
+use sdrmm_array::Reading;
 use sdrmm_engine::ArrayEvent;
-use sdrmm_wire::{ArrayCalRecord, ArrayStatus, ProcessorReading, ServerEvent, SurfaceFrame};
+use sdrmm_wire::{ArrayCalRecord, ArrayStatus, ServerEvent, SurfaceFrame};
 use tokio::{
     sync::broadcast::{self, error::RecvError},
     time::MissedTickBehavior,
@@ -44,7 +45,7 @@ pub(super) async fn run(
 
 pub(crate) fn handle(state: &AppState, received: Result<ArrayEvent, RecvError>) -> ControlFlow<()> {
     match received {
-        Ok(ArrayEvent::Report { processor, reading }) => report(state, processor, &reading),
+        Ok(ArrayEvent::Report { processor, reading }) => report(state, &processor, &reading),
         Ok(ArrayEvent::Surface {
             processor,
             seq,
@@ -63,15 +64,13 @@ pub(crate) fn handle(state: &AppState, received: Result<ArrayEvent, RecvError>) 
     ControlFlow::Continue(())
 }
 
-fn report(state: &AppState, processor: String, reading: &ProcessorReading) {
+fn report(state: &AppState, processor: &str, reading: &Reading) {
     let mut reading = reading.clone();
-    state.reports.on_report(state, &processor, &mut reading);
-    if state.arrays.holds_processor(&processor) {
-        state.reports.keep(&processor, &reading);
+    state.reports.on_report(state, processor, &mut reading);
+    if state.arrays.holds_processor(processor) {
+        state.reports.keep(processor, &reading);
     }
-    state
-        .engine
-        .emit_event(ServerEvent::processor_update(processor, reading));
+    crate::reports::emit_update(state, processor, &reading);
 }
 
 fn draw(state: &AppState, processor: &str, seq: u32, surface: Arc<SurfaceFrame>) {

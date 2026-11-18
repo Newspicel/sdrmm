@@ -4,20 +4,26 @@ use std::{
 };
 
 use num_complex::Complex;
-use sdrmm_channels::NfmParams;
-use sdrmm_channels::array_processor::{
-    ArrayBlock, CalView, CorrectionView, LaneFormat, OutputSlots, ProcessorOutput, create_processor,
+use sdrmm_array::{
+    ArrayBlock, CalView, CorrectionView, LaneFormat, OutputSlots, Params, ProcessorOutput, Reading,
+    Settings, create_processor, df::DfParams,
 };
+use sdrmm_channels::NfmParams;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_wire::{
     ArrayGeometry, ArrayNode, ArrayOrientation, ArrayRecordingRequest, ArrayTuneRequest,
     ArrayTuningMode, Attitude, ChannelParams, ChannelSettings, Coherence, DeviceBackend,
-    DeviceSettings, DfParams, DfReading, GainValue, HeldLane, PositionFix, ProcessorGate,
-    ProcessorParams, ProcessorReading, StreamSettings, VirtualLane, Winding, array::ArrayElement,
+    DeviceSettings, DfReading, GainValue, HeldLane, PositionFix, ProcessorGate, ProcessorParams,
+    StreamSettings, VirtualLane, Winding, array::ArrayElement,
 };
 
 use super::{pose::PoseTrack, tuning::restore, *};
+
+/// `settings` as a spec carries them.
+fn wire<S: Settings>(settings: &S) -> ProcessorParams {
+    sdrmm_array::wire_params(settings).expect("settings serialize")
+}
 use crate::array::{COMMAND_SLOTS, LaneRef, PoseRing, ProcessorSpec, oriented};
 
 const ARRAY: &str = "array-1";
@@ -509,7 +515,7 @@ fn df_yaw_gate_fires_on_derived_rates() {
         tuning: ArrayTuningMode::Together,
         dc_block: false,
         in_flight: 0,
-        devices: [0; sdrmm_channels::array_processor::MAX_LANES],
+        devices: [0; sdrmm_array::MAX_LANES],
     };
     let shape = ArrayShape {
         positions: geometry.positions(5).expect("kraken positions"),
@@ -518,7 +524,7 @@ fn df_yaw_gate_fires_on_derived_rates() {
         tuning: ArrayTuningMode::Together,
     };
     let ctx = shape.ctx("df-yaw", &frame);
-    let params = ProcessorParams::Df(DfParams {
+    let params = Params::new(DfParams {
         report_ms: 100,
         ..DfParams::default()
     });
@@ -535,8 +541,8 @@ fn df_yaw_gate_fires_on_derived_rates() {
         let sample = track.sample(Some(&fix(at_ms, heading, None)), host_ns(at_ms));
         ring.push(sample);
     }
-    let mut report = ProcessorReading::empty("df");
-    let mut bearings = vec![sdrmm_channels::df::reserved_bearing(8); 2];
+    let mut report = sdrmm_array::reserved_reading(&params);
+    let mut bearings = vec![sdrmm_array::df::reserved_bearing(8); 2];
     let mut readings: Vec<DfReading> = Vec::new();
     let mut seed = 7;
     for index in 0..200i64 {
@@ -567,7 +573,7 @@ fn df_yaw_gate_fires_on_derived_rates() {
         });
         df.process(&block, &mut out);
         if out.tally().report
-            && let Some(ProcessorReading::Df(reading)) = &report
+            && let Some(reading) = report.as_ref().and_then(Reading::get::<DfReading>)
         {
             readings.push(reading.clone());
         }
@@ -588,7 +594,7 @@ fn probe_spec(node: &str) -> ProcessorSpec {
     ProcessorSpec {
         node: node.to_owned(),
         array: ARRAY.to_owned(),
-        params: ProcessorParams::Df(DfParams::default()),
+        params: wire(&DfParams::default()),
         lane_ports: Vec::new(),
         steer_from: None,
     }
@@ -596,16 +602,16 @@ fn probe_spec(node: &str) -> ProcessorSpec {
 
 #[cfg(feature = "probe")]
 fn probe_params(lane_ports: u8) -> ProcessorParams {
-    ProcessorParams::Probe(sdrmm_wire::processor::ProbeParams {
+    wire(&sdrmm_array::probe::ProbeParams {
         lane_ports,
-        ..sdrmm_wire::processor::ProbeParams::default()
+        ..sdrmm_array::probe::ProbeParams::default()
     })
 }
 
 #[cfg(feature = "probe")]
 #[test]
 fn processor_action_reaches_the_runner() {
-    use sdrmm_channels::array_processor::probe::take_probe_log;
+    use sdrmm_array::probe::take_probe_log;
 
     use crate::array::ProcessorAction;
 
@@ -818,7 +824,7 @@ fn tuning_an_array_moves_every_held_lane() {
 #[cfg(feature = "probe")]
 #[test]
 fn a_rate_change_keeps_the_array_and_rebuilds_its_processors() {
-    use sdrmm_channels::array_processor::probe::take_probe_log;
+    use sdrmm_array::probe::take_probe_log;
 
     let (engine, ds) = bench();
     engine
@@ -859,7 +865,7 @@ fn a_rate_change_keeps_the_array_and_rebuilds_its_processors() {
 #[cfg(feature = "probe")]
 #[test]
 fn replugging_the_anchor_keeps_the_array_and_its_lane_outputs() {
-    use sdrmm_channels::array_processor::probe::take_probe_log;
+    use sdrmm_array::probe::take_probe_log;
     use sdrmm_wire::ArrayFailure;
 
     let (engine, ds) = bench();
@@ -905,7 +911,7 @@ fn replugging_the_anchor_keeps_the_array_and_its_lane_outputs() {
 #[cfg(feature = "probe")]
 #[test]
 fn a_rewired_lane_swaps_in_place() {
-    use sdrmm_channels::array_processor::probe::take_probe_log;
+    use sdrmm_array::probe::take_probe_log;
 
     let (engine, ds) = bench();
     let mut spec = kraken_spec(ds);
@@ -1014,9 +1020,9 @@ fn removing_an_array_never_blocks_the_engine() {
     engine
         .apply_array(kraken_spec(ds))
         .expect("the array starts");
-    let slow = ProcessorParams::Probe(sdrmm_wire::processor::ProbeParams {
+    let slow = wire(&sdrmm_array::probe::ProbeParams {
         block_drop_ms: 500,
-        ..sdrmm_wire::processor::ProbeParams::default()
+        ..sdrmm_array::probe::ProbeParams::default()
     });
     engine
         .apply_processor(&ProcessorSpec {
@@ -1117,7 +1123,7 @@ fn a_failed_processor_build_leaves_the_array_running() {
 #[cfg(feature = "probe")]
 #[test]
 fn a_tuning_mode_change_spreads_the_lanes_and_rebuilds_the_processors() {
-    use sdrmm_channels::array_processor::probe::take_probe_log;
+    use sdrmm_array::probe::take_probe_log;
 
     let (engine, ds) = bench();
     let mut spec = kraken_spec(ds);
@@ -1243,7 +1249,7 @@ fn a_processor_whose_retune_failed_is_rebuilt() {
         .apply_processor(&ProcessorSpec {
             node: "df-rebuild".to_owned(),
             array: ARRAY.to_owned(),
-            params: ProcessorParams::Df(DfParams::default()),
+            params: wire(&DfParams::default()),
             lane_ports: Vec::new(),
             steer_from: None,
         })
@@ -1273,7 +1279,7 @@ fn a_processor_whose_retune_failed_is_rebuilt() {
 #[cfg(feature = "probe")]
 #[test]
 fn a_probe_whose_retune_failed_comes_back_as_a_new_build() {
-    use sdrmm_channels::array_processor::probe::take_probe_log;
+    use sdrmm_array::probe::take_probe_log;
 
     let (engine, ds) = bench();
     engine
@@ -1455,7 +1461,7 @@ fn a_processor_the_array_had_no_room_to_drop_stays_until_it_can() {
         .apply_processor(&ProcessorSpec {
             node: "df-busy".to_owned(),
             array: ARRAY.to_owned(),
-            params: ProcessorParams::Df(DfParams::default()),
+            params: wire(&DfParams::default()),
             lane_ports: Vec::new(),
             steer_from: None,
         })

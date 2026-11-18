@@ -15,7 +15,8 @@ workspace = true
 [dependencies]
 sdrmm-wire.workspace = true
 sdrmm-dsp.workspace = true
-sdrmm-channels.workspace = true
+sdrmm-decoder.workspace = true
+sdrmm-array.workspace = true
 num-complex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -28,5 +29,6 @@ sha2.workspace = true
 tempfile.workspace = true
 
 [dev-dependencies]
+sdrmm-channels.workspace = true
 serde_json.workspace = true
 wasmtime = { workspace = true, features = ["wat"] }

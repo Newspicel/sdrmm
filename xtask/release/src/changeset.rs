@@ -765,7 +765,7 @@ mod tests {
             assert!(user_visible(path), "{path}");
         }
         for path in [
-            "crates/channels/src/dv/dmr/tests.rs",
+            "crates/channels/src/dmr/tests.rs",
             "crates/wire/src/patch/tests/registry.rs",
             "crates/channels/fuzz/fuzz_targets/aprs.rs",
             "crates/dsp/benches/fft.rs",

@@ -1,9 +1,9 @@
 use std::{sync::Arc, time::Instant};
 
-use sdrmm_channels::passive_radar::{
-    CafBackend, CpiJob, CpuCaf, CubeOut, RadarCtx, RadarPlan, plan,
+use sdrmm_array::passive_radar::{
+    CafBackend, CpiJob, CpuCaf, CubeOut, Illuminator, PassiveRadarParams, RadarCtx, RadarPlan,
+    ReferenceCleaning, plan,
 };
-use sdrmm_wire::{radar::Illuminator, radar::PassiveRadarParams, radar::ReferenceCleaning};
 
 use super::{super::caf::GpuCaf, samples};
 
@@ -59,7 +59,7 @@ fn benchmark_radar_caf() {
         let job = job(&stage);
         let mut out = CubeOut::new(&stage.shape);
         let mut cpu = CpuCaf::new(&stage).unwrap();
-        let mut gpu = GpuCaf::new(Arc::clone(&context), &stage).unwrap();
+        let mut gpu = GpuCaf::new(Arc::clone(&context), &stage.caf()).unwrap();
         let cpu_ms = median_ms(|| cpu.run(&job, &mut out).unwrap());
         let gpu_ms = median_ms(|| gpu.run(&job, &mut out).unwrap());
         println!("radar_caf/{name},cpu_ms={cpu_ms:.2},gpu_ms={gpu_ms:.2}");

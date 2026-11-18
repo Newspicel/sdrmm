@@ -5,17 +5,15 @@
 
 use std::sync::Arc;
 
-use sdrmm_channels::{
-    ChannelError,
-    array_processor::{
-        ArrayBlock, ArrayCtx, ArrayProcessor, ProcessorAction, ProcessorDescriptor,
-        ProcessorFactory, ProcessorFaults, ProcessorOutput, ResetCause, install_processors,
-        plugin_descriptor,
-    },
+use sdrmm_array::{
+    ArrayBlock, ArrayCtx, ArrayProcessor, Params, PluginReading, PluginSettings, ProcessorAction,
+    ProcessorFactory, ProcessorFaults, ProcessorOutput, Reading, Report, ResetCause,
+    install_plugins as install_processors,
 };
+use sdrmm_decoder::ChannelError;
 use sdrmm_wire::{
-    ArrayCal, ArrayCalSource, ArrayNeeds, DecodedRecord, EventKind, PluginParams, PluginReading,
-    ProcessorParams, ProcessorReading, ProcessorType, ReadoutSpec, present::Unit,
+    ArrayCal, ArrayCalSource, ArrayNeeds, DecodedRecord, EventKind, ProcessorParams, ProcessorPort,
+    ProcessorType, ReadoutSpec, present::Unit,
 };
 use tokio::sync::broadcast::{Receiver, error::TryRecvError};
 
@@ -38,15 +36,11 @@ struct Meter {
 }
 
 impl ArrayProcessor for Meter {
-    fn descriptor() -> &'static ProcessorDescriptor {
-        plugin_descriptor()
-    }
-
-    fn new(_: &ArrayCtx<'_>, params: &ProcessorParams) -> Result<Self, ChannelError> {
+    fn new(_: &ArrayCtx<'_>, params: &Params) -> Result<Self, ChannelError> {
         Err(ChannelError::UnknownType(params.type_id().to_owned()))
     }
 
-    fn apply(&mut self, _: &ProcessorParams) -> Result<(), ChannelError> {
+    fn apply(&mut self, _: &Params) -> Result<(), ChannelError> {
         Ok(())
     }
 
@@ -75,7 +69,7 @@ impl ArrayProcessor for Meter {
             return;
         }
         let power_db = 10.0 * (self.power / self.samples.max(1) as f64).log10();
-        if let Some(ProcessorReading::Plugin(reading)) = out.report() {
+        if let Some(reading) = out.report_as::<PluginReading>() {
             reading.fill([self.build, self.lanes as f64, power_db]);
             out.publish_report();
         }
@@ -101,7 +95,7 @@ impl ProcessorFactory for MeterBuild {
     fn create(
         &self,
         ctx: &ArrayCtx<'_>,
-        _: &PluginParams,
+        _: &PluginSettings,
     ) -> Result<Box<dyn ArrayProcessor>, ChannelError> {
         Ok(Box::new(Meter {
             lanes: ctx.lanes,
@@ -132,15 +126,19 @@ fn build(build: f64) -> Arc<dyn ProcessorFactory> {
             emits: vec![EventKind::named("lane_meter")],
             defaults: serde_json::Value::Null,
             facets: sdrmm_wire::ProcessorFacets::default(),
+            face: sdrmm_wire::Face::fit(400),
+            ports: vec![ProcessorPort::Events { note: None }],
+            band: None,
+            resolved_ports: Vec::new(),
         },
         build,
     })
 }
 
-fn plugin_reading(reading: &ProcessorReading) -> PluginReading {
-    match reading {
-        ProcessorReading::Plugin(reading) => reading.clone(),
-        other => panic!("a plugin reading, got {other:?}"),
+fn plugin_reading(reading: &Reading) -> PluginReading {
+    match reading.get::<PluginReading>() {
+        Some(reading) => reading.clone(),
+        None => panic!("a plugin reading, got {reading:?}"),
     }
 }
 
@@ -183,10 +181,7 @@ fn a_plugin_processor_runs_on_the_lanes_and_reopens_on_reload() {
     let mut decoded = bench.engine.subscribe_decoded();
     bench
         .engine
-        .apply_processor(&processor(
-            NODE,
-            ProcessorParams::Plugin(kind.params(serde_json::Value::Null)),
-        ))
+        .apply_processor(&processor(NODE, ProcessorParams::bare(&kind.type_id)))
         .unwrap();
 
     let first = plugin_reading(&next_reading(&mut events, NODE, WAIT));

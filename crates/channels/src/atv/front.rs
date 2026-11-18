@@ -7,7 +7,8 @@ use sdrmm_dsp::{
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 
-use crate::{AUDIO_RATE, ChannelError, ChannelOutputs, clamp_full_scale};
+use sdrmm_decoder::{AUDIO_RATE, ChannelError, ChannelOutputs};
+use sdrmm_dsp::audio::clip::clamp_full_scale;
 
 const AM_TAPS: usize = 63;
 const RESAMPLER_DB: f64 = 50.0;

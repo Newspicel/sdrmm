@@ -7,7 +7,6 @@ use crate::common::{
     baseline_path, dmr_entry, find_uw, recovered_symbols, uw_dibits,
 };
 use num_complex::Complex;
-use sdrmm_channels::synth::dv as tg;
 use sdrmm_dsp::{
     Bptc196,
     coding::fec::conv::{CONFIDENT, Soft},
@@ -47,9 +46,9 @@ const RECIPE: &str = "96 info bits -> Bptc196 -> tg::dibits -> steady framing \
 fn modulate(coded: &[bool; Bptc196::CODED_BITS]) -> Vec<Complex<f32>> {
     let mut symbols: Vec<u8> = alternating(STEADY_PREAMBLE).collect();
     symbols.extend(uw_dibits());
-    symbols.extend(tg::dibits(coded));
+    symbols.extend(sdrmm_modem::synth::dibits(coded));
     symbols.extend(alternating(STEADY_TAIL));
-    tg::c4fm(&symbols, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA)
+    sdrmm_modem::synth::c4fm(&symbols, RATE, BAUD, DEVIATION_HZ, RRC_ALPHA)
 }
 
 fn received_soft(wave: &[Complex<f32>]) -> Option<[Soft; Bptc196::CODED_BITS]> {

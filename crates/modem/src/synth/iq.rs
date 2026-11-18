@@ -13,6 +13,29 @@ pub fn shift(iq: &mut [Complex<f32>], freq_hz: f64, rate: f64) {
     }
 }
 
+/// `iq` moved `freq_hz` up the band.
+#[must_use]
+pub fn shifted(mut iq: Vec<Complex<f32>>, freq_hz: f64, rate: f64) -> Vec<Complex<f32>> {
+    shift(&mut iq, freq_hz, rate);
+    iq
+}
+
+/// `bursts` one after another with `gap_s` of dead air before, between and after them.
+#[must_use]
+pub fn spaced(
+    bursts: impl IntoIterator<Item = Vec<Complex<f32>>>,
+    gap_s: f64,
+    rate: f64,
+) -> Vec<Complex<f32>> {
+    let gap = vec![Complex::default(); (gap_s * rate) as usize];
+    let mut iq = gap.clone();
+    for burst in bursts {
+        iq.extend(burst);
+        iq.extend_from_slice(&gap);
+    }
+    iq
+}
+
 /// Adds uniform noise of peak `amp` from a xorshift32 stream, so a seed always gives the same block.
 pub fn add_noise(iq: &mut [Complex<f32>], seed: u32, amp: f32) {
     let mut state = seed | 1;

@@ -1,18 +1,18 @@
 //! The guest side of the array processor ABI, instantiated for one processor type by
 //! [`crate::export_processor!`].
 
-use num_complex::Complex;
-use sdrmm_wire::plugin::processor::{ArrayFacts, ArrayHeader, ArrayOpen, Reset, lock};
+use sdrmm_array::{ArrayProcessor, Settings};
+use sdrmm_wire::plugin::processor::{ArrayFacts, ArrayHeader, ArrayOpen, LANE_OUTPUTS, Reset};
 
-use super::{address, fail, len_u32, store, take, with_stored};
-use crate::{ArrayOutputs, Lanes, Processor, from_value, settings};
+use super::{answer, fail, store, take, with_stored};
+use crate::{
+    Parts,
+    output::{address, len_u32},
+    processor::Hosted,
+};
 
-struct ArraySlot<T> {
-    processor: T,
-    input: Vec<Complex<f32>>,
-    lanes: usize,
-    out: ArrayOutputs,
-    events: Vec<u8>,
+struct ArraySlot {
+    hosted: Hosted,
     header: [u8; ArrayHeader::BYTES],
 }
 
@@ -20,105 +20,91 @@ fn missing(handle: i32) -> String {
     format!("no processor {handle}")
 }
 
-fn answer(result: Result<(), String>) -> i32 {
-    match result {
-        Ok(()) => 0,
-        Err(error) => fail(&error),
-    }
-}
-
-fn opened<T: Processor>(bytes: &[u8]) -> Result<T, String> {
+fn opened<P, S>(parts: &Parts, bytes: &[u8]) -> Result<Hosted, String>
+where
+    P: ArrayProcessor + 'static,
+    S: Settings,
+{
+    let kind = parts
+        .processor()
+        .ok_or_else(|| "this plugin declares no processor".to_owned())?;
     let request: ArrayOpen = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-    T::open(&request.facts, from_value(request.settings)?)
+    Hosted::open::<P, S>(kind, request)
 }
 
-pub fn open<T: Processor + 'static>(ptr: u32, len: u32) -> i32 {
-    match opened::<T>(&take(ptr, len)) {
-        Ok(processor) => store(ArraySlot {
-            processor,
-            input: Vec::new(),
-            lanes: 0,
-            out: ArrayOutputs::default(),
-            events: Vec::new(),
+pub fn open<P, S>(parts: &Parts, ptr: u32, len: u32) -> i32
+where
+    P: ArrayProcessor + 'static,
+    S: Settings,
+{
+    match opened::<P, S>(parts, &take(ptr, len)) {
+        Ok(hosted) => store(ArraySlot {
+            hosted,
             header: [0; ArrayHeader::BYTES],
         }),
         Err(error) => fail(&error),
     }
 }
 
-pub fn apply<T: Processor + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
-    answer(settings::<T::Settings>(&take(ptr, len)).and_then(|s| {
-        with_stored::<ArraySlot<T>, _>(handle, |slot| slot.processor.apply(s))
+fn with_slot<R>(handle: i32, f: impl FnOnce(&mut ArraySlot) -> R) -> Option<R> {
+    with_stored::<ArraySlot, _>(handle, f)
+}
+
+pub fn apply(handle: i32, ptr: u32, len: u32) -> i32 {
+    let settings = crate::settings::<serde_json::Value>(&take(ptr, len));
+    answer(settings.and_then(|settings| {
+        with_slot(handle, |slot| slot.hosted.apply(settings))
             .unwrap_or_else(|| Err(missing(handle)))
     }))
 }
 
-pub fn retune<T: Processor + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
+pub fn retune(handle: i32, ptr: u32, len: u32) -> i32 {
     let facts =
         serde_json::from_slice::<ArrayFacts>(&take(ptr, len)).map_err(|error| error.to_string());
     answer(facts.and_then(|facts| {
-        with_stored::<ArraySlot<T>, _>(handle, |slot| slot.processor.retune(&facts))
-            .unwrap_or_else(|| Err(missing(handle)))
+        with_slot(handle, |slot| slot.hosted.retune(facts)).unwrap_or_else(|| Err(missing(handle)))
     }))
 }
 
-pub fn reset<T: Processor + 'static>(handle: i32, cause: u32) {
+pub fn reset(handle: i32, cause: u32) {
     if let Some(cause) = Reset::from_code(cause) {
-        with_stored::<ArraySlot<T>, _>(handle, |slot| slot.processor.reset(cause));
+        with_slot(handle, |slot| slot.hosted.reset(cause));
     }
 }
 
-pub fn input<T: Processor + 'static>(handle: i32, lanes: u32, samples: u32) -> u32 {
-    with_stored::<ArraySlot<T>, _>(handle, |slot| {
-        slot.lanes = lanes as usize;
-        let total = (lanes as usize).saturating_mul(samples as usize);
-        slot.input.resize(total, Complex::new(0.0, 0.0));
-        address(&slot.input)
+pub fn action(handle: i32, code: u32) -> i32 {
+    answer(
+        with_slot(handle, |slot| slot.hosted.action(code)).unwrap_or_else(|| Err(missing(handle))),
+    )
+}
+
+pub fn input(handle: i32, lanes: u32, samples: u32) -> u32 {
+    with_slot(handle, |slot| {
+        address(slot.hosted.input(lanes as usize, samples as usize))
     })
     .unwrap_or(0)
 }
 
-pub fn process<T: Processor + 'static>(handle: i32, lanes: u32, samples: u32) -> u32 {
-    with_stored::<ArraySlot<T>, _>(handle, |slot| {
-        slot.out.clear();
-        let count = (lanes as usize).min(slot.lanes);
-        let total = count.saturating_mul(samples as usize).min(slot.input.len());
-        slot.processor
-            .process(Lanes::new(&slot.input[..total], count), &mut slot.out);
-        encode(slot)
+pub fn context(handle: i32) -> u32 {
+    with_slot(handle, |slot| address(slot.hosted.context())).unwrap_or(0)
+}
+
+pub fn process(handle: i32, _lanes: u32, samples: u32) -> u32 {
+    with_slot(handle, |slot| {
+        let staged = slot.hosted.process(samples as usize);
+        let mut header = staged.header;
+        header.values_ptr = address(&staged.values);
+        header.values_len = len_u32(staged.values.len());
+        header.events_ptr = address(&staged.events);
+        header.events_len = len_u32(staged.events.len());
+        header.surface_ptr = address(&staged.surface);
+        header.surface_len = len_u32(staged.surface.len());
+        for port in 0..LANE_OUTPUTS {
+            header.lane_ptr[port] = address(&staged.lanes[port]);
+            header.lane_samples[port] = len_u32(staged.lanes[port].len() / 2);
+        }
+        slot.header = header.to_bytes();
+        address(&slot.header)
     })
     .unwrap_or(0)
-}
-
-const fn lock_code(lock: Option<bool>) -> u32 {
-    match lock {
-        Some(true) => lock::HELD,
-        Some(false) => lock::LOST,
-        None => lock::UNKNOWN,
-    }
-}
-
-fn encode<T>(slot: &mut ArraySlot<T>) -> u32 {
-    slot.events.clear();
-    if !slot.out.events.is_empty()
-        && serde_json::to_writer(&mut slot.events, &slot.out.events).is_err()
-    {
-        slot.events.clear();
-        slot.out.truncated = slot.out.truncated.saturating_add(1);
-    }
-    let health = slot.out.health;
-    slot.header = ArrayHeader {
-        report: u32::from(slot.out.report),
-        values_ptr: address(&slot.out.values),
-        values_len: len_u32(slot.out.values.len()),
-        lock: lock_code(health.lock),
-        snr_db: health.snr_db.unwrap_or(f32::NAN),
-        freq_error_hz: health.freq_error_hz.map_or(f32::NAN, |hz| hz as f32),
-        errors_per_s: health.errors_per_s.unwrap_or(f32::NAN),
-        events_ptr: address(&slot.events),
-        events_len: len_u32(slot.events.len()),
-        truncated: slot.out.truncated,
-    }
-    .to_bytes();
-    address(&slot.header)
 }

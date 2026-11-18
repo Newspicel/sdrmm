@@ -114,10 +114,10 @@ mod tests {
 
     #[test]
     fn a_retyped_decoder_keeps_where_it_listens_and_its_squelch() {
-        let mut current = sdrmm_channels::default_settings("nfm").expect("nfm");
+        let mut current = sdrmm_decoder::default_settings("nfm").expect("nfm");
         current.frequency_hz = 145_500_000.0;
         current.squelch = Squelch::Manual { level_db: -42.0 };
-        let defaults = sdrmm_channels::default_settings("am").expect("am");
+        let defaults = sdrmm_decoder::default_settings("am").expect("am");
         let retyped = retyped(&current, defaults.clone());
         assert_eq!(retyped.frequency_hz, 145_500_000.0);
         assert_eq!(retyped.squelch, Squelch::Manual { level_db: -42.0 });

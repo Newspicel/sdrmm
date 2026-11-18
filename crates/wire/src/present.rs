@@ -10,6 +10,7 @@ use crate::{
 mod broadcast;
 mod file;
 mod ident;
+mod squelch;
 mod voice;
 
 pub use file::PresentedFile;
@@ -421,6 +422,16 @@ pub fn repaired(corrected: u32) -> Option<FieldValue> {
 #[must_use]
 pub fn percent(fraction: f32) -> Option<FieldValue> {
     number(Some(fraction * 100.0), Unit::Percent, 0)
+}
+
+/// A fraction as a percent, with a decimal below 10 %.
+#[must_use]
+pub fn share(fraction: f32) -> Option<FieldValue> {
+    number(
+        Some(fraction * 100.0),
+        Unit::Percent,
+        u8::from(fraction < 0.1),
+    )
 }
 
 #[must_use]

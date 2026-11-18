@@ -1,12 +1,11 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{Capability, Hue, KindSpec, SettingField, Symbol};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
-use sdrmm_wire::{KindSpec, SettingField};
 mod model;
 pub use model::*;
 mod atn;
 mod avlc;
-mod cpdlc;
-mod cpdlc_tables;
 mod decoder;
 mod demod;
 mod header;
@@ -45,7 +44,18 @@ pub(crate) fn vdl2_form() -> Vec<SettingField> {
 }
 
 fn vdl2_kinds() -> Vec<KindSpec> {
-    vec![crate::datalink::vdl2_kind()]
+    vec![
+        KindSpec::tagged::<DataLinkMessage>(
+            EventKind::named("vdl2"),
+            "VDL Mode 2",
+            "Aircraft",
+            Hue::Teal,
+        )
+        .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+        .symbol(Symbol::PLANE)
+        .sighting()
+        .build(),
+    ]
 }
 
 #[cfg(test)]
@@ -54,7 +64,6 @@ mod scramble;
 
 use std::sync::LazyLock;
 
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
@@ -62,10 +71,9 @@ use serde_json::{Value, json};
 
 use self::avlc::{AvlcFrame, Control, Payload};
 use self::decoder::{Vdl2Decoder, Vdl2Frame};
-use crate::datalink::{self, Quality};
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = 100_000.0;
@@ -90,15 +98,15 @@ pub struct Vdl2Channel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<Vdl2Params, ChannelError> {
-    crate::settings_of::<Vdl2Params>(settings)
+    sdrmm_decoder::settings_of::<Vdl2Params>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
 
 impl NativeChannel for Vdl2Channel {
@@ -115,7 +123,7 @@ impl NativeChannel for Vdl2Channel {
     }
 }
 
-impl ChannelRx for Vdl2Channel {
+impl Channel for Vdl2Channel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -130,6 +138,9 @@ impl ChannelRx for Vdl2Channel {
         );
     }
 }
+
+/// Where a VDL2 frame keeps its envelope: the aircraft, or the AVLC address that sent it.
+const LINK: Fields = Fields::station(&["tail", "src", "icao"]);
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -147,10 +158,10 @@ fn message(frame: &Vdl2Frame) -> DataLinkMessage {
     };
     let raw = Some(frame.avlc.raw.as_slice());
     if let Some(block) = &frame.acars {
-        datalink::message(&Body::Acars(&block.core), quality, raw)
+        link::message(&Body::Acars(&block.core), &LINK, quality, raw)
     } else {
         let (kind, details) = avlc_body(&frame.avlc, frame.atn.as_ref());
-        datalink::message(&Body::<()>::Vdl2 { kind, details }, quality, raw)
+        link::message(&Body::<()>::Vdl2 { kind, details }, &LINK, quality, raw)
     }
 }
 
@@ -195,13 +206,13 @@ fn avlc_body(frame: &AvlcFrame, atn: Option<&Value>) -> (String, Value) {
     }
     if !frame.info.is_empty() {
         let shown = &frame.info[..frame.info.len().min(INFO_HEX_LIMIT)];
-        details["info_hex"] = json!(datalink::hex(shown));
+        details["info_hex"] = json!(sdrmm_crypto::hex_string(shown));
         details["info_len"] = json!(frame.info.len());
     }
     (frame_kind(frame), details)
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod fixture;
 #[cfg(test)]
-pub(crate) use tests::fixture;
+mod tests;

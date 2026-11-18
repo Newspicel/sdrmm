@@ -1,7 +1,7 @@
 //! What a plugin's manifest declares is checked when it loads: each part needs its exports, a
 //! plugin needs at least one part, and a plugin built for another ABI is refused.
 
-use sdrmm_channels::encoder::{Encoder, EncoderError, EncoderParams, TxPayload};
+use sdrmm_decoder::encoder::{Encoder, EncoderError, EncoderParams, TxPayload};
 use sdrmm_plugins::{PluginModule, WasmDecoder, WasmEncoder};
 
 mod common;
@@ -15,7 +15,7 @@ const MESSAGE_ENCODER: &str = r#"{"type_id":"probe_tx","name":"Probe","rate_hz":
 
 const KINDS: &str = r#"[{"kind":"probe","name":"Probe","noun":"Probes","caps":["log"],"hue":"teal","lifetime":{"type":"instant"}}]"#;
 
-const ENCODER_EXPORTS: &str = r#"(func (export "sdrmm_encoder_open") (param f64 i32 i32) (result i32) i32.const 0)
+const ENCODER_EXPORTS: &str = r#"(func (export "sdrmm_encoder_open") (param i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_encoder_submit") (param i32 i32 i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_encoder_generate") (param i32 i32) (result i64) i64.const 0)
   (func (export "sdrmm_encoder_close") (param i32))"#;
@@ -121,20 +121,63 @@ fn any_other_abi_is_refused() {
     }
 }
 
+/// Answers every control call with `reply` in place of the empty object.
+fn answering(reply: &str) -> String {
+    let at = 30_000_i64;
+    format!(
+        r#"{ENCODER_EXPORTS}
+  (data (i32.const {at}) "{}")
+  (func (export "sdrmm_call") (param i32 i32 i32) (result i64) i64.const {})"#,
+        common::wat_bytes(reply.as_bytes()),
+        (at << 32) | reply.len() as i64,
+    )
+}
+
+fn answered(name: &str, declared: &str, reply: &str) -> WasmEncoder {
+    let parts = manifest(common::ABI, &[("encoder", declared)]);
+    let text = common::wat_text(common::ABI, &parts, "i32.const 0", &answering(reply)).replacen(
+        r#"(func (export "sdrmm_call")"#,
+        r#"(func (export "sdrmm_unused_call")"#,
+        1,
+    );
+    let module = PluginModule::from_bytes(name.to_owned(), text.as_bytes(), None)
+        .unwrap_or_else(|error| panic!("{error}"));
+    WasmEncoder::of(&module).unwrap_or_else(|| panic!("the manifest declares an encoder"))
+}
+
 #[test]
-fn a_message_encoder_is_handed_the_filled_form_as_json() {
+fn a_message_encoder_composes_the_filled_form_itself() {
     let audio = encoder("tx-audio", AUDIO_ENCODER);
     assert!(matches!(
         audio.compose(&serde_json::json!({"text": "hi"})),
         Err(EncoderError::NoMessages(id)) if id == "probe_tx"
     ));
 
-    let messages = encoder("tx-message", MESSAGE_ENCODER);
+    let messages = answered(
+        "tx-message",
+        MESSAGE_ENCODER,
+        r#"{"ok":{"frame":[104,105]}}"#,
+    );
     assert_eq!(messages.descriptor().message.len(), 1);
     let Ok(TxPayload::Frame(frame)) = messages.compose(&serde_json::json!({"text": "hi"})) else {
         panic!("a filled form becomes a frame");
     };
-    assert_eq!(frame, br#"{"text":"hi"}"#);
+    assert_eq!(frame, b"hi");
+
+    let refusing = answered("tx-refusing", MESSAGE_ENCODER, r#"{"err":"no text"}"#);
+    let refused = refusing.compose(&serde_json::json!({}));
+    assert!(
+        matches!(&refused, Err(EncoderError::Message { reason, .. }) if reason == "no text"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn an_encoder_width_comes_from_the_plugin() {
+    let encoder = answered("tx-width", AUDIO_ENCODER, r#"{"ok":1800.0}"#);
+    let width = encoder.width_hz(&EncoderParams::bare("probe_tx"));
+    assert_eq!(width.ok(), Some(1_800.0));
+    assert!(encoder.width_hz(&EncoderParams::bare("probe")).is_err());
 }
 
 #[test]

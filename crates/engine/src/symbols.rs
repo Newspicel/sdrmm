@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sdrmm_channels::SymbolTap;
+use sdrmm_decoder::SymbolTap;
 use sdrmm_wire::SymbolPlane;
 
 pub const SYMBOL_BLOCKS_PER_SEC: f64 = 10.0;

@@ -11,7 +11,7 @@ use super::{
     odid::APP_CODE,
     tracker::{Heard, Tracker},
 };
-use crate::wifi::mac::{
+use sdrmm_modem::wifi::mac::{
     ACTION, BEACON, SSID, TYPE_MASK, VENDOR, WFA_OUI, address_text, element, management, text,
 };
 

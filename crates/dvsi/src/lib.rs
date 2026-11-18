@@ -22,7 +22,7 @@ use std::{
 };
 
 pub use chip::{BAUDS, Chip, ChipInfo};
-use sdrmm_channels::chip::{ChipLink, ChipRate, VocoderChips, chip_link};
+use sdrmm_codec::voice::chip::{ChipLink, ChipRate, VocoderChips, chip_link};
 pub use transport::{Opener, SerialOpener, Transport};
 use worker::{Dongle, Dongles, Worker};
 

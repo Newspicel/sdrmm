@@ -1,11 +1,11 @@
-use crate::datalink::DataLinkMessage;
+use super::StdcMessage as DataLinkMessage;
 use num_complex::Complex;
 
 use super::{
     RATE, equivalence::frame_payload, equivalence::run_ours, equivalence::run_xng, frame,
     modulate::modulate,
 };
-use crate::testutil::add_awgn;
+use sdrmm_decoder_test_support::add_awgn;
 
 type Decode = fn(&[Complex<f32>], usize) -> Vec<DataLinkMessage>;
 
@@ -41,7 +41,11 @@ pub(super) fn noisy_frames(
     let sigma = (f64::from(power) * SAMPLES_PER_SYMBOL / 2.0 / 10f64.powf(esn0_db / 10.0)).sqrt();
     add_awgn(&mut iq, sigma as f32, seed);
     let mut filtered = Vec::with_capacity(iq.len());
-    super::channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(&iq, &mut filtered);
     filtered
 }
 
@@ -164,7 +168,11 @@ fn noise_false_packets() {
     let mut iq = vec![Complex::new(0.0, 0.0); minutes * 60 * 12_000];
     add_awgn(&mut iq, 0.3, 91);
     let mut filtered = Vec::new();
-    super::channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(&iq, &mut filtered);
     for (name, decode) in [("xng", run_xng as Decode), ("ours", run_ours)] {
         let messages = decode(&filtered, 8_192);
         eprintln!(

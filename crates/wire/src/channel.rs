@@ -9,12 +9,14 @@ use crate::{
 };
 
 mod choices;
+mod filter_spec;
 mod form;
 mod if_filter;
 mod params;
 mod status;
 
 pub use choices::{ParamChoice, ParamOption, SettingChoice};
+pub use filter_spec::FilterSpec;
 pub use form::{Condition, Control, LanePick, NumberSpec, PresetOption, SettingField, lookup};
 pub use if_filter::{
     DEFAULT_IF_NOTCH_WIDTH_HZ, IfFilter, IfNotch, MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ,

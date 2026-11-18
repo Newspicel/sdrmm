@@ -12,8 +12,8 @@ publish = false
 workspace = true
 
 [features]
-probe = []
 pin = ["dep:rustls-webpki", "dep:rustls-pki-types", "dep:sha2"]
+testing = []
 
 [dependencies]
 jiff.workspace = true

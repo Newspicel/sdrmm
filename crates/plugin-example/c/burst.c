@@ -11,10 +11,11 @@
 #define PAGE 65536
 #define THRESHOLD 0.01f
 
-enum { OP_LAYOUT = 1, OP_NORMALIZE = 2 };
+enum { OP_LAYOUT = 1, OP_NORMALIZE = 2, OP_FILTER = 3 };
+enum { HEADER_WORDS = 22 };
 
 static const char MANIFEST[] =
-    "{\"abi\":2,"
+    "{\"abi\":3,"
     "\"decoder\":{\"descriptor\":{\"type_id\":\"burst\",\"name\":\"Burst\",\"summary\":\"Strong bursts\","
     "\"family\":\"utility\",\"bandwidth_hz\":12000.0,\"input_rate_hz\":48000.0,"
     "\"emits\":[\"burst\"]}},"
@@ -23,6 +24,8 @@ static const char MANIFEST[] =
 static const char LAYOUT[] =
     "{\"ok\":{\"input_rate_hz\":48000.0,\"band\":[-6000.0,6000.0]}}";
 static const char NORMALIZED[] = "{\"ok\":{}}";
+static const char FILTER[] =
+    "{\"ok\":{\"type\":\"lowpass\",\"taps\":65,\"cutoff_hz\":6000.0}}";
 static const char PRESENTED[] = "{\"ok\":{\"summary\":\"Burst\"}}";
 static const char UNKNOWN[] = "{\"err\":\"unknown op\"}";
 static const char EVENT[] = "[{\"kind\":\"burst\",\"data\":{}}]";
@@ -40,7 +43,7 @@ typedef struct {
 
 static Region inbox;
 static Region input;
-static uint32_t header[9];
+static uint32_t header[HEADER_WORDS];
 static int loud;
 
 static void *grab(size_t bytes) {
@@ -65,7 +68,7 @@ static int64_t pack(const void *ptr, size_t len) {
     return ((int64_t)(uintptr_t)ptr << 32) | (int64_t)len;
 }
 
-EXPORT uint32_t sdrmm_abi(void) { return 2; }
+EXPORT uint32_t sdrmm_abi(void) { return 3; }
 
 EXPORT uint32_t sdrmm_alloc(uint32_t len) { return (uint32_t)(uintptr_t)fit(&inbox, len); }
 
@@ -75,6 +78,7 @@ EXPORT int64_t sdrmm_call(int32_t op, uint32_t ptr, uint32_t len) {
     switch (op) {
     case OP_LAYOUT: return pack(LAYOUT, sizeof LAYOUT - 1);
     case OP_NORMALIZE: return pack(NORMALIZED, sizeof NORMALIZED - 1);
+    case OP_FILTER: return pack(FILTER, sizeof FILTER - 1);
     default: return pack(UNKNOWN, sizeof UNKNOWN - 1);
     }
 }
@@ -94,13 +98,13 @@ EXPORT uint32_t sdrmm_input(int32_t handle, uint32_t samples) {
     return (uint32_t)(uintptr_t)fit(&input, (size_t)samples * 2 * sizeof(float));
 }
 
-EXPORT uint32_t sdrmm_process(int32_t handle, uint32_t samples) {
+EXPORT uint32_t sdrmm_process(int32_t handle, uint32_t samples, uint32_t flags) {
     const float *iq = input.ptr;
     float power = 0.0f;
     for (uint32_t n = 0; n < 2 * samples; n++)
         power += iq[n] * iq[n];
     int now = samples > 0 && power / (float)samples > THRESHOLD;
-    for (int word = 0; word < 9; word++)
+    for (int word = 0; word < HEADER_WORDS; word++)
         header[word] = 0;
     if (now && !loud) {
         header[3] = (uint32_t)(uintptr_t)EVENT;

@@ -188,7 +188,7 @@ pub(super) fn next_control(configured_hz: u64, current_hz: u64, others: &[u64]) 
 
 /// The control channel settings of the decoder a trunk system runs on.
 fn control_params(decoder: &str) -> Result<ChannelParams, String> {
-    let (_, trunking) = sdrmm_channels::trunking(decoder)
+    let (_, trunking) = sdrmm_decoder::trunking(decoder)
         .ok_or_else(|| format!("no registered decoder trunks as {decoder:?}"))?;
     (trunking.watch)(true).map_err(|error| error.to_string())
 }

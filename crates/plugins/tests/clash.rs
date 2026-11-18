@@ -3,7 +3,8 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use sdrmm_channels::{array_processor::processor_plugin, descriptors, registry};
+use sdrmm_array::processor_plugin;
+use sdrmm_decoder::{descriptors, registry};
 use sdrmm_plugins::{PluginDir, PluginError};
 
 mod common;
@@ -13,7 +14,7 @@ fn write(dir: &std::path::Path, file: &str, type_id: &str, processor: Option<&st
         format!(r#","processor":{{"type_id":"{id}","name":"{id}"}}"#)
     });
     let manifest = format!(
-        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"{type_id}","name":"{file}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}{processor}}}"#
+        r#"{{"abi":4,"decoder":{{"descriptor":{{"type_id":"{type_id}","name":"{file}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}{processor}}}"#
     );
     let text = common::wat_text(common::ABI, &manifest, "i32.const 0", common::ARRAY_EXPORTS);
     std::fs::write(dir.join(format!("{file}.wasm")), text)
@@ -32,6 +33,8 @@ fn refused(errors: &[PluginError]) -> Vec<(String, String)> {
 
 #[test]
 fn a_clashing_plugin_is_refused_alone() {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     let built_in = descriptors()[0].type_id.clone();
     let before = registry().find(&built_in).cloned().expect("a built-in");
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("clash");

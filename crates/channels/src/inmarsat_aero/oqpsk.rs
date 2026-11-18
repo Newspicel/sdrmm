@@ -4,7 +4,7 @@ use std::{
 };
 
 use num_complex::Complex;
-use sdrmm_dsp::{design_rrc_unit_energy, fast_arg};
+use sdrmm_dsp::{Biquad, FracDelay, MovingAverage, design_rrc_unit_energy, fast_arg};
 
 use super::{
     acquisition::CoarseAcquisition,
@@ -40,82 +40,8 @@ const CARRIER_LOOP: ([f32; 3], [f32; 2]) = (
     [-1.920_738_7, 0.925_092_46],
 );
 
-struct Biquad {
-    b: [f32; 3],
-    a: [f32; 2],
-    z: [f32; 2],
-}
-
-impl Biquad {
-    fn new((b, a): ([f32; 3], [f32; 2])) -> Self {
-        Self { b, a, z: [0.0; 2] }
-    }
-
-    fn run(&mut self, x: f32) -> f32 {
-        let y = self.b[0] * x + self.z[0];
-        self.z[0] = self.b[1] * x - self.a[0] * y + self.z[1];
-        self.z[1] = self.b[2] * x - self.a[1] * y;
-        y
-    }
-
-    fn reset(&mut self) {
-        self.z = [0.0; 2];
-    }
-}
-
-struct FracDelay {
-    buffer: Vec<f32>,
-    position: usize,
-    delay: f64,
-}
-
-impl FracDelay {
-    fn new(delay: f64) -> Self {
-        Self {
-            buffer: vec![0.0; delay.ceil() as usize + 2],
-            position: 0,
-            delay,
-        }
-    }
-
-    fn run(&mut self, x: f32) -> f32 {
-        let length = self.buffer.len();
-        self.buffer[self.position] = x;
-        let whole = self.delay.floor() as usize;
-        let fraction = (self.delay - whole as f64) as f32;
-        let a = self.buffer[(self.position + length - whole) % length];
-        let b = self.buffer[(self.position + length - whole - 1) % length];
-        self.position = (self.position + 1) % length;
-        a * (1.0 - fraction) + b * fraction
-    }
-}
-
-struct MovingAverage {
-    buffer: Vec<f32>,
-    position: usize,
-    sum: f64,
-}
-
-impl MovingAverage {
-    fn new(length: usize) -> Self {
-        Self {
-            buffer: vec![0.0; length],
-            position: 0,
-            sum: 0.0,
-        }
-    }
-
-    fn run(&mut self, x: f32) -> f32 {
-        self.sum += f64::from(x - self.buffer[self.position]);
-        self.buffer[self.position] = x;
-        self.position = (self.position + 1) % self.buffer.len();
-        (self.sum / self.buffer.len() as f64) as f32
-    }
-
-    fn reset(&mut self) {
-        self.buffer.fill(0.0);
-        self.sum = 0.0;
-    }
+const fn biquad((b, a): ([f32; 3], [f32; 2])) -> Biquad {
+    Biquad::from_coefficients(b, a)
 }
 
 struct SymbolTiming {
@@ -145,11 +71,11 @@ impl SymbolTiming {
 
     fn strobe_fraction(&mut self, sample: Complex<f32>, fs: f64) -> Option<f32> {
         let power = sample.norm_sqr();
-        let difference = self.power_delay.run(power) - power;
-        let first = self.quarter_first.run(difference);
-        let second = self.quarter_second.run(first);
+        let difference = self.power_delay.push(power) - power;
+        let first = self.quarter_first.push(difference);
+        let second = self.quarter_second.push(first);
         let eta = self.resonator.run((second - difference) * first);
-        let detector = Complex::new(eta, -self.eighth.run(eta));
+        let detector = Complex::new(eta, -self.eighth.push(eta));
         let rotation = Complex::from_polar(1.0, (TAU * self.phase) as f32);
         let error = f64::from(fast_arg(rotation * detector));
         self.freq_hz =
@@ -216,11 +142,11 @@ impl OqpskDemod {
             nco_phase: 0.0,
             phase_trim: 0.0,
             agc: 1.0,
-            timing: SymbolTiming::new(samples_per_symbol, bit_rate, Biquad::new(resonator)),
+            timing: SymbolTiming::new(samples_per_symbol, bit_rate, biquad(resonator)),
             last_sample: Complex::new(0.0, 0.0),
             pair_toggle: false,
             held: Complex::new(0.0, 0.0),
-            carrier_loop: Biquad::new(CARRIER_LOOP),
+            carrier_loop: biquad(CARRIER_LOOP),
             bias: MovingAverage::new(BIAS_WINDOW),
             mse: 100.0,
             quad: Complex::new(0.0, 0.0),
@@ -288,7 +214,7 @@ impl OqpskDemod {
         let error = self.carrier_loop.run(cross).clamp(-FRAC_PI_2, FRAC_PI_2);
         self.phase_trim += error.to_radians();
         self.nco_freq_hz -= 0.01 * f64::from(error);
-        pair *= Complex::from_polar(1.0, self.bias.run(error));
+        pair *= Complex::from_polar(1.0, self.bias.push(error));
         let ideal = Complex::new(
             FRAC_1_SQRT_2.copysign(pair.re),
             FRAC_1_SQRT_2.copysign(pair.im),

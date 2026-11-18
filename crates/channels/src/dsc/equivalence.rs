@@ -1,11 +1,9 @@
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 
 use super::{DscDecoder, RATE, modulate, to_datalink};
-use crate::{
-    datalink::{self, Quality},
-    testutil::add_awgn,
-};
+use sdrmm_decoder::link::{self, DataLinkMessage, Quality};
+use sdrmm_decoder_test_support::add_awgn;
+use sdrmm_decoder_test_support::xng;
 
 pub(super) const CALLS: &[&[i32]] = &[
     &[
@@ -45,8 +43,9 @@ fn xng_datalink(message: &xng_mode_dsc::DscMessage) -> DataLinkMessage {
             channel: None,
         },
     );
-    datalink::message(
+    link::message(
         &converted.body,
+        &xng::FIELDS,
         Quality {
             crc_ok: converted.decode.crc_ok,
             fec_corrected: converted.decode.fec_corrected,
@@ -110,10 +109,14 @@ pub(super) fn offset_transmission(
         }
         iq.extend(vec![Complex::new(0.0, 0.0); 3_000]);
     }
-    crate::synth::shift(&mut iq, offset_hz, RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
     add_awgn(&mut iq, sigma, seed);
     let mut filtered = Vec::with_capacity(iq.len());
-    super::channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(&iq, &mut filtered);
     filtered
 }
 

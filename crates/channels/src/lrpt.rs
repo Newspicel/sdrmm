@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod demod;
 mod frame;
@@ -9,11 +12,15 @@ pub(crate) mod jpeg;
 pub(crate) mod link;
 mod packet;
 pub(crate) fn lrpt_decoder() -> Native<LrptParams> {
-    Native::new::<LrptChannel>(|_| occupied_band())
+    let decoder = Native::new::<LrptChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(137_900_000.0)
         .form(lrpt_form)
-        .kinds(lrpt_kinds)
+        .kinds(lrpt_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn lrpt_form() -> Vec<SettingField> {
@@ -28,6 +35,8 @@ fn lrpt_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests;
 
 use std::sync::LazyLock;
@@ -37,14 +46,13 @@ use frame::{Deframer, FrameOutcome};
 use image::{IDLE_APID, Imagery, Placement};
 use num_complex::Complex;
 use packet::Depacketizer;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    NativeChannel, check_input_rate,
-};
 use link::PacketHeader;
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, DecodedImage, NativeChannel,
+    check_input_rate,
+};
 
 pub(crate) const INPUT_RATE_HZ: f64 = 288_000.0;
 const FILTER_TAPS: usize = 127;
@@ -71,16 +79,13 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
+pub(crate) fn channel_filter() -> FilterSpec {
     let (_, half) = occupied_band();
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
-        1,
-    ))
+    FilterSpec::lowpass(FILTER_TAPS, half)
 }
 
 fn params(settings: &ChannelSettings) -> Result<LrptParams, ChannelError> {
-    crate::settings_of::<LrptParams>(settings)
+    sdrmm_decoder::settings_of::<LrptParams>(settings)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -174,7 +179,7 @@ impl Picture {
         }));
         out.video.push(picture.clone());
         out.images.push(DecodedImage {
-            source: SOURCE,
+            source: SOURCE.into(),
             mode: self.imagery.label(),
             complete,
             lines,
@@ -260,7 +265,7 @@ impl NativeChannel for LrptChannel {
     }
 }
 
-impl ChannelRx for LrptChannel {
+impl Channel for LrptChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let mode = params(&settings)?.mode;
         if mode != self.mode {

@@ -22,6 +22,10 @@ pub(crate) struct Plan<C> {
     pub(super) row_taps: Vec<C>,
     #[cfg(test)]
     pub(super) reach: usize,
+    #[cfg_attr(
+        not(any(target_arch = "aarch64", target_arch = "x86_64")),
+        allow(dead_code, reason = "only the SIMD kernels walk the window unchecked")
+    )]
     pub(super) floats: usize,
     pub(super) folded: bool,
 }
@@ -120,6 +124,10 @@ fn rows<T: Sample, C: Copy + PartialEq + Default>(
 
 /// The window floats `count` blocks of outputs read, checked once so the kernels can walk them
 /// unchecked. `None` when there is no block to compute.
+#[cfg_attr(
+    not(any(target_arch = "aarch64", target_arch = "x86_64")),
+    allow(dead_code, reason = "only the SIMD kernels walk the window unchecked")
+)]
 pub(super) fn reach_of<'a, C>(floats: &'a [f32], plan: &Plan<C>, out: &[f32]) -> Option<&'a [f32]> {
     let last = out.len().checked_sub(BLOCK_FLOATS)?;
     Some(&floats[..last + plan.floats])

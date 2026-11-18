@@ -5,15 +5,15 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_channels::array_processor::{
-    ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, Execution, LaneFormat, Pose,
-    ProcessorAction, ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput,
-    ResetCause, Steer, TuningNeed, no_gpu, no_lane_format,
+use sdrmm_array::{
+    ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, Descriptor, Execution,
+    LaneFormat, Native, Params, Pose, ProcessorAction, ProcessorFaults, ProcessorNeeds,
+    ProcessorOutput, Reading, ResetCause, Steer, TuningNeed, df::DfParams, no_gpu, no_lane_format,
 };
 use sdrmm_wire::{
-    ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DecodedRecord, DfBearing,
-    DfParams, DfPeak, NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading,
-    processor::df::DF_POINTS, processor::df::MAX_DF_PEAKS,
+    ArrayGeometry, ArrayOrientation, ArrayTuningMode, Coherence, DecodedRecord, DfBearing, DfPeak,
+    DfReading, NO_CHANNEL, ProcessorGate, ProcessorPort, ProcessorType, processor::df::DF_POINTS,
+    processor::df::MAX_DF_PEAKS,
 };
 use tokio::sync::broadcast;
 
@@ -23,48 +23,96 @@ use crate::array::{LiveFrame, correct::CorrectionSet};
 pub(crate) const LANES: usize = 2;
 pub(crate) const RATE: f64 = 48_000.0;
 
-pub(crate) static TALKER: ProcessorDescriptor = ProcessorDescriptor {
-    type_id: "df",
-    name: "Talker",
-    min_lanes: 1,
-    max_lanes: 16,
-    lane_ports: &[],
-    steer_port: Some("steer"),
-    surface: None,
-    settings: Vec::new,
-    needs: |_| ProcessorNeeds::default(),
-    band: |_| None,
-    tuning: |_| TuningNeed::Any,
-    lane_format: no_lane_format,
-    execution: |_, _| Execution::Inline,
-    in_place: |_, _| true,
-    actions: &[],
-    gpu: no_gpu,
-    event_bytes: 0,
-    enricher: None,
-    mission: None,
-};
+fn talker_kind() -> ProcessorType {
+    let mut kind: ProcessorType = serde_json::from_value(serde_json::json!({
+        "type_id": "df",
+        "name": "Talker",
+        "min_lanes": 1,
+        "max_lanes": 16,
+    }))
+    .expect("a bare type");
+    kind.ports = vec![ProcessorPort::Steer { note: None }];
+    kind
+}
 
-pub(crate) static BANDED: ProcessorDescriptor = ProcessorDescriptor {
-    needs: |_| ProcessorNeeds::TIME,
-    band: |_| Some((0.0, 1_000.0)),
-    ..TALKER
-};
+fn talker_native() -> Native {
+    Native {
+        kind: talker_kind(),
+        parse: |params| Err(format!("{} is built by the test", params.type_id)),
+        reading: || Some(Reading::new("df", DfReading::reserved())),
+        needs: |_| ProcessorNeeds::default(),
+        band: |_| None,
+        tuning: |_| TuningNeed::Any,
+        lane_format: no_lane_format,
+        execution: |_, _| Execution::Inline,
+        in_place: |_, _| true,
+        gpu: no_gpu,
+        event_bytes: 0,
+        enricher: None,
+        mission: None,
+        create: None,
+        dedicated: None,
+    }
+}
 
-pub(crate) static WIDE: ProcessorDescriptor = ProcessorDescriptor {
-    needs: |_| ProcessorNeeds::TIME,
-    ..TALKER
-};
+pub(crate) fn talker_descriptor() -> Descriptor {
+    Arc::new(talker_native())
+}
 
-pub(crate) static LANED: ProcessorDescriptor = ProcessorDescriptor {
-    lane_ports: &["out"],
-    lane_format: |_, ctx, _| LaneFormat {
-        center_hz: ctx.center_hz,
-        sample_rate: ctx.sample_rate,
-        capacity: HOST_BLOCK,
-    },
-    ..TALKER
-};
+pub(crate) fn banded() -> Descriptor {
+    Arc::new(Native {
+        needs: |_| ProcessorNeeds::TIME,
+        band: |_| Some((0.0, 1_000.0)),
+        ..talker_native()
+    })
+}
+
+pub(crate) fn wide() -> Descriptor {
+    Arc::new(Native {
+        needs: |_| ProcessorNeeds::TIME,
+        ..talker_native()
+    })
+}
+
+pub(crate) fn laned() -> Descriptor {
+    let mut kind = talker_kind();
+    kind.ports.push(ProcessorPort::Lane {
+        name: "out".to_owned(),
+        note: None,
+    });
+    Arc::new(Native {
+        kind,
+        lane_format: |_, ctx, _| LaneFormat {
+            center_hz: ctx.center_hz,
+            sample_rate: ctx.sample_rate,
+            capacity: HOST_BLOCK,
+        },
+        ..talker_native()
+    })
+}
+
+/// A laned talker whose lane holds far more than one block.
+pub(crate) fn deep_laned() -> Descriptor {
+    let mut kind = talker_kind();
+    kind.ports.push(ProcessorPort::Lane {
+        name: "out".to_owned(),
+        note: None,
+    });
+    Arc::new(Native {
+        kind,
+        lane_format: |_, ctx, _| LaneFormat {
+            center_hz: ctx.center_hz,
+            sample_rate: ctx.sample_rate,
+            capacity: 1 << 16,
+        },
+        ..talker_native()
+    })
+}
+
+/// The settings every talker runs on.
+pub(crate) fn talk_params() -> Params {
+    Params::new(DfParams::default())
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct Heard {
@@ -119,7 +167,7 @@ impl Talker {
 
     fn fill(&mut self, block: &ArrayBlock<'_>, out: &mut ProcessorOutput<'_>) {
         if self.talk.report
-            && let Some(ProcessorReading::Df(reading)) = out.report()
+            && let Some(reading) = out.report_as::<DfReading>()
         {
             reading.peaks.clear();
             for peak in 0..self.talk.peaks {
@@ -139,7 +187,7 @@ impl Talker {
             reading.likelihood.extend((0..DF_POINTS).map(|at| at as u8));
             reading.eigenvalues_db.clear();
             reading.eigenvalues_db.extend((0..16).map(|at| at as f32));
-            sdrmm_channels::array_processor::stamp_at(&mut reading.at, block.unix_ns);
+            sdrmm_array::stamp_at(&mut reading.at, block.unix_ns);
             out.publish_report();
         }
         if self.talk.surface && out.surface().is_some() {
@@ -171,15 +219,11 @@ impl Talker {
 }
 
 impl ArrayProcessor for Talker {
-    fn descriptor() -> &'static ProcessorDescriptor {
-        &TALKER
-    }
-
-    fn new(_ctx: &ArrayCtx<'_>, _params: &ProcessorParams) -> Result<Self, ChannelError> {
+    fn new(_ctx: &ArrayCtx<'_>, _params: &Params) -> Result<Self, ChannelError> {
         Err(ChannelError::Refused("built by the test"))
     }
 
-    fn apply(&mut self, _params: &ProcessorParams) -> Result<(), ChannelError> {
+    fn apply(&mut self, _params: &Params) -> Result<(), ChannelError> {
         Ok(())
     }
 
@@ -265,12 +309,7 @@ pub(crate) fn taps(anchor: u32) -> Taps {
     }
 }
 
-pub(crate) fn plan(
-    node: &str,
-    params: ProcessorParams,
-    sinks: &HostSinks,
-    lanes: usize,
-) -> HostPlan {
+pub(crate) fn plan(node: &str, params: Params, sinks: &HostSinks, lanes: usize) -> HostPlan {
     let geometry = ArrayGeometry::default();
     HostPlan {
         node: node.to_owned(),
@@ -296,9 +335,9 @@ pub(crate) fn talker_host(
 ) -> (Box<ProcessorHost>, Consumer<Heard>) {
     let (talker, log) = Talker::new(talk);
     let host = ProcessorHost::with_processor(
-        plan(node, ProcessorParams::Df(DfParams::default()), sinks, LANES),
+        plan(node, talk_params(), sinks, LANES),
         &frame(LANES),
-        &TALKER,
+        talker_descriptor(),
         talker,
     )
     .expect("host");
@@ -477,7 +516,7 @@ fn a_reading_past_the_wire_limit_is_truncated_and_counted() {
         panic!("a report");
     };
     assert_eq!(processor, "df-long");
-    let ProcessorReading::Df(reading) = reading.as_ref() else {
+    let Some(reading) = reading.get::<DfReading>() else {
         panic!("a df reading");
     };
     assert_eq!(reading.peaks.len(), usize::from(MAX_DF_PEAKS));
@@ -522,14 +561,9 @@ fn a_steer_from_a_batched_direction_finder_reaches_the_beamformer() {
         ..Talk::default()
     });
     let df = ProcessorHost::batched(
-        plan(
-            "df",
-            ProcessorParams::Df(DfParams::default()),
-            &taps.sinks,
-            LANES,
-        ),
+        plan("df", talk_params(), &taps.sinks, LANES),
         &frame(LANES),
-        &TALKER,
+        talker_descriptor(),
         talker,
         64,
     )
@@ -581,14 +615,9 @@ fn gates_follow_the_contract_order() {
     let taps = taps(0);
     let (talker, _log) = Talker::new(Talk::default());
     let host = ProcessorHost::with_processor(
-        plan(
-            "wide",
-            ProcessorParams::Df(DfParams::default()),
-            &taps.sinks,
-            LANES,
-        ),
+        plan("wide", talk_params(), &taps.sinks, LANES),
         &frame(LANES),
-        &WIDE,
+        wide(),
         talker,
     )
     .expect("host");
@@ -620,14 +649,9 @@ fn a_batched_host_hands_full_batches_to_its_worker() {
     let taps = taps(0);
     let (talker, mut log) = Talker::new(Talk::default());
     let mut host = ProcessorHost::batched(
-        plan(
-            "batch",
-            ProcessorParams::Df(DfParams::default()),
-            &taps.sinks,
-            LANES,
-        ),
+        plan("batch", talk_params(), &taps.sinks, LANES),
         &frame(LANES),
-        &TALKER,
+        talker_descriptor(),
         talker,
         1_000,
     )
@@ -663,14 +687,9 @@ fn a_busy_worker_drops_the_batch_and_counts_it() {
     let (talker, _log) = Talker::paused(Talk::default(), pause.clone());
     let held = pause.lock().unwrap_or_else(PoisonError::into_inner);
     let mut host = ProcessorHost::batched(
-        plan(
-            "busy",
-            ProcessorParams::Df(DfParams::default()),
-            &taps.sinks,
-            LANES,
-        ),
+        plan("busy", talk_params(), &taps.sinks, LANES),
         &frame(LANES),
-        &TALKER,
+        talker_descriptor(),
         talker,
         100,
     )
@@ -704,7 +723,7 @@ fn a_passive_radar_host_refuses_a_plan_its_capture_cannot_hold() {
     let built = ProcessorHost::build(
         plan(
             "radar",
-            ProcessorParams::PassiveRadar(sdrmm_wire::PassiveRadarParams::default()),
+            Params::new(sdrmm_array::passive_radar::PassiveRadarParams::default()),
             &taps.sinks,
             LANES,
         ),
@@ -720,7 +739,7 @@ fn a_passive_radar_host_refuses_a_plan_its_capture_cannot_hold() {
 }
 
 fn laned_plan(node: &str, sinks: &HostSinks, sink: VirtualLaneSink) -> HostPlan {
-    let mut plan = plan(node, ProcessorParams::Df(DfParams::default()), sinks, LANES);
+    let mut plan = plan(node, talk_params(), sinks, LANES);
     plan.sinks = vec![Some(sink)];
     plan
 }
@@ -758,7 +777,7 @@ fn a_lane_output_steps_over_a_jump_in_the_array_index() {
     let mut host = ProcessorHost::with_processor(
         laned_plan("laned", &taps.sinks, sink),
         &frame(LANES),
-        &LANED,
+        laned(),
         talker,
     )
     .expect("host");
@@ -788,7 +807,7 @@ fn a_batch_the_worker_had_no_room_for_is_skipped_on_its_lane() {
     let mut host = ProcessorHost::batched(
         laned_plan("laned-busy", &taps.sinks, sink),
         &frame(LANES),
-        &LANED,
+        laned(),
         talker,
         100,
     )

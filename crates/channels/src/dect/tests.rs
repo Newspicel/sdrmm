@@ -1,4 +1,3 @@
-use crate::NativeChannel;
 use crate::dect::DectArc;
 use crate::dect::DectBand;
 use crate::dect::DectCapability;
@@ -7,6 +6,7 @@ use crate::dect::DectParams;
 use crate::dect::DectSide;
 use crate::dect::DectSides;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, DecoderEvent};
 
 use super::{
@@ -17,11 +17,9 @@ use super::{
 };
 
 mod air;
-use crate::{
-    ChannelCtx, ChannelRx,
-    synth::dect as sig,
-    testutil::{run_events, settings},
-};
+use crate::synth::dect as sig;
+use sdrmm_decoder::{Channel, ChannelCtx};
+use sdrmm_decoder_test_support::{run_events, settings};
 
 const CLASS_A_RFPI: u64 = 0x0001_234D_5E6D & ((1 << 40) - 1);
 
@@ -300,7 +298,8 @@ fn only_corrupt_a_fields_are_counted_with_nothing_reported() {
 fn noise_alone_rejects_nothing() {
     for (seed, amplitude) in [(0xDEC7, 0.01), (0xDEC8, 0.3), (0xDEC9, 3.0)] {
         let mut chan = channel(DectParams::default());
-        let noise = crate::testutil::complex_noise(seed, amplitude, 3 * INPUT_RATE_HZ as usize);
+        let noise =
+            sdrmm_decoder_test_support::complex_noise(seed, amplitude, 3 * INPUT_RATE_HZ as usize);
         assert!(frames(&run_events(&mut chan, &noise)).is_empty());
         assert_eq!(chan.rejected(), 0, "{amplitude}");
     }
@@ -313,7 +312,7 @@ fn survives_noise_at_a_workable_signal_level() {
         ..sig::Station::default()
     };
     let mut iq = sig::dummy_bearer(&station, 9);
-    crate::synth::add_noise(&mut iq, 0x5EED, 0.12);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, 0.12);
     let mut chan = channel(DectParams::default());
     let decoded = frames(&run_events(&mut chan, &iq));
     assert!(
@@ -381,7 +380,7 @@ fn a_carrier_offset_does_not_stop_the_identity_getting_through() {
     };
     for offset_hz in [-40_000.0, 40_000.0] {
         let mut iq = sig::dummy_bearer(&station, 9);
-        crate::synth::shift(&mut iq, offset_hz, INPUT_RATE_HZ);
+        sdrmm_modem::synth::shift(&mut iq, offset_hz, INPUT_RATE_HZ);
         let mut chan = channel(DectParams::default());
         let decoded = frames(&run_events(&mut chan, &iq));
         assert!(
@@ -400,7 +399,7 @@ fn known_station_under_noise(amplitude: f32) -> (usize, u32) {
         ..sig::Station::default()
     };
     let mut iq = sig::dummy_bearer(&station, 100);
-    crate::synth::add_noise(&mut iq, 0x5EED, amplitude);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, amplitude);
     let mut chan = channel(DectParams::default());
     let heard = frames(&run_events(&mut chan, &iq)).len();
     (heard, chan.rejected())

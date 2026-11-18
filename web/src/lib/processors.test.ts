@@ -5,8 +5,8 @@ import type { ServerEvent } from "./types";
 
 function radar(node: string, detections: ReturnType<typeof detection>[]): ServerEvent {
   const marks = detections.map((found) => ({
-    x: found.range_km,
-    y: found.doppler_hz,
+    x: Number(found.range_km),
+    y: Number(found.doppler_hz),
     shape: "dot" as const,
   }));
   return {

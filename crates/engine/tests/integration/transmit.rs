@@ -5,10 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::{
-    AprsPacket, AprsParams, NfmParams,
-    encoder::{EncoderError, EncoderParams},
-};
+use sdrmm_channels::{AprsPacket, AprsParams, NfmParams};
+use sdrmm_decoder::encoder::{EncoderError, EncoderParams};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::{Engine, EngineError, TransmitRequest, TransmitSource, audio::PcmPayload};

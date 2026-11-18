@@ -1,4 +1,11 @@
-use sdrmm_dsp::crc16_msb;
+use sdrmm_dsp::{
+    Prbs, PrbsSpec,
+    coding::{
+        fec::hamming::{codeword_bit, codeword_len},
+        interleave::diagonal,
+    },
+    crc16_msb,
+};
 use sdrmm_modem::constellation::tables::gray_inverse;
 
 use crate::lora::LoraCodingRate;
@@ -12,14 +19,19 @@ const LOW_DATA_RATE_SYMBOL_S: f64 = 0.016;
 
 pub(crate) static WHITENING: [u8; MAX_PAYLOAD] = whitening_table();
 
+const WHITENER: PrbsSpec = PrbsSpec {
+    stages: 8,
+    taps: 0xb8,
+    seed: 0xff,
+};
+
 const fn whitening_table() -> [u8; MAX_PAYLOAD] {
     let mut table = [0u8; MAX_PAYLOAD];
-    let mut state: u8 = 0xff;
+    let mut lfsr = Prbs::new(WHITENER);
     let mut i = 0;
     while i < MAX_PAYLOAD {
-        table[i] = state;
-        let feedback = ((state >> 7) ^ (state >> 5) ^ (state >> 4) ^ (state >> 3)) & 1;
-        state = (state << 1) | feedback;
+        table[i] = lfsr.register() as u8;
+        lfsr.next_bit();
         i += 1;
     }
     table
@@ -67,6 +79,7 @@ impl Header {
         })
     }
 
+    #[cfg(any(test, feature = "synth"))]
     #[must_use]
     pub(crate) fn nibbles(self) -> [u8; HEADER_NIBBLES] {
         let n0 = self.length >> 4;
@@ -92,36 +105,6 @@ pub(crate) fn payload_crc(payload: &[u8]) -> u16 {
         0
     };
     crc16_msb(0x1021, 0, body) ^ last ^ before
-}
-
-#[must_use]
-pub(crate) fn codeword_len(parity_bits: u8) -> usize {
-    4 + usize::from(parity_bits)
-}
-
-#[must_use]
-pub(crate) fn hamming_encode(nibble: u8, parity_bits: u8) -> u8 {
-    let b = |i| bit(nibble, i);
-    let data = (b(0) << 3) | (b(1) << 2) | (b(2) << 1) | b(3);
-    if parity_bits == 1 {
-        return (data << 1) | (b(0) ^ b(1) ^ b(2) ^ b(3));
-    }
-    let p0 = b(0) ^ b(1) ^ b(2);
-    let p1 = b(1) ^ b(2) ^ b(3);
-    let p2 = b(0) ^ b(1) ^ b(3);
-    let p3 = b(0) ^ b(2) ^ b(3);
-    let full = (data << 4) | (p0 << 3) | (p1 << 2) | (p2 << 1) | p3;
-    full >> (4 - parity_bits)
-}
-
-#[must_use]
-pub(crate) fn codeword_bit(codeword: u8, len: usize, index: usize) -> bool {
-    (codeword >> (len - 1 - index)) & 1 == 1
-}
-
-#[must_use]
-pub(crate) fn diagonal(index: usize, symbol: usize, rows: usize) -> usize {
-    (symbol + 2 * rows - index - 1) % rows
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,15 +137,14 @@ impl Shape {
     }
 }
 
-#[must_use]
-pub(crate) fn dewhiten(nibbles: &[u8], length: usize) -> Vec<u8> {
-    (0..length)
-        .map(|i| {
-            let low = nibbles.get(2 * i).copied().unwrap_or(0);
-            let high = nibbles.get(2 * i + 1).copied().unwrap_or(0);
-            ((high << 4) | low) ^ WHITENING[i % MAX_PAYLOAD]
-        })
-        .collect()
+/// Packs `length` bytes from nibble pairs, low nibble first, and removes the whitening.
+pub(crate) fn dewhiten(nibbles: &[u8], length: usize, out: &mut Vec<u8>) {
+    out.clear();
+    out.extend((0..length).map(|i| {
+        let low = nibbles.get(2 * i).copied().unwrap_or(0);
+        let high = nibbles.get(2 * i + 1).copied().unwrap_or(0);
+        ((high << 4) | low) ^ WHITENING[i % MAX_PAYLOAD]
+    }));
 }
 
 #[must_use]
@@ -198,9 +180,10 @@ pub(crate) fn block_symbol(
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) mod encode {
+    use sdrmm_dsp::coding::fec::hamming::{codeword_len, encode_nibble};
+
     use super::{
-        CRC_NIBBLES, HEADER_PARITY_BITS, Header, Shape, WHITENING, block_symbol, codeword_len,
-        hamming_encode, payload_crc,
+        CRC_NIBBLES, HEADER_PARITY_BITS, Header, Shape, WHITENING, block_symbol, payload_crc,
     };
 
     #[must_use]
@@ -236,7 +219,7 @@ pub(crate) mod encode {
         let first = shape.first_rows();
         let mut out = Vec::new();
         let head: Vec<u8> = (0..first)
-            .map(|i| hamming_encode(nibbles.get(i).copied().unwrap_or(0), HEADER_PARITY_BITS))
+            .map(|i| encode_nibble(nibbles.get(i).copied().unwrap_or(0), HEADER_PARITY_BITS))
             .collect();
         out.extend(interleave(
             &head,
@@ -249,7 +232,7 @@ pub(crate) mod encode {
         let parity = shape.coding_rate.parity_bits();
         for block in rest.chunks(shape.rows()) {
             let codewords: Vec<u8> = (0..shape.rows())
-                .map(|i| hamming_encode(block.get(i).copied().unwrap_or(0), parity))
+                .map(|i| encode_nibble(block.get(i).copied().unwrap_or(0), parity))
                 .collect();
             out.extend(interleave(
                 &codewords,
@@ -310,23 +293,6 @@ mod tests {
     }
 
     #[test]
-    fn hamming_codewords_have_their_documented_shape() {
-        assert_eq!(hamming_encode(0b0001, 4), 0b1000_1011);
-        assert_eq!(hamming_encode(0b1111, 4), 0xff);
-        assert_eq!(hamming_encode(0b0001, 1), 0b10001);
-        for nibble in 0..16 {
-            for parity in 1..=4 {
-                let codeword = hamming_encode(nibble, parity);
-                assert!(u32::from(codeword) < 1 << codeword_len(parity));
-                let data = (0..4).fold(0, |acc, i| {
-                    acc | (u8::from(codeword_bit(codeword, codeword_len(parity), i)) << i)
-                });
-                assert_eq!(data, nibble);
-            }
-        }
-    }
-
-    #[test]
     fn the_symbol_count_matches_the_semtech_airtime_formula() {
         let shape = Shape {
             spreading_factor: 7,
@@ -356,7 +322,9 @@ mod tests {
     fn dewhitening_inverts_the_encoder() {
         let payload = b"hello lora";
         let nibbles = encode::nibbles(payload, None, true);
-        assert_eq!(dewhiten(&nibbles, payload.len()), payload);
+        let mut dewhitened = Vec::new();
+        dewhiten(&nibbles, payload.len(), &mut dewhitened);
+        assert_eq!(dewhitened, payload);
         assert_eq!(
             received_crc(&nibbles, payload.len()),
             Some(payload_crc(payload))

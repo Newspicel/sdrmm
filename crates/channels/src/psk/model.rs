@@ -85,10 +85,9 @@ impl sdrmm_wire::DecoderSettings for PskParams {
 
 #[cfg(test)]
 mod model_tests {
-    use sdrmm_wire::present::{FieldValue, Unit, number};
+    use sdrmm_wire::present::FieldValue;
 
     use super::*;
-    use crate::morse::MorseText;
 
     fn field<'a>(view: &'a Presentation, label: &str) -> Option<&'a FieldValue> {
         view.fields
@@ -98,16 +97,7 @@ mod model_tests {
     }
 
     #[test]
-    fn morse_and_psk_add_speed_and_mode() {
-        let morse = MorseText {
-            text: "CQ".to_owned(),
-            wpm: 18.4,
-        }
-        .present(&MorseText::KIND);
-        assert_eq!(
-            field(&morse, "Speed"),
-            number(Some(18.4_f32), Unit::Wpm, 0).as_ref()
-        );
+    fn psk_adds_its_mode() {
         let psk = PskText {
             baud: PskBaud::Psk63,
             text: "CQ".to_owned(),

@@ -1,25 +1,29 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+pub(crate) mod rds;
 mod stereo;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
+
+#[cfg(test)]
+mod if_offair;
 pub use model::*;
 use std::sync::LazyLock;
 use stereo::StereoDemux;
 
 use num_complex::Complex;
-use sdrmm_dsp::{
-    Decimator, Deemphasis, RealDecimator, design_lowpass, filter::fir::design_lowpass_kaiser,
-    tuning::ddc::STOPBAND_DB,
-};
+use sdrmm_dsp::{Deemphasis, RealDecimator, design_lowpass, tuning::ddc::STOPBAND_DB};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily};
 
-use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, clamp_full_scale,
-    rds::{RdsDecoder, RdsUpdate},
+use rds::{RdsDecoder, RdsUpdate};
+use sdrmm_decoder::{
+    AUDIO_RATE, Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_dsp::audio::clip::clamp_full_scale;
 
 const DEVIATION_HZ: f64 = 75_000.0;
 const AUDIO_CUTOFF_HZ: f64 = 15_000.0;
@@ -65,17 +69,19 @@ pub struct WfmChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<WfmParams, ChannelError> {
-    crate::settings_of::<WfmParams>(settings)
+    sdrmm_decoder::settings_of::<WfmParams>(settings)
 }
 
 /// The channel filter also takes the last halving of the rate: the converter delivers twice
 /// [`DESCRIPTOR`]'s rate and guards only its band, and this one filter keeps the band and
 /// stops everything that would fold onto it as deep as the converter would have.
-pub(crate) fn channel_filter() -> ChannelFilter {
-    let rate = DESCRIPTOR.input_rate_hz * CHANNEL_DECIMATION as f64;
-    let cutoff = DESCRIPTOR.bandwidth_hz / 2.0 / rate;
-    let taps = design_lowpass_kaiser(CHANNEL_TAPS, cutoff, STOPBAND_DB);
-    ChannelFilter::Symmetric(Decimator::new(&taps, CHANNEL_DECIMATION))
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Lowpass {
+        taps: CHANNEL_TAPS,
+        cutoff_hz: DESCRIPTOR.bandwidth_hz / 2.0,
+        decimation: CHANNEL_DECIMATION,
+        stopband_db: Some(STOPBAND_DB),
+    }
 }
 
 fn deemphasis(p: &WfmParams) -> Result<Deemphasis, ChannelError> {
@@ -131,7 +137,7 @@ impl NativeChannel for WfmChannel {
     }
 }
 
-impl ChannelRx for WfmChannel {
+impl Channel for WfmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         let deemphasis = deemphasis(&p)?;
@@ -202,7 +208,7 @@ fn wfm_tune(_signal: &sdrmm_wire::IdentSignal, p: &mut WfmParams) -> f64 {
 }
 
 pub(crate) fn wfm_decoder() -> Native<WfmParams> {
-    Native::new::<WfmChannel>(|_| {
+    let decoder = Native::new::<WfmChannel>(|_| {
         let half = DESCRIPTOR.bandwidth_hz / 2.0;
         (-half, half)
     })
@@ -212,7 +218,11 @@ pub(crate) fn wfm_decoder() -> Native<WfmParams> {
     .tune(wfm_tune)
     .trial(wfm_trial)
     .form(wfm_form)
-    .kinds(wfm_kinds)
+    .kinds(wfm_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(rds::synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn wfm_form() -> Vec<SettingField> {
@@ -229,23 +239,24 @@ pub(crate) fn wfm_form() -> Vec<SettingField> {
 }
 
 fn wfm_kinds() -> Vec<KindSpec> {
-    vec![crate::rds::rds_kind()]
+    vec![rds::rds_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::{ChannelParams, DecoderEvent};
 
     use super::*;
-    use crate::ssb::SsbParams;
-    use crate::{
-        synth::{
-            rds::{Station, transmission},
-            tone_audio,
-            wfm::transmission as stereo_transmission,
-        },
-        testutil::{dominant_tone, fm_iq, rms, run_ragged, settings, split_stereo, tone_power},
+    use crate::synth::{
+        rds::{Station, transmission},
+        wfm::transmission as stereo_transmission,
     };
+    use sdrmm_decoder_test_support::{
+        dominant_tone, fm_iq, rms, run_ragged, settings, split_stereo, tone_power,
+    };
+    use sdrmm_modem::synth::tone_audio;
 
     const RATE: f64 = 240_000.0;
     const RUN_SAMPLES: usize = 240_000;
@@ -362,9 +373,7 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(50.0);
-        let err = chan.apply(settings(
-            ChannelParams::new("ssb", &SsbParams::default()).expect("ssb settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("ssb")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 

@@ -15,12 +15,12 @@ use crate::common::array::{
     Bench, FULL_RATE, KRAKEN, LOCK_WAIT, WAIT, df, kraken_array, next_reading, processor,
     processor_status, wait_calibrated, wait_status,
 };
+use sdrmm_array::GpuUse;
+use sdrmm_array::beamformer::BeamformerParams;
+use sdrmm_array::passive_radar::PassiveRadarParams;
+use sdrmm_array::spatial_spectrum::SpatialSpectrumParams;
 use sdrmm_engine::Engine;
-use sdrmm_wire::{
-    ArrayStatus, ProcessorParams, ProcessorReading, processor::beamformer::BeamformerParams,
-    processor::spatial::SpatialSpectrumParams, radar::GpuUse, radar::PassiveRadarParams,
-    radar::RadarHealth,
-};
+use sdrmm_wire::{ArrayStatus, radar::RadarHealth};
 
 const RUN: Duration = Duration::from_secs(30);
 const AGGREGATOR_BUDGET: f64 = 0.5;
@@ -214,9 +214,9 @@ fn is_aggregator(name: &str) -> bool {
 fn radar_health(engine: &Engine) -> RadarHealth {
     let mut events = engine.subscribe_arrays();
     let reading = next_reading(&mut events, "radar", WAIT);
-    match reading.as_ref() {
-        ProcessorReading::PassiveRadar(update) => update.health.clone(),
-        other => panic!("a radar reading: {other:?}"),
+    match reading.get::<sdrmm_wire::RadarUpdate>() {
+        Some(update) => update.health.clone(),
+        None => panic!("a radar reading: {reading:?}"),
     }
 }
 
@@ -227,20 +227,20 @@ fn start_workload(bench: &Bench) -> Arc<Engine> {
     engine.apply_processor(&df("df")).unwrap();
     let mut beam = processor(
         "beam",
-        ProcessorParams::Beamformer(BeamformerParams::default()),
+        crate::common::array::wire(&BeamformerParams::default()),
     );
     beam.lane_ports = vec!["beam".to_owned()];
     engine.apply_processor(&beam).unwrap();
     engine
         .apply_processor(&processor(
             "spatial",
-            ProcessorParams::SpatialSpectrum(SpatialSpectrumParams::default()),
+            crate::common::array::wire(&SpatialSpectrumParams::default()),
         ))
         .unwrap();
     engine
         .apply_processor(&processor(
             "radar",
-            ProcessorParams::PassiveRadar(PassiveRadarParams {
+            crate::common::array::wire(&PassiveRadarParams {
                 gpu: GpuUse::Off,
                 ..PassiveRadarParams::default()
             }),

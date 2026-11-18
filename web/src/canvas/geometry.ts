@@ -14,10 +14,10 @@ export interface Placed {
 }
 
 function geometryOf(placed: Placed, node: PatchNode): Geometry {
-  const natural = nodeSize(node.kind);
+  const natural = nodeSize(node);
   const { width: w, height: h } = placed;
   const resized =
-    isResizable(node.kind) && w != null && h != null && (w !== natural.w || h !== natural.h);
+    isResizable(node) && w != null && h != null && (w !== natural.w || h !== natural.h);
   return {
     position: { x: placed.position.x, y: placed.position.y },
     size: resized ? { w, h } : null,

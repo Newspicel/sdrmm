@@ -1,3 +1,5 @@
+use sdrmm_dsp::crc_msb_bits;
+
 pub(crate) const A_FIELD_BITS: usize = 64;
 pub(crate) const NO_B_FIELD: u64 = 0b111;
 pub(crate) const VOICE_B_FIELD: u8 = 0b000;
@@ -76,16 +78,8 @@ pub(crate) fn bit(a: u64, offset: usize) -> bool {
 
 #[must_use]
 pub(crate) fn r_crc(a: u64, bits: usize) -> u16 {
-    let mut reg: u32 = 0;
-    for index in 0..bits {
-        let input = u32::from((a >> (A_FIELD_BITS - 1 - index)) & 1 != 0);
-        let feedback = ((reg >> 15) & 1) ^ input;
-        reg = (reg << 1) & 0xFFFF;
-        if feedback == 1 {
-            reg ^= R_CRC_POLY;
-        }
-    }
-    reg as u16
+    let msb_first = (0..bits).map(|index| (a >> (A_FIELD_BITS - 1 - index)) & 1 != 0);
+    crc_msb_bits(R_CRC_POLY, 16, 0, msb_first) as u16
 }
 
 #[must_use]

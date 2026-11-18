@@ -2,9 +2,10 @@ use crate::wmbus::WMBUS_SAMPLE_RATE_HZ;
 use crate::wmbus::WmbusFormat;
 use crate::wmbus::WmbusMode;
 use num_complex::Complex;
+use sdrmm_modem::symbolcode::three_of_six_decode;
 
 use super::{
-    coding::{manchester, nrz, three_of_six},
+    coding::{manchester, nrz},
     link::{self, FIRST_BLOCK, MAX_RAW},
 };
 
@@ -349,8 +350,8 @@ impl Lane {
         let chips = &self.chips[start..start + shape.per_byte];
         let byte = match shape.mode {
             WmbusMode::T => {
-                let high = three_of_six(&chips[..6]);
-                let low = three_of_six(&chips[6..]);
+                let high = three_of_six_decode(&chips[..6]);
+                let low = three_of_six_decode(&chips[6..]);
                 self.repaired += u32::from(high.repaired) + u32::from(low.repaired);
                 high.value << 4 | low.value
             }

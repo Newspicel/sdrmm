@@ -1,4 +1,6 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{
+    Capability, EventContract, Hue, KindSpec, PagerPayload, default_pager_bandwidth_hz,
+};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
@@ -12,10 +14,6 @@ use sdrmm_wire::present::flag;
 use sdrmm_wire::present::repaired;
 use sdrmm_wire::present::text;
 use sdrmm_wire::present::text_of;
-
-pub(crate) fn default_pager_bandwidth_hz() -> f64 {
-    12_500.0
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlexParams {
@@ -32,15 +30,6 @@ impl Default for FlexParams {
             invert: false,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PagerPayload {
-    Tone,
-    Numeric,
-    Alpha,
-    Binary,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -61,15 +50,6 @@ pub struct FlexMessage {
 
 fn complete() -> bool {
     true
-}
-
-pub(crate) fn pager_payload(payload: PagerPayload) -> &'static str {
-    match payload {
-        PagerPayload::Tone => "tone",
-        PagerPayload::Numeric => "numeric",
-        PagerPayload::Alpha => "alpha",
-        PagerPayload::Binary => "binary",
-    }
 }
 
 impl EventPayload for FlexMessage {
@@ -95,7 +75,7 @@ impl EventPayload for FlexMessage {
 fn flex_fields(p: &FlexMessage) -> Vec<Field> {
     fields(&[
         ("address", "Address", text_of(p.address)),
-        ("payload", "Payload", text_of(pager_payload(p.payload))),
+        ("payload", "Payload", text_of(p.payload.label())),
         ("mode", "Mode", text_of(format!("{}/{}", p.baud, p.levels))),
         ("cycle", "Cycle", count(Some(p.cycle))),
         ("frame", "Frame", count(Some(p.frame))),
@@ -128,14 +108,13 @@ impl sdrmm_wire::DecoderSettings for FlexParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
-    use crate::ermes::ErmesMessage;
 
     fn present<T: EventPayload>(kind: &EventKind, json: serde_json::Value) -> Presentation {
         serde_json::from_value::<T>(json).unwrap().present(kind)
     }
 
     #[test]
-    fn flex_and_ermes_list_their_frame_facts() {
+    fn flex_lists_its_frame_facts() {
         let flex = present::<FlexMessage>(
             &EventKind::named("flex"),
             serde_json::json!({
@@ -157,14 +136,5 @@ mod model_tests {
         );
         assert_eq!(partial.field("Complete"), flag(Some(false)).as_ref());
         assert_eq!(partial.summary, "1234567: HEL …");
-        let ermes = present::<ErmesMessage>(
-            &EventKind::named("ermes"),
-            serde_json::json!({
-                "local_address": 42, "message_number": 5, "payload": "numeric", "text": "123",
-                "urgent": true, "alert": 2, "errors_corrected": 1,
-            }),
-        );
-        assert_eq!(ermes.field("Urgent"), flag(Some(true)).as_ref());
-        assert_eq!(ermes.field("Payload"), text(Some("numeric")).as_ref());
     }
 }

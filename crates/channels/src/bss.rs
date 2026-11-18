@@ -1,24 +1,27 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, KindSpec, Modulation, SettingField, SignalSignature};
 mod frame;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) use frame::Compose;
 mod model;
 pub use model::*;
 #[cfg(test)]
-mod tests;
+pub(crate) mod fixture;
 #[cfg(test)]
-pub(crate) use tests::fixture;
+mod tests;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass, hdlc_fcs_ok, hdlc_repair};
+use sdrmm_dsp::{hdlc_fcs_ok, hdlc_repair};
 use sdrmm_modem::packet::{PacketMode, PacketReceiver, RecentFrames};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const CHANNEL_TAPS: usize = 65;
@@ -52,7 +55,7 @@ struct Listener {
 }
 
 fn params(settings: &ChannelSettings) -> Result<BssParams, ChannelError> {
-    let p: BssParams = crate::settings_of(settings)?;
+    let p: BssParams = sdrmm_decoder::settings_of(settings)?;
     let rate = DESCRIPTOR.input_rate_hz;
     if p.bandwidth_hz.is_finite() && p.bandwidth_hz > 0.0 && p.bandwidth_hz < rate {
         Ok(p)
@@ -69,12 +72,9 @@ fn occupied_band(p: &BssParams) -> (f64, f64) {
     (-half, half)
 }
 
-fn channel_filter(p: &BssParams) -> ChannelFilter {
+fn channel_filter(p: &BssParams) -> FilterSpec {
     let (_, half) = occupied_band(p);
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    ))
+    FilterSpec::lowpass(CHANNEL_TAPS, half)
 }
 
 fn body(frame: &[u8]) -> &[u8] {
@@ -132,7 +132,7 @@ impl NativeChannel for BssChannel {
     }
 }
 
-impl ChannelRx for BssChannel {
+impl Channel for BssChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -175,12 +175,16 @@ fn bss_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn bss_decoder() -> Native<BssParams> {
-    Native::new::<BssChannel>(occupied_band)
+    let decoder = Native::new::<BssChannel>(occupied_band)
         .filter(|p| Ok(channel_filter(p)))
         .signatures(bss_signatures)
         .trial(bss_trial)
         .form(bss_form)
-        .kinds(bss_kinds)
+        .kinds(bss_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 fn bss_form() -> Vec<SettingField> {

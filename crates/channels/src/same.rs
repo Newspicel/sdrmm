@@ -1,21 +1,23 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod burst;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, ToneCorrelator, design_lowpass};
+use sdrmm_dsp::{BitSync, FmDemod, RealDecimator, ToneCorrelator, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use burst::{Bursts, Framer};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 pub(crate) const RATE: f64 = 50_000.0;
 pub(crate) const DEVIATION_HZ: f64 = 5_000.0;
@@ -97,7 +99,7 @@ pub struct SameChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<SameParams, ChannelError> {
-    crate::settings_of::<SameParams>(settings)
+    sdrmm_decoder::settings_of::<SameParams>(settings)
 }
 
 fn check_params(params: &SameParams) -> Result<(), ChannelError> {
@@ -118,13 +120,9 @@ pub(crate) fn occupied_band(params: &SameParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &SameParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: &SameParams) -> Result<FilterSpec, ChannelError> {
     check_params(params)?;
-    let half = params.bandwidth_hz / 2.0;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / RATE),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, params.bandwidth_hz / 2.0))
 }
 
 impl NativeChannel for SameChannel {
@@ -144,7 +142,7 @@ impl NativeChannel for SameChannel {
     }
 }
 
-impl ChannelRx for SameChannel {
+impl Channel for SameChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         check_params(&params(&settings)?)
     }
@@ -197,12 +195,16 @@ fn same_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn same_decoder() -> Native<SameParams> {
-    Native::new::<SameChannel>(occupied_band)
+    let decoder = Native::new::<SameChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(same_signatures)
         .trial(same_trial)
         .form(same_form)
-        .kinds(same_kinds)
+        .kinds(same_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn same_form() -> Vec<SettingField> {
@@ -213,5 +215,7 @@ fn same_kinds() -> Vec<KindSpec> {
     vec![crate::same::same_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

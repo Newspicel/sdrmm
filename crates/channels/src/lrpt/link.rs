@@ -19,8 +19,10 @@ pub const INSERT_ZONE: usize = 2;
 pub const MPDU_HEADER: usize = 2;
 pub const MPDU_DATA: usize = VCDU_BYTES - VCDU_HEADER - INSERT_ZONE - MPDU_HEADER;
 pub const NO_PACKET_START: u16 = 0x7FF;
+#[cfg(any(test, feature = "synth"))]
 pub const SPACECRAFT_ID: u8 = 0x93;
 pub const IMAGE_VCID: u8 = 5;
+#[cfg(any(test, feature = "synth"))]
 pub const FILL_VCID: u8 = 63;
 
 pub const PACKET_HEADER: usize = 6;
@@ -174,6 +176,7 @@ impl VcduHeader {
         }
     }
 
+    #[cfg(any(test, feature = "synth"))]
     pub fn write(self, vcdu: &mut [u8]) {
         vcdu[0] = 0x40 | SPACECRAFT_ID >> 2;
         vcdu[1] = (SPACECRAFT_ID & 0x03) << 6 | self.vcid & 0x3F;
@@ -205,6 +208,7 @@ impl PacketHeader {
         }
     }
 
+    #[cfg(any(test, feature = "synth"))]
     pub fn write(&self, header: &mut [u8]) {
         header[0] = 0x08 | (self.apid >> 8) as u8 & 0x07;
         header[1] = self.apid as u8;

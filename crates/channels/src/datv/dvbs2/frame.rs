@@ -1,6 +1,6 @@
 use num_complex::Complex;
 
-use super::ldpc::{NORMAL, Rate, SHORT};
+use sdrmm_modem::dvb::ldpc::{NORMAL, Rate, SHORT};
 
 pub const MAX_POINTS: usize = 256;
 
@@ -118,7 +118,11 @@ impl ModCod {
     #[cfg(any(test, feature = "synth"))]
     pub fn find_for_frame(modulation: Modulation, rate: Rate, short: bool) -> Option<Self> {
         Self::find(modulation, rate)
-            .filter(|mode| mode.rate.information(super::ldpc::Frame::of(short)) > 0)
+            .filter(|mode| {
+                mode.rate
+                    .information(sdrmm_modem::dvb::ldpc::Frame::of(short))
+                    > 0
+            })
             .or_else(|| {
                 (132..=248)
                     .filter_map(super::s2x::mode)
@@ -191,20 +195,21 @@ pub fn interleave(coded: &[bool], modulation: Modulation, rate: Rate) -> Vec<boo
     out
 }
 
-#[must_use]
-pub fn deinterleave(llrs: &[f32], modulation: Modulation, rate: Rate) -> Vec<f32> {
+/// Undoes the column interleaver into `out`, reusing its storage frame after frame.
+pub fn deinterleave(llrs: &[f32], modulation: Modulation, rate: Rate, out: &mut Vec<f32>) {
+    out.clear();
     let order = column_order(modulation, rate);
     if order.is_empty() {
-        return llrs.to_vec();
+        out.extend_from_slice(llrs);
+        return;
     }
     let rows = llrs.len() / order.len();
-    let mut out = vec![0.0; llrs.len()];
+    out.resize(llrs.len(), 0.0);
     for row in 0..rows {
         for (position, &column) in order.iter().enumerate() {
             out[column * rows + row] = llrs[row * order.len() + position];
         }
     }
-    out
 }
 
 const QPSK_PHASES: [f32; 4] = [1.0, 7.0, 3.0, 5.0];
@@ -419,7 +424,8 @@ mod tests {
                 .iter()
                 .map(|&bit| if bit { -1.0 } else { 1.0 })
                 .collect();
-            let restored = deinterleave(&llrs, modulation, rate);
+            let mut restored = Vec::new();
+            deinterleave(&llrs, modulation, rate, &mut restored);
             let bits: Vec<bool> = restored.iter().map(|&value| value < 0.0).collect();
             assert_eq!(bits, coded, "{modulation:?} {}", rate.label());
         }

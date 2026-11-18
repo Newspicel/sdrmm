@@ -248,7 +248,7 @@ fn with_heading(bearing: DfBearing, heading_sigma_deg: f32) -> DfBearing {
 fn hunt_mark(heading_accuracy_deg: f64) -> DfBearing {
     let params = sdrmm_wire::HuntSweepParams::default();
     let mut hunt =
-        sdrmm_channels::hunt_sweep::SweepDf::new("hunt".to_owned(), "car".to_owned(), &params)
+        sdrmm_array::hunt_sweep::SweepDf::new("hunt".to_owned(), "car".to_owned(), &params)
             .expect("hunt sweep");
     let at_s = AT.parse::<jiff::Timestamp>().expect("time").as_second() as f64;
     let fix = PositionFix {

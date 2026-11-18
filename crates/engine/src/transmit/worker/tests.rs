@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use sdrmm_channels::encoder::EncoderError;
+use sdrmm_decoder::encoder::EncoderError;
 use sdrmm_device::DeviceError;
 
 use super::*;

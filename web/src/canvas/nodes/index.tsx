@@ -90,11 +90,11 @@ export const NODE_TYPES: Record<string, ComponentType<NodeProps<Node<FlowData>>>
 };
 
 export function faceSize(node: PatchNode): CSSProperties {
-  const size = nodeSize(node.kind);
+  const size = nodeSize(node);
   return { width: size.h === undefined ? size.w : "100%", height: "100%" };
 }
 
 /// A rack slot may be narrower than a face can draw; the slot scrolls rather than squeezing it.
 export function rackFaceSize(node: PatchNode): CSSProperties {
-  return { minWidth: nodeMinSize(node.kind, []).w };
+  return { minWidth: nodeMinSize(node, []).w };
 }

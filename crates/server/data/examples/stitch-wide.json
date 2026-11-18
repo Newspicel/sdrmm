@@ -46,8 +46,11 @@
         },
         {
           "id": "stitch",
-          "kind": "stitch",
-          "data": {},
+          "kind": "processor",
+          "data": {
+            "processor_type": "stitch",
+            "settings": {}
+          },
           "position": {
             "x": 1040.0,
             "y": 0.0

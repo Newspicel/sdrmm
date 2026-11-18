@@ -10,6 +10,7 @@ use super::{
     fields::{Geodetic, Motion, empty_frame, plausible, set_motion, set_position, today_at},
 };
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const BAUD: f64 = 1_200.0;
 pub(crate) const MARK_HZ: f64 = 1_200.0;
 pub(crate) const SPACE_HZ: f64 = 2_200.0;

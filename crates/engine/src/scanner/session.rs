@@ -32,7 +32,7 @@ pub(crate) fn watches(lane: Option<WatchedLane>, ds: u32, stream: u32) -> Result
 }
 
 fn decoder_bandwidth_hz(settings: &ChannelSettings) -> f64 {
-    let (low, high) = sdrmm_channels::occupied_band(&settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&settings.params);
     high - low
 }
 

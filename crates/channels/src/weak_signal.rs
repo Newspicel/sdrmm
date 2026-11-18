@@ -1,7 +1,10 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod ftx;
 mod wspr;
@@ -22,14 +25,12 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
-use sdrmm_dsp::{FirC, design_lowpass};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
 };
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const INPUT_RATE_HZ: f64 = 12_000.0;
@@ -566,15 +567,10 @@ fn search_band((low, high, _): (f32, f32, usize)) -> (f64, f64) {
     (f64::from(low), f64::from(high))
 }
 
-fn search_filter(search: (f32, f32, usize)) -> Result<ChannelFilter, ChannelError> {
+fn search_filter(search: (f32, f32, usize)) -> Result<FilterSpec, ChannelError> {
     validate_passband(search)?;
     let (low, high) = search_band(search);
-    let half_width = (high - low) / 2.0 / INPUT_RATE_HZ;
-    let center = f64::midpoint(high, low) / INPUT_RATE_HZ;
-    Ok(ChannelFilter::Sideband(FirC::from_lowpass(
-        &design_lowpass(FILTER_TAPS, half_width),
-        center,
-    )))
+    Ok(FilterSpec::band(FILTER_TAPS, low, high))
 }
 
 macro_rules! channel {
@@ -591,7 +587,7 @@ macro_rules! channel {
             }
         }
 
-        impl ChannelRx for $name {
+        impl Channel for $name {
             fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
                 self.0.apply(&settings)
             }
@@ -653,12 +649,16 @@ fn ft8_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn ft8_decoder() -> Native<WsjtParams> {
-    Native::new::<Ft8Channel>(|params| search_band(wsjt_config(params)))
+    let decoder = Native::new::<Ft8Channel>(|params| search_band(wsjt_config(params)))
         .filter(|params| search_filter(wsjt_config(params)))
         .home(14_074_000.0)
         .signatures(ft8_signatures)
         .form(wsjt_form)
-        .kinds(ft8_kinds)
+        .kinds(ft8_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::FT8_SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn wsjt_form() -> Vec<SettingField> {
@@ -705,12 +705,16 @@ fn ft4_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn ft4_decoder() -> Native<WsjtParams> {
-    Native::new::<Ft4Channel>(|params| search_band(wsjt_config(params)))
+    let decoder = Native::new::<Ft4Channel>(|params| search_band(wsjt_config(params)))
         .filter(|params| search_filter(wsjt_config(params)))
         .home(14_080_000.0)
         .signatures(ft4_signatures)
         .form(wsjt_form)
-        .kinds(ft4_kinds)
+        .kinds(ft4_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::FT4_SIGNALS),
+        _ => decoder,
+    }
 }
 
 fn ft4_kinds() -> Vec<KindSpec> {
@@ -742,12 +746,16 @@ fn wspr_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn wspr_decoder() -> Native<WsprParams> {
-    Native::new::<WsprChannel>(|params| search_band(wspr_config(params)))
+    let decoder = Native::new::<WsprChannel>(|params| search_band(wspr_config(params)))
         .filter(|params| search_filter(wspr_config(params)))
         .home(14_095_600.0)
         .signatures(wspr_signatures)
         .form(wsjt_form)
-        .kinds(wspr_kinds)
+        .kinds(wspr_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::WSPR_SIGNALS),
+        _ => decoder,
+    }
 }
 
 fn wspr_kinds() -> Vec<KindSpec> {
@@ -755,14 +763,14 @@ fn wspr_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::{
-        synth,
-        testutil::{realtime_budget, settings},
-    };
+    use crate::synth;
+    use sdrmm_decoder_test_support::{realtime_budget, settings};
 
     fn wsjt(event: &DecoderEvent, kind: &str) -> Option<WsjtMessage> {
         if event.kind == kind {
@@ -885,7 +893,7 @@ mod tests {
     fn windows_the_worker_cannot_take_are_counted_as_skipped() {
         let hop = Mode::Ft8.hop_samples();
         let mut iq = vec![Complex::new(0.0, 0.0); Mode::Ft8.slot_samples() + 20 * hop];
-        synth::add_noise(&mut iq, 7, 0.1);
+        sdrmm_modem::synth::add_noise(&mut iq, 7, 0.1);
         let mut channel = Ft8Channel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,

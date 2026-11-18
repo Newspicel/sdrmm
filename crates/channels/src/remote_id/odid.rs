@@ -10,7 +10,7 @@ use crate::remote_id::UaStatus;
 use crate::remote_id::UaType;
 use crate::remote_id::UasIdType;
 
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 pub(crate) const MESSAGE_SIZE: usize = 25;
 pub(crate) const MAX_PACK_MESSAGES: usize = 9;

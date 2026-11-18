@@ -35,25 +35,36 @@ An existing crate adds the SDK as a git dependency:
 sdrmm-plugin = { git = "https://github.com/newspicel/sdrmm", tag = "v2.4.3" }
 ```
 
-A plugin crate depends on `sdrmm-plugin` and builds as a `cdylib`. It implements `Plugin` and
-calls `export!` once:
+A plugin crate depends on `sdrmm-plugin` and builds as a `cdylib`. The SDK re-exports
+`sdrmm-decoder`, the API the built-in decoders and encoders use, so a plugin's parts are written
+exactly like built-in ones. It implements `Plugin` and calls `export!` once:
 
 | `Plugin` item | Gives |
 |---|---|
-| `manifest()` | The event kinds, and which of a decoder, encoder and processor it brings |
-| `present()` | How one of your events reads in logs and on maps |
+| `decoder()` | The decoder, built with `Native` |
+| `encoder()` | The encoder, built with `NativeEncoder` |
+| `processor()` | The array processor's type |
+| `kinds()` | Event kinds the decoder does not declare, such as the processor's |
+
+The manifest, the presenters and every control call follow from these.
 
 ## Decoders
 
-Declare the manifest's `decoder` (type id, name, family, input rate, settings form), implement
-`Decoder` and call `export_decoder!` once:
+A channel implements `Channel` and opens through `NativeChannel`. `Native` declares the rest:
 
-| `Decoder` item | Gives |
+| `Native` item | Gives |
 |---|---|
-| `Settings` | Your settings struct, read from JSON with defaults for absent fields |
-| `layout()` | Input rate and the band the settings occupy |
-| `open()`, `apply()` | A running channel, and new settings for it |
-| `process()` | One block of IQ in; audio, events and node readouts out |
+| `new::<C>(band)` | The channel type and the band the settings occupy |
+| `filter()` | The `FilterSpec` between the downconverter and the channel: lowpass, band or none |
+| `input_rate()`, `audio_channels()` | Rates and channels that follow the settings |
+| `form()`, `home()` | The settings form and the frequency a new channel starts on |
+| `kinds()`, `feeds()` | Event kinds with their presenters, and feed formats |
+| `tune()`, `signatures()` | How Signal ID names the signal and shapes settings to it |
+
+`Channel` takes full channel settings on `apply()`, and hears `retuned()`, `position_changed()`,
+`captured_at()` and `lo_artifact_at()`. `process()` fills `ChannelOutputs`: audio, events,
+status, video frames, images and symbols. A trunking decoder cannot be a plugin yet; a manifest
+that declares trunking is refused.
 
 The settings form is what the channel node shows: choices, numbers with ranges and units,
 toggles, text, conditional fields and lists. The frontend draws it from the manifest, so a plugin
@@ -63,30 +74,30 @@ symbol the server does not know gets its own palette group or a dot on the map.
 
 ## Encoders
 
-Declare the manifest's `encoder` (type id, name, rate, width, input, settings form), implement
-`Encoder` and call `export_encoder!` once. `submit()` takes audio or a frame, `generate()` fills
-baseband at the encoder's rate.
-
-It shows under **Encoders** like a built-in one. Its `input` is `audio` for an audio wire, or
-`message` with fields in `message` for a form with a Send button: each filled form arrives as
-UTF-8 JSON in a frame. The example's `Beacon` declares one text field and keys it as two-tone FSK.
+A modulator implements `Modulator` and opens through `NativeModulator`. `NativeEncoder` declares
+its width as a function of its settings, its form and, for a message encoder, the message form
+and how a filled one becomes a payload. It shows under **Encoders** like a built-in one. The
+example's `Beacon` keys a text field as two-tone FSK at a set baud.
 
 ## Array processors
 
-An array processor runs on every lane of an Array node at once, like the direction finder. Declare it as the manifest's `processor` (type id, name, lane range, needs,
-settings form, readouts, emitted kinds), implement `Processor` and call `export_processor!` once.
-`process()` gets one block of every lane and sets readouts by their declared order, the health
-footer and events. Its node gets the face every built-in processor has, drawn from what its type
-declares. The example's `LaneMeter` reports each lane's power and phase against the first.
+An array processor runs on every lane of an Array node at once, like the direction finder.
+It is written like a built-in one: implement `array::ArrayProcessor` on settings that implement
+`array::Settings`, return its `ProcessorType` from `Plugin::processor()` and call
+`export_processor!(Plugin, Processor, Settings)` once. A block carries geometry, calibration,
+pose, time and gaps, as for a built-in. Its type may declare bearing, steer and lane ports, a
+range-Doppler, spatial spectrum or visibility surface, actions and a band; position and track
+ports are refused. The example's `LaneMeter` reports each lane's power and phase and writes their
+sum to a `sum` lane.
 
 ## ABI
 
-The server runs plugins built for its own ABI version, currently 2, and refuses any other. A
-plugin built for ABI 1 needs a rebuild against the current SDK.
+The server runs plugins built for its own ABI version, currently 4, and refuses any other. A
+plugin built for an older ABI needs a rebuild against the current SDK.
 
 ## Speed
 
-`sdrmm_plugin::dsp` and `sdrmm_plugin::modem` are the building blocks the built-in decoders use.
+`sdrmm_plugin::dsp`, `modem`, `codec` and `crypto` are the building blocks the built-in decoders use.
 The heavy kernels in `sdrmm_plugin::kernels` (FIR, FFT, resampler) run natively in the server on
 the plugin's own memory. Under `cargo test` they run in-process, so a plugin tests like any crate.
 

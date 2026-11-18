@@ -112,6 +112,7 @@ impl sdrmm_wire::DecoderSettings for CwSkimmerParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
+    use sdrmm_wire::present::{Unit, number};
 
     fn spot(offset_hz: f32) -> CwSkimmerSpot {
         CwSkimmerSpot {
@@ -128,9 +129,26 @@ mod model_tests {
         assert_eq!(spot(1_262.0).signal_hz(), 1_250.0);
         assert_eq!(spot(-1_237.0).signal_hz(), -1_250.0);
         assert_eq!(spot(-10.0).signal_hz().to_bits(), 0.0_f32.to_bits());
-        crate::testutil::assert_views_hold(
+        sdrmm_decoder_test_support::assert_views_hold(
             &cw_skimmer_kind(),
             &[sdrmm_wire::DecoderEvent::of(&spot(1_237.0))],
         );
+    }
+
+    #[test]
+    fn a_skimmer_spot_shows_offset_speed_and_snr() {
+        let view = CwSkimmerSpot {
+            offset_hz: -120.0,
+            text: "CQ DL1ABC".to_owned(),
+            wpm: 24.0,
+            snr_db: 11.5,
+        }
+        .present(&EventKind::named("cw_skimmer"));
+        assert_eq!(view.labels(), ["Signal", "Offset", "Speed", "SNR", "Text"]);
+        assert_eq!(
+            view.field("Offset"),
+            number(Some(-120.0_f32), Unit::Hz, 0).as_ref()
+        );
+        assert_eq!(view.text, None);
     }
 }

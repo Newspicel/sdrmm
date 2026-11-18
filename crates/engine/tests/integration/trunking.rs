@@ -23,7 +23,7 @@ const SOURCE: u32 = 9_999;
 const FOUND_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn band(dir: &Path) -> String {
-    let mut control = synth::dv::dmr::tier_three_grant(
+    let mut control = synth::dmr::tier_three_grant(
         COLOR_CODE,
         LOGICAL_CHANNEL,
         1,
@@ -32,7 +32,7 @@ fn band(dir: &Path) -> String {
         24,
         DEVICE_RATE,
     );
-    let call = synth::dv::dmr::Call {
+    let call = synth::dmr::Call {
         color_code: COLOR_CODE,
         group: true,
         encrypted: false,
@@ -41,18 +41,18 @@ fn band(dir: &Path) -> String {
     };
     let mut traffic = Vec::new();
     while traffic.len() < control.len() {
-        traffic.extend(synth::dv::dmr::repeater_transmission(&call, 1, DEVICE_RATE));
+        traffic.extend(synth::dmr::repeater_transmission(&call, 1, DEVICE_RATE));
     }
     traffic.truncate(control.len());
 
-    synth::shift(&mut control, CONTROL_HZ as f64 - CENTER_HZ, DEVICE_RATE);
-    synth::shift(&mut traffic, TRAFFIC_HZ as f64 - CENTER_HZ, DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut control, CONTROL_HZ as f64 - CENTER_HZ, DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut traffic, TRAFFIC_HZ as f64 - CENTER_HZ, DEVICE_RATE);
     let mut iq: Vec<Complex<f32>> = control
         .iter()
         .zip(&traffic)
         .map(|(control, traffic)| control + traffic)
         .collect();
-    synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
 
     let path = dir.join("dmr_tier3_band");
     let mut writer = SigmfWriter::create(&path, DEVICE_RATE, CENTER_HZ, "trunk fixture").unwrap();
@@ -124,9 +124,8 @@ const REST_TWO: u8 = 4;
 /// Both repeaters of a Capacity Plus system, saying the same thing at the same time the way they
 /// do on the air: the rest channel the system is parked on, and the move when it changes.
 fn capacity_plus_band(dir: &Path) -> String {
-    let mut announcement =
-        synth::dv::dmr::capacity_plus_status(COLOR_CODE, REST_ONE, 8, DEVICE_RATE);
-    announcement.extend(synth::dv::dmr::capacity_plus_status(
+    let mut announcement = synth::dmr::capacity_plus_status(COLOR_CODE, REST_ONE, 8, DEVICE_RATE);
+    announcement.extend(synth::dmr::capacity_plus_status(
         COLOR_CODE,
         REST_TWO,
         8,
@@ -134,14 +133,14 @@ fn capacity_plus_band(dir: &Path) -> String {
     ));
     let mut control = announcement.clone();
     let mut repeater = announcement;
-    synth::shift(&mut control, CONTROL_HZ as f64 - CENTER_HZ, DEVICE_RATE);
-    synth::shift(&mut repeater, REPEATER_HZ as f64 - CENTER_HZ, DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut control, CONTROL_HZ as f64 - CENTER_HZ, DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut repeater, REPEATER_HZ as f64 - CENTER_HZ, DEVICE_RATE);
     let mut iq: Vec<Complex<f32>> = control
         .iter()
         .zip(&repeater)
         .map(|(control, repeater)| control + repeater)
         .collect();
-    synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
 
     let path = dir.join("dmr_capacity_plus_band");
     let mut writer = SigmfWriter::create(&path, DEVICE_RATE, CENTER_HZ, "trunk fixture").unwrap();

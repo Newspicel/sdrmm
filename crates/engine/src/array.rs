@@ -7,7 +7,6 @@ mod controller;
 mod correct;
 mod dedicated;
 mod host;
-mod radar;
 mod record;
 mod tap;
 pub(crate) mod tier;
@@ -27,15 +26,15 @@ use std::{
 };
 
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_channels::array_processor::{GeoFix, INLINE_INPUT_LIMIT, MAX_LANES};
+use sdrmm_array::{GeoFix, INLINE_INPUT_LIMIT, MAX_LANES};
 use sdrmm_device::{GapScope, lock};
 use sdrmm_wire::{
     ArrayCalRecord, ArrayFailure, ArrayNode, ArrayOrientation, ArrayTune, ArrayTuningMode,
-    Coherence, ProcessorParams, ProcessorReading, SurfaceFrame,
+    Coherence, ProcessorParams, SurfaceFrame,
 };
 use tokio::sync::broadcast;
 
-pub use sdrmm_channels::array_processor::ProcessorAction;
+pub use sdrmm_array::ProcessorAction;
 
 use crate::EngineError;
 
@@ -51,7 +50,7 @@ pub(crate) use controller::{
 };
 pub(crate) use correct::CorrectionSet;
 use correct::{correction_stage, spawn_stage};
-pub(crate) use dedicated::{DedicatedPlan, DedicatedRunner, Prepared};
+pub(crate) use dedicated::{DedicatedPlan, DedicatedRunner, Prepared, engine_host};
 pub(crate) use host::{
     ArrayShape, HostPlan, HostSinks, ProcessorHost, ProcessorStats, SteerInput, SteerMailbox,
 };
@@ -111,7 +110,7 @@ pub struct ProcessorSpec {
 pub enum ArrayEvent {
     Report {
         processor: String,
-        reading: Arc<ProcessorReading>,
+        reading: Arc<sdrmm_array::Reading>,
     },
     Surface {
         processor: String,
@@ -180,7 +179,7 @@ pub(crate) enum Command {
     },
     ApplyParams {
         node: String,
-        params: Box<ProcessorParams>,
+        params: Box<sdrmm_array::Params>,
     },
     SwapVirtual {
         node: String,
@@ -273,7 +272,7 @@ pub(crate) enum Retired {
     Sink(crate::runtime::VirtualLaneSink),
     Runner(Box<dyn DedicatedRunner>),
     Buffers(Box<CaptureBuffers>),
-    Params(Box<ProcessorParams>),
+    Params(Box<sdrmm_array::Params>),
     Prepared(Prepared),
     Node(String),
 }

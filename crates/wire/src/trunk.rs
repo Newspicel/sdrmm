@@ -59,6 +59,18 @@ impl TrunkSpec {
     }
 }
 
+/// What a trunk node sets on every call it follows, written as decoder settings: the decoder
+/// that follows a call reads those its protocol has and leaves the rest.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrunkCallSettings {
+    #[serde(default)]
+    pub ignore_crc: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<crate::VoiceKey>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vocoder: Option<String>,
+}
+
 /// Which talkgroups a trunk node follows, and which win a traffic channel when all are busy.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]

@@ -4,6 +4,10 @@ mod denoise_models;
 #[cfg(feature = "denoise-models")]
 pub use denoise_models::denoise_model;
 
+pub mod reference_data;
+#[cfg(feature = "xng")]
+pub mod xng;
+
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,

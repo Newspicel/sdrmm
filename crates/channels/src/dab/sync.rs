@@ -3,7 +3,8 @@ use std::{f64::consts::TAU, ops::RangeInclusive};
 use crate::dab::DabTransmissionMode;
 use num_complex::Complex;
 
-use super::mode::{Mode, TRANSMISSION_MODES};
+use super::TRANSMISSION_MODES;
+use sdrmm_modem::ofdm::dab::{Mode, TransmissionMode};
 
 pub const SEARCH: usize = 96;
 pub const MIN_COHERENCE: f32 = 0.25;
@@ -149,7 +150,7 @@ pub fn prefix_phase(mode: Mode, samples: &[Complex<f32>], at: usize, drift: f64)
 
 #[must_use]
 pub fn detect_span() -> usize {
-    (ALIGN_SYMBOLS + 1) * Mode::new(DabTransmissionMode::I).symbol()
+    (ALIGN_SYMBOLS + 1) * Mode::new(TransmissionMode::I).symbol()
 }
 
 #[must_use]
@@ -162,7 +163,7 @@ pub fn detect(
     let mut ranked = TRANSMISSION_MODES.map(|candidate| {
         (
             aligner
-                .align(Mode::new(candidate), samples, from, span, 0.0)
+                .align(Mode::new(candidate.into()), samples, from, span, 0.0)
                 .0,
             candidate,
         )
@@ -270,7 +271,7 @@ mod tests {
     #[test]
     fn the_cyclic_prefix_finds_the_reference_symbol_and_its_fractional_offset() {
         for transmission in TRANSMISSION_MODES {
-            let mode = Mode::new(transmission);
+            let mode = Mode::new(transmission.into());
             let shift = 0.3 / mode.useful as f64;
             let iq = turned(
                 &synth::dab::ensemble_for_mode(transmission, 2).expect("a synthetic signal"),
@@ -291,8 +292,8 @@ mod tests {
     #[test]
     fn the_cyclic_prefix_length_names_the_transmission_mode() {
         for transmission in TRANSMISSION_MODES {
-            let mode = Mode::new(transmission);
-            let iq = crate::testutil::at_snr(
+            let mode = Mode::new(transmission.into());
+            let iq = sdrmm_decoder_test_support::at_snr(
                 &synth::dab::ensemble_for_mode(transmission, 4).expect("a synthetic signal"),
                 6.0,
                 3,
@@ -302,13 +303,13 @@ mod tests {
                 Some(transmission)
             );
         }
-        let noise = crate::testutil::complex_noise(9, 1.0, 4 * detect_span());
+        let noise = sdrmm_decoder_test_support::complex_noise(9, 1.0, 4 * detect_span());
         assert_eq!(detect(&mut Aligner::default(), &noise, 0, 2 * SEARCH), None);
     }
 
     #[test]
     fn shifts_stay_inside_the_frequency_limit() {
-        let mode = Mode::new(DabTransmissionMode::Ii);
+        let mode = Mode::new(DabTransmissionMode::Ii.into());
         let limit = 40_000.0 / 2_048_000.0;
         assert_eq!(shifts(mode, 0.0, limit), -10..=10);
         assert_eq!(shifts(mode, 10.0 / 512.0, limit), -20..=0);
@@ -316,7 +317,7 @@ mod tests {
 
     #[test]
     fn the_tracker_learns_sample_clock_drift_and_predicts_the_next_frame() {
-        let mode = Mode::new(DabTransmissionMode::Iii);
+        let mode = Mode::new(DabTransmissionMode::Iii.into());
         let frame = mode.frame() as f64;
         let drift = 80e-6;
         let mut tracker = Tracker::default();

@@ -3,13 +3,13 @@
 use std::{path::PathBuf, time::Instant};
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, Decoder};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs, Decoder};
 use sdrmm_plugins::{PluginModule, WasmDecoder};
 use sdrmm_wire::present::FieldValue;
 
 mod common;
 
-const MANIFEST: &str = r#"{"abi":2,"decoder":{"descriptor":{"type_id":"runaway","name":"Runaway","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
+const MANIFEST: &str = r#"{"abi":4,"decoder":{"descriptor":{"type_id":"runaway","name":"Runaway","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
 
 fn plugin_path() -> PathBuf {
     common::wat_plugin(
@@ -28,7 +28,7 @@ fn a_plugin_stuck_in_a_loop_stops_its_channel_with_a_visible_error() {
         WasmDecoder::of(&module).unwrap_or_else(|| panic!("the plugin declares a decoder"));
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let mut channel = decoder
-        .create_rx(
+        .open(
             ChannelCtx {
                 input_rate: 48_000.0,
             },

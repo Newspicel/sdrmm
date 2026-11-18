@@ -5,7 +5,7 @@ use super::advert_data::{self, PUBLIC_KEY_LEN};
 use super::frame::Frame;
 use super::group::{self, MAC_LEN, Sealed, is_block_aligned};
 use super::keys::Keys;
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 const ACK_LEN: usize = 4;
 const TRACE_HEADER_LEN: usize = 9;

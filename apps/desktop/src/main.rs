@@ -43,6 +43,8 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<Exit> {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     let _library = shell::load()?;
     let data_dir = paths::data_dir()?;
     std::fs::create_dir_all(&data_dir)?;

@@ -155,7 +155,7 @@ fn runnable(entry: &Entry) -> bool {
     entry
         .channels
         .iter()
-        .all(|channel| sdrmm_channels::descriptor(channel.settings.params.type_id()).is_some())
+        .all(|channel| sdrmm_decoder::descriptor(channel.settings.params.type_id()).is_some())
 }
 
 fn info(entry: Entry) -> TemplateInfo {
@@ -285,7 +285,7 @@ mod tests {
     fn every_channel_gets_at_least_its_decoder_rate() {
         for template in all() {
             for channel in &template.channels {
-                let rate = sdrmm_channels::input_rate(&channel.params);
+                let rate = sdrmm_decoder::input_rate(&channel.params);
                 assert!(
                     template.sample_rate >= rate,
                     "{}: {} needs {rate} Hz",
@@ -301,7 +301,7 @@ mod tests {
         let mut wide = 0;
         for template in all() {
             for channel in &template.channels {
-                let rate = sdrmm_channels::input_rate(&channel.params);
+                let rate = sdrmm_decoder::input_rate(&channel.params);
                 if rate * 2.0 > template.sample_rate {
                     wide += 1;
                     assert_eq!(template.sample_rate, rate, "{}", template.id);

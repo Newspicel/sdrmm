@@ -1,0 +1,1108 @@
+use std::f64::consts::TAU;
+
+use num_complex::Complex;
+use sdrmm_dsp::{CyclicPrefix, CyclicPrefixSearch, Ddc, SpectrumAnalyzer, fast_arg};
+
+use super::detect::Band;
+
+/// How far a zoom's rate sits above the band it holds.
+pub const ZOOM_OVERSAMPLE: f64 = 4.0;
+const MIN_ZOOM_RATE_HZ: f64 = 2_000.0;
+const SETTLE: usize = 96;
+
+const FFT_SIZES: [usize; 3] = [256, 1_024, 4_096];
+const MIN_ANALYSIS_SAMPLES: usize = FFT_SIZES[0];
+const MIN_RUN_SAMPLES: usize = 256;
+const MAX_SEGMENTS: usize = 16;
+
+const CLOCK_SKIRT_BINS: usize = 8;
+
+const BACKGROUND_BINS: usize = 32;
+const GUARD_BINS: usize = 4;
+
+const MIN_SHIFT_FRACTION: f64 = 1e-4;
+
+const HIST_BINS: usize = 96;
+const PEAK_FLOOR: f32 = 0.25;
+const PEAK_SEPARATION: usize = HIST_BINS / 12;
+
+const KEYING_GAP_DB: f32 = 6.0;
+
+const LINE_THRESHOLD_DB: f32 = 6.0;
+const MIN_CLOCK_SEGMENTS: usize = 3;
+
+const MAX_HARMONIC: usize = 8;
+/// How far under the loudest line its own fundamental may sit and still be read as the clock.
+/// Squaring a two-level series leaves most of the energy in the octave: on an ACARS burst the
+/// 2400 Hz clock is four decibels under its octave, while the bumps between the two are thirteen.
+const SUBHARMONIC_FRACTION: f32 = 0.25;
+const HARMONIC_TOLERANCE: f64 = 0.03;
+
+const KEYED_FRACTION: f32 = 0.35;
+/// How long a keyed burst may sit on its rest frequency before its symbols reach full swing.
+const KEY_EDGE_S: f64 = 1e-3;
+const BOTTOM: f32 = 0.10;
+const MAX_DEPTH_DB: f32 = 100.0;
+
+const RAYLEIGH_VARIATION: f32 = 0.522_723;
+
+const BURST_SMOOTH: usize = 16;
+const BURST_FRACTION: f32 = 0.15;
+const GATE_SMOOTH: usize = 8;
+const MIN_BURSTS: usize = 2;
+const BURST_AGREEMENT: f32 = 0.7;
+const BURST_SPREAD: f32 = 0.3;
+const CONTINUOUS_DUTY: f32 = 0.97;
+
+const PREFIX_SAMPLES: usize = 1 << 16;
+const PREFIX_MIN_LAG: usize = 16;
+const PREFIX_BANDWIDTH_LAGS: f64 = 4.0;
+const PREFIX_MAX_SYMBOL_S: f64 = 0.03;
+
+pub struct Zoom {
+    pub rate: f64,
+    pub iq: Vec<Complex<f32>>,
+}
+
+fn zoom_rate_hz(rate: f64, band: &Band) -> Option<f64> {
+    if !(rate.is_finite() && rate > 0.0) {
+        return None;
+    }
+    let narrowest = MIN_ZOOM_RATE_HZ.min(rate);
+    let wanted = band.bandwidth_hz * ZOOM_OVERSAMPLE;
+    Some(if wanted.is_finite() {
+        wanted.clamp(narrowest, rate)
+    } else {
+        narrowest
+    })
+}
+
+pub fn zoom(iq: &[Complex<f32>], rate: f64, band: &Band) -> Option<Zoom> {
+    let target = zoom_rate_hz(rate, band)?;
+    let mut ddc = Ddc::new(rate, target, band.center_hz).ok()?;
+    let mut out = Vec::with_capacity((iq.len() as f64 * target / rate) as usize + 1);
+    ddc.process(iq, &mut out);
+    let settle = SETTLE.max(ddc.settling());
+    if out.len() <= settle + MIN_ANALYSIS_SAMPLES {
+        return None;
+    }
+    out.drain(..settle);
+    Some(Zoom {
+        rate: target,
+        iq: out,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Waveform {
+    pub envelope_variation: f32,
+    pub noise_variation: f32,
+    pub duty: f32,
+    pub on_off_db: f32,
+    pub keying_gap: f32,
+    pub frequency_levels: u8,
+    pub deviation_hz: f64,
+    pub frequency_spread_hz: f64,
+    pub frequency_noise_hz: f64,
+    pub level_valley: f32,
+    pub symbol_rate_hz: Option<f64>,
+    pub square_line_db: f32,
+    pub quartic_line_db: f32,
+    pub burst_ms: Option<f64>,
+    pub burst_period_ms: Option<f64>,
+    pub ofdm_symbol_us: Option<f64>,
+    pub ofdm_guard_us: Option<f64>,
+    pub ofdm_strength: f32,
+}
+
+pub struct Meter {
+    spectra: Vec<SpectrumAnalyzer>,
+    amplitude: Vec<f32>,
+    frequency: Vec<f32>,
+    keyed: Vec<bool>,
+    settled: Vec<bool>,
+    weight: Vec<f32>,
+    edge: Vec<f32>,
+    runs: Vec<(usize, usize)>,
+    starts: Vec<usize>,
+    fft_in: Vec<Complex<f32>>,
+    fft_db: Vec<f32>,
+    power: Vec<f32>,
+    contrast: Vec<f32>,
+    scratch: Vec<f32>,
+    histogram: Vec<f32>,
+    smoothed: Vec<f32>,
+    peak_bins: Vec<usize>,
+    bursts: Vec<(usize, usize)>,
+    spans: Vec<f32>,
+    prefix: CyclicPrefixSearch,
+}
+
+impl Default for Meter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Meter {
+    pub fn new() -> Self {
+        let largest = FFT_SIZES[FFT_SIZES.len() - 1];
+        Self {
+            spectra: FFT_SIZES
+                .iter()
+                .map(|&n| SpectrumAnalyzer::new(n))
+                .collect(),
+            amplitude: Vec::new(),
+            frequency: Vec::new(),
+            keyed: Vec::new(),
+            settled: Vec::new(),
+            weight: Vec::new(),
+            edge: Vec::new(),
+            runs: Vec::new(),
+            starts: Vec::new(),
+            fft_in: vec![Complex::new(0.0, 0.0); largest],
+            fft_db: vec![0.0; largest],
+            power: vec![0.0; largest],
+            contrast: vec![0.0; largest],
+            scratch: Vec::new(),
+            histogram: vec![0.0; HIST_BINS],
+            smoothed: vec![0.0; HIST_BINS],
+            peak_bins: Vec::new(),
+            bursts: Vec::new(),
+            spans: Vec::new(),
+            prefix: CyclicPrefixSearch::new(PREFIX_SAMPLES),
+        }
+    }
+
+    pub fn measure(&mut self, zoom: &Zoom, band: &Band) -> Waveform {
+        let (duty, on_off_db, gate) = self.envelope(&zoom.iq);
+        let envelope_variation = self.envelope_variation(gate);
+        let keying_gap = self.keying_gap(gate);
+        let (burst_ms, burst_period_ms) = self.bursts(zoom.rate, gate, duty);
+        self.discriminate(&zoom.iq, zoom.rate, gate);
+
+        let levels = self.levels(zoom.rate);
+        let symbol_rate_hz = self.symbol_rate(zoom.rate, levels.count);
+        let (square_line_db, quartic_line_db) = self.nonlinearity_lines(&zoom.iq);
+        let prefix = self.cyclic_prefix(&zoom.iq, zoom.rate, band.bandwidth_hz);
+        let to_us = |samples: usize| samples as f64 / zoom.rate * 1e6;
+
+        Waveform {
+            envelope_variation,
+            noise_variation: noise_variation(zoom.rate, band),
+            duty,
+            on_off_db,
+            keying_gap,
+            frequency_levels: levels.count,
+            deviation_hz: levels.deviation_hz,
+            frequency_spread_hz: levels.spread_hz,
+            frequency_noise_hz: self.frequency_noise(zoom.rate),
+            level_valley: levels.valley,
+            symbol_rate_hz,
+            square_line_db,
+            quartic_line_db,
+            burst_ms,
+            burst_period_ms,
+            ofdm_symbol_us: prefix.map(|p| to_us(p.useful)),
+            ofdm_guard_us: prefix.and_then(|p| p.guard).map(to_us),
+            ofdm_strength: prefix.map_or(0.0, |p| p.strength),
+        }
+    }
+
+    pub fn cyclic_prefix(
+        &mut self,
+        iq: &[Complex<f32>],
+        rate: f64,
+        bandwidth_hz: f64,
+    ) -> Option<CyclicPrefix> {
+        let min_lag =
+            ((PREFIX_BANDWIDTH_LAGS * rate / bandwidth_hz.max(1.0)) as usize).max(PREFIX_MIN_LAG);
+        let max_lag = (PREFIX_MAX_SYMBOL_S * rate) as usize;
+        self.prefix.search(iq, min_lag, max_lag)
+    }
+
+    fn bursts(&mut self, rate: f64, gate: f32, duty: f32) -> (Option<f64>, Option<f64>) {
+        self.bursts.clear();
+        if duty > CONTINUOUS_DUTY || self.amplitude.len() < 4 * BURST_SMOOTH {
+            return (None, None);
+        }
+        self.smooth_envelope(BURST_SMOOTH);
+        self.on_runs(gate / KEYED_FRACTION * BURST_FRACTION);
+        if self.bursts.len() < MIN_BURSTS {
+            return (None, None);
+        }
+        self.spans.clear();
+        self.spans
+            .extend(self.bursts.iter().map(|&(_, len)| len as f32));
+        let typical = median(&mut self.spans);
+        let agreeing = self
+            .bursts
+            .iter()
+            .filter(|&&(_, len)| (len as f32) >= typical * 0.5 && (len as f32) <= typical * 2.0)
+            .count();
+        if (agreeing as f32) < BURST_AGREEMENT * self.bursts.len() as f32 {
+            return (None, None);
+        }
+        let burst_ms = f64::from(typical) / rate * 1_000.0;
+        self.spans.clear();
+        self.spans.extend(
+            self.bursts
+                .windows(2)
+                .map(|pair| (pair[1].0 - pair[0].0) as f32),
+        );
+        if self.spans.is_empty() {
+            return (Some(burst_ms), None);
+        }
+        let period = median(&mut self.spans);
+        let spread = self
+            .spans
+            .iter()
+            .map(|&gap| (gap - period).abs())
+            .sum::<f32>()
+            / self.spans.len() as f32;
+        let period_ms =
+            (spread <= period * BURST_SPREAD).then(|| f64::from(period) / rate * 1_000.0);
+        (Some(burst_ms), period_ms)
+    }
+
+    fn smooth_envelope(&mut self, span: usize) {
+        self.scratch.clear();
+        let mut running = 0.0f32;
+        for (i, &a) in self.amplitude.iter().enumerate() {
+            running += a;
+            if i >= span {
+                running -= self.amplitude[i - span];
+            }
+            self.scratch.push(running / (i + 1).min(span) as f32);
+        }
+    }
+
+    fn on_runs(&mut self, gate: f32) {
+        let mut start = None;
+        for (i, &level) in self.scratch.iter().enumerate() {
+            match (start, level >= gate) {
+                (None, true) => start = Some(i),
+                (Some(from), false) => {
+                    if from > 0 {
+                        self.bursts.push((from, i - from));
+                    }
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn envelope(&mut self, iq: &[Complex<f32>]) -> (f32, f32, f32) {
+        self.amplitude.clear();
+        self.amplitude.extend(iq.iter().map(|s| s.norm()));
+        let low = self.percentile(BOTTOM);
+        self.smooth_envelope(GATE_SMOOTH);
+        let high = self.scratch.iter().copied().fold(0.0f32, f32::max);
+        let gate = high * KEYED_FRACTION;
+        let on = self.scratch.iter().filter(|&&a| a >= gate).count();
+        let duty = on as f32 / self.scratch.len().max(1) as f32;
+        let on_off_db = (20.0 * (high / low.max(f32::MIN_POSITIVE)).log10()).min(MAX_DEPTH_DB);
+        (duty, on_off_db, gate)
+    }
+
+    fn percentile(&mut self, fraction: f32) -> f32 {
+        self.scratch.clear();
+        self.scratch.extend_from_slice(&self.amplitude);
+        let n = self.scratch.len();
+        if n == 0 {
+            return 0.0;
+        }
+        let index = ((n - 1) as f32 * fraction) as usize;
+        let (_, value, _) = self.scratch.select_nth_unstable_by(index, f32::total_cmp);
+        *value
+    }
+
+    fn keying_gap(&mut self, gate: f32) -> f32 {
+        let high = gate / KEYED_FRACTION;
+        let middle = (high * self.percentile(BOTTOM)).sqrt();
+        if self.amplitude.is_empty() || high <= 0.0 {
+            return 1.0;
+        }
+        if middle <= 0.0 {
+            return 0.0;
+        }
+        let reach = 10.0f32.powf(KEYING_GAP_DB / 20.0);
+        let (low, high) = (middle / reach, middle * reach);
+        let between = self
+            .amplitude
+            .iter()
+            .filter(|&&a| a >= low && a <= high)
+            .count();
+        between as f32 / self.amplitude.len() as f32
+    }
+
+    fn envelope_variation(&self, gate: f32) -> f32 {
+        let mut n = 0u32;
+        let mut sum = 0.0f64;
+        let mut sum_sq = 0.0f64;
+        for &a in self.amplitude.iter().filter(|&&a| a >= gate) {
+            n += 1;
+            sum += f64::from(a);
+            sum_sq += f64::from(a) * f64::from(a);
+        }
+        if n < 2 {
+            return 0.0;
+        }
+        let mean = sum / f64::from(n);
+        let variance = (sum_sq / f64::from(n) - mean * mean).max(0.0);
+        (variance.sqrt() / mean.max(f64::MIN_POSITIVE)) as f32
+    }
+
+    fn discriminate(&mut self, iq: &[Complex<f32>], rate: f64, gate: f32) {
+        let scale = (rate / TAU) as f32;
+        self.frequency.clear();
+        self.frequency.push(0.0);
+        for pair in iq.windows(2) {
+            self.frequency
+                .push(fast_arg(pair[1] * pair[0].conj()) * scale);
+        }
+
+        let mut slope_sq = 0.0f64;
+        for pair in self.frequency.windows(2) {
+            let d = f64::from(pair[1] - pair[0]);
+            slope_sq += d * d;
+        }
+        let slope_rms = (slope_sq / self.frequency.len().max(1) as f64)
+            .sqrt()
+            .max(1.0) as f32;
+
+        self.keyed.clear();
+        self.keyed.extend(self.amplitude.iter().map(|&a| a >= gate));
+        clear_of_edges(&self.keyed, (rate * KEY_EDGE_S) as usize, &mut self.settled);
+
+        self.weight.clear();
+        self.weight.push(0.0);
+        for i in 1..self.frequency.len() {
+            let carrier = self.settled[i] && self.settled[i - 1];
+            let slope = (self.frequency[i] - self.frequency[i - 1]) / slope_rms;
+            let dwell = 1.0 / (1.0 + slope * slope);
+            self.weight.push(if carrier {
+                self.amplitude[i] * self.amplitude[i] * dwell
+            } else {
+                0.0
+            });
+        }
+    }
+
+    fn frequency_noise(&self, rate: f64) -> f64 {
+        let mut power = 0.0;
+        let mut noise = 0.0;
+        for (pair, &weight) in self.amplitude.windows(2).zip(&self.weight[1..]) {
+            let mean = f64::from(pair[0] + pair[1]) * 0.5;
+            let difference = f64::from(pair[1] - pair[0]);
+            power += f64::from(weight) * mean * mean;
+            noise += f64::from(weight) * difference * difference;
+        }
+        if power <= 0.0 {
+            return 0.0;
+        }
+        (noise / power).sqrt() * rate / TAU
+    }
+
+    fn levels(&mut self, rate: f64) -> Levels {
+        let bare = |spread: f64| Levels {
+            spread_hz: spread,
+            count: u8::from(spread > 0.0),
+            deviation_hz: spread,
+            valley: 1.0,
+        };
+        let total: f64 = self.weight.iter().map(|&w| f64::from(w)).sum();
+        if total <= 0.0 {
+            return bare(0.0);
+        }
+        let weighted = |power: i32, mean: f64| -> f64 {
+            self.frequency
+                .iter()
+                .zip(&self.weight)
+                .map(|(&f, &w)| f64::from(w) * (f64::from(f) - mean).powi(power))
+                .sum::<f64>()
+                / total
+        };
+        let mean = weighted(1, 0.0);
+        let spread = weighted(2, mean).max(0.0).sqrt();
+        if spread < rate * MIN_SHIFT_FRACTION {
+            return bare(spread);
+        }
+        let span = spread * 3.0;
+
+        let scale = HIST_BINS as f64 / (2.0 * span);
+        self.histogram.fill(0.0);
+        for (&f, &w) in self.frequency.iter().zip(&self.weight) {
+            if w <= 0.0 {
+                continue;
+            }
+            let position = (f64::from(f) - mean + span) * scale;
+            if position < 0.0 || position >= HIST_BINS as f64 {
+                continue;
+            }
+            self.histogram[position as usize] += w;
+        }
+        smooth(&self.histogram, &mut self.smoothed);
+        smooth(&self.smoothed, &mut self.histogram);
+        std::mem::swap(&mut self.histogram, &mut self.smoothed);
+
+        peaks_of(&self.smoothed, &mut self.peak_bins);
+        let to_hz = |bin: usize| (bin as f64 + 0.5) / scale - span + mean;
+        let (deviation, valley) = match self.peak_bins.as_slice() {
+            [] => (spread, 1.0),
+            [only] => ((to_hz(*only) - mean).abs().max(spread), 1.0),
+            [first, .., last] => (
+                (to_hz(*last) - to_hz(*first)) / 2.0,
+                valley_of(&self.smoothed, *first, *last),
+            ),
+        };
+        Levels {
+            spread_hz: spread,
+            count: self.peak_bins.len().min(u8::MAX as usize) as u8,
+            deviation_hz: deviation,
+            valley,
+        }
+    }
+
+    /// Detectors disagree by an octave as often as they agree: squaring a two-level series
+    /// answers at twice the clock the difference detector finds, and on a clean signal the two
+    /// lines sit within a decibel of each other. Taking the loudest would then read the symbol
+    /// rate off a coin toss, so a line the loudest is a harmonic of wins whenever it clears the
+    /// same margin `fundamental` allows inside one spectrum.
+    fn symbol_rate(&mut self, rate: f64, levels: u8) -> Option<f64> {
+        let series: &[Series] = if levels >= 2 {
+            &[Series::Frequency]
+        } else {
+            &[Series::Envelope, Series::Frequency]
+        };
+        let mut lines: Vec<(f64, f32)> = Vec::new();
+        for &series in series {
+            for &detector in &[Detector::Square, Detector::Difference] {
+                self.build_edge(series, detector);
+                if let Some(line) = self.line_search(rate) {
+                    lines.push(line);
+                }
+            }
+        }
+        lines.retain(|&(_, db)| db >= LINE_THRESHOLD_DB);
+        let (loudest_hz, loudest_db) = lines
+            .iter()
+            .copied()
+            .reduce(|best, line| if line.1 > best.1 { line } else { best })?;
+        let floor = loudest_db + 10.0 * SUBHARMONIC_FRACTION.log10();
+        lines
+            .iter()
+            .filter(|&&(hz, db)| db >= floor && divides(hz, loudest_hz))
+            .map(|&(hz, _)| hz)
+            .reduce(f64::min)
+    }
+
+    fn build_edge(&mut self, series: Series, detector: Detector) {
+        let values: &[f32] = match series {
+            Series::Frequency => &self.frequency,
+            Series::Envelope => &self.amplitude,
+        };
+        self.runs.clear();
+        match series {
+            Series::Frequency => keyed_runs(&self.keyed, MIN_RUN_SAMPLES, &mut self.runs),
+            Series::Envelope => self.runs.push((0, values.len())),
+        }
+        let live: usize = self.runs.iter().map(|&(a, b)| b - a).sum();
+        let mean = if live == 0 {
+            0.0
+        } else {
+            (self
+                .runs
+                .iter()
+                .flat_map(|&(a, b)| values[a..b].iter())
+                .map(|&v| f64::from(v))
+                .sum::<f64>()
+                / live as f64) as f32
+        };
+
+        self.edge.clear();
+        match detector {
+            Detector::Square => self
+                .edge
+                .extend(values.iter().map(|&v| (v - mean) * (v - mean))),
+            Detector::Difference => {
+                self.edge.push(0.0);
+                self.edge.extend(values.windows(2).map(|p| {
+                    let d = p[1] - p[0];
+                    d * d
+                }));
+            }
+        }
+    }
+
+    fn line_search(&mut self, rate: f64) -> Option<(f64, f32)> {
+        let size = self.spectrum_of_runs()?;
+
+        let bin_hz = rate / size as f64;
+        let center = size / 2;
+        let first = center + CLOCK_SKIRT_BINS;
+        let last = (center + (rate / ZOOM_OVERSAMPLE / bin_hz) as usize).min(size - 2);
+        if first >= last {
+            return None;
+        }
+        self.contrast(size);
+        let tallest =
+            (first..=last).max_by(|&a, &b| self.contrast[a].total_cmp(&self.contrast[b]))?;
+        let db = 10.0 * self.contrast[tallest].max(f32::MIN_POSITIVE).log10();
+        let peak = self.fundamental(tallest, center, first);
+        Some((interpolate(&self.contrast, peak, center, bin_hz), db))
+    }
+
+    fn contrast(&mut self, size: usize) {
+        self.scratch.clear();
+        self.scratch.push(0.0);
+        let mut running = 0.0f64;
+        for &p in &self.power[..size] {
+            running += f64::from(p);
+            self.scratch.push(running as f32);
+        }
+        let quiet = (running / size as f64 * 1e-6) as f32;
+        if quiet <= 0.0 || !quiet.is_finite() {
+            self.contrast[..size].fill(1.0);
+            return;
+        }
+        let sum =
+            |prefix: &[f32], lo: usize, hi: usize| prefix[hi.min(size)] - prefix[lo.min(size)];
+        for i in 0..size {
+            let wide = sum(
+                &self.scratch,
+                i.saturating_sub(BACKGROUND_BINS),
+                i + BACKGROUND_BINS + 1,
+            );
+            let guarded = sum(
+                &self.scratch,
+                i.saturating_sub(GUARD_BINS),
+                i + GUARD_BINS + 1,
+            );
+            let bins = (i + BACKGROUND_BINS + 1).min(size)
+                - i.saturating_sub(BACKGROUND_BINS)
+                - ((i + GUARD_BINS + 1).min(size) - i.saturating_sub(GUARD_BINS));
+            let background = (wide - guarded) / bins.max(1) as f32;
+            self.contrast[i] = self.power[i] / background.max(quiet);
+        }
+    }
+
+    fn fundamental(&self, tallest: usize, center: usize, first: usize) -> usize {
+        let strong = self.contrast[tallest] * SUBHARMONIC_FRACTION;
+        let offset = tallest - center;
+        for divisor in (2..=MAX_HARMONIC).rev() {
+            let candidate = center + offset / divisor;
+            if candidate <= first + 2 {
+                continue;
+            }
+            let Some(local) = (candidate - 1..=candidate + 1)
+                .max_by(|&a, &b| self.contrast[a].total_cmp(&self.contrast[b]))
+            else {
+                continue;
+            };
+            let shoulder = self.contrast[local - 2].max(self.contrast[local + 2]);
+            if self.contrast[local] >= strong && self.contrast[local] > shoulder {
+                return local;
+            }
+        }
+        tallest
+    }
+
+    fn nonlinearity_lines(&mut self, iq: &[Complex<f32>]) -> (f32, f32) {
+        if iq.len() < MIN_ANALYSIS_SAMPLES {
+            return (0.0, 0.0);
+        }
+        let unit = |x: Complex<f32>| {
+            let n = x.norm();
+            if n > f32::MIN_POSITIVE {
+                x / n
+            } else {
+                Complex::new(0.0, 0.0)
+            }
+        };
+        let square = self.line_strength(iq.len(), |i| {
+            let u = unit(iq[i]);
+            u * u
+        });
+        let quartic = self.line_strength(iq.len(), |i| {
+            let u = unit(iq[i]);
+            let s = u * u;
+            s * s
+        });
+        (square, quartic)
+    }
+
+    fn line_strength(&mut self, len: usize, sample: impl Fn(usize) -> Complex<f32>) -> f32 {
+        let size = self.average_spectrum(len, sample);
+        let Some(peak) = (0..size).max_by(|&a, &b| self.power[a].total_cmp(&self.power[b])) else {
+            return 0.0;
+        };
+        let median = self.median_power(0, size - 1);
+        10.0 * (self.power[peak] / median.max(f32::MIN_POSITIVE)).log10()
+    }
+
+    fn spectrum_of_runs(&mut self) -> Option<usize> {
+        let mut index = 0;
+        let mut size = 0;
+        for (candidate, &n) in FFT_SIZES.iter().enumerate().rev() {
+            self.plan_segments(n);
+            if self.starts.len() >= MIN_CLOCK_SEGMENTS {
+                (index, size) = (candidate, n);
+                break;
+            }
+        }
+        if size == 0 {
+            return None;
+        }
+        let stride = self.starts.len().div_ceil(MAX_SEGMENTS);
+
+        self.power[..size].fill(0.0);
+        let mut segments = 0u32;
+        for k in (0..self.starts.len()).step_by(stride) {
+            let start = self.starts[k];
+            for (slot, &v) in self.fft_in[..size]
+                .iter_mut()
+                .zip(&self.edge[start..start + size])
+            {
+                *slot = Complex::new(v, 0.0);
+            }
+            let (input, output) = (&self.fft_in[..size], &mut self.fft_db[..size]);
+            self.spectra[index].power_db(input, output);
+            for (acc, &db) in self.power[..size].iter_mut().zip(&self.fft_db[..size]) {
+                *acc += (db * 0.332_192_8).exp2();
+            }
+            segments += 1;
+        }
+        let scale = 1.0 / f32::from(u16::try_from(segments).unwrap_or(u16::MAX)).max(1.0);
+        for p in &mut self.power[..size] {
+            *p *= scale;
+        }
+        Some(size)
+    }
+
+    fn plan_segments(&mut self, size: usize) {
+        self.starts.clear();
+        for &(a, b) in &self.runs {
+            let mut start = a;
+            while start + size <= b {
+                self.starts.push(start);
+                start += size / 2;
+            }
+        }
+    }
+
+    fn average_spectrum(&mut self, len: usize, sample: impl Fn(usize) -> Complex<f32>) -> usize {
+        let index = FFT_SIZES.iter().rposition(|&n| n <= len).unwrap_or(0);
+        let size = FFT_SIZES[index];
+        let spare = len - size;
+        let segments = (spare / (size / 2) + 1).min(MAX_SEGMENTS);
+        let hop = if segments > 1 {
+            spare / (segments - 1)
+        } else {
+            0
+        };
+
+        self.power[..size].fill(0.0);
+        for s in 0..segments {
+            let start = s * hop;
+            for (k, slot) in self.fft_in[..size].iter_mut().enumerate() {
+                *slot = sample(start + k);
+            }
+            let (input, output) = (&self.fft_in[..size], &mut self.fft_db[..size]);
+            self.spectra[index].power_db(input, output);
+            for (acc, &db) in self.power[..size].iter_mut().zip(&self.fft_db[..size]) {
+                *acc += (db * 0.332_192_8).exp2();
+            }
+        }
+        let scale = 1.0 / segments as f32;
+        for p in &mut self.power[..size] {
+            *p *= scale;
+        }
+        size
+    }
+
+    fn median_power(&mut self, lo: usize, hi: usize) -> f32 {
+        self.scratch.clear();
+        self.scratch.extend_from_slice(&self.power[lo..=hi]);
+        let mid = self.scratch.len() / 2;
+        let (_, median, _) = self.scratch.select_nth_unstable_by(mid, f32::total_cmp);
+        *median
+    }
+}
+
+fn noise_variation(zoom_rate: f64, band: &Band) -> f32 {
+    let signal_to_noise = 10.0_f64.powf(f64::from(band.snr_db) / 10.0);
+    if !signal_to_noise.is_finite() || signal_to_noise <= 0.0 {
+        return RAYLEIGH_VARIATION;
+    }
+    let widening = (zoom_rate / band.bandwidth_hz.max(1.0)).max(1.0);
+    ((widening / (2.0 * signal_to_noise)).sqrt() as f32).min(RAYLEIGH_VARIATION)
+}
+
+struct Levels {
+    spread_hz: f64,
+    count: u8,
+    deviation_hz: f64,
+    valley: f32,
+}
+
+#[derive(Clone, Copy)]
+enum Series {
+    Frequency,
+    Envelope,
+}
+
+#[derive(Clone, Copy)]
+enum Detector {
+    Square,
+    Difference,
+}
+
+fn keyed_runs(keyed: &[bool], minimum: usize, out: &mut Vec<(usize, usize)>) {
+    let mut start = 0;
+    for i in 0..=keyed.len() {
+        if i < keyed.len() && keyed[i] {
+            continue;
+        }
+        if i - start >= minimum {
+            out.push((start, i));
+        }
+        start = i + 1;
+    }
+}
+
+/// Marks the keyed samples at least `guard` samples from any unkeyed one. The ends of the series
+/// are not edges: a capture that opens or closes mid-burst has no ramp there.
+fn clear_of_edges(keyed: &[bool], guard: usize, out: &mut Vec<bool>) {
+    out.clear();
+    let mut since = guard;
+    out.extend(keyed.iter().map(|&on| {
+        since = if on { since.saturating_add(1) } else { 0 };
+        since > guard
+    }));
+    let mut until = guard;
+    for (slot, &on) in out.iter_mut().zip(keyed).rev() {
+        until = if on { until.saturating_add(1) } else { 0 };
+        *slot &= until > guard;
+    }
+}
+
+fn peaks_of(histogram: &[f32], out: &mut Vec<usize>) {
+    out.clear();
+    let max = histogram.iter().copied().fold(0.0f32, f32::max);
+    if max <= 0.0 {
+        return;
+    }
+    let floor = max * PEAK_FLOOR;
+    let last = histogram.len() - 1;
+    for i in 0..=last {
+        let v = histogram[i];
+        if v < floor || v < histogram[i.saturating_sub(1)] || v < histogram[(i + 1).min(last)] {
+            continue;
+        }
+        match out.last() {
+            Some(&previous) if i - previous < PEAK_SEPARATION => {
+                if v > histogram[previous] {
+                    let last = out.len() - 1;
+                    out[last] = i;
+                }
+            }
+            _ => out.push(i),
+        }
+    }
+}
+
+fn valley_of(histogram: &[f32], first: usize, last: usize) -> f32 {
+    let rim = histogram[first].min(histogram[last]);
+    if rim <= 0.0 {
+        return 1.0;
+    }
+    let floor = histogram[first..=last]
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    (floor / rim).clamp(0.0, 1.0)
+}
+
+fn median(values: &mut [f32]) -> f32 {
+    let mid = values.len() / 2;
+    let (_, value, _) = values.select_nth_unstable_by(mid, f32::total_cmp);
+    *value
+}
+
+fn smooth(input: &[f32], out: &mut [f32]) {
+    debug_assert_eq!(input.len(), out.len());
+    for i in 0..input.len() {
+        let left = input[i.saturating_sub(1)];
+        let right = input[(i + 1).min(input.len() - 1)];
+        out[i] = (left + 2.0 * input[i] + right) * 0.25;
+    }
+}
+
+fn interpolate(power: &[f32], peak: usize, center: usize, bin_hz: f64) -> f64 {
+    let left = f64::from(power[peak - 1]);
+    let mid = f64::from(power[peak]);
+    let right = f64::from(power[peak + 1]);
+    let denominator = left - 2.0 * mid + right;
+    let shift = if denominator.abs() > f64::MIN_POSITIVE {
+        (0.5 * (left - right) / denominator).clamp(-0.5, 0.5)
+    } else {
+        0.0
+    };
+    (peak as f64 - center as f64 + shift) * bin_hz
+}
+
+/// Whether `line` is one of the first `MAX_HARMONIC` harmonics of `fundamental`, within the
+/// error two interpolated peaks can carry between them.
+fn divides(fundamental: f64, line: f64) -> bool {
+    if fundamental <= 0.0 {
+        return false;
+    }
+    let ratio = line / fundamental;
+    let order = ratio.round();
+    order >= 1.0 && order <= MAX_HARMONIC as f64 && (ratio - order).abs() <= HARMONIC_TOLERANCE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RATE: f64 = 48_000.0;
+
+    fn fsk(
+        levels: &[f64],
+        baud: f64,
+        deviation_hz: f64,
+        symbols: usize,
+        seed: u32,
+    ) -> Vec<Complex<f32>> {
+        let sps = (RATE / baud) as usize;
+        let mut state = seed | 1;
+        let mut phase = 0.0f64;
+        let mut out = Vec::with_capacity(symbols * sps);
+        for _ in 0..symbols {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let level = levels[state as usize % levels.len()];
+            for _ in 0..sps {
+                phase += TAU * level * deviation_hz / RATE;
+                out.push(Complex::from_polar(1.0, phase as f32));
+            }
+        }
+        out
+    }
+
+    fn band() -> Band {
+        Band {
+            center_hz: 0.0,
+            bandwidth_hz: RATE / ZOOM_OVERSAMPLE,
+            snr_db: 40.0,
+            carrier_db: 3.0,
+            flatness: 0.3,
+            skew: 0.0,
+            peak_hz: 0.0,
+        }
+    }
+
+    fn measure(iq: Vec<Complex<f32>>) -> Waveform {
+        Meter::new().measure(&Zoom { rate: RATE, iq }, &band())
+    }
+
+    #[test]
+    fn the_zoom_rate_stays_usable_whatever_the_band_says() {
+        let unusable = Band {
+            bandwidth_hz: f64::NAN,
+            ..band()
+        };
+        assert_eq!(zoom_rate_hz(RATE, &unusable), Some(MIN_ZOOM_RATE_HZ));
+        assert_eq!(zoom_rate_hz(1_000.0, &band()), Some(1_000.0));
+        assert_eq!(zoom_rate_hz(f64::NAN, &band()), None);
+
+        let iq: Vec<Complex<f32>> = (0..48_000)
+            .map(|k| Complex::from_polar(1.0, (TAU * 900.0 * f64::from(k) / RATE) as f32))
+            .collect();
+        let zoomed = zoom(&iq, RATE, &unusable).expect("a usable rate still zooms");
+        assert_eq!(zoomed.rate, MIN_ZOOM_RATE_HZ);
+    }
+
+    #[test]
+    fn two_level_keying_reads_two_levels_and_its_shift() {
+        let w = measure(fsk(&[-1.0, 1.0], 2_400.0, 2_000.0, 4_000, 0x1234));
+        assert_eq!(w.frequency_levels, 2, "levels");
+        assert!(w.level_valley < 0.2, "valley {}", w.level_valley);
+        assert!(
+            (w.deviation_hz - 2_000.0).abs() < 400.0,
+            "deviation {} Hz",
+            w.deviation_hz
+        );
+        let baud = w
+            .symbol_rate_hz
+            .expect("a keyed carrier has a symbol clock");
+        assert!((baud - 2_400.0).abs() < 120.0, "baud {baud}");
+        assert!(w.envelope_variation < 0.05, "constant envelope");
+        assert!(w.duty > 0.99, "continuous");
+    }
+
+    #[test]
+    fn four_level_keying_reads_four_levels_and_its_outer_deviation() {
+        let w = measure(fsk(&[-3.0, -1.0, 1.0, 3.0], 4_800.0, 648.0, 6_000, 0x5678));
+        assert_eq!(w.frequency_levels, 4, "levels");
+        assert!(
+            (w.deviation_hz - 1_944.0).abs() < 400.0,
+            "deviation {} Hz",
+            w.deviation_hz
+        );
+        let baud = w
+            .symbol_rate_hz
+            .expect("a keyed carrier has a symbol clock");
+        assert!((baud - 4_800.0).abs() < 240.0, "baud {baud}");
+    }
+
+    #[test]
+    fn an_unmodulated_carrier_has_one_level_and_no_spread() {
+        let iq: Vec<Complex<f32>> = (0..24_000)
+            .map(|k| Complex::from_polar(1.0, (TAU * 500.0 * f64::from(k) / RATE) as f32))
+            .collect();
+        let w = measure(iq);
+        assert!(
+            w.frequency_spread_hz < 50.0,
+            "spread {}",
+            w.frequency_spread_hz
+        );
+        assert!(w.square_line_db > 20.0, "square line {}", w.square_line_db);
+    }
+
+    #[test]
+    fn a_swept_carrier_has_no_ground_between_its_levels() {
+        let mut state = 0x51f3u32;
+        let mut smoothed = 0.0f64;
+        let mut phase = 0.0f64;
+        let iq: Vec<Complex<f32>> = (0..48_000)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let noise = f64::from(state) / f64::from(u32::MAX) - 0.5;
+                smoothed += 0.02 * (noise - smoothed);
+                phase += TAU * smoothed * 12.0 * 3_000.0 / RATE;
+                Complex::from_polar(1.0, phase as f32)
+            })
+            .collect();
+        let w = measure(iq);
+        assert!(w.level_valley > 0.5, "valley {}", w.level_valley);
+    }
+
+    #[test]
+    fn the_noise_alone_accounts_for_more_envelope_spread_as_the_signal_weakens() {
+        let quiet = Band {
+            snr_db: 40.0,
+            ..band()
+        };
+        let weak = Band {
+            snr_db: 12.0,
+            ..band()
+        };
+        assert!(noise_variation(RATE, &quiet) < 0.05);
+        assert!(noise_variation(RATE, &weak) > 0.2);
+        let none = Band {
+            snr_db: -40.0,
+            ..band()
+        };
+        assert_eq!(noise_variation(RATE, &none), RAYLEIGH_VARIATION);
+    }
+
+    #[test]
+    fn a_keyed_carrier_reports_its_duty_and_depth() {
+        let mut iq = Vec::new();
+        let mut state = 0x2c9fu32;
+        for symbol in 0..4_800i32 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let on = !state.is_multiple_of(3);
+            for k in 0..10i32 {
+                let phase = (TAU * 300.0 * f64::from(symbol * 10 + k) / RATE) as f32;
+                iq.push(Complex::from_polar(if on { 1.0 } else { 0.001 }, phase));
+            }
+        }
+        let w = measure(iq);
+        assert!(w.duty > 0.55 && w.duty < 0.8, "duty {}", w.duty);
+        assert!(w.on_off_db > 30.0, "depth {} dB", w.on_off_db);
+        assert!(w.envelope_variation < 0.05, "on-state is flat");
+        let baud = w.symbol_rate_hz.expect("keying has a clock");
+        assert!((baud - 4_800.0).abs() < 250.0, "baud {baud}");
+        assert!(w.keying_gap < 0.05, "gap {}", w.keying_gap);
+    }
+
+    #[test]
+    fn a_line_counts_as_a_harmonic_only_up_to_the_order_the_search_walks_down() {
+        assert!(divides(2_400.0, 2_400.0));
+        assert!(divides(2_400.0, 4_799.5));
+        assert!(divides(2_400.0, 2_400.0 * MAX_HARMONIC as f64));
+        assert!(!divides(2_400.0, 2_400.0 * (MAX_HARMONIC + 1) as f64));
+        assert!(!divides(2_400.0, 3_600.0));
+        assert!(!divides(4_800.0, 2_400.0));
+        assert!(!divides(0.0, 2_400.0));
+    }
+
+    #[test]
+    fn the_envelope_of_bare_noise_has_no_keyed_state_under_it() {
+        let w = measure(sdrmm_modem_test_support::noise::complex_noise(
+            0x4f21, 0.05, 48_000,
+        ));
+        assert!(w.on_off_db > 8.0, "depth {} dB", w.on_off_db);
+        assert!(w.duty > 0.9, "noise never switches off, duty {}", w.duty);
+        assert!(w.keying_gap > 0.3, "gap {}", w.keying_gap);
+    }
+
+    #[test]
+    fn one_short_burst_in_a_silent_window_is_measured_as_a_burst() {
+        let mut iq = vec![Complex::default(); 48_000];
+        for (k, sample) in iq[20_000..21_300].iter_mut().enumerate() {
+            *sample = Complex::from_polar(1.0, (TAU * 700.0 * k as f64 / RATE) as f32);
+        }
+        let w = measure(iq);
+        assert!(w.duty < 0.05, "duty {}", w.duty);
+        assert!(w.on_off_db >= 60.0, "depth {}", w.on_off_db);
+    }
+
+    #[test]
+    fn a_slotted_carrier_reports_its_burst_length_and_period() {
+        let on = (RATE * 0.030) as usize;
+        let off = (RATE * 0.030) as usize;
+        let mut iq = Vec::new();
+        let mut phase = 0.0f32;
+        for burst in 0..16 {
+            for k in 0..on + off {
+                phase += TAU as f32 * 1_500.0 / RATE as f32;
+                let amp = if k < on { 1.0 } else { 0.0005 };
+                iq.push(Complex::from_polar(amp, phase + burst as f32));
+            }
+        }
+        let w = measure(iq);
+        let burst = w.burst_ms.expect("slots are bursts");
+        assert!((burst - 30.0).abs() < 2.0, "burst {burst} ms");
+        let period = w.burst_period_ms.expect("slots repeat");
+        assert!((period - 60.0).abs() < 3.0, "period {period} ms");
+    }
+
+    #[test]
+    fn a_continuous_carrier_has_no_bursts() {
+        let iq: Vec<Complex<f32>> = (0..48_000)
+            .map(|k| Complex::from_polar(1.0, (TAU * 900.0 * f64::from(k) / RATE) as f32))
+            .collect();
+        let w = measure(iq);
+        assert_eq!(w.burst_ms, None);
+        assert_eq!(w.burst_period_ms, None);
+    }
+
+    #[test]
+    fn keyed_noise_is_not_a_burst_train() {
+        let w = measure(sdrmm_modem_test_support::noise::complex_noise(
+            0x77a1, 0.05, 48_000,
+        ));
+        assert_eq!(w.burst_period_ms, None);
+    }
+}

@@ -15,7 +15,13 @@ pub fn pack_msb(bits: &[bool]) -> Vec<u8> {
 pub fn pack_msb_into(bits: &[bool], out: &mut Vec<u8>) {
     out.clear();
     out.resize(bits.len().div_ceil(8), 0);
-    for (i, &bit) in bits.iter().enumerate() {
+    pack_msb_slice(bits, out);
+}
+
+/// [`pack_msb`] into a fixed buffer, setting bits on top of what it holds; bits past its
+/// end are dropped.
+pub fn pack_msb_slice(bits: &[bool], out: &mut [u8]) {
+    for (i, &bit) in bits.iter().enumerate().take(out.len() * 8) {
         out[i / 8] |= u8::from(bit) << (7 - i % 8);
     }
 }
@@ -24,6 +30,12 @@ pub fn pack_msb_into(bits: &[bool], out: &mut Vec<u8>) {
 #[must_use]
 pub fn word_msb(bits: &[bool]) -> u64 {
     bits.iter().fold(0, |word, &bit| word << 1 | u64::from(bit))
+}
+
+/// The `len` bits at `offset`, most significant first, as a field no wider than 32 bits.
+#[must_use]
+pub fn field_msb(bits: &[bool], offset: usize, len: usize) -> u32 {
+    word_msb(&bits[offset..offset + len]) as u32
 }
 
 #[must_use]
@@ -56,6 +68,24 @@ pub fn bits_be(bytes: &[u8], offset: usize, len: usize) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_field_reads_its_own_bits_most_significant_first() {
+        let bits = [true, false, true, true, false, false, true, false];
+        assert_eq!(field_msb(&bits, 1, 4), 0b0110);
+        assert_eq!(field_msb(&bits, 0, 8), 0b1011_0010);
+    }
+
+    #[test]
+    fn packing_into_a_slice_matches_the_vec_form() {
+        let bits: Vec<bool> = (0..21).map(|i| i % 3 == 0).collect();
+        let mut fixed = [0u8; 3];
+        pack_msb_slice(&bits, &mut fixed);
+        assert_eq!(fixed[..], pack_msb(&bits)[..]);
+        let mut short = [0u8; 1];
+        pack_msb_slice(&bits, &mut short);
+        assert_eq!(short[0], pack_msb(&bits)[0]);
+    }
 
     #[test]
     fn a_word_reads_its_first_bit_as_the_most_significant() {

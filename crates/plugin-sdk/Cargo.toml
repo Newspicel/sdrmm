@@ -13,9 +13,14 @@ publish = false
 workspace = true
 
 [dependencies]
+sdrmm-decoder.workspace = true
+sdrmm-array.workspace = true
 sdrmm-wire.workspace = true
 sdrmm-dsp.workspace = true
 sdrmm-modem.workspace = true
+sdrmm-codec.workspace = true
+sdrmm-crypto.workspace = true
+sdrmm-aviation.workspace = true
 num-complex.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -1,4 +1,5 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
@@ -23,9 +24,8 @@ use self::{
     slicer::slice,
     unknown::Unknown,
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, datalink,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = ISM_SAMPLE_RATE_HZ;
@@ -46,7 +46,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<IsmParams, ChannelError> {
-    crate::settings_of::<IsmParams>(settings)
+    sdrmm_decoder::settings_of::<IsmParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -54,8 +54,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, ISM_BANDWIDTH_HZ / 2.0)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(ISM_BANDWIDTH_HZ / 2.0)
 }
 
 #[derive(Default)]
@@ -193,7 +193,7 @@ impl NativeChannel for IsmChannel {
     }
 }
 
-impl ChannelRx for IsmChannel {
+impl Channel for IsmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.decoders.show_unknown = params(&settings)?.unknown;
         Ok(())
@@ -271,5 +271,7 @@ fn ism_kinds() -> Vec<KindSpec> {
     vec![crate::ism::ism_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

@@ -4,7 +4,7 @@ use crate::stanag::StanagRate;
 use num_complex::Complex;
 
 use super::{identify, run};
-use crate::ChannelRx;
+use sdrmm_decoder::Channel;
 
 fn ci16_le(bytes: &[u8]) -> Vec<Complex<f32>> {
     bytes
@@ -304,7 +304,7 @@ const LIBRARY: &[Sample] = &[
 ];
 
 fn audio(dir: &std::path::Path, stem: &str) -> Vec<Complex<f32>> {
-    crate::reference_data::bytes(dir, &format!("{stem}.f32"))
+    sdrmm_test_support::reference_data::bytes(dir, &format!("{stem}.f32"))
         .as_chunks::<4>()
         .0
         .iter()
@@ -334,7 +334,7 @@ fn expected(
 #[test]
 #[ignore = "needs STANAG_SIGID_DIR=<sigidwiki samples as 9.6 kHz mono f32le, one <stem>.f32 each>"]
 fn names_the_sigidwiki_library() {
-    let Some(dir) = crate::reference_data::stanag_sigid_dir() else {
+    let Some(dir) = sdrmm_test_support::reference_data::stanag_sigid_dir() else {
         return;
     };
     let window = usize::from(crate::stanag::STANAG_WINDOW_S) * 9_600;

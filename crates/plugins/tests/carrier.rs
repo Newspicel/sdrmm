@@ -5,18 +5,21 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, OnceLock},
+    time::{Duration, UNIX_EPOCH},
 };
 
 use num_complex::Complex;
-use sdrmm_channels::array_processor::ProcessorFactory;
-use sdrmm_channels::{
+use sdrmm_array::ProcessorFactory;
+use sdrmm_decoder::{
     ChannelCtx, ChannelOutputs, Decoder,
     encoder::{Encoder, EncoderError, EncoderParams, TxPayload},
 };
 use sdrmm_plugins::{
     PluginModule, WasmDecoder, WasmEncoder, WasmProcessors, load_dir, plugin_kinds,
 };
-use sdrmm_wire::{ChannelParams, ChannelSettings, EventKind};
+use sdrmm_wire::{
+    ChannelParams, ChannelSettings, DecoderEvent, EventKind, FilterSpec, IdentSignal, PositionFix,
+};
 
 mod common;
 
@@ -29,7 +32,8 @@ fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The example plugin, built once per test run into its own target directory.
+/// The example plugin, built once per test process into its own target directory and moved
+/// into place whole, so a test in another process never loads it half copied.
 fn plugin_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
@@ -51,11 +55,14 @@ fn plugin_dir() -> &'static Path {
         assert!(status.success(), "the example plugin did not build");
         let dir = target.join("plugins");
         std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("plugins dir: {error}"));
+        let staged = target.join(format!("{WASM}.{}", std::process::id()));
         std::fs::copy(
             target.join("wasm32-unknown-unknown/release").join(WASM),
-            dir.join(WASM),
+            &staged,
         )
         .unwrap_or_else(|error| panic!("copy plugin: {error}"));
+        std::fs::rename(&staged, dir.join(WASM))
+            .unwrap_or_else(|error| panic!("place plugin: {error}"));
         dir
     })
 }
@@ -98,7 +105,7 @@ fn a_plugin_channel_reports_a_tone_through_the_host_fft() {
     let decoder = decoder();
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let mut channel = decoder
-        .create_rx(
+        .open(
             ChannelCtx {
                 input_rate: RATE_HZ,
             },
@@ -127,7 +134,7 @@ fn a_plugin_reports_health_and_view_hints_like_a_built_in() {
     assert_eq!(plugin_kinds(&module())[0].entry.views.len(), 2);
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let mut channel = decoder
-        .create_rx(
+        .open(
             ChannelCtx {
                 input_rate: RATE_HZ,
             },
@@ -146,10 +153,10 @@ fn a_plugin_transmits_what_its_own_receiver_hears() {
     let decoder = decoder();
     let encoder = WasmEncoder::of(&module()).expect("the example brings an encoder");
     assert_eq!(encoder.descriptor().message.len(), 1);
-    let Ok(TxPayload::Frame(form)) = encoder.compose(&serde_json::json!({"text": "CQ"})) else {
+    let Ok(TxPayload::Frame(text)) = encoder.compose(&serde_json::json!({"text": "CQ"})) else {
         panic!("the beacon's form composes to a frame");
     };
-    assert_eq!(form, br#"{"text":"CQ"}"#);
+    assert_eq!(text, b"CQ");
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
     let ctx = ChannelCtx {
         input_rate: RATE_HZ,
@@ -168,7 +175,7 @@ fn a_plugin_transmits_what_its_own_receiver_hears() {
     let sent = tx.generate(&mut wave);
     assert_eq!(sent, 64 * 480);
     let mut rx = decoder
-        .create_rx(ctx, &settings)
+        .open(ctx, &settings)
         .unwrap_or_else(|error| panic!("receiver opens: {error}"));
     let mut out = ChannelOutputs::default();
     for block in wave[..sent].chunks(2_000) {
@@ -183,7 +190,7 @@ fn a_plugin_transmits_what_its_own_receiver_hears() {
 fn a_plugin_refuses_what_it_cannot_run() {
     let decoder = decoder();
     let settings = decoder.descriptor().defaults.clone().expect("defaults");
-    let refused = decoder.create_rx(
+    let refused = decoder.open(
         ChannelCtx {
             input_rate: 96_000.0,
         },
@@ -209,7 +216,85 @@ fn a_plugin_layout_and_filter_come_from_its_settings() {
     assert_eq!(layout.input_rate_hz, RATE_HZ);
     let normalized = decoder.normalize(&params).expect("normalize");
     assert_eq!(normalized.settings["threshold_db"], 20.0);
-    assert!(decoder.filter(&params).is_ok());
+    assert_eq!(
+        decoder.filter(&params).expect("a filter"),
+        FilterSpec::lowpass(65, 2_000.0)
+    );
+}
+
+#[test]
+fn a_plugin_shapes_its_settings_to_an_identified_signal() {
+    let decoder = decoder();
+    let params = ChannelParams::bare("carrier");
+    let signal = IdentSignal {
+        bandwidth_hz: 3_000.0,
+        ..IdentSignal::default()
+    };
+    let tuned = decoder.tune(&params, &signal).expect("tunes");
+    assert_eq!(tuned.params.settings["bandwidth_hz"], 6_000.0);
+    assert_eq!(tuned.offset_hz, 0.0);
+}
+
+#[test]
+fn a_plugin_feed_frames_events_through_the_plugin() {
+    let feeds = decoder().feeds();
+    assert_eq!(feeds.len(), 1);
+    assert_eq!(feeds[0].format, "carrier-text");
+    let event = DecoderEvent::tagged(
+        EventKind::named("carrier"),
+        &serde_json::json!({"offset_hz": -500.0, "snr_db": 12.0}),
+    );
+    let line = feeds[0].encoder.encode(&event).expect("encodes");
+    assert_eq!(line, b"-500 Hz 12.0 dB\n");
+    let other = DecoderEvent::tagged(EventKind::named("other"), &1);
+    assert!(feeds[0].encoder.encode(&other).is_err());
+}
+
+#[test]
+fn a_plugin_channel_hears_its_hooks() {
+    let decoder = decoder();
+    let settings = decoder.descriptor().defaults.clone().expect("defaults");
+    let mut channel = decoder
+        .open(
+            ChannelCtx {
+                input_rate: RATE_HZ,
+            },
+            &settings,
+        )
+        .unwrap_or_else(|error| panic!("channel opens: {error}"));
+    assert!(
+        !channel.needs_gated_input(),
+        "the carrier waits for squelch"
+    );
+    let mut out = ChannelOutputs::default();
+    channel.lo_artifact_at(Some(1_500.0));
+    channel.process(&tone(1_500.0, 4_096), &mut out);
+    assert!(out.events.is_empty(), "the LO artifact is no carrier");
+    channel.lo_artifact_at(None);
+    let fix: PositionFix = serde_json::from_value(serde_json::json!({
+        "latitude": 48.1,
+        "longitude": 11.6,
+        "time": "2026-11-17T12:00:00Z",
+    }))
+    .expect("a fix");
+    channel.position_changed(Some(&fix));
+    channel.captured_at(UNIX_EPOCH + Duration::from_secs(3));
+    channel.process(&tone(2_000.0, 4_096), &mut out);
+    assert_eq!(out.events.len(), 1, "{:?}", out.events);
+    let data = out.events[0].data();
+    assert_eq!(data["heard_at_ms"], 3_000);
+    assert_eq!(data["receiver"]["latitude"], 48.1);
+}
+
+#[test]
+fn a_plugin_encoder_width_follows_its_settings() {
+    let encoder = WasmEncoder::of(&module()).expect("the example brings an encoder");
+    let params = EncoderParams {
+        type_id: "beacon".to_owned(),
+        settings: serde_json::json!({"baud": 50.0}),
+    };
+    assert_eq!(encoder.width_hz(&params).expect("a width"), 2_200.0);
+    assert!(encoder.compose(&serde_json::json!({"nope": 1})).is_err());
 }
 
 #[test]
@@ -231,6 +316,10 @@ fn the_example_lane_meter_reports_power_and_phase_through_the_abi() {
     assert!((phase - 60.0).abs() < 0.5, "{phase}");
     assert!((rig.value("phase_3").expect("lane 3 phase") + 120.0).abs() < 0.5);
     assert_eq!(rig.value("power_4"), None);
+    let sum = rig.lanes[0].samples();
+    assert_eq!(sum.len(), 512, "the sum lane carries the block");
+    let want = (block[0][7] + block[1][7] + block[2][7]) / 3.0;
+    assert!((sum[7] - want).norm() < 1e-5, "{} vs {want}", sum[7]);
 }
 
 #[test]

@@ -338,11 +338,7 @@ impl<'a> Net<'a> {
     fn label(&self, id: &str) -> String {
         self.node(id).map_or_else(
             || id.to_owned(),
-            |(node, _)| {
-                node.label
-                    .clone()
-                    .unwrap_or_else(|| node.body.kind().name().to_owned())
-            },
+            |(node, _)| node.label.clone().unwrap_or_else(|| node.body.name()),
         )
     }
 }

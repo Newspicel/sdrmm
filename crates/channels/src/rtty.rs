@@ -1,21 +1,23 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, EventContract, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, FmDemod, RealDecimator, design_lowpass};
+use sdrmm_dsp::{FmDemod, RealDecimator};
 #[cfg(any(test, feature = "synth"))]
 use sdrmm_modem::cpm::{CpmParams, Mapping};
 use sdrmm_modem::ita2::{self, ShiftDecoder};
 use sdrmm_modem::pulse::{self, Norm};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const CHANNEL_TAPS: usize = 257;
@@ -53,7 +55,7 @@ pub struct RttyChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<RttyParams, ChannelError> {
-    crate::settings_of::<RttyParams>(settings)
+    sdrmm_decoder::settings_of::<RttyParams>(settings)
 }
 
 fn check_params(p: &RttyParams) -> Result<(), ChannelError> {
@@ -80,13 +82,10 @@ pub(crate) fn occupied_band(p: &RttyParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &RttyParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &RttyParams) -> Result<FilterSpec, ChannelError> {
     check_params(p)?;
     let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, half))
 }
 
 fn post_filter(p: &RttyParams) -> RealDecimator {
@@ -126,7 +125,7 @@ impl NativeChannel for RttyChannel {
     }
 }
 
-impl ChannelRx for RttyChannel {
+impl Channel for RttyChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = &params(&settings)?;
         check_params(p)?;
@@ -300,11 +299,15 @@ fn rtty_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn rtty_decoder() -> Native<RttyParams> {
-    Native::new::<RttyChannel>(occupied_band)
+    let decoder = Native::new::<RttyChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(rtty_signatures)
         .form(rtty_form)
-        .kinds(rtty_kinds)
+        .kinds(rtty_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn rtty_form() -> Vec<SettingField> {
@@ -334,18 +337,14 @@ fn rtty_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{
-        nfm::NfmParams,
-        synth::{
-            self,
-            rtty::{encode_codes, modulate, transmission},
-        },
-        testutil::{complex_noise, settings},
-    };
+    use crate::synth::rtty::{encode_codes, modulate, transmission};
+    use sdrmm_decoder_test_support::{complex_noise, settings};
 
     const RATE: f64 = 8_000.0;
     const BLOCKS: [usize; 7] = [997, 1, 4_096, 65, 2_048, 7, 1_024];
@@ -359,7 +358,7 @@ mod tests {
     }
 
     fn tail(baud: f64) -> Vec<Complex<f32>> {
-        synth::silence((40.0 * RATE / baud) as usize)
+        sdrmm_modem::synth::silence((40.0 * RATE / baud) as usize)
     }
 
     fn decode_blocks(chan: &mut RttyChannel, iq: &[Complex<f32>], lens: &[usize]) -> Vec<String> {
@@ -492,7 +491,11 @@ mod tests {
 
     fn selected(p: &RttyParams, iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
         let mut filtered = Vec::new();
-        channel_filter(p).unwrap().process(iq, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(
+            channel_filter(p).unwrap(),
+            DESCRIPTOR.input_rate_hz,
+        )
+        .process(iq, &mut filtered);
         filtered
     }
 
@@ -500,7 +503,7 @@ mod tests {
     fn decodes_through_additive_noise() {
         let p = RttyParams::default();
         let mut iq = burst("CQ DE DL1ABC", &p);
-        synth::add_noise(&mut iq, 0xabad_1dea, 0.5);
+        sdrmm_modem::synth::add_noise(&mut iq, 0xabad_1dea, 0.5);
         assert_eq!(decode(&p, &selected(&p, &iq)), "CQ DE DL1ABC");
     }
 
@@ -573,13 +576,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(&RttyParams::default());
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = RttyChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("nfm")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

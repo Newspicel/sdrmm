@@ -440,15 +440,25 @@ fn link_down_marks_radar_stale_and_live_seeds_again() {
     }));
 }
 
+/// A processor's update as the server sends it.
+fn update(node: &str, type_id: &str, reading: &impl serde::Serialize) -> ServerEvent {
+    ServerEvent::ProcessorUpdate {
+        node: node.to_owned(),
+        reading: Box::new(ProcessorReading {
+            type_id: type_id.to_owned(),
+            reading: serde_json::to_value(reading).expect("reading serializes"),
+        }),
+        status: Box::default(),
+        view: Box::default(),
+    }
+}
+
 #[test]
 fn radar_readings_refresh_and_go_stale_after_5_s() {
     let mut reducer = listed(vec![radar("pr1")]);
     reducer.handle(Input::Open("pr1".to_owned()), T0);
     let fresh = reducer.handle(
-        event(ServerEvent::processor_update(
-            "pr1".to_owned(),
-            ProcessorReading::PassiveRadar(RadarUpdate::default()),
-        )),
+        event(update("pr1", "passive_radar", &RadarUpdate::default())),
         T0,
     );
     assert!(matches!(emitted(&fresh).as_slice(), [CoreEvent::Radar { view }] if !view.stale));
@@ -767,13 +777,7 @@ fn a_df_reading_projects_and_retargets_once() {
         azimuth_deg: Some(10.0),
         ..DfReading::default()
     };
-    let effects = reducer.handle(
-        event(ServerEvent::processor_update(
-            "df1".to_owned(),
-            ProcessorReading::Df(reading),
-        )),
-        T0 + 41_000,
-    );
+    let effects = reducer.handle(event(update("df1", "df", &reading)), T0 + 41_000);
     let view = emitted(&effects)
         .into_iter()
         .find_map(|event| match event {

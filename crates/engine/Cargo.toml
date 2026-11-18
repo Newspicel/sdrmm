@@ -46,7 +46,7 @@ net-client = [
 # Headless wgpu compute. Runtime selection still keeps small transforms on rustfft and falls
 # back to it when the host has no suitable hardware adapter.
 gpu-fft = ["dep:bytemuck", "dep:pollster", "dep:wgpu"]
-probe = ["sdrmm-channels/probe"]
+probe = ["sdrmm-array/probe"]
 
 [dependencies]
 serde_json.workspace = true
@@ -70,7 +70,8 @@ sdrmm-device-rtltcp = { workspace = true, optional = true }
 sdrmm-device-spyserver = { workspace = true, optional = true }
 sdrmm-device-sdrconnect = { workspace = true, optional = true }
 sdrmm-device-kiwisdr = { workspace = true, optional = true }
-sdrmm-channels = { workspace = true, features = ["synth"] }
+sdrmm-decoder.workspace = true
+sdrmm-array.workspace = true
 sdrmm-recorder.workspace = true
 opus.workspace = true
 num-complex.workspace = true
@@ -85,8 +86,10 @@ pollster = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
+ctor.workspace = true
 sdrmm-test-support = { workspace = true, features = ["denoise-models"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
 tempfile.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
+sdrmm-modem.workspace = true
 libc.workspace = true

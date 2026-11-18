@@ -263,10 +263,10 @@ pub enum ServerEvent {
     ProcessorUpdate {
         node: String,
         reading: Box<crate::processor::ProcessorReading>,
-        /// Readouts and health derived from `reading`, for any face to show.
+        /// Readouts and health the processor derives from `reading`, for any face to show.
         #[serde(default)]
         status: Box<crate::channel::ChannelStatus>,
-        /// What `reading` puts on the face, derived from it.
+        /// What the processor puts on the face from `reading`.
         #[serde(default)]
         view: Box<crate::processor::view::ProcessorView>,
     },
@@ -316,17 +316,6 @@ pub enum ServerEvent {
 }
 
 impl ServerEvent {
-    /// A processor's reading with the status every face shows derived from it.
-    #[must_use]
-    pub fn processor_update(node: String, reading: crate::processor::ProcessorReading) -> Self {
-        Self::ProcessorUpdate {
-            node,
-            status: Box::new(reading.status()),
-            view: Box::new(reading.view()),
-            reading: Box::new(reading),
-        }
-    }
-
     /// A triangulation's state with the readouts its face shows.
     #[must_use]
     pub fn fusion_update(node: String, state: crate::fusion::DfFusionState) -> Self {

@@ -1,4 +1,4 @@
-use super::bits::{byte_bits, crc};
+use sdrmm_dsp::coding::bits::{byte_bits, crc_msb_inverted as crc};
 
 const MARKER: [u8; 4] = [0xFF; 4];
 const SEGMENTS: usize = 8;

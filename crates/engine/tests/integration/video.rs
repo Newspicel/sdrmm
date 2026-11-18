@@ -198,7 +198,7 @@ async fn an_atv_transmission_reaches_the_video_stream_as_a_picture() {
     let params = atv_params();
     let source = sdrmm_channels::synth::atv::AtvSource::new(&params, DEVICE_RATE);
     let mut iq = sdrmm_channels::synth::atv::bars(&source, 8);
-    sdrmm_channels::synth::shift(&mut iq, OFFSET_HZ, DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, OFFSET_HZ, DEVICE_RATE);
 
     let path = dir.path().join("atv");
     let mut writer = SigmfWriter::create(&path, DEVICE_RATE, CENTER_HZ, "atv fixture").unwrap();
@@ -326,11 +326,9 @@ async fn an_sstv_transmission_reaches_the_image_stream_as_a_finished_picture() {
 
     let sent = sdrmm_channels::synth::sstv::bars(mode);
     let native = sdrmm_channels::synth::sstv::transmission(mode, &sent, 16_000.0);
-    let mut iq = sdrmm_channels::synth::resample(&native, 16_000.0, SSTV_DEVICE_RATE);
-    iq.extend(sdrmm_channels::synth::silence(
-        SSTV_DEVICE_RATE as usize * 3,
-    ));
-    sdrmm_channels::synth::shift(&mut iq, SSTV_OFFSET_HZ, SSTV_DEVICE_RATE);
+    let mut iq = sdrmm_modem::synth::resample(&native, 16_000.0, SSTV_DEVICE_RATE);
+    iq.extend(sdrmm_modem::synth::silence(SSTV_DEVICE_RATE as usize * 3));
+    sdrmm_modem::synth::shift(&mut iq, SSTV_OFFSET_HZ, SSTV_DEVICE_RATE);
 
     let path = dir.path().join("sstv");
     let mut writer =

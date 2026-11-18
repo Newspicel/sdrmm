@@ -236,6 +236,20 @@ macro_rules! borrow_field {
     };
 }
 
+macro_rules! assign_field {
+    ($target:expr, $value:expr, bytes) => {{
+        $target.clear();
+        $target.extend_from_slice($value);
+    }};
+    ($target:expr, $value:expr, bytes16) => {{
+        $target.clear();
+        $target.extend_from_slice($value);
+    }};
+    ($target:expr, $value:expr, $scalar:ty) => {
+        $target = $value
+    };
+}
+
 macro_rules! write_field {
     ($buf:ident, $value:expr, bytes) => {
         $buf.extend_from_slice($value)
@@ -368,6 +382,14 @@ macro_rules! define_frame {
             $(pub $field: owned_type!($ty),)*
         }
         impl $owned {
+            /// Takes `frame` in place of what it held, its byte fields keeping their room.
+            pub fn assign(&mut self, frame: &$name<'_>) {
+                self.stream_id = frame.stream_id;
+                self.seq = frame.seq;
+                self.timestamp = frame.timestamp;
+                $(assign_field!(self.$field, frame.$field, $ty);)*
+            }
+
             #[must_use]
             pub fn frame(&self) -> $name<'_> {
                 $name {
@@ -522,6 +544,18 @@ impl SurfaceFrame {
             }
             .encode(),
         }
+    }
+
+    /// Takes the encoded frame `bytes` in place of what it held. Refuses a frame of another
+    /// kind, leaving the slot as it was.
+    pub fn assign(&mut self, bytes: &[u8]) -> Result<(), FrameError> {
+        match self {
+            Self::RangeDoppler(owned) => owned.assign(&RangeDopplerFrame::decode(bytes)?),
+            Self::SpatialSpectrum(owned) => owned.assign(&SpatialSpectrumFrame::decode(bytes)?),
+            Self::Visibility(owned) => owned.assign(&VisibilityFrame::decode(bytes)?),
+            Self::FusionGrid(owned) => owned.assign(&FusionGridFrame::decode(bytes)?),
+        }
+        Ok(())
     }
 }
 

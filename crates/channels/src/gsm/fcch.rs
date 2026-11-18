@@ -146,7 +146,7 @@ fn wrap(angle: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{at_snr, frequency_shift};
+    use sdrmm_decoder_test_support::{at_snr, frequency_shift};
 
     #[test]
     fn the_tone_offset_ignores_coloured_noise() {
@@ -157,7 +157,11 @@ mod tests {
             INPUT_RATE_HZ,
         );
         let mut filtered = Vec::new();
-        crate::gsm::channel_filter().process(&at_snr(&shifted, 0.0, 9), &mut filtered);
+        sdrmm_decoder_test_support::built_filter(
+            crate::gsm::channel_filter(),
+            crate::gsm::DESCRIPTOR.input_rate_hz,
+        )
+        .process(&at_snr(&shifted, 0.0, 9), &mut filtered);
         let (offset, coherence) = tone_offset(&filtered, BURST_SYMBOLS * SPS).unwrap();
         assert!((offset - 7_000.0).abs() < 150.0, "{offset}");
         assert!(coherence > THRESHOLD, "{coherence}");

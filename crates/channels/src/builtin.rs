@@ -1,84 +1,122 @@
+//! The decoders and encoders this crate compiles in.
+
 use std::sync::Arc;
 
-use crate::{encoder::Encoder, registry::Decoder};
+use sdrmm_decoder::{Decoder, Encoder};
 
-/// Every decoder compiled in, in the order the palette lists them; the first is what a new
-/// channel starts as.
-pub(crate) fn decoders() -> Vec<Arc<dyn Decoder>> {
-    vec![
-        Arc::new(crate::nfm::nfm_decoder()),
-        Arc::new(crate::selcall::selcall_decoder()),
-        Arc::new(crate::am::am_decoder()),
-        Arc::new(crate::ssb::ssb_decoder()),
-        Arc::new(crate::wfm::wfm_decoder()),
-        Arc::new(crate::pocsag::pocsag_decoder()),
-        Arc::new(crate::flex::flex_decoder()),
-        Arc::new(crate::ermes::ermes_decoder()),
-        Arc::new(crate::eot::eot_decoder()),
-        Arc::new(crate::sarsat::sarsat_decoder()),
-        Arc::new(crate::tetrapol::tetrapol_decoder()),
-        Arc::new(crate::adsb::adsb_decoder()),
-        Arc::new(crate::ais::ais_decoder()),
-        Arc::new(crate::aprs::aprs_decoder()),
-        Arc::new(crate::bss::bss_decoder()),
-        Arc::new(crate::rtty::rtty_decoder()),
-        Arc::new(crate::morse::morse_decoder()),
-        Arc::new(crate::cw_skimmer::cw_skimmer_decoder()),
-        Arc::new(crate::navtex::navtex_decoder()),
-        Arc::new(crate::acars::acars_decoder()),
-        Arc::new(crate::atv::atv_decoder()),
-        Arc::new(crate::sstv::sstv_decoder()),
-        Arc::new(crate::dab::dab_decoder()),
-        Arc::new(crate::datv::dvbt::dvbt_decoder()),
-        Arc::new(crate::datv::datv_decoder()),
-        Arc::new(crate::drm::drm_decoder()),
-        Arc::new(crate::dv::dmr::dmr_decoder()),
-        Arc::new(crate::dv::dstar::dstar_decoder()),
-        Arc::new(crate::dv::ysf::ysf_decoder()),
-        Arc::new(crate::dv::nxdn::nxdn_decoder()),
-        Arc::new(crate::dv::p25_decoder()),
-        Arc::new(crate::dv::dpmr::dpmr_decoder()),
-        Arc::new(crate::dv::m17_decoder()),
-        Arc::new(crate::tetra::tetra_decoder()),
-        Arc::new(crate::dv::freedv::freedv_decoder()),
-        Arc::new(crate::weak_signal::ft8_decoder()),
-        Arc::new(crate::weak_signal::ft4_decoder()),
-        Arc::new(crate::psk::psk_decoder()),
-        Arc::new(crate::weak_signal::wspr_decoder()),
-        Arc::new(crate::ident::ident_decoder()),
-        Arc::new(crate::radio_clock::radio_clock_decoder()),
-        Arc::new(crate::gnss::gnss_decoder()),
-        Arc::new(crate::vor::vor_decoder()),
-        Arc::new(crate::ils::ils_decoder()),
-        Arc::new(crate::dsc::dsc_decoder()),
-        Arc::new(crate::inmarsat_stdc::inmarsat_stdc_decoder()),
-        Arc::new(crate::inmarsat_aero::inmarsat_aero_decoder()),
-        Arc::new(crate::vdl2::vdl2_decoder()),
-        Arc::new(crate::hfdl::hfdl_decoder()),
-        Arc::new(crate::iridium::iridium_decoder()),
-        Arc::new(crate::dect::dect_decoder()),
-        Arc::new(crate::gsm::gsm_decoder()),
-        Arc::new(crate::apt::apt_decoder()),
-        Arc::new(crate::lrpt::lrpt_decoder()),
-        Arc::new(crate::wefax::wefax_decoder()),
-        Arc::new(crate::same::same_decoder()),
-        Arc::new(crate::radiosonde::radiosonde_decoder()),
-        Arc::new(crate::lora::lora_decoder()),
-        Arc::new(crate::remote_id::remote_id_decoder()),
-        Arc::new(crate::ble::ble_decoder()),
-        Arc::new(crate::wifi::wifi_occupancy_decoder()),
-        Arc::new(crate::ism_survey::ism_survey_decoder()),
-        Arc::new(crate::ism::ism_decoder()),
-        Arc::new(crate::wmbus::wmbus_decoder()),
-        Arc::new(crate::noise_figure::noise_figure_decoder()),
-        Arc::new(crate::per::per_decoder()),
-        Arc::new(crate::sid::sid_decoder()),
-        Arc::new(crate::stanag::stanag_decoder()),
-    ]
+/// Installs [`decoders`] and [`encoders`] as the build's built-ins, once.
+pub fn install() {
+    sdrmm_decoder::install(decoders, encoders);
+}
+
+/// Lists each decoder once: [`decoders`] opens them, and under test each one's positive fixture
+/// from its own `fixture` module runs as a test of its own.
+macro_rules! built_in {
+    ($($module:ident::$constructor:ident),* $(,)?) => {
+        /// Every decoder compiled in, in the order the palette lists them; the first is what a
+        /// new channel starts as.
+        pub fn decoders() -> Vec<Arc<dyn Decoder>> {
+            vec![$(Arc::new(crate::$module::$constructor())),*]
+        }
+
+        /// Every decoder's positive fixture, by type.
+        #[cfg(test)]
+        fn positives() -> Vec<(String, fixtures::Positive)> {
+            vec![$((
+                Decoder::descriptor(&crate::$module::$constructor()).type_id.clone(),
+                crate::$module::fixture::$constructor(),
+            )),*]
+        }
+
+        /// Each decoder emits what it declares and reads what it must from its fixture.
+        #[cfg(test)]
+        mod positive {
+            $(
+                #[test]
+                fn $constructor() {
+                    super::fixtures::check(
+                        &crate::$module::$constructor(),
+                        &crate::$module::fixture::$constructor(),
+                    );
+                }
+            )*
+        }
+    };
+}
+
+built_in! {
+    nfm::nfm_decoder,
+    selcall::selcall_decoder,
+    am::am_decoder,
+    ssb::ssb_decoder,
+    wfm::wfm_decoder,
+    pocsag::pocsag_decoder,
+    flex::flex_decoder,
+    ermes::ermes_decoder,
+    eot::eot_decoder,
+    sarsat::sarsat_decoder,
+    tetrapol::tetrapol_decoder,
+    adsb::adsb_decoder,
+    ais::ais_decoder,
+    aprs::aprs_decoder,
+    bss::bss_decoder,
+    rtty::rtty_decoder,
+    morse::morse_decoder,
+    cw_skimmer::cw_skimmer_decoder,
+    navtex::navtex_decoder,
+    acars::acars_decoder,
+    atv::atv_decoder,
+    sstv::sstv_decoder,
+    dab::dab_decoder,
+    dvbt::dvbt_decoder,
+    datv::datv_decoder,
+    drm::drm_decoder,
+    dmr::dmr_decoder,
+    dstar::dstar_decoder,
+    ysf::ysf_decoder,
+    nxdn::nxdn_decoder,
+    p25::p25_decoder,
+    dpmr::dpmr_decoder,
+    m17::m17_decoder,
+    tetra::tetra_decoder,
+    freedv::freedv_decoder,
+    weak_signal::ft8_decoder,
+    weak_signal::ft4_decoder,
+    psk::psk_decoder,
+    weak_signal::wspr_decoder,
+    ident::ident_decoder,
+    radio_clock::radio_clock_decoder,
+    gnss::gnss_decoder,
+    vor::vor_decoder,
+    ils::ils_decoder,
+    dsc::dsc_decoder,
+    inmarsat_stdc::inmarsat_stdc_decoder,
+    inmarsat_aero::inmarsat_aero_decoder,
+    vdl2::vdl2_decoder,
+    hfdl::hfdl_decoder,
+    iridium::iridium_decoder,
+    dect::dect_decoder,
+    gsm::gsm_decoder,
+    apt::apt_decoder,
+    lrpt::lrpt_decoder,
+    wefax::wefax_decoder,
+    same::same_decoder,
+    radiosonde::radiosonde_decoder,
+    lora::lora_decoder,
+    remote_id::remote_id_decoder,
+    ble::ble_decoder,
+    wifi::wifi_occupancy_decoder,
+    ism_survey::ism_survey_decoder,
+    ism::ism_decoder,
+    wmbus::wmbus_decoder,
+    noise_figure::noise_figure_decoder,
+    per::per_decoder,
+    sid::sid_decoder,
+    stanag::stanag_decoder,
 }
 
 /// Every encoder compiled in, in the order the palette lists them.
-pub(crate) fn encoders() -> Vec<Arc<dyn Encoder>> {
+pub fn encoders() -> Vec<Arc<dyn Encoder>> {
     vec![
         Arc::new(crate::nfm::nfm_encoder()),
         Arc::new(crate::am::am_encoder()),
@@ -86,3 +124,19 @@ pub(crate) fn encoders() -> Vec<Arc<dyn Encoder>> {
         Arc::new(crate::aprs::aprs_encoder()),
     ]
 }
+
+/// Every unit test runs against the built-in decoders, installed once before main.
+#[cfg(test)]
+#[ctor::ctor(unsafe)]
+fn install_for_tests() {
+    install();
+}
+
+#[cfg(test)]
+pub(crate) mod fixtures;
+#[cfg(test)]
+mod kinds_tests;
+#[cfg(test)]
+mod signals_tests;
+#[cfg(test)]
+mod tests;

@@ -80,6 +80,7 @@ impl Huffman {
         table
     }
 
+    #[cfg(any(test, feature = "synth"))]
     #[must_use]
     pub fn code(&self, symbol: u8) -> Code {
         self.codes[usize::from(symbol)]
@@ -147,6 +148,7 @@ pub fn inverse_dct(coefficients: &[f32; MCU_PIXELS], pixels: &mut Block) {
     }
 }
 
+#[cfg(any(test, feature = "synth"))]
 #[must_use]
 pub fn forward_dct(pixels: &Block) -> [f32; MCU_PIXELS] {
     let cos = &*COSINES;
@@ -189,11 +191,13 @@ impl<'a> BitReader<'a> {
     }
 }
 
+#[cfg(any(test, feature = "synth"))]
 #[must_use]
 pub fn magnitude_category(value: i32) -> u8 {
     (32 - value.unsigned_abs().leading_zeros()) as u8
 }
 
+#[cfg(any(test, feature = "synth"))]
 #[must_use]
 pub fn magnitude_bits(value: i32, category: u8) -> u16 {
     if value >= 0 {

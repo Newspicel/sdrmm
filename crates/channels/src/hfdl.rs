@@ -1,6 +1,7 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{Capability, Hue, KindSpec, SettingField, Symbol};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
-use sdrmm_wire::{KindSpec, SettingField};
 mod model;
 pub use model::*;
 mod ac_cache;
@@ -41,7 +42,18 @@ pub(crate) fn hfdl_form() -> Vec<SettingField> {
 }
 
 fn hfdl_kinds() -> Vec<KindSpec> {
-    vec![crate::datalink::hfdl_kind()]
+    vec![
+        KindSpec::tagged::<DataLinkMessage>(
+            EventKind::named("hfdl"),
+            "HFDL",
+            "Aircraft",
+            Hue::Teal,
+        )
+        .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+        .symbol(Symbol::PLANE)
+        .sighting()
+        .build(),
+    ]
 }
 
 #[cfg(test)]
@@ -51,20 +63,18 @@ mod systable;
 
 use std::{f64::consts::PI, sync::LazyLock};
 
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, Nco};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-    datalink::{self, Quality},
-};
 use demod::{Burst, HfdlDemod};
 use pdu::{HfdlEvent, PduParser};
+use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 const RATE: f64 = 12_000.0;
 const HALF_BANDWIDTH: f64 = 3_000.0;
@@ -148,6 +158,9 @@ impl Receiver {
     }
 }
 
+/// Where an HFDL message keeps its envelope: the aircraft, or the ground station it heard.
+const LINK: Fields = Fields::station(&["tail", "icao", "gs_name"]);
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Body<'a, C> {
@@ -164,12 +177,13 @@ fn message(event: &HfdlEvent) -> DataLinkMessage {
     };
     let raw = Some(event.raw.as_slice());
     match &event.acars {
-        Some(block) => datalink::message(&Body::Acars(&block.core), quality, raw),
-        None => datalink::message(
+        Some(block) => link::message(&Body::Acars(&block.core), &LINK, quality, raw),
+        None => link::message(
             &Body::<()>::Hfdl {
                 kind: &event.kind,
                 details: &event.details,
             },
+            &LINK,
             quality,
             raw,
         ),
@@ -182,15 +196,15 @@ pub struct HfdlChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<HfdlParams, ChannelError> {
-    crate::settings_of::<HfdlParams>(settings)
+    sdrmm_decoder::settings_of::<HfdlParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
 
 impl NativeChannel for HfdlChannel {
@@ -207,7 +221,7 @@ impl NativeChannel for HfdlChannel {
     }
 }
 
-impl ChannelRx for HfdlChannel {
+impl Channel for HfdlChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -223,6 +237,6 @@ impl ChannelRx for HfdlChannel {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod fixture;
 #[cfg(test)]
-pub(crate) use tests::fixture;
+mod tests;

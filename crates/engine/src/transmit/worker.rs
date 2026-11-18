@@ -10,7 +10,7 @@ use std::{
 use arc_swap::ArcSwapOption;
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_channels::encoder::{Modulator, TxPayload};
+use sdrmm_decoder::encoder::{Modulator, TxPayload};
 use sdrmm_device::TxStream;
 use sdrmm_dsp::{Duc, EmissionMeter};
 use sdrmm_wire::{TransmitPhase, TransmitSettings, TransmitStatus};

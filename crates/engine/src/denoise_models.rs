@@ -7,10 +7,8 @@ use std::{
     },
 };
 
-use sdrmm_channels::{
-    neural::Net,
-    neural_denoise::{DenoiseNets, NeuralDenoiseError},
-};
+use sdrmm_decoder::DenoiseNets;
+use sdrmm_dsp::{audio::noise::NeuralDenoiseError, math::neural::Net};
 use sdrmm_wire::DenoiseModel;
 
 use crate::EngineError;

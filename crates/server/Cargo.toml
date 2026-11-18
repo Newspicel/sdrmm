@@ -28,7 +28,7 @@ ad936x = ["sdrmm-engine/ad936x"]
 net-client = ["sdrmm-engine/net-client"]
 gpu-fft = ["sdrmm-engine/gpu-fft"]
 probe = ["sdrmm-engine/probe"]
-dvsi = ["dep:sdrmm-dvsi", "sdrmm-channels/vocoder-chip"]
+dvsi = ["dep:sdrmm-dvsi", "dep:sdrmm-codec", "sdrmm-codec/vocoder-chip"]
 
 [dependencies]
 tun-rs.workspace = true
@@ -39,11 +39,14 @@ sdrmm-dsp.workspace = true
 num-complex.workspace = true
 sdrmm-orbit.workspace = true
 sdrmm-channels.workspace = true
+sdrmm-decoder.workspace = true
+sdrmm-array.workspace = true
 sdrmm-device.workspace = true
 sdrmm-cps.workspace = true
 sdrmm-recorder.workspace = true
 sdrmm-serial.workspace = true
 sdrmm-dvsi = { workspace = true, optional = true }
+sdrmm-codec = { workspace = true, optional = true }
 sdrmm-tools.workspace = true
 
 # `macros` for the FromRequest/FromRequestParts derives that remap extractor rejections
@@ -95,6 +98,7 @@ mime_guess.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
+ctor.workspace = true
 tower = { workspace = true, features = ["util"] }
 http-body-util = "0.1"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "test-util"] }
@@ -103,6 +107,7 @@ sdrmm-device-virtual.workspace = true
 sdrmm-device-recording.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
 sdrmm-dsp = { workspace = true, features = ["test-scene"] }
+sdrmm-modem.workspace = true
 tokio-tungstenite.workspace = true
 num-complex.workspace = true
 tempfile.workspace = true

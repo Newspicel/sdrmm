@@ -161,6 +161,8 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         None => {}
     }
     sdrmm_server::diagnostics::install_tracing()?;
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     let db_path = resolve_db_path(args.db.take())?;
     let recordings_dir = resolve_recordings_dir(args.recordings_dir.take())?;
     let plugins_dir = resolve_plugins_dir(args.plugins_dir.take())?;

@@ -1,12 +1,13 @@
 use std::sync::LazyLock;
 
+use sdrmm_dsp::coding::fec::ldpc::{MinSum, ParityCheck, Schedule};
+
 pub(crate) const N: usize = 174;
 pub(crate) const K: usize = 91;
 const M: usize = 83;
 const PAYLOAD: usize = 77;
 const CRC_POLY: u16 = 0x2757;
 const CRC_BITS: u32 = 14;
-const MAX_CHECK_DEGREE: usize = 7;
 const WORDS: usize = 3;
 const SYNDROMES: usize = 1 << CRC_BITS;
 const NO_ROW: u8 = u8::MAX;
@@ -194,8 +195,6 @@ const COLUMN_CHECKS: [[u8; 3]; N] = [
 type Bits = [u64; WORDS];
 
 struct Code {
-    checks: [[u8; MAX_CHECK_DEGREE]; M],
-    degrees: [u8; M],
     parity: [u128; M],
     crc_syndrome: [u16; K],
 }
@@ -204,18 +203,7 @@ static CODE: LazyLock<Code> = LazyLock::new(Code::build);
 
 impl Code {
     fn build() -> Self {
-        let mut checks = [[0u8; MAX_CHECK_DEGREE]; M];
-        let mut degrees = [0u8; M];
-        for (bit, rows) in COLUMN_CHECKS.iter().enumerate() {
-            for &row in rows {
-                let row = usize::from(row);
-                checks[row][usize::from(degrees[row])] = bit as u8;
-                degrees[row] += 1;
-            }
-        }
         Self {
-            checks,
-            degrees,
             parity: parity_rows(),
             crc_syndrome: std::array::from_fn(|bit| {
                 if bit < PAYLOAD {
@@ -226,6 +214,15 @@ impl Code {
             }),
         }
     }
+}
+
+fn parity_check() -> ParityCheck {
+    let edges: Vec<(usize, usize)> = COLUMN_CHECKS
+        .iter()
+        .enumerate()
+        .flat_map(|(bit, rows)| rows.iter().map(move |&row| (usize::from(row), bit)))
+        .collect();
+    ParityCheck::from_edges(M, N, &edges)
 }
 
 fn parity_rows() -> [u128; M] {
@@ -303,16 +300,14 @@ pub(crate) struct Decoded {
 }
 
 pub(crate) struct Decoder {
-    posterior: [f32; N],
-    messages: [[f32; MAX_CHECK_DEGREE]; M],
+    min_sum: MinSum,
     osd: Osd,
 }
 
 impl Decoder {
     pub(crate) fn new() -> Self {
         Self {
-            posterior: [0.0; N],
-            messages: [[0.0; MAX_CHECK_DEGREE]; M],
+            min_sum: MinSum::new(parity_check(), Schedule::Layered, MIN_SUM_SCALE),
             osd: Osd::new(),
         }
     }
@@ -346,21 +341,15 @@ impl Decoder {
     }
 
     fn belief_propagation(&mut self, llr: &[f32; N], iterations: usize) -> Option<[u8; N]> {
-        let code = &*CODE;
-        for (posterior, &value) in self.posterior.iter_mut().zip(llr) {
-            *posterior = -value;
-        }
-        self.messages = [[0.0; MAX_CHECK_DEGREE]; M];
+        let negated = llr.map(|value| -value);
+        self.min_sum.load(&negated);
         let mut fewest = M;
         let mut stale = 0;
         for iteration in 0..iterations {
-            for check in 0..M {
-                self.update_check(code, check);
-            }
-            let hard: [u8; N] = std::array::from_fn(|bit| u8::from(self.posterior[bit] < 0.0));
-            let unsatisfied = unsatisfied_checks(code, &hard);
+            let unsatisfied = self.min_sum.iterate(&negated);
             if unsatisfied == 0 {
-                return Some(hard);
+                let hard = self.min_sum.hard();
+                return Some(std::array::from_fn(|bit| u8::from(hard[bit])));
             }
             if iteration >= HOPELESS_AFTER && unsatisfied > HOPELESS_CHECKS {
                 return None;
@@ -377,48 +366,6 @@ impl Decoder {
         }
         None
     }
-
-    fn update_check(&mut self, code: &Code, check: usize) {
-        let degree = usize::from(code.degrees[check]);
-        let variables = &code.checks[check][..degree];
-        let stored = &mut self.messages[check];
-        let mut incoming = [0f32; MAX_CHECK_DEGREE];
-        let (mut first, mut second, mut weakest, mut negative) = (f32::MAX, f32::MAX, 0, false);
-        for (edge, &variable) in variables.iter().enumerate() {
-            let value = self.posterior[usize::from(variable)] - stored[edge];
-            incoming[edge] = value;
-            negative ^= value < 0.0;
-            let magnitude = value.abs();
-            if magnitude < first {
-                second = first;
-                first = magnitude;
-                weakest = edge;
-            } else if magnitude < second {
-                second = magnitude;
-            }
-        }
-        for (edge, &variable) in variables.iter().enumerate() {
-            let magnitude = MIN_SUM_SCALE * if edge == weakest { second } else { first };
-            let message = if negative ^ (incoming[edge] < 0.0) {
-                -magnitude
-            } else {
-                magnitude
-            };
-            stored[edge] = message;
-            self.posterior[usize::from(variable)] = incoming[edge] + message;
-        }
-    }
-}
-
-fn unsatisfied_checks(code: &Code, hard: &[u8; N]) -> usize {
-    (0..M)
-        .filter(|&check| {
-            code.checks[check][..usize::from(code.degrees[check])]
-                .iter()
-                .fold(0u8, |acc, &bit| acc ^ hard[usize::from(bit)])
-                == 1
-        })
-        .count()
 }
 
 fn distance(llr: &[f32; N], codeword: &[u8; N]) -> f32 {
@@ -659,8 +606,9 @@ mod tests {
     #[test]
     fn every_codeword_satisfies_every_check() {
         for payload in [0u128, 1, 0x1234_5678_9abc_def0_1234, (1 << 77) - 1] {
+            let codeword = encode(payload).map(|bit| bit == 1);
+            assert!(parity_check().satisfies(&codeword));
             let codeword = encode(payload);
-            assert_eq!(unsatisfied_checks(&CODE, &codeword), 0);
             assert_eq!(payload_of(&codeword), Some(payload));
         }
     }

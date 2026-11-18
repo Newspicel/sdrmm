@@ -1,6 +1,6 @@
 //! Follows trunked radio systems: hunts the control channel, opens a receiver on every traffic
 //! channel a call is granted, and learns where the logical channels transmit. Which protocol a
-//! system speaks is the decoder's business, declared through [`sdrmm_channels::Trunking`].
+//! system speaks is the decoder's business, declared through [`sdrmm_decoder::Trunking`].
 
 mod carriers;
 mod control;
@@ -16,11 +16,11 @@ use std::{
 };
 
 use prospect::Prospector;
-use sdrmm_channels::{TrunkGrant, Trunking};
+use sdrmm_decoder::{TrunkGrant, Trunking};
 use sdrmm_wire::{
-    AUTO_TRUNK_PROTOCOL, DecodedRecord, DvFrame, DvFrameKind, StateScope, TrunkChannelEntry,
-    TrunkDiscovery, TrunkKind, TrunkScheme, TrunkSite, TrunkSpec, TrunkSystemStatus,
-    TrunkTalkgroups, VoiceKey,
+    AUTO_TRUNK_PROTOCOL, ChannelParams, DecodedRecord, DvFrame, DvFrameKind, StateScope,
+    TrunkCallSettings, TrunkChannelEntry, TrunkDiscovery, TrunkKind, TrunkScheme, TrunkSite,
+    TrunkSpec, TrunkSystemStatus, TrunkTalkgroups, VoiceKey,
 };
 
 use crate::Engine;
@@ -64,6 +64,18 @@ pub struct TrunkSystem {
     pub vocoder: Option<String>,
 }
 
+/// What `system` sets on every call it follows, as `decoder`'s params.
+fn call_settings(decoder: &str, system: &TrunkSystem) -> Result<ChannelParams, String> {
+    ChannelParams::new(
+        decoder,
+        &TrunkCallSettings {
+            ignore_crc: system.radio.is_some_and(|radio| radio.ignore_crc),
+            keys: system.keys.clone(),
+            vocoder: system.vocoder.clone(),
+        },
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TrunkRadio {
     pub device_set: u32,
@@ -95,9 +107,8 @@ struct Carrier {
     center_hz: f64,
     sample_rate: f64,
     freq_hz: u64,
-    ignore_crc: bool,
-    keys: Vec<VoiceKey>,
-    vocoder: Option<String>,
+    /// The trunk node's settings for its calls, as the decoder's params.
+    calls: ChannelParams,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -272,7 +283,7 @@ impl Follower {
             let Some(control) = self.controls.get(&system.node) else {
                 continue;
             };
-            let Some((decoder, trunking)) = sdrmm_channels::trunking(&system.decoder) else {
+            let Some((decoder, trunking)) = sdrmm_decoder::trunking(&system.decoder) else {
                 continue;
             };
             let (device_set, channel) = (control.device_set, control.channel);
@@ -285,6 +296,13 @@ impl Follower {
             if info.settings.params.type_id() != decoder {
                 continue;
             }
+            let calls = match call_settings(&decoder, system) {
+                Ok(calls) => calls,
+                Err(error) => {
+                    tracing::warn!(node = system.node, %error, "trunk call settings");
+                    continue;
+                }
+            };
             let Some(center_hz) = set.settings.center_hz else {
                 continue;
             };
@@ -304,9 +322,7 @@ impl Follower {
                     center_hz,
                     sample_rate: crate::sample_rate_of(&set.settings),
                     freq_hz: absolute.round() as u64,
-                    ignore_crc: system.radio.is_some_and(|radio| radio.ignore_crc),
-                    keys: system.keys.clone(),
-                    vocoder: system.vocoder.clone(),
+                    calls,
                 },
             );
         }

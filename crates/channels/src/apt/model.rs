@@ -1,4 +1,4 @@
-use crate::default_true;
+use sdrmm_decoder::default_true;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
@@ -144,6 +144,23 @@ impl sdrmm_wire::DecoderSettings for AptParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
+
+    #[test]
+    fn empty_settings_take_the_defaults() {
+        assert_eq!(
+            serde_json::from_str::<AptParams>("{}").unwrap(),
+            AptParams::default()
+        );
+    }
+
+    #[test]
+    fn a_picture_names_no_station() {
+        let picture: AptImage =
+            serde_json::from_str(r#"{"seq":1,"lines":1200,"complete":true,"duration_ms":600000}"#)
+                .expect("picture fixture");
+        assert_eq!(picture.present(&EventKind::named("apt")).entity, None);
+    }
+
     use sdrmm_wire::present::Unit;
     use sdrmm_wire::present::number;
 

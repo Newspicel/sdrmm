@@ -1,7 +1,7 @@
 use crate::lora::MeshcorePayloadType;
 use crate::lora::MeshcoreRoute;
 
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 pub(super) const MAX_PATH_BYTES: usize = 64;
 pub(super) const MAX_PAYLOAD_BYTES: usize = 184;

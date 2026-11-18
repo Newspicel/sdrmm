@@ -1,17 +1,19 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
-use sdrmm_wire::{KindSpec, SettingField};
+use sdrmm_wire::{KindSpec, PagerPayload, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass, hamming_distance};
+use sdrmm_dsp::hamming_distance;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 pub(crate) mod codeword;
@@ -179,7 +181,7 @@ pub struct FlexChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<FlexParams, ChannelError> {
-    crate::settings_of::<FlexParams>(settings)
+    sdrmm_decoder::settings_of::<FlexParams>(settings)
 }
 
 fn check_params(params: &FlexParams) -> Result<(), ChannelError> {
@@ -202,13 +204,12 @@ pub(crate) fn occupied_band(params: &FlexParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &FlexParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: &FlexParams) -> Result<FilterSpec, ChannelError> {
     check_params(params)?;
-    let half = params.bandwidth_hz / 2.0 + AFC_PULL_HZ;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / RATE),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(
+        CHANNEL_TAPS,
+        params.bandwidth_hz / 2.0 + AFC_PULL_HZ,
+    ))
 }
 
 fn mode(sync: u16) -> Option<Mode> {
@@ -797,7 +798,7 @@ impl NativeChannel for FlexChannel {
     }
 }
 
-impl ChannelRx for FlexChannel {
+impl Channel for FlexChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         check_params(&params)?;
@@ -851,12 +852,16 @@ fn flex_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn flex_decoder() -> Native<FlexParams> {
-    Native::new::<FlexChannel>(occupied_band)
+    let decoder = Native::new::<FlexChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(flex_signatures)
         .trial(flex_trial)
         .form(flex_form)
-        .kinds(flex_kinds)
+        .kinds(flex_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn flex_form() -> Vec<SettingField> {
@@ -871,19 +876,23 @@ fn flex_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{synth, testutil::settings};
+    use crate::synth;
+    use sdrmm_decoder_test_support::settings;
     use sdrmm_wire::ChannelParams;
 
     #[test]
     fn decodes_a_p2000_page_off_air() {
-        let iq = crate::testutil::cf32_le(include_bytes!(
+        let iq = sdrmm_decoder_test_support::cf32_le(include_bytes!(
             "../../../fixtures/flex_p2000_offair_48k.sigmf-data"
         ));
         let params = FlexParams::default();
         let mut filtered = Vec::new();
-        channel_filter(&params).unwrap().process(&iq, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(channel_filter(&params).unwrap(), RATE)
+            .process(&iq, &mut filtered);
         let mut channel = FlexChannel::new(
             ChannelCtx { input_rate: RATE },
             settings(ChannelParams::of(&params).expect("settings")),
@@ -937,7 +946,7 @@ mod tests {
 
     #[test]
     fn the_p2000_page_survives_extra_noise_on_a_weak_recording() {
-        let clean = crate::testutil::cf32_le(include_bytes!(
+        let clean = sdrmm_decoder_test_support::cf32_le(include_bytes!(
             "../../../fixtures/flex_p2000_offair_48k.sigmf-data"
         ));
         for seed in 1..=8 {
@@ -1017,10 +1026,10 @@ mod tests {
     }
 
     fn received_with_rejected(iq: &[Complex<f32>]) -> (Vec<FlexMessage>, u32) {
-        let Ok(ChannelFilter::Symmetric(mut filter)) = channel_filter(&FlexParams::default())
-        else {
-            panic!("flex filters symmetrically");
-        };
+        let mut filter = sdrmm_decoder_test_support::built_filter(
+            channel_filter(&FlexParams::default()).unwrap(),
+            RATE,
+        );
         let mut filtered = Vec::new();
         filter.process(iq, &mut filtered);
         let mut channel = FlexChannel::new(
@@ -1118,7 +1127,7 @@ mod tests {
 
     #[test]
     fn decodes_a_long_address_page_off_air() {
-        let iq = crate::testutil::cf32_le(include_bytes!(
+        let iq = sdrmm_decoder_test_support::cf32_le(include_bytes!(
             "../../../fixtures/flex_us_long_address_48k.sigmf-data"
         ));
         let messages = received(&iq);
@@ -1150,7 +1159,7 @@ mod tests {
     #[test]
     fn a_page_split_over_frames_arrives_whole() {
         let mut iq = fragment("TRAUMA ALERT # ", 3, true, 83);
-        iq.extend(synth::silence(3 * FRAME_SAMPLES as usize));
+        iq.extend(sdrmm_modem::synth::silence(3 * FRAME_SAMPLES as usize));
         iq.extend(fragment("OF PATIENTS: 1", 0, false, 87));
         let messages = received(&iq);
         assert_eq!(messages.len(), 1, "{messages:?}");
@@ -1161,7 +1170,7 @@ mod tests {
 
     #[test]
     fn joins_pages_split_over_two_frames_off_air() {
-        let iq = crate::testutil::cf32_le(include_bytes!(
+        let iq = sdrmm_decoder_test_support::cf32_le(include_bytes!(
             "../../../fixtures/flex_us_fragments_48k.sigmf-data"
         ));
         let messages = received(&iq);
@@ -1248,12 +1257,12 @@ mod tests {
             synth::flex::Mode::Flex3200_4,
         ] {
             for seed in [0x1357_9bdf, 0x2468_ace1] {
-                let mut iq = synth::silence(3_000);
+                let mut iq = sdrmm_modem::synth::silence(3_000);
                 iq.extend(synth::flex::transmission_mode(&page(), 7, 83, RATE, mode));
-                iq.extend(synth::silence(3_000));
-                let mut iq = synth::resample(&iq, RATE, RATE * 1.000_15);
-                synth::shift(&mut iq, 800.0, RATE);
-                synth::add_noise(&mut iq, seed, 1.5);
+                iq.extend(sdrmm_modem::synth::silence(3_000));
+                let mut iq = sdrmm_modem::synth::resample(&iq, RATE, RATE * 1.000_15);
+                sdrmm_modem::synth::shift(&mut iq, 800.0, RATE);
+                sdrmm_modem::synth::add_noise(&mut iq, seed, 1.5);
                 let messages = received(&iq);
                 assert!(
                     messages.iter().any(|m| m.text == "FLEX ALPHA PAGE"),
@@ -1267,11 +1276,11 @@ mod tests {
     fn a_pager_off_frequency_by_more_than_the_tone_margin_decodes_in_noise() {
         for mode in [synth::flex::Mode::Flex1600_2, synth::flex::Mode::Flex3200_4] {
             for offset in [-2_500.0, 2_500.0] {
-                let mut iq = synth::silence(3_000);
+                let mut iq = sdrmm_modem::synth::silence(3_000);
                 iq.extend(synth::flex::transmission_mode(&page(), 7, 83, RATE, mode));
-                iq.extend(synth::silence(3_000));
-                synth::shift(&mut iq, offset, RATE);
-                synth::add_noise(&mut iq, 0x2468_ace1, 1.5);
+                iq.extend(sdrmm_modem::synth::silence(3_000));
+                sdrmm_modem::synth::shift(&mut iq, offset, RATE);
+                sdrmm_modem::synth::add_noise(&mut iq, 0x2468_ace1, 1.5);
                 let messages = received(&iq);
                 assert!(
                     messages.iter().any(|m| m.text == "FLEX ALPHA PAGE"),

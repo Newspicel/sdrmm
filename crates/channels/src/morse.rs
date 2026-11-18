@@ -1,43 +1,22 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, Envelope, KeyingSlicer, design_lowpass};
+use sdrmm_modem::morse::{MorseChunk, MorseReader};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const CHANNEL_TAPS: usize = 257;
-
-const ENV_ATTACK_S: f64 = 2e-3;
-const ENV_RELEASE_S: f64 = 2e-3;
-const MIN_RUN_S: f64 = 5e-3;
-const MIN_SNR: f32 = 6.0;
-const DASH_MIN_DOTS: f32 = 2.0;
-const LETTER_GAP_DOTS: f32 = 2.0;
-const WORD_GAP_DOTS: f32 = 4.5;
-const TRACK_ALPHA: f32 = 0.2;
-const CALIB_MARKS: usize = 9;
-const WPM_MIN: f32 = 3.0;
-const WPM_MAX: f32 = 80.0;
-const IDLE_FLUSH_S: f64 = 3.0;
-const MAX_CHUNK_CHARS: usize = 64;
-const MAX_ELEMENTS: u8 = 8;
-const FIT_ALPHA: f32 = 0.15;
-
-/// Timing this far off the one-dot and three-dot lengths came from a slicer chewing on noise, not
-/// from a hand or a keyer.
-pub const FIT_MAX: f32 = 0.35;
-
-/// Marks that have to land before their timing says anything about who sent them.
-const FIT_MARKS: u32 = 3;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "morse".to_owned(),
@@ -51,118 +30,14 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     ..ChannelDescriptor::default()
 });
 
-const fn code(pattern: &str) -> u16 {
-    let bytes = pattern.as_bytes();
-    let mut key = 1;
-    let mut i = 0;
-    while i < bytes.len() {
-        key = key * 2 + (bytes[i] == b'-') as u16;
-        i += 1;
-    }
-    key
-}
-
-static TABLE: &[(u16, &str)] = &[
-    (code(".-"), "A"),
-    (code("-..."), "B"),
-    (code("-.-."), "C"),
-    (code("-.."), "D"),
-    (code("."), "E"),
-    (code("..-."), "F"),
-    (code("--."), "G"),
-    (code("...."), "H"),
-    (code(".."), "I"),
-    (code(".---"), "J"),
-    (code("-.-"), "K"),
-    (code(".-.."), "L"),
-    (code("--"), "M"),
-    (code("-."), "N"),
-    (code("---"), "O"),
-    (code(".--."), "P"),
-    (code("--.-"), "Q"),
-    (code(".-."), "R"),
-    (code("..."), "S"),
-    (code("-"), "T"),
-    (code("..-"), "U"),
-    (code("...-"), "V"),
-    (code(".--"), "W"),
-    (code("-..-"), "X"),
-    (code("-.--"), "Y"),
-    (code("--.."), "Z"),
-    (code("-----"), "0"),
-    (code(".----"), "1"),
-    (code("..---"), "2"),
-    (code("...--"), "3"),
-    (code("....-"), "4"),
-    (code("....."), "5"),
-    (code("-...."), "6"),
-    (code("--..."), "7"),
-    (code("---.."), "8"),
-    (code("----."), "9"),
-    (code(".-.-.-"), "."),
-    (code("--..--"), ","),
-    (code("..--.."), "?"),
-    (code(".----."), "'"),
-    (code("-.-.--"), "!"),
-    (code("-..-."), "/"),
-    (code("-.--."), "("),
-    (code("-.--.-"), ")"),
-    (code(".-..."), "&"),
-    (code("---..."), ":"),
-    (code("-.-.-."), ";"),
-    (code("-...-"), "="),
-    (code(".-.-."), "+"),
-    (code("-....-"), "-"),
-    (code("..--.-"), "_"),
-    (code(".-..-."), "\""),
-    (code("...-..-"), "$"),
-    (code(".--.-."), "@"),
-    (code("...-.-"), "SK"),
-];
-
-const UNKNOWN: &str = "*";
-
-#[derive(Clone, Copy)]
-struct Run {
-    on: bool,
-    len: u32,
-    clean: bool,
-}
-
 #[derive(Clone)]
 pub struct MorseChannel {
-    rate: f64,
-    fixed_wpm: Option<f32>,
-    env: Envelope,
-    slicer: KeyingSlicer,
-    min_run: u32,
-    idle_flush: u32,
-    dot_bounds: (f32, f32),
-
-    key: bool,
-    run: u32,
-    mark_clean: bool,
-    idle: u32,
-    pending: Option<Run>,
-
-    dot: Option<f32>,
-    hold: Vec<Run>,
-    replay: Vec<Run>,
-    marks_held: usize,
-
-    pattern: u16,
-    elements: u8,
-    overflow: bool,
-    started: bool,
-    pending_space: bool,
-    fit: f32,
-    scored: u32,
-    unproven: String,
-    text: String,
+    reader: MorseReader,
+    chunks: Vec<MorseChunk>,
 }
 
 fn params(settings: &ChannelSettings) -> Result<MorseParams, ChannelError> {
-    crate::settings_of::<MorseParams>(settings)
+    sdrmm_decoder::settings_of::<MorseParams>(settings)
 }
 
 fn check_params(p: &MorseParams) -> Result<(), ChannelError> {
@@ -189,212 +64,10 @@ pub(crate) fn occupied_band(p: &MorseParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &MorseParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &MorseParams) -> Result<FilterSpec, ChannelError> {
     check_params(p)?;
     let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    )))
-}
-
-fn dot_samples(wpm: f32, rate: f64) -> f32 {
-    (1.2 * rate / f64::from(wpm)) as f32
-}
-
-impl MorseChannel {
-    fn push_run(&mut self, run: Run, out: &mut ChannelOutputs) {
-        match self.pending.take() {
-            None => self.pending = Some(run),
-            Some(prev) if prev.on == run.on || run.len < self.min_run => {
-                self.pending = Some(Run {
-                    on: prev.on,
-                    len: prev.len.saturating_add(run.len),
-                    clean: prev.clean && run.clean,
-                });
-            }
-            Some(prev) => {
-                self.consume(prev, out);
-                self.pending = Some(run);
-            }
-        }
-    }
-
-    fn consume(&mut self, run: Run, out: &mut ChannelOutputs) {
-        if self.dot.is_none() {
-            self.hold.push(run);
-            if run.on {
-                self.marks_held += 1;
-                if self.marks_held >= CALIB_MARKS {
-                    self.calibrate(out);
-                }
-            }
-            return;
-        }
-        self.classify(run, out);
-    }
-
-    fn calibrate(&mut self, out: &mut ChannelOutputs) {
-        let marks = self.hold.iter().filter(|r| r.on).count();
-        let seed = self
-            .hold
-            .iter()
-            .filter(|r| r.on)
-            .skip(usize::from(marks > 1))
-            .map(|r| r.len)
-            .min();
-        if let Some(seed) = seed {
-            let (lo, hi) = self.dot_bounds;
-            self.dot = Some((seed as f32).clamp(lo, hi));
-            std::mem::swap(&mut self.hold, &mut self.replay);
-            let mut i = 0;
-            while let Some(&run) = self.replay.get(i) {
-                self.classify(run, out);
-                i += 1;
-            }
-            self.replay.clear();
-            std::mem::swap(&mut self.hold, &mut self.replay);
-        }
-        self.hold.clear();
-        self.marks_held = 0;
-    }
-
-    fn classify(&mut self, run: Run, out: &mut ChannelOutputs) {
-        let Some(dot) = self.dot else { return };
-        let len = run.len as f32;
-        if run.on {
-            if !run.clean {
-                self.reset_character();
-                return;
-            }
-            self.started = true;
-            self.score_fit(len);
-            let dash = len >= DASH_MIN_DOTS * dot;
-            if self.elements < MAX_ELEMENTS {
-                self.pattern = self.pattern * 2 + u16::from(dash);
-                self.elements += 1;
-            } else {
-                self.overflow = true;
-            }
-            self.track(if dash { len / 3.0 } else { len });
-        } else if len >= WORD_GAP_DOTS * dot {
-            self.finish_character(out);
-            self.pending_space |= self.started;
-            self.flush(out);
-        } else if len >= LETTER_GAP_DOTS * dot {
-            self.finish_character(out);
-            self.track(len / 3.0);
-        } else {
-            self.track(len);
-        }
-    }
-
-    fn score_fit(&mut self, len: f32) {
-        let Some(dot) = self.dot else { return };
-        let units = len / dot;
-        let nearest = if units < DASH_MIN_DOTS { 1.0 } else { 3.0 };
-        let error = (units - nearest).abs() / nearest;
-        self.scored = self.scored.saturating_add(1);
-        let alpha = FIT_ALPHA.max(1.0 / self.scored as f32);
-        self.fit += alpha * (error.min(1.0) - self.fit);
-    }
-
-    fn track(&mut self, observed_dot: f32) {
-        if self.fixed_wpm.is_some() || !observed_dot.is_finite() {
-            return;
-        }
-        if let Some(dot) = self.dot {
-            let (lo, hi) = self.dot_bounds;
-            self.dot = Some((dot + TRACK_ALPHA * (observed_dot - dot)).clamp(lo, hi));
-        }
-    }
-
-    fn reset_character(&mut self) {
-        self.pattern = 1;
-        self.elements = 0;
-        self.overflow = false;
-    }
-
-    fn finish_character(&mut self, out: &mut ChannelOutputs) {
-        if self.elements == 0 && !self.overflow {
-            return;
-        }
-        let decoded = if self.overflow {
-            UNKNOWN
-        } else {
-            TABLE
-                .iter()
-                .find(|(c, _)| *c == self.pattern)
-                .map_or(UNKNOWN, |(_, s)| *s)
-        };
-        if self.pending_space {
-            self.text.push(' ');
-            self.pending_space = false;
-        }
-        self.text.push_str(decoded);
-        self.reset_character();
-        if self.text.len() >= MAX_CHUNK_CHARS {
-            self.flush(out);
-        }
-    }
-
-    fn flush(&mut self, out: &mut ChannelOutputs) {
-        if self.text.is_empty() {
-            return;
-        }
-        if self.element_fit() > FIT_MAX {
-            if self.unproven.len() >= MAX_CHUNK_CHARS {
-                self.unproven.clear();
-            }
-            self.unproven.push_str(&std::mem::take(&mut self.text));
-            return;
-        }
-        let mut text = std::mem::take(&mut self.unproven);
-        text.push_str(&std::mem::take(&mut self.text));
-        out.events.push(DecoderEvent::of(&MorseText {
-            text,
-            wpm: self.wpm(),
-        }));
-    }
-
-    #[must_use]
-    pub fn marks_scored(&self) -> u32 {
-        self.scored
-    }
-
-    /// How closely the marks seen so far land on the one-dot and three-dot lengths a hand or a
-    /// keyer produces. Filtered noise sliced into runs lands anywhere, so this separates a station
-    /// from a patch of band that merely crossed the detection threshold.
-    #[must_use]
-    pub fn element_fit(&self) -> f32 {
-        if self.scored < FIT_MARKS || self.speed_ran_into_its_limit() {
-            1.0
-        } else {
-            self.fit
-        }
-    }
-
-    fn speed_ran_into_its_limit(&self) -> bool {
-        let (fastest, slowest) = self.dot_bounds;
-        self.fixed_wpm.is_none() && self.dot.is_some_and(|dot| dot <= fastest || dot >= slowest)
-    }
-
-    fn wpm(&self) -> f32 {
-        self.dot
-            .filter(|d| *d > 0.0)
-            .map_or(0.0, |dot| (1.2 * self.rate) as f32 / dot)
-    }
-
-    fn on_idle(&mut self, out: &mut ChannelOutputs) {
-        if let Some(run) = self.pending.take() {
-            self.consume(run, out);
-        }
-        if self.dot.is_none() {
-            self.calibrate(out);
-        }
-        self.finish_character(out);
-        self.flush(out);
-    }
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, half))
 }
 
 impl NativeChannel for MorseChannel {
@@ -405,72 +78,27 @@ impl NativeChannel for MorseChannel {
         check_input_rate(ctx, &DESCRIPTOR)?;
         let p = &params(&settings)?;
         check_params(p)?;
-        let rate = ctx.input_rate;
         Ok(Self {
-            rate,
-            fixed_wpm: p.wpm,
-            env: Envelope::new(rate, ENV_ATTACK_S, ENV_RELEASE_S),
-            slicer: KeyingSlicer::new(rate),
-            min_run: (MIN_RUN_S * rate).round().max(1.0) as u32,
-            idle_flush: (IDLE_FLUSH_S * rate).round().max(1.0) as u32,
-            dot_bounds: (dot_samples(WPM_MAX, rate), dot_samples(WPM_MIN, rate)),
-            key: false,
-            run: 0,
-            mark_clean: true,
-            idle: 0,
-            pending: None,
-            dot: p.wpm.map(|wpm| dot_samples(wpm, rate)),
-            hold: Vec::new(),
-            replay: Vec::new(),
-            marks_held: 0,
-            pattern: 1,
-            elements: 0,
-            overflow: false,
-            started: false,
-            pending_space: false,
-            fit: 1.0,
-            scored: 0,
-            unproven: String::new(),
-            text: String::new(),
+            reader: MorseReader::new(ctx.input_rate, p.wpm),
+            chunks: Vec::new(),
         })
     }
 }
 
-impl ChannelRx for MorseChannel {
+impl Channel for MorseChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = &params(&settings)?;
         check_params(p)?;
-        self.fixed_wpm = p.wpm;
-        if let Some(wpm) = p.wpm {
-            self.dot = Some(dot_samples(wpm, self.rate));
-        }
+        self.reader.set_wpm(p.wpm);
         Ok(())
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         for sample in iq {
-            let key = self.slicer.push(self.env.push(sample.norm()));
-            if key {
-                self.mark_clean &= self.slicer.snr() >= MIN_SNR;
-                self.idle = 0;
-            } else {
-                self.idle = self.idle.saturating_add(1);
-            }
-            if key != self.key {
-                let run = Run {
-                    on: self.key,
-                    len: self.run,
-                    clean: self.mark_clean,
-                };
-                self.push_run(run, out);
-                self.key = key;
-                self.run = 0;
-                self.mark_clean = true;
-            }
-            self.run = self.run.saturating_add(1);
-            if self.idle == self.idle_flush {
-                self.on_idle(out);
-            }
+            self.reader.push(sample.norm(), &mut self.chunks);
+        }
+        for MorseChunk { text, wpm } in self.chunks.drain(..) {
+            out.events.push(DecoderEvent::of(&MorseText { text, wpm }));
         }
     }
 }
@@ -488,11 +116,15 @@ fn morse_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn morse_decoder() -> Native<MorseParams> {
-    Native::new::<MorseChannel>(occupied_band)
+    let decoder = Native::new::<MorseChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(morse_signatures)
         .form(morse_form)
-        .kinds(morse_kinds)
+        .kinds(morse_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn morse_form() -> Vec<SettingField> {
@@ -513,14 +145,20 @@ fn morse_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{rtty::RttyParams, synth, testutil::settings};
+
+    use sdrmm_decoder_test_support::settings;
 
     const RATE: f64 = 8_000.0;
     const CALL: &str = "CQ CQ DE DL1ABC K";
+    const IDLE_FLUSH_S: f64 = 3.0;
+    const UNKNOWN: &str = "*";
+    const MAX_CHUNK_CHARS: usize = 64;
 
     fn channel(wpm: Option<f32>) -> MorseChannel {
         MorseChannel::new(
@@ -537,9 +175,13 @@ mod tests {
     }
 
     fn burst(text: &str, wpm: f32, tone_hz: f64) -> Vec<Complex<f32>> {
-        let mut iq = synth::silence((0.5 * RATE) as usize);
-        iq.extend(synth::morse::transmission(text, wpm, tone_hz, RATE));
-        iq.extend(synth::silence(((IDLE_FLUSH_S + 0.5) * RATE) as usize));
+        let mut iq = sdrmm_modem::synth::silence((0.5 * RATE) as usize);
+        iq.extend(sdrmm_modem::synth::morse::transmission(
+            text, wpm, tone_hz, RATE,
+        ));
+        iq.extend(sdrmm_modem::synth::silence(
+            ((IDLE_FLUSH_S + 0.5) * RATE) as usize,
+        ));
         iq
     }
 
@@ -576,8 +218,9 @@ mod tests {
     fn decodes_a_call_at_dc_and_at_an_offset() {
         for tone_hz in [0.0, 120.0] {
             let iq = burst(CALL, 20.0, tone_hz);
+            let spec = channel_filter(&MorseParams::default()).expect("default params are valid");
             let mut filter =
-                channel_filter(&MorseParams::default()).expect("default params are valid");
+                sdrmm_decoder_test_support::built_filter(spec, DESCRIPTOR.input_rate_hz);
             let mut filtered = Vec::new();
             filter.process(&iq, &mut filtered);
             let text = decode(&mut channel(None), &filtered);
@@ -648,16 +291,18 @@ mod tests {
             }
             env.resize(env.len() + dot, 1.0);
         }
-        let mut iq = synth::silence((0.5 * RATE) as usize);
-        iq.extend(synth::ook(&env, 0.0, RATE));
-        iq.extend(synth::silence(((IDLE_FLUSH_S + 0.5) * RATE) as usize));
+        let mut iq = sdrmm_modem::synth::silence((0.5 * RATE) as usize);
+        iq.extend(sdrmm_modem::synth::ook(&env, 0.0, RATE));
+        iq.extend(sdrmm_modem::synth::silence(
+            ((IDLE_FLUSH_S + 0.5) * RATE) as usize,
+        ));
         assert_eq!(decode(&mut channel(None), &iq), UNKNOWN);
     }
 
     #[test]
     fn pure_noise_decodes_to_nothing() {
-        let mut iq = synth::silence((20.0 * RATE) as usize);
-        synth::add_noise(&mut iq, 0x0c0f_fee1, 0.3);
+        let mut iq = sdrmm_modem::synth::silence((20.0 * RATE) as usize);
+        sdrmm_modem::synth::add_noise(&mut iq, 0x0c0f_fee1, 0.3);
         let mut channel = channel(None);
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(1_024) {
@@ -672,22 +317,22 @@ mod tests {
         let mut out = ChannelOutputs::default();
         keyed.process(&burst(CALL, 20.0, 0.0), &mut out);
         assert!(
-            keyed.element_fit() < 0.1,
+            keyed.reader.element_fit() < 0.1,
             "a keyed carrier scored {}",
-            keyed.element_fit()
+            keyed.reader.element_fit()
         );
 
-        let mut iq = synth::silence((20.0 * RATE) as usize);
-        synth::add_noise(&mut iq, 0x0c0f_fee1, 0.3);
+        let mut iq = sdrmm_modem::synth::silence((20.0 * RATE) as usize);
+        sdrmm_modem::synth::add_noise(&mut iq, 0x0c0f_fee1, 0.3);
         let mut noisy = channel(None);
         let mut out = ChannelOutputs::default();
         for block in iq.chunks(1_024) {
             noisy.process(block, &mut out);
         }
         assert!(
-            noisy.element_fit() > 0.5,
+            noisy.reader.element_fit() > 0.5,
             "noise scored {}",
-            noisy.element_fit()
+            noisy.reader.element_fit()
         );
     }
 
@@ -713,13 +358,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(None);
-        let err = chan.apply(settings(
-            ChannelParams::new("rtty", &RttyParams::default()).expect("rtty settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("rtty")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = MorseChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("rtty", &RttyParams::default()).expect("rtty settings")),
+            settings(ChannelParams::bare("rtty")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

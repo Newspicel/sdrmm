@@ -38,23 +38,31 @@ Radio / network / recording → DSP engine → audio, events, spectrum, IQ
 | `sdrmm-device-kiwisdr` | KiwiSDR over its WebSocket API |
 | `sdrmm-device-cr8` | Dragon Labs CR-8 through the vendor SDK, loaded at runtime |
 | `sdrmm-device-aaronia` | Aaronia SPECTRAN V6 and V6 ECO through the RTSA API, loaded at runtime |
-| `sdrmm-channels` | Every built-in decoder, each a module with its settings, events and registration, plus the decoder registry and signal synthesis |
+| `sdrmm-codec` | Audio codecs and vocoders: AAC framing, AMBE, G.726, MP2, MBE and Codec 2, the vocoder chip link |
+| `sdrmm-aviation` | ACARS, ARINC 622, CPDLC and ATN parsing shared by the aviation decoders |
+| `sdrmm-crypto` | Ciphers, hashes and key text formats: AES, DES, RC4, IDEA, Ed25519, SHA-256, hex, base64 |
+| `sdrmm-decoder` | The decoder API for built-ins and plugins: channel and encoder traits, outputs, filters, the registries, the signal catalog, the audio chain and IF stage |
+| `sdrmm-media` | Broadcast audio and video playout through FFmpeg and FDK, off the DSP thread |
+| `sdrmm-channels` | Every built-in decoder, each a module with its settings, events and registration, plus signal synthesis |
+| `sdrmm-array` | Array processors (beamformer, DF, passive radar and more), their settings, readings and registry |
 | `sdrmm-dvsi` | DVSI AMBE vocoder chips over USB serial |
 | `sdrmm-plugins` | Loads WASM plugins into the registries |
-| `sdrmm-plugin` | SDK for writing a WASM plugin |
+| `sdrmm-plugin` | SDK for writing a WASM plugin: the decoder API, the guest ABI and kernels |
 | `sdrmm-plugin-example` | Plugin template |
 | `sdrmm-recorder` | SigMF writing, reading, scanning, and export |
 | `sdrmm-orbit` | SGP4, pass prediction, and Doppler |
 | `sdrmm-tools` | Antenna calculator and NanoVNA |
 | `sdrmm-cps` | Codeplug reading, writing, and conversion |
 | `sdrmm-test-support` | Allocation and timing helpers for tests |
+| `sdrmm-decoder-test-support` | Shared helpers for decoder tests |
 | `sdrmm-engine` | Device supervision, channelization, scanning, streams, recording, and state snapshots |
 | `sdrmm-server` | REST, WebSocket, MCP, persistence, band plans, auth, phones, and embedded assets |
 | `sdrmm-mobile-core` | Pairing, pinned TLS client, missions, and pose fusion for the phone apps |
 
 Nothing outside `sdrmm-channels` names a decoder. The engine, server and frontend read the decoder
 registry: descriptors, settings forms, event kinds with their presenters, feeds and trunking. A
-shared behavior is a capability or facet a decoder declares.
+shared behavior is a capability or facet a decoder declares. Array processors follow the same rule
+in `sdrmm-array`: engine, server and frontend read the processor registry.
 
 `apps/sdrmm` is the CLI and owns the process. `apps/desktop` starts the same server on a random
 loopback port and opens it in a Chromium (CEF) window. Both probe SoapySDR in a short-lived child process.
@@ -64,7 +72,12 @@ The dependency rules:
 
 - `dsp` does no I/O and depends on no project crate.
 - `modem` builds reusable modulation algorithms on `dsp` only.
-- `channels` pulls no internal crates beyond `dsp`, `modem` and `wire`.
+- `codec` and `aviation` build on `dsp` only; `crypto` depends on no project crate.
+- `decoder` builds on `dsp`, `modem`, `codec` and `wire` only.
+- `media` builds on `decoder`, `modem` and `codec`.
+- `channels` pulls no internal crates beyond `dsp`, `modem`, `codec`, `crypto`, `aviation`,
+  `decoder`, `media` and `wire`.
+- `array` builds on `dsp`, `modem`, `decoder` and `wire` only.
 - Device crates never depend on `channels`, `engine` or `server`.
 - `mobile-core` depends on `wire` only. Phone builds pull no engine, server, DSP, USB, FFmpeg,
   codec2, or SQLite crate.
@@ -169,13 +182,13 @@ Some decoder constants are copied from the standards:
 | Constants | File |
 |---|---|
 | DAB puncturing and protection profiles | `crates/channels/src/dab/protection.rs` |
-| DAB phase reference | `crates/channels/src/dab/ofdm.rs` |
-| DVB-S puncturing and Reed-Solomon parameters | `crates/channels/src/datv/dvbs.rs` |
-| DVB-S2 LDPC accumulator addresses | `crates/channels/src/datv/dvbs2/tables/` |
-| DVB-S2X LDPC addresses, constellations and interleavers | `crates/channels/src/datv/dvbs2/s2x/` |
+| DAB phase reference | `crates/modem/src/ofdm/dab.rs` |
+| DVB-S puncturing and Reed-Solomon parameters | `crates/modem/src/dvb/dvbs.rs` |
+| DVB-S2 and S2X LDPC accumulator addresses | `crates/modem/src/dvb/ldpc/tables/` |
+| DVB-S2X constellations and interleavers | `crates/channels/src/datv/dvbs2/s2x/` |
 | VL-SNR header sequence | `crates/channels/src/datv/dvbs2/vlsnr.rs` |
-| DVB-T continual pilot and TPS carriers | `crates/channels/src/datv/dvbt/en300744.rs` |
-| DVB-T2 pilots, reserved carriers, P1, L1 and LDPC tables | `crates/channels/src/datv/dvbt/t2/en302755/` |
+| DVB-T continual pilot and TPS carriers | `crates/channels/src/dvbt/en300744.rs` |
+| DVB-T2 pilots, reserved carriers, P1, L1 and LDPC tables | `crates/channels/src/dvbt/t2/en302755/` |
 
 Sources: ETSI EN 300 401 (DAB), TS 102 563 (DAB+), EN 300 421 (DVB-S), EN 302 307-1 and -2
 (DVB-S2/S2X), EN 300 744 (DVB-T), EN 302 755 (DVB-T2), TS 102 606 (GSE), and ES 201 980 (DRM).

@@ -967,7 +967,7 @@ impl Store {
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
         let mut snapshot = settled(snapshot.clone());
-        snapshot.validate_against(&sdrmm_channels::descriptors())?;
+        snapshot.validate_against(&sdrmm_decoder::descriptors())?;
         let conn = self.lock();
         secrets::lift(&conn, &mut snapshot)?;
         let json = serde_json::to_string(&snapshot)?;
@@ -998,7 +998,7 @@ impl Store {
     ) -> Result<i64, StoreError> {
         let mut document = export.clone();
         document.snapshot.graph.settle_arrays();
-        document.validate_against(&sdrmm_channels::descriptors())?;
+        document.validate_against(&sdrmm_decoder::descriptors())?;
         document.forget_absent_nodes();
         let now = now_rfc3339();
         let mut conn = self.lock();
@@ -1027,7 +1027,7 @@ impl Store {
     ) -> Result<WorkspaceDetail, StoreError> {
         let settled = req.snapshot.clone().map(settled);
         if let Some(snapshot) = &settled {
-            snapshot.validate_against(&sdrmm_channels::descriptors())?;
+            snapshot.validate_against(&sdrmm_decoder::descriptors())?;
         }
         if let Some(name) = &req.name {
             validate_name(name)?;
@@ -1454,7 +1454,7 @@ fn rebase(
     let mut merged = crate::merge::merge_typed(&base, ours, held).map_err(|_| conflict())?;
     merged.drop_dangling();
     merged
-        .validate_against(&sdrmm_channels::descriptors())
+        .validate_against(&sdrmm_decoder::descriptors())
         .map_err(|_| conflict())?;
     Ok(merged)
 }

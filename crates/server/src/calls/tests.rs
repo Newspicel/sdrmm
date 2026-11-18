@@ -33,7 +33,7 @@ async fn a_binding_that_arrives_without_a_state_event_still_records() {
         .add_channel_for(
             set,
             0,
-            sdrmm_channels::default_settings("dmr").expect("dmr is built in"),
+            sdrmm_decoder::default_settings("dmr").expect("dmr is built in"),
             Some("radio"),
         )
         .expect("add channel");

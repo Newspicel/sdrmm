@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::{f32::consts::TAU, sync::LazyLock};
 
@@ -8,9 +11,8 @@ use num_complex::Complex;
 use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = 2_048_000.0;
@@ -73,15 +75,15 @@ pub struct GnssChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<GnssParams, ChannelError> {
-    crate::settings_of::<GnssParams>(settings)
+    sdrmm_decoder::settings_of::<GnssParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-1_023_000.0, 1_023_000.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Passthrough
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 impl NativeChannel for GnssChannel {
@@ -95,7 +97,7 @@ impl NativeChannel for GnssChannel {
     }
 }
 
-impl ChannelRx for GnssChannel {
+impl Channel for GnssChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         if p != self.params {
@@ -550,11 +552,15 @@ fn check_word(raw: u32, previous_d29: bool, previous_d30: bool) -> Option<u32> {
 }
 
 pub(crate) fn gnss_decoder() -> Native<GnssParams> {
-    Native::new::<GnssChannel>(|_| occupied_band())
+    let decoder = Native::new::<GnssChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(1_575_420_000.0)
         .form(gnss_form)
-        .kinds(gnss_kinds)
+        .kinds(gnss_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn gnss_form() -> Vec<SettingField> {
@@ -581,9 +587,11 @@ fn gnss_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::realtime_budget;
+    use sdrmm_decoder_test_support::realtime_budget;
 
     const GPS_SPS_TABLE_2_1_FIRST_TEN_CHIPS_OCTAL: [u16; 32] = [
         0o1440, 0o1620, 0o1710, 0o1744, 0o1133, 0o1455, 0o1131, 0o1454, 0o1626, 0o1504, 0o1642,
@@ -753,7 +761,7 @@ mod tests {
             doppler_hz: 3_250,
             ..GnssParams::default()
         });
-        channel.samples = crate::testutil::complex_noise(9, 0.5, SAMPLES_PER_MS);
+        channel.samples = sdrmm_decoder_test_support::complex_noise(9, 0.5, SAMPLES_PER_MS);
         channel.transform();
         let mut direct = vec![Complex::default(); SAMPLES_PER_MS];
         for (row, doppler) in channel.dopplers().enumerate() {
@@ -794,7 +802,8 @@ mod tests {
                 prn,
                 ..GnssParams::default()
             });
-            let noise = crate::testutil::complex_noise(u32::from(prn), 0.5, RATE as usize);
+            let noise =
+                sdrmm_decoder_test_support::complex_noise(u32::from(prn), 0.5, RATE as usize);
             let mut out = ChannelOutputs::default();
             channel.process(&noise, &mut out);
             assert!(out.events.is_empty(), "PRN {prn}: {:?}", out.events.first());
@@ -809,7 +818,7 @@ mod tests {
         let noise_amp = 0.5f32;
         let noise_power = 2.0 * noise_amp * noise_amp / 3.0;
         let amplitude = (snr_per_ms * noise_power / SAMPLES_PER_MS as f32).sqrt();
-        let mut iq = crate::testutil::complex_noise(5, noise_amp, SAMPLES_PER_MS * 40);
+        let mut iq = sdrmm_decoder_test_support::complex_noise(5, noise_amp, SAMPLES_PER_MS * 40);
         for (n, sample) in iq.iter_mut().enumerate() {
             let carrier = Complex::from_polar(amplitude, TAU * doppler * n as f32 / RATE as f32);
             *sample += carrier * code[(n + 900) % SAMPLES_PER_MS];

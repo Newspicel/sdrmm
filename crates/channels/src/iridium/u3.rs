@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
 use super::rs::{bytes_of_bits, checksum_16, first_39, rs6_correct, rs8_correct, symbols6};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 pub fn parse_u3(payload_bits: &[u8]) -> Value {
     if payload_bits.len() < 312 {

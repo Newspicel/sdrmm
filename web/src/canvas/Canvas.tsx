@@ -403,7 +403,7 @@ function ContextMenu({
         })),
       ),
     );
-    if (node.size != null && isResizable(node.kind)) {
+    if (node.size != null && isResizable(node)) {
       items.push(
         item("Reset size", () =>
           workspace.edit((snapshot) => ({
@@ -448,13 +448,13 @@ function ContextMenu({
 
 function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
   return graph.nodes.map((node) => {
-    const size = (isResizable(node.kind) ? node.size : null) ?? nodeSize(node.kind);
+    const size = (isResizable(node) ? node.size : null) ?? nodeSize(node);
     return {
       id: node.id,
       type: flowTypeOf(node.kind),
       position: node.position,
       data: { node },
-      width: isResizable(node.kind) ? size.w : undefined,
+      width: isResizable(node) ? size.w : undefined,
       height: size.h,
       dragHandle: ".node-drag",
     };

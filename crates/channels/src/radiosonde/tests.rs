@@ -1,4 +1,3 @@
-use crate::nfm::NfmParams;
 use crate::radiosonde::RadiosondeFrame;
 use crate::radiosonde::RadiosondeParams;
 use crate::radiosonde::SondeType;
@@ -18,16 +17,10 @@ use super::{
     rs41::{self, Rs41Frames},
     *,
 };
-use crate::{
-    synth::{
-        self,
-        radiosonde::{
-            Flight, RATE, dfm_payload, flight, imet_packets, m10_frame, m20_frame, rs41_frame,
-            transmission,
-        },
-    },
-    testutil::{add_awgn, complex_noise, settings},
+use crate::synth::radiosonde::{
+    Flight, RATE, dfm_payload, flight, imet_packets, m10_frame, m20_frame, rs41_frame, transmission,
 };
+use sdrmm_decoder_test_support::{add_awgn, complex_noise, settings};
 
 const BLOCKS: [usize; 7] = [4_096, 1, 997, 65, 12_288, 7, 2_048];
 const BOTH: Accept = Accept {
@@ -445,7 +438,7 @@ fn mixed_signal() -> Vec<Complex<f32>> {
         (SondeType::Imet4, 3),
     ] {
         iq.extend(transmission(sonde, frames, RATE));
-        iq.extend(synth::silence(4_800));
+        iq.extend(sdrmm_modem::synth::silence(4_800));
     }
     iq
 }
@@ -485,7 +478,7 @@ fn frequency_offset_and_noise_still_decode() {
         (SondeType::Imet4, 3, 3_500.0, 0.25),
     ] {
         let mut iq = transmission(sonde, frames, RATE);
-        synth::shift(&mut iq, offset_hz, RATE);
+        sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
         add_awgn(&mut iq, sigma, 7);
         let decoded = decode(Some(sonde), &iq);
         assert!(
@@ -519,7 +512,7 @@ fn pure_noise_emits_and_rejects_nothing() {
 fn wrong_params_and_rate_are_rejected() {
     let wrong = RadiosondeChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+        settings(ChannelParams::bare("nfm")),
     );
     assert!(matches!(wrong, Err(ChannelError::InvalidSettings(_))));
     let rate = RadiosondeChannel::new(
@@ -533,12 +526,7 @@ fn wrong_params_and_rate_are_rejected() {
     );
     assert!(rate.is_err());
     let mut chan = channel(None);
-    assert!(
-        chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
-        ))
-        .is_err()
-    );
+    assert!(chan.apply(settings(ChannelParams::bare("nfm"))).is_err());
 }
 
 #[test]

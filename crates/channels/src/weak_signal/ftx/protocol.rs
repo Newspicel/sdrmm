@@ -1,3 +1,5 @@
+use sdrmm_modem::framesync::ToneArray;
+
 use super::ldpc;
 
 pub(crate) const SAMPLE_RATE: f32 = 12_000.0;
@@ -10,7 +12,7 @@ pub(crate) struct Protocol {
     pub(crate) tones: usize,
     pub(crate) bits_per_symbol: usize,
     pub(crate) symbols: usize,
-    pub(crate) sync: &'static [(usize, &'static [u8])],
+    pub(crate) sync: ToneArray,
     pub(crate) gray: &'static [u8],
     pub(crate) scramble: u128,
     pub(crate) bt: f32,
@@ -38,7 +40,7 @@ pub(crate) const FT8: Protocol = Protocol {
     tones: 8,
     bits_per_symbol: 3,
     symbols: 79,
-    sync: &[(0, FT8_COSTAS), (36, FT8_COSTAS), (72, FT8_COSTAS)],
+    sync: ToneArray::new(&[(0, FT8_COSTAS), (36, FT8_COSTAS), (72, FT8_COSTAS)]),
     gray: &[0, 1, 3, 2, 5, 6, 4, 7],
     scramble: 0,
     bt: 2.0,
@@ -63,12 +65,12 @@ pub(crate) const FT4: Protocol = Protocol {
     tones: 4,
     bits_per_symbol: 2,
     symbols: 103,
-    sync: &[
+    sync: ToneArray::new(&[
         (0, FT4_COSTAS[0]),
         (33, FT4_COSTAS[1]),
         (66, FT4_COSTAS[2]),
         (99, FT4_COSTAS[3]),
-    ],
+    ]),
     gray: &[0, 1, 3, 2],
     scramble: 0x4A5E_89B4_B08A_7955_BE28 >> 3,
     bt: 1.0,
@@ -106,18 +108,11 @@ impl Protocol {
     }
 
     pub(crate) fn sync_tone(&self, symbol: usize) -> Option<u8> {
-        self.sync.iter().find_map(|&(start, pattern)| {
-            symbol
-                .checked_sub(start)
-                .and_then(|offset| pattern.get(offset).copied())
-        })
+        self.sync.tone(symbol)
     }
 
     pub(crate) fn data_blocks(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.sync.windows(2).map(|pair| {
-            let start = pair[0].0 + pair[0].1.len();
-            (start, pair[1].0 - start)
-        })
+        self.sync.data_blocks()
     }
 
     pub(crate) fn inverse_gray(&self, tone: usize) -> usize {
@@ -154,7 +149,7 @@ mod tests {
         for protocol in [&FT8, &FT4] {
             let symbols: usize = protocol.data_blocks().map(|(_, length)| length).sum();
             assert_eq!(symbols * protocol.bits_per_symbol, ldpc::N);
-            let sync: usize = protocol.sync.iter().map(|(_, pattern)| pattern.len()).sum();
+            let sync = protocol.sync.sync_symbols();
             assert_eq!(symbols + sync, protocol.symbols);
         }
     }

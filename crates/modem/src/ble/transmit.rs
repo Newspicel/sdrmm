@@ -80,3 +80,9 @@ pub fn modulate(symbols: &[bool], rate_hz: f64) -> Vec<Complex<f32>> {
 pub fn packet(pdu: &[u8], channel_index: u8, phy: BlePhy, rate_hz: f64) -> Vec<Complex<f32>> {
     modulate(&symbols(pdu, channel_index, phy), rate_hz)
 }
+
+/// A packet sent on RF channel `rf_channel` (0 to 39, in frequency order).
+#[must_use]
+pub fn rf_packet(pdu: &[u8], rf_channel: u8, phy: BlePhy, rate_hz: f64) -> Vec<Complex<f32>> {
+    packet(pdu, super::channel_index(rf_channel), phy, rate_hz)
+}

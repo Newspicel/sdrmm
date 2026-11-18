@@ -8,7 +8,7 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_channels::{AUDIO_RATE, ChannelCtx, ChannelOutputs, ChannelRx};
+use sdrmm_decoder::{AUDIO_RATE, Channel, ChannelCtx, ChannelOutputs};
 use sdrmm_wire::ChannelSettings;
 
 use super::Publisher;
@@ -68,8 +68,8 @@ pub(crate) struct ChannelPacket {
 pub(crate) struct ChannelPublisher {
     pub(crate) queue: Publisher<ChannelPacket>,
     wanted: Arc<AtomicU8>,
-    retired_rx: Producer<Box<dyn ChannelRx>>,
-    fresh_rx: Consumer<Box<dyn ChannelRx>>,
+    retired_rx: Producer<Box<dyn Channel>>,
+    fresh_rx: Consumer<Box<dyn Channel>>,
 }
 
 impl ChannelPublisher {
@@ -81,10 +81,8 @@ impl ChannelPublisher {
         decoded: DecodedSink,
     ) -> std::io::Result<Self> {
         let iq_capacity = iq_capacity(rate, device_rate);
-        let pcm_capacity = audio_capacity(
-            device_rate,
-            sdrmm_channels::audio_channels(&settings.params),
-        );
+        let pcm_capacity =
+            audio_capacity(device_rate, sdrmm_decoder::audio_channels(&settings.params));
         let depth = publication_depth(
             device_rate,
             iq_capacity * size_of::<Complex<f32>>() + pcm_capacity * size_of::<f32>(),
@@ -92,8 +90,8 @@ impl ChannelPublisher {
         let device_set = decoded.device_set();
         let channel = decoded.channel();
         let settings = settings.clone();
-        let make_rx = move || sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings);
-        let (retired_rx, mut old_rx) = RingBuffer::<Box<dyn ChannelRx>>::new(1);
+        let make_rx = move || sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings);
+        let (retired_rx, mut old_rx) = RingBuffer::<Box<dyn Channel>>::new(1);
         let (mut ready_rx, fresh_rx) = RingBuffer::new(1);
         let fresh = make_rx().map_err(std::io::Error::other)?;
         if ready_rx.push(fresh).is_err() {
@@ -225,7 +223,7 @@ impl ChannelPublisher {
         })
     }
 
-    pub(crate) fn recover(&mut self, receiver: &mut Box<dyn ChannelRx>) -> bool {
+    pub(crate) fn recover(&mut self, receiver: &mut Box<dyn Channel>) -> bool {
         let Ok(retired) = self.retired_rx.write_chunk_uninit(1) else {
             return false;
         };

@@ -8,7 +8,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{LoopFilter, math::fft::FftPair};
 
 use self::{acquire::Point, resample::Interpolator};
-use super::{MAX_CLOCK_PPM, TIMING_BW, TRACK_BW, params::CssParams};
+use super::{MAX_CLOCK_PPM, TIMING_BW, TRACK_BW, params::CssParams, wrap};
 use crate::{constellation::demap::energy_llrs, soft::Llr};
 
 const TRACK_DAMPING: f64 = FRAC_1_SQRT_2;
@@ -235,10 +235,6 @@ fn timing_loop(chips: usize) -> LoopFilter {
 /// The most the symbol clock may drift, in samples per symbol, for acquisition and tracking.
 fn timing_range(chips: usize) -> f64 {
     (chips as f64 * MAX_CLOCK_PPM * 1e-6).max(MIN_TIMING_RANGE)
-}
-
-fn wrap(value: f64, period: f64) -> f64 {
-    value - (value / period).round() * period
 }
 
 pub(super) fn argmax_bin(energies: &[f32]) -> u32 {

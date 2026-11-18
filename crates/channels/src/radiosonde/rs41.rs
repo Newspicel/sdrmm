@@ -27,6 +27,7 @@ pub(crate) const PARITY_POS: usize = 8;
 pub(crate) const PARITY_LEN: usize = 24;
 pub(crate) const MESSAGE_POS: usize = 56;
 pub(crate) const FRAME_TYPE_POS: usize = 56;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const STANDARD_TYPE: u8 = 0x0F;
 pub(crate) const BLOCKS_POS: usize = 0x39;
 pub(crate) const RS_PRIMITIVE: u16 = 0x11D;
@@ -35,7 +36,9 @@ pub(crate) const BLOCK_STATUS: u8 = 0x79;
 pub(crate) const BLOCK_PTU: u8 = 0x7A;
 pub(crate) const BLOCK_GPS_POSITION: u8 = 0x7B;
 pub(crate) const BLOCK_GPS_INFO: u8 = 0x7C;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const BLOCK_GPS_RAW: u8 = 0x7D;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const BLOCK_EMPTY: u8 = 0x76;
 
 pub(crate) const STATUS_CALIBRATION_INDEX: usize = 23;

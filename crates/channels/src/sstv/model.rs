@@ -1,4 +1,4 @@
-use crate::default_true;
+use sdrmm_decoder::default_true;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
 use serde::{Deserialize, Serialize};
 
@@ -205,7 +205,6 @@ mod model_tests {
 
     #[test]
     fn an_sstv_picture_summarises_its_mode_size_and_outcome() {
-        crate::registry::init();
         let complete = DecoderEvent::of(&SstvPicture {
             seq: 1,
             mode: SstvMode::MartinM1,
@@ -272,27 +271,6 @@ mod model_tests {
             entity::<SstvPicture>(
                 "sstv",
                 r#"{"seq":1,"mode":"martin_m1","width":320,"height":256,"lines":256,"complete":true,"duration_ms":114300}"#
-            ),
-            None
-        );
-        assert_eq!(
-            entity::<crate::apt::AptImage>(
-                "apt",
-                r#"{"seq":1,"lines":1200,"complete":true,"duration_ms":600000}"#
-            ),
-            None
-        );
-        assert_eq!(
-            entity::<crate::lrpt::LrptImage>(
-                "lrpt",
-                r#"{"seq":1,"mode":"qpsk72","width":1568,"lines":800,"complete":true,"duration_ms":600000,"apids":[64,65,66],"frames":100,"frames_corrected":2,"frames_failed":0,"packets_lost":0}"#
-            ),
-            None
-        );
-        assert_eq!(
-            entity::<crate::wefax::WefaxPicture>(
-                "wefax",
-                r#"{"seq":1,"ioc":"ioc576","lpm":"lpm120","width":1809,"lines":1200,"complete":true,"duration_ms":600000}"#
             ),
             None
         );

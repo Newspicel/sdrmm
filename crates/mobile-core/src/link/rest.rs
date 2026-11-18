@@ -226,13 +226,10 @@ impl Api for RestClient {
 
     fn radar(&self, node: String) -> BoxFuture<'_, Result<RadarUpdate, RestError>> {
         Box::pin(async move {
-            match self.get(&["api", "processors", &node]).await? {
-                ProcessorReading::PassiveRadar(update) => Ok(update),
-                other => Err(RestError::Decode(format!(
-                    "{node} runs {}, not a radar",
-                    other.type_id()
-                ))),
-            }
+            let reading: ProcessorReading = self.get(&["api", "processors", &node]).await?;
+            reading
+                .parse::<RadarUpdate>()
+                .map_err(|error| RestError::Decode(format!("{node} is not a radar: {error}")))
         })
     }
 

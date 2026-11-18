@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PatchGraph, ProcessorStatus } from "../../lib/types";
-import { CATALOG, catalogBody } from "../../test/catalog";
+import { CATALOG, catalogBody, processorBody } from "../../test/catalog";
 import { arrayStatus, laneStatus, placed } from "../../test/fixtures";
 import { resolvedBy } from "../../test/recorded";
 import { nodeOf } from "../graph";
@@ -18,7 +18,7 @@ import {
 } from "./processorFace";
 
 const WIRED: PatchGraph = {
-  nodes: [placed("arr", catalogBody("array")), placed("df", catalogBody("df"))],
+  nodes: [placed("arr", catalogBody("array")), placed("df", processorBody("df"))],
   edges: [{ from: { node: "arr", port: "array" }, to: { node: "df", port: "array" } }],
 };
 
@@ -119,7 +119,7 @@ describe("ageLabel", () => {
 
 function stitched(wired: boolean): PatchGraph {
   return {
-    nodes: [placed("arr", catalogBody("array")), placed("wide", catalogBody("stitch"))],
+    nodes: [placed("arr", catalogBody("array")), placed("wide", processorBody("stitch"))],
     edges: wired
       ? [{ from: { node: "arr", port: "array" }, to: { node: "wide", port: "array" } }]
       : [],
@@ -140,7 +140,7 @@ describe("array tuning a processor needs", () => {
   });
 
   it("comes from the catalog, not the processor's name", () => {
-    const stitch = processorKindOf(CATALOG, placed("wide", catalogBody("stitch")));
+    const stitch = processorKindOf(CATALOG, placed("wide", processorBody("stitch")));
     expect(stitch.facets.tuning).toBe("spread");
     expect(stitch.loaded).toBe(true);
   });

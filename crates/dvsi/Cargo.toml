@@ -13,7 +13,7 @@ publish = false
 workspace = true
 
 [dependencies]
-sdrmm-channels.workspace = true
+sdrmm-codec.workspace = true
 sdrmm-serial.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

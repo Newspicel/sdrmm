@@ -36,16 +36,8 @@ export interface ProcessorKindInfo {
   loaded: boolean;
 }
 
-/** What the catalog says a processor node draws: a built-in's own entry, or its plugin type. */
+/** What the catalog says a processor node draws: the processor type it runs. */
 export function processorKindOf(catalog: PatchCatalog, node: PatchNode): ProcessorKindInfo {
-  const entry = catalog.nodes.find((type) => type.kind === node.kind);
-  if (entry?.picks !== "processor") {
-    return {
-      title: entry?.name ?? FALLBACK_TITLE,
-      facets: entry?.processor ?? NO_FACETS,
-      loaded: entry !== undefined,
-    };
-  }
   const typeId = node.kind === "processor" ? (node.data?.processor_type ?? "") : "";
   const type = processorTypeOf(catalog, typeId);
   return {

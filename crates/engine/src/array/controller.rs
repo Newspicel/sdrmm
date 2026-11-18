@@ -10,7 +10,7 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::Consumer;
-use sdrmm_channels::array_processor::MAX_LANES;
+use sdrmm_array::MAX_LANES;
 use sdrmm_dsp::{
     array::array_sync::{COARSE_LAGS, coarse_decimation},
     array::manifold::{Direction, Vec3, steer},

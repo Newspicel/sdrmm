@@ -5,8 +5,7 @@ use crate::{
     channel::{ChannelInfo, ChannelSettings},
     filter::EventFilterNode,
     patch::{
-        AudioRecorderNode, BeamformerNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge,
-        PatchNode, Position,
+        AudioRecorderNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode, Position,
     },
     state::{DeviceSet, TrunkControl, TrunkFollower, TrunkSystemStatus},
 };
@@ -517,7 +516,7 @@ fn beam_graph() -> PatchGraph {
         nodes: vec![
             radio("dev", "band"),
             node("arr", NodeBody::Array(crate::array::ArrayNode::default())),
-            node("bf", NodeBody::Beamformer(BeamformerNode::default())),
+            node("bf", crate::patch::tests::processors::body("beamformer")),
             channel("voice", "probe_voice"),
         ],
         edges: vec![

@@ -14,8 +14,8 @@ mod stream;
 mod x86;
 
 pub use design::{
-    MIN_TAPS, design_bandpass, design_gaussian, design_halfband, design_lowpass,
-    design_lowpass_blackman_harris, design_lowpass_kaiser, design_rds_biphase, design_rds_shaping,
+    MIN_TAPS, design_bandpass, design_cosine_biphase, design_cosine_shaping, design_gaussian,
+    design_halfband, design_lowpass, design_lowpass_blackman_harris, design_lowpass_kaiser,
     design_rrc, design_rrc_unit_energy, halfband_taps, kaiser_beta, kaiser_taps, kaiser_transition,
     rrc_pulse,
 };

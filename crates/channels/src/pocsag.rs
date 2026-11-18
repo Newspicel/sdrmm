@@ -1,26 +1,30 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 pub(crate) mod idea;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 use idea::{Civil, Header, KEY_BYTES};
 pub use model::*;
 use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, SyncDetector, design_lowpass, hamming_distance, pocsag_bch_decode};
+use sdrmm_dsp::{ShortBch, SyncDetector, hamming_distance};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_BURST},
     pulse::{self, Norm},
 };
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
+/// BCH(31,21) plus an even parity bit.
+pub(crate) const BCH: ShortBch<31> = ShortBch::new(0x769, 10);
 const CHANNEL_TAPS: usize = 65;
 const BANDWIDTHS_HZ: [f64; 2] = [12_500.0, 20_000.0];
 
@@ -127,7 +131,7 @@ impl Reader {
 }
 
 fn idea_key(text: &str) -> Result<[u8; KEY_BYTES], ChannelError> {
-    crate::crypto::hex(text)
+    sdrmm_crypto::hex(text)
         .and_then(|bytes| bytes.try_into().ok())
         .ok_or_else(|| {
             ChannelError::InvalidSettings(format!(
@@ -165,7 +169,7 @@ fn cpm_params(rate: f64, baud: u16) -> CpmParams {
 }
 
 fn params(settings: &ChannelSettings) -> Result<PocsagParams, ChannelError> {
-    crate::settings_of::<PocsagParams>(settings)
+    sdrmm_decoder::settings_of::<PocsagParams>(settings)
 }
 
 fn check_params(p: &PocsagParams) -> Result<(), ChannelError> {
@@ -185,13 +189,10 @@ pub(crate) fn occupied_band(p: &PocsagParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &PocsagParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &PocsagParams) -> Result<FilterSpec, ChannelError> {
     check_params(p)?;
     let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, half))
 }
 
 fn candidates(rate: f64, baud: PocsagBaud) -> Vec<Candidate> {
@@ -301,7 +302,7 @@ impl Candidate {
     }
 
     fn codeword(&mut self, index: usize, word: u32, reader: &Reader, out: &mut Vec<DecoderEvent>) {
-        let Some((word, errors)) = pocsag_bch_decode(word) else {
+        let Some((word, errors)) = BCH.decode_extended(word) else {
             if let Some(pending) = &mut self.pending {
                 pending.poisoned = true;
             }
@@ -483,7 +484,7 @@ impl NativeChannel for PocsagChannel {
     }
 }
 
-impl ChannelRx for PocsagChannel {
+impl Channel for PocsagChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;
@@ -587,12 +588,16 @@ fn pocsag_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn pocsag_decoder() -> Native<PocsagParams> {
-    Native::new::<PocsagChannel>(occupied_band)
+    let decoder = Native::new::<PocsagChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(pocsag_signatures)
         .trial(pocsag_trial)
         .form(pocsag_form)
-        .kinds(pocsag_kinds)
+        .kinds(pocsag_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn pocsag_form() -> Vec<SettingField> {
@@ -634,22 +639,18 @@ fn pocsag_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use crate::nfm::NfmParams;
     use sdrmm_wire::ChannelParams;
 
     use super::idea::Civil;
     use super::*;
-    use crate::{
-        synth::{
-            add_noise,
-            pocsag::{IdeaSeal, Page, codewords, keyed, transmission},
-            silence,
-        },
-        testutil::settings,
-    };
+    use crate::synth::pocsag::{IdeaSeal, Page, codewords, keyed, transmission};
+    use sdrmm_decoder_test_support::settings;
+    use sdrmm_modem::synth::{add_noise, silence};
 
     const RATE: f64 = 24_000.0;
     const DEVIATION_HZ: f64 = 4_500.0;
@@ -838,12 +839,12 @@ mod tests {
         iq
     }
 
-    fn run(chan: &mut dyn ChannelRx, iq: &[Complex<f32>]) -> Vec<PocsagMessage> {
+    fn run(chan: &mut dyn Channel, iq: &[Complex<f32>]) -> Vec<PocsagMessage> {
         run_chunked(chan, iq, &[iq.len().max(1)])
     }
 
     fn run_chunked(
-        chan: &mut dyn ChannelRx,
+        chan: &mut dyn Channel,
         iq: &[Complex<f32>],
         chunks: &[usize],
     ) -> Vec<PocsagMessage> {
@@ -1050,7 +1051,7 @@ mod tests {
     fn a_pager_detuned_by_kilohertz_decodes_in_heavy_noise() {
         for offset_hz in [-5_000.0, 3_000.0] {
             let mut iq = burst(&pages(), 1_200);
-            crate::synth::shift(&mut iq, offset_hz, RATE);
+            sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
             add_noise(&mut iq, 0x2468_ace1, 2.0);
             let mut chan = channel();
             assert_expected_pages(&run(&mut chan, &iq), 1_200);
@@ -1082,7 +1083,7 @@ mod tests {
             .expect("the fixture carries message codewords");
         damaged[victim] ^= 0b0111_0000_0000;
         assert_eq!(
-            pocsag_bch_decode(damaged[victim]),
+            BCH.decode_extended(damaged[victim]),
             None,
             "the fixture must be uncorrectable"
         );
@@ -1132,13 +1133,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel();
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = PocsagChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("nfm")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

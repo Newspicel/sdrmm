@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sdrmm_channels::{array_processor::GeoFix, pose_clock::PoseClock};
+use sdrmm_array::{GeoFix, pose_clock::PoseClock};
 use sdrmm_device::now_ns;
 use sdrmm_wire::{HeadingSource, LatLon, PositionFix};
 

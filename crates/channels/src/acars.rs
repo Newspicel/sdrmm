@@ -1,27 +1,11 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
-pub(crate) mod adsc;
-pub(crate) mod airline5z;
-mod app;
-pub(crate) mod arinc622;
-mod bits;
-pub(crate) mod block;
-pub(crate) mod cfb;
-mod codec;
-pub(crate) mod cpdlc;
-pub(crate) mod fpn;
-pub(crate) mod media_adv;
-mod message;
-pub(crate) mod met;
-pub(crate) mod miam;
-pub(crate) mod min;
-pub(crate) mod ohma;
-pub(crate) mod oooi;
-pub(crate) mod position;
-pub(crate) mod qseries;
 const ACARS_VHF: &[HzRange] = &[HzRange::mhz(129.0, 137.0)];
 
 fn acars_signatures() -> Vec<SignalSignature> {
@@ -42,13 +26,17 @@ fn acars_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn acars_decoder() -> Native<AcarsParams> {
-    Native::new::<AcarsChannel>(occupied_band)
+    let decoder = Native::new::<AcarsChannel>(occupied_band)
         .filter(channel_filter)
         .home(131_550_000.0)
         .signatures(acars_signatures)
         .trial(acars_trial)
         .form(acars_form)
-        .kinds(acars_kinds)
+        .kinds(acars_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn acars_form() -> Vec<SettingField> {
@@ -59,28 +47,17 @@ fn acars_kinds() -> Vec<KindSpec> {
     vec![crate::acars::acars_kind()]
 }
 
-#[cfg(test)]
-mod real_messages;
-pub(crate) mod reasm;
-pub(crate) mod sublabel;
-#[cfg(test)]
-mod xng_equivalence;
-
-#[cfg(test)]
-pub(crate) use app::summary;
-pub(crate) use app::{AcarsApp, AppDecode, decode};
-pub(crate) use message::AcarsCore;
+use sdrmm_aviation::acars::{AcarsApp, AppDecode, block, decode, miam, reasm};
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{DcBlocker, Decimator, design_lowpass};
+use sdrmm_dsp::DcBlocker;
 use sdrmm_modem::cpm::MskDetector;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 use block::AcarsBlock;
@@ -122,7 +99,7 @@ pub struct AcarsChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<AcarsParams, ChannelError> {
-    crate::settings_of::<AcarsParams>(settings)
+    sdrmm_decoder::settings_of::<AcarsParams>(settings)
 }
 
 fn check_params(p: &AcarsParams) -> Result<(), ChannelError> {
@@ -143,13 +120,10 @@ pub(crate) fn occupied_band(p: &AcarsParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: &AcarsParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &AcarsParams) -> Result<FilterSpec, ChannelError> {
     check_params(p)?;
     let (_, half) = occupied_band(p);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, half))
 }
 
 impl NativeChannel for AcarsChannel {
@@ -169,7 +143,7 @@ impl NativeChannel for AcarsChannel {
     }
 }
 
-impl ChannelRx for AcarsChannel {
+impl Channel for AcarsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         check_params(&params(&settings)?)
     }
@@ -373,18 +347,17 @@ fn message(
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
-    use crate::nfm::NfmParams;
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{
-        synth::{
-            self,
-            acars::{Block, transmission},
-        },
-        testutil::{complex_noise, settings},
+    use crate::synth::{
+        self,
+        acars::{Block, transmission},
     };
+    use sdrmm_decoder_test_support::{complex_noise, settings};
 
     const RATE: f64 = 24_000.0;
     const BLOCKS: [usize; 7] = [997, 1, 4_096, 65, 2_048, 7, 1_024];
@@ -434,9 +407,11 @@ mod tests {
 
     fn filtered(iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
         let mut narrow = Vec::new();
-        channel_filter(&AcarsParams::default())
-            .unwrap()
-            .process(iq, &mut narrow);
+        sdrmm_decoder_test_support::built_filter(
+            channel_filter(&AcarsParams::default()).unwrap(),
+            DESCRIPTOR.input_rate_hz,
+        )
+        .process(iq, &mut narrow);
         narrow
     }
 
@@ -531,7 +506,7 @@ mod tests {
     #[test]
     fn decodes_through_additive_noise() {
         let mut iq = transmission(&downlink(), RATE);
-        synth::add_noise(&mut iq, 0xabad_1dea, 0.15);
+        sdrmm_modem::synth::add_noise(&mut iq, 0xabad_1dea, 0.15);
         let messages = decode(&filtered(&iq));
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert_eq!(messages[0].text, "REPORT ENGINE 1 OK");
@@ -867,9 +842,7 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel();
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 

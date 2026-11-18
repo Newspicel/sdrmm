@@ -80,7 +80,7 @@ fn has_video(node: &Value) -> bool {
             .get("data")
             .and_then(|data| data.get("channel_type"))
             .and_then(Value::as_str)
-            .and_then(sdrmm_channels::descriptor)
+            .and_then(sdrmm_decoder::descriptor)
             .is_some_and(|descriptor| descriptor.has_video)
 }
 

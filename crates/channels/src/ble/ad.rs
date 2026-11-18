@@ -2,39 +2,18 @@ use crate::ble::BleBeacon;
 use crate::ble::BleFlags;
 use crate::ble::BleManufacturer;
 use crate::ble::BleService;
+use sdrmm_crypto::hex_string as hex;
 
 use super::{beacon, names};
+use sdrmm_modem::ble::ad::{
+    APPEARANCE, FLAGS, MANUFACTURER, NAME_COMPLETE, NAME_SHORT, SERVICE_DATA_16, SERVICE_DATA_32,
+    SERVICE_DATA_128, TX_POWER, URI, UUID16_ALL, UUID16_SOME, UUID32_ALL, UUID32_SOME, UUID128_ALL,
+    UUID128_SOME, structures,
+};
 
-const FLAGS: u8 = 0x01;
-const UUID16_SOME: u8 = 0x02;
-const UUID16_ALL: u8 = 0x03;
-const UUID32_SOME: u8 = 0x04;
-const UUID32_ALL: u8 = 0x05;
-const UUID128_SOME: u8 = 0x06;
-const UUID128_ALL: u8 = 0x07;
-const NAME_SHORT: u8 = 0x08;
-const NAME_COMPLETE: u8 = 0x09;
-const TX_POWER: u8 = 0x0A;
-pub(crate) const SERVICE_DATA_16: u8 = 0x16;
-const APPEARANCE: u8 = 0x19;
-const SERVICE_DATA_32: u8 = 0x20;
-const SERVICE_DATA_128: u8 = 0x21;
-const URI: u8 = 0x24;
-const MANUFACTURER: u8 = 0xFF;
 const BASE_UUID_TAIL: [u8; 12] = [
     0xFB, 0x34, 0x9B, 0x5F, 0x80, 0x00, 0x00, 0x80, 0x00, 0x10, 0x00, 0x00,
 ];
-
-pub(crate) fn structures(data: &[u8]) -> impl Iterator<Item = (u8, &[u8])> {
-    let mut rest = data;
-    std::iter::from_fn(move || {
-        let (&length, tail) = rest.split_first()?;
-        let (structure, next) = tail.split_at_checked(usize::from(length))?;
-        let (&kind, body) = structure.split_first()?;
-        rest = next;
-        Some((kind, body))
-    })
-}
 
 #[derive(Debug, Default, PartialEq)]
 pub(crate) struct Fields {
@@ -168,13 +147,4 @@ pub(crate) fn text(bytes: &[u8]) -> String {
         .chars()
         .map(|c| if c.is_control() { '?' } else { c })
         .collect()
-}
-
-#[must_use]
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        text.push_str(&format!("{byte:02x}"));
-    }
-    text
 }

@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
-use sdrmm_channels::VideoPicture;
+use sdrmm_decoder::VideoPicture;
 
 pub(crate) const IMAGE_CHANNEL_CAP: usize = 8;
 pub(crate) const IMAGE_QUEUE_CAP: usize = 4;
@@ -11,7 +11,7 @@ pub struct ImageCapture {
     pub channel: u32,
     pub at: String,
     pub freq_hz: f64,
-    pub source: &'static str,
+    pub source: Cow<'static, str>,
     pub mode: String,
     pub complete: bool,
     pub lines: u16,

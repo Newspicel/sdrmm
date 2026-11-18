@@ -1,0 +1,729 @@
+use super::*;
+use sdrmm_channels::{IlsReading, LoraFrame, LoraIntegrity, PocsagMessage, synth};
+use sdrmm_wire::{DvFrame, EventContract};
+
+const RATE: f64 = 1_024_000.0;
+const CENTER: f64 = 145_000_000.0;
+
+fn noise(seconds: f64, seed: u32) -> Vec<Complex<f32>> {
+    complex_noise(seed, 0.002, (RATE * seconds) as usize)
+}
+
+fn run(monitor: &mut SpectrumMonitor, samples: &[Complex<f32>], start: u64) -> Vec<MonitorOutput> {
+    let mut output = Vec::new();
+    for (index, block) in samples.chunks(8192).enumerate() {
+        output.extend(monitor.process(block, start + (index * 8192) as u64));
+    }
+    output
+}
+
+fn keeping() -> SpectrumMonitorNode {
+    SpectrumMonitorNode {
+        keep_clips: true,
+        ..SpectrumMonitorNode::default()
+    }
+}
+
+fn monitor() -> SpectrumMonitor {
+    SpectrumMonitor::new(RATE, CENTER, keeping()).unwrap()
+}
+
+fn transmissions(output: &[MonitorOutput]) -> Vec<Transmission> {
+    output
+        .iter()
+        .filter_map(|out| out.event.read::<Transmission>())
+        .collect()
+}
+
+#[test]
+fn quiet_wideband_stream_does_not_invent_transmissions() {
+    let mut monitor = monitor();
+    assert!(run(&mut monitor, &noise(0.5, 41), 0).is_empty());
+}
+
+fn uncertain_noise(seconds: f64) -> Vec<Complex<f32>> {
+    let mut iq = noise(seconds, 80);
+    let mut filtered = Complex::new(0.0, 0.0);
+    let random = complex_noise(81, 0.6, iq.len());
+    for (i, (sample, random)) in iq.iter_mut().zip(random).enumerate() {
+        filtered = filtered * 0.95 + random * 0.05;
+        *sample += filtered
+            * Complex::from_polar(
+                1.0,
+                (std::f64::consts::TAU * 250_000.0 * i as f64 / RATE)
+                    .rem_euclid(std::f64::consts::TAU) as f32,
+            );
+    }
+    iq
+}
+
+#[test]
+fn uncertain_noise_is_rejected_before_decoding_or_recording() {
+    let iq = uncertain_noise(0.3);
+    let mut permissive = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            min_confidence: 0.0,
+            ..keeping()
+        },
+    )
+    .unwrap();
+    let mut output = run(&mut permissive, &iq, 0);
+    output.extend(permissive.finish(TransmissionState::Completed, None));
+    let detected = transmissions(&output);
+    assert!(!detected.is_empty());
+    assert!(
+        detected.iter().all(|t| t.signal.confidence < 0.7),
+        "{detected:?}"
+    );
+    let mut filtered = monitor();
+    assert!(run(&mut filtered, &iq, 0).is_empty());
+    assert!(filtered.tracks.is_empty());
+    assert!(
+        filtered
+            .finish(TransmissionState::Completed, None)
+            .is_empty()
+    );
+}
+
+#[test]
+fn reversed_range_is_rejected_before_capture() {
+    assert!(
+        SpectrumMonitor::new(
+            RATE,
+            CENTER,
+            SpectrumMonitorNode {
+                start_hz: Some(CENTER + 1.0),
+                stop_hz: Some(CENTER),
+                ..Default::default()
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn invalid_confidence_is_rejected_before_capture() {
+    for min_confidence in [-0.1, 1.1, f32::NAN] {
+        assert!(
+            SpectrumMonitor::new(
+                RATE,
+                CENTER,
+                SpectrumMonitorNode {
+                    min_confidence,
+                    ..Default::default()
+                }
+            )
+            .is_err()
+        );
+    }
+}
+
+fn am_and_fm() -> Vec<Complex<f32>> {
+    let mut iq = noise(0.7, 42);
+    let mut audio = sdrmm_modem::synth::tone_audio(900.0, 0.6, RATE, iq.len());
+    for (index, sample) in audio.iter_mut().enumerate() {
+        *sample += 0.2 * (std::f64::consts::TAU * 1437.0 * index as f64 / RATE).sin() as f32;
+    }
+    let mut fm = sdrmm_modem::synth::fm_modulate(&audio, 3000.0, RATE);
+    sdrmm_modem::synth::shift(&mut fm, 250_000.0, RATE);
+    let mut am: Vec<_> = audio
+        .iter()
+        .map(|sample| Complex::new(0.4 * (1.0 + sample), 0.0))
+        .collect();
+    sdrmm_modem::synth::shift(&mut am, -250_000.0, RATE);
+    for ((sample, fm), am) in iq.iter_mut().zip(fm).zip(am) {
+        *sample += (fm + am) * 0.4;
+    }
+    iq
+}
+
+#[test]
+fn concurrent_am_and_fm_outside_identifier_span_have_separate_audio_events() {
+    let iq = am_and_fm();
+    let mut monitor = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            min_confidence: 0.0,
+            ..keeping()
+        },
+    )
+    .unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    assert!(transmissions(&output).is_empty());
+    output.extend(run(&mut monitor, &noise(0.5, 43), iq.len() as u64));
+    assert_eq!(transmissions(&output).len(), 2);
+    let completed: Vec<_> = output
+        .iter()
+        .filter(|out| {
+            out.event
+                .read::<Transmission>()
+                .is_some_and(|t| t.state == TransmissionState::Completed)
+        })
+        .collect();
+    for offset in [-250_000.0, 250_000.0] {
+        let found = completed
+            .iter()
+            .find(|out| (out.frequency_hz - CENTER - offset).abs() < 4000.0)
+            .unwrap_or_else(|| panic!("missing {offset}: {:?}", transmissions(&output)));
+        assert!(
+            !found.audio.is_empty(),
+            "no audio at {offset}: {:?}",
+            found.event
+        );
+        assert!(found.audio.iter().any(|sample| sample.unsigned_abs() > 10));
+    }
+}
+
+#[test]
+fn signals_outside_the_range_are_ignored() {
+    let iq = am_and_fm();
+    let mut monitor = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            min_confidence: 0.0,
+            start_hz: Some(CENTER),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(run(&mut monitor, &noise(0.5, 43), iq.len() as u64));
+    assert!(!output.is_empty());
+    assert!(
+        output.iter().all(|out| out.frequency_hz > CENTER),
+        "{:?}",
+        transmissions(&output)
+    );
+}
+
+#[test]
+fn buffered_pager_decodes_the_first_message_and_retains_its_origin() {
+    let pages = [synth::pocsag::Page {
+        address: 1_234_567,
+        function: 3,
+        text: "MONITOR FIRST FRAME".to_owned(),
+        numeric: false,
+        seal: None,
+    }];
+    let mut iq = synth::pocsag::transmission(&pages, 1200, 4500.0, RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 300_000.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 44, 0.002);
+    let mut monitor = monitor();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(run(&mut monitor, &noise(0.5, 45), iq.len() as u64));
+    let decoded = output
+        .iter()
+        .find(|out| {
+            out.event
+                .read::<PocsagMessage>()
+                .is_some_and(|page| page.text.contains("MONITOR FIRST FRAME"))
+        })
+        .unwrap_or_else(|| panic!("pager not decoded: {:?}", transmissions(&output)));
+    assert!(decoded.transmission > 0);
+    assert!((decoded.frequency_hz - CENTER - 300_000.0).abs() < 3000.0);
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.id == decoded.transmission && t.start_sample == 0)
+    );
+}
+
+#[test]
+fn a_disabled_protocol_is_neither_decoded_nor_reported() {
+    let pages = [synth::pocsag::Page {
+        address: 1_234_567,
+        function: 3,
+        text: "MUTED".to_owned(),
+        numeric: false,
+        seal: None,
+    }];
+    let mut iq = synth::pocsag::transmission(&pages, 1200, 4500.0, RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 300_000.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 44, 0.002);
+    let settings = SpectrumMonitorNode {
+        disabled_protocols: vec!["pocsag".to_owned()],
+        ..Default::default()
+    };
+    let mut monitor = SpectrumMonitor::new(RATE, CENTER, settings).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        output
+            .iter()
+            .all(|out| out.event.kind != PocsagMessage::KIND),
+        "{:?}",
+        transmissions(&output)
+    );
+    assert!(
+        transmissions(&output)
+            .iter()
+            .all(|t| t.decoder.as_deref() != Some("pocsag"))
+    );
+}
+
+#[test]
+fn unidentified_signals_can_be_hidden() {
+    let bits = sdrmm_modem::synth::filler(720, 85);
+    let mut iq = sdrmm_modem::synth::fsk(&bits, 1200.0, 4500.0, RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 250_000.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 86, 0.002);
+    let settings = SpectrumMonitorNode {
+        report_unidentified: false,
+        disabled_protocols: sdrmm_decoder::descriptors()
+            .into_iter()
+            .map(|descriptor| descriptor.type_id)
+            .collect(),
+        ..Default::default()
+    };
+    let mut monitor = SpectrumMonitor::new(RATE, CENTER, settings).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        transmissions(&output).is_empty(),
+        "{:?}",
+        transmissions(&output)
+    );
+}
+
+#[test]
+fn simplex_dmr_at_435_125_mhz_is_confirmed() {
+    let call = synth::dmr::Call::default();
+    let mut iq = synth::dmr::simplex_transmission(&call, RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 125_000.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 84, 0.02);
+    let mut monitor = SpectrumMonitor::new(RATE, 435_000_000.0, keeping()).unwrap();
+    let lead = noise(0.2, 87);
+    let mut output = run(&mut monitor, &lead, 0);
+    output.extend(run(&mut monitor, &iq, lead.len() as u64));
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        output.iter().any(|out| out
+            .event
+            .read::<DvFrame>()
+            .is_some_and(|frame| frame.mode == "DMR" && frame.crc_verified == Some(true))),
+        "{:?}",
+        transmissions(&output)
+    );
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.decoder.as_deref() == Some("dmr") && t.decoder_confirmed)
+    );
+    assert!(!output.iter().any(|out| out.event.kind == IlsReading::KIND));
+}
+
+#[test]
+fn unrecognized_fsk_does_not_create_nfm_audio() {
+    let bits = sdrmm_modem::synth::filler(720, 85);
+    let mut iq = sdrmm_modem::synth::fsk(&bits, 1200.0, 4500.0, RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 250_000.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 86, 0.002);
+    let mut monitor = monitor();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(!transmissions(&output).is_empty());
+    assert!(
+        transmissions(&output)
+            .iter()
+            .all(|t| t.decoder.as_deref() != Some("nfm"))
+    );
+    assert!(output.iter().all(|out| out.audio.is_empty()));
+}
+
+#[test]
+fn a_capture_gap_interrupts_instead_of_joining_unrelated_samples() {
+    let mut iq = noise(0.3, 46);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        *sample += Complex::from_polar(
+            0.5,
+            (std::f64::consts::TAU * 200_000.0 * i as f64 / RATE) as f32,
+        );
+    }
+    let mut monitor = monitor();
+    let first = run(&mut monitor, &iq, 0);
+    assert!(transmissions(&first).is_empty());
+    assert!(!monitor.tracks.is_empty());
+    let gap = run(&mut monitor, &noise(0.2, 47), iq.len() as u64 + 8192);
+    assert!(
+        transmissions(&gap)
+            .iter()
+            .any(|t| t.state == TransmissionState::Interrupted && t.error.is_some())
+    );
+    let problems: Vec<_> = transmissions(&gap)
+        .into_iter()
+        .filter(|t| t.state == TransmissionState::Problem)
+        .collect();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].error.as_deref(), Some("8192 IQ samples lost"));
+    assert_eq!(problems[0].summary(), "problem · 8192 IQ samples lost");
+}
+
+#[test]
+fn audio_can_be_disabled_without_disabling_events() {
+    let mut monitor = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            keep_clips: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut iq = noise(0.3, 48);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let amplitude =
+            0.4 * (1.0 + 0.6 * (std::f64::consts::TAU * 900.0 * i as f64 / RATE).sin() as f32);
+        *sample += Complex::from_polar(
+            amplitude,
+            (std::f64::consts::TAU * 200_000.0 * i as f64 / RATE) as f32,
+        );
+    }
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Interrupted, None));
+    assert!(!transmissions(&output).is_empty());
+    assert!(output.iter().all(|out| out.audio.is_empty()));
+}
+
+#[test]
+fn a_carrier_that_starts_modulating_is_reidentified_automatically() {
+    let mut iq = noise(0.9, 51);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let t = i as f64 / RATE;
+        let amplitude = if t < 0.15 {
+            0.5
+        } else {
+            0.5 + 0.3 * (std::f64::consts::TAU * 1100.0 * t).sin() as f32
+        };
+        *sample += Complex::from_polar(
+            amplitude,
+            (std::f64::consts::TAU * 250_000.0 * t).rem_euclid(std::f64::consts::TAU) as f32,
+        );
+    }
+    let mut monitor = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            min_confidence: 0.0,
+            ..keeping()
+        },
+    )
+    .unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(run(&mut monitor, &noise(0.4, 52), iq.len() as u64));
+    assert!(
+        output.iter().any(|out| !out.audio.is_empty()),
+        "{:?}",
+        transmissions(&output)
+    );
+}
+
+#[test]
+fn more_than_thirty_two_signals_reports_capacity_loss() {
+    let mut iq = noise(0.1, 53);
+    for offset in (0..34).map(|i| -450_000.0 + f64::from(i) * 25_000.0) {
+        for (i, sample) in iq.iter_mut().enumerate() {
+            *sample += Complex::from_polar(
+                0.02,
+                (std::f64::consts::TAU * offset * i as f64 / RATE).rem_euclid(std::f64::consts::TAU)
+                    as f32,
+            );
+        }
+    }
+    let mut monitor = monitor();
+    let output = run(&mut monitor, &iq, 0);
+    assert_eq!(monitor.tracks.len(), 32);
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.state == TransmissionState::Problem)
+    );
+}
+
+#[test]
+fn a_short_final_window_is_examined_when_the_stream_finishes() {
+    let mut iq = noise(0.05, 54);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        *sample += Complex::from_polar(
+            0.5,
+            (std::f64::consts::TAU * 250_000.0 * i as f64 / RATE).rem_euclid(std::f64::consts::TAU)
+                as f32,
+        );
+    }
+    let mut monitor = SpectrumMonitor::new(
+        RATE,
+        CENTER,
+        SpectrumMonitorNode {
+            min_confidence: 0.0,
+            ..keeping()
+        },
+    )
+    .unwrap();
+    assert!(run(&mut monitor, &iq, 0).is_empty());
+    let output = monitor.finish(TransmissionState::Completed, None);
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.state == TransmissionState::Completed)
+    );
+}
+
+#[test]
+fn continuous_audio_is_segmented_without_loss_or_buffer_overflow() {
+    let rate = 48_000.0;
+    let mut monitor = SpectrumMonitor::new(rate, CENTER, keeping()).unwrap();
+    let mut iq = complex_noise(55, 0.002, 4800);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let t = i as f64 / rate;
+        let amplitude = 0.5 + 0.3 * (std::f64::consts::TAU * 900.0 * t).sin() as f32;
+        *sample += Complex::from_polar(
+            amplitude,
+            (std::f64::consts::TAU * 10_000.0 * t).rem_euclid(std::f64::consts::TAU) as f32,
+        );
+    }
+    let mut output = Vec::new();
+    for block in 0..650 {
+        output.extend(monitor.process(&iq, block * 4800));
+    }
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let clips: Vec<_> = output.iter().filter(|out| !out.audio.is_empty()).collect();
+    assert_eq!(clips.len(), 3, "{:?}", transmissions(&output));
+    assert!(
+        clips
+            .iter()
+            .all(|out| out.transmission == clips[0].transmission)
+    );
+    assert!(transmissions(&output).iter().all(|t| t.error.is_none()));
+    assert_eq!(
+        clips.iter().map(|out| out.audio.len()).sum::<usize>(),
+        65 * 8000
+    );
+    let segments: Vec<_> = transmissions(&output)
+        .into_iter()
+        .filter(|t| t.id == clips[0].transmission)
+        .collect();
+    assert_eq!(segments.len(), 3);
+    assert_eq!(segments[0].state, TransmissionState::Continued);
+    assert_eq!(segments[1].state, TransmissionState::Continued);
+    assert_eq!(segments[2].state, TransmissionState::Completed);
+    assert_eq!(segments[0].end_sample, segments[1].start_sample);
+    assert_eq!(segments[1].end_sample, segments[2].start_sample);
+}
+
+#[test]
+fn a_long_transmission_without_audio_is_reported_once() {
+    let rate = 48_000.0;
+    let mut monitor = SpectrumMonitor::new(rate, CENTER, SpectrumMonitorNode::default()).unwrap();
+    let mut iq = complex_noise(55, 0.002, 4800);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let t = i as f64 / rate;
+        let amplitude = 0.5 + 0.3 * (std::f64::consts::TAU * 900.0 * t).sin() as f32;
+        *sample += Complex::from_polar(
+            amplitude,
+            (std::f64::consts::TAU * 10_000.0 * t).rem_euclid(std::f64::consts::TAU) as f32,
+        );
+    }
+    let mut output = Vec::new();
+    for block in 0..650 {
+        output.extend(monitor.process(&iq, block * 4800));
+    }
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let reported = transmissions(&output);
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    assert_eq!(reported[0].state, TransmissionState::Completed);
+    assert_eq!(reported[0].duration_ms, 65_000);
+}
+
+#[test]
+fn an_unconfirmed_track_closes_when_confidence_falls() {
+    let mut iq = noise(0.1, 82);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        *sample += Complex::from_polar(
+            0.5,
+            (std::f64::consts::TAU * 250_000.0 * i as f64 / RATE).rem_euclid(std::f64::consts::TAU)
+                as f32,
+        );
+    }
+    let mut monitor = monitor();
+    let output = run(&mut monitor, &iq, 0);
+    assert!(transmissions(&output).is_empty());
+    let id = monitor.tracks.first().unwrap().id;
+    let output = run(&mut monitor, &uncertain_noise(0.8), iq.len() as u64);
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.id == id && t.state == TransmissionState::Completed)
+    );
+    assert!(monitor.tracks.is_empty());
+}
+
+#[test]
+fn a_faint_lora_train_is_heard_as_chirps_and_decoded() {
+    let waveform = synth::lora::LoraWaveform::default();
+    let packets: Vec<Vec<u8>> = (0..4).map(|n| vec![0x40 + n; 48]).collect();
+    let mut iq = synth::lora::scene(&waveform, &packets, RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.002);
+    sdrmm_modem::synth::shift(&mut iq, -200_000.0, RATE);
+    let floor = noise(iq.len() as f64 / RATE, 90);
+    for (sample, noise) in iq.iter_mut().zip(floor) {
+        *sample += noise;
+    }
+    let mut monitor = SpectrumMonitor::new(RATE, 868_000_000.0, keeping()).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        output
+            .iter()
+            .any(|out| out.event.read::<LoraFrame>().is_some_and(|frame| {
+                frame.integrity == LoraIntegrity::CrcOk && frame.spreading_factor == 7
+            })),
+        "{:?}",
+        transmissions(&output)
+    );
+    let heard = transmissions(&output);
+    assert!(
+        heard
+            .iter()
+            .any(|t| t.signal.modulation == Modulation::Chirp
+                && t.decoder.as_deref() == Some("lora")
+                && t.decoder_confirmed)
+    );
+}
+
+#[test]
+fn a_clipping_front_end_is_reported_instead_of_its_spurs() {
+    let mut iq = noise(0.3, 91);
+    for (i, sample) in iq.iter_mut().enumerate() {
+        let tone = Complex::from_polar(
+            3.0,
+            (std::f64::consts::TAU * 120_000.0 * i as f64 / RATE).rem_euclid(std::f64::consts::TAU)
+                as f32,
+        );
+        let loud = *sample + tone;
+        *sample = Complex::new(loud.re.clamp(-1.0, 1.0), loud.im.clamp(-1.0, 1.0));
+    }
+    let mut monitor = monitor();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let heard = transmissions(&output);
+    assert_eq!(
+        heard
+            .iter()
+            .filter(|t| t.error.as_deref().is_some_and(|e| e.contains("clipping")))
+            .count(),
+        1,
+        "{heard:?}"
+    );
+    assert!(
+        heard.iter().all(|t| t.state == TransmissionState::Problem),
+        "{heard:?}"
+    );
+}
+
+#[test]
+fn a_tetra_downlink_is_confirmed() {
+    let burst = synth::tetra::sample(synth::tetra::Cell::default()).modulate();
+    let mut iq = sdrmm_modem::synth::resample(
+        &[burst.clone(), burst.clone(), burst].concat(),
+        synth::tetra::SAMPLE_RATE_HZ,
+        RATE,
+    );
+    sdrmm_modem::synth::scale(&mut iq, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 125_000.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 84, 0.02);
+    let mut monitor = SpectrumMonitor::new(RATE, 467_787_500.0, keeping()).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    assert!(
+        output.iter().any(|out| out
+            .event
+            .read::<DvFrame>()
+            .is_some_and(|frame| frame.mode == "TETRA")),
+        "{:?}",
+        transmissions(&output)
+    );
+    assert!(
+        transmissions(&output)
+            .iter()
+            .any(|t| t.decoder.as_deref() == Some("tetra") && t.decoder_confirmed)
+    );
+}
+
+#[test]
+fn a_recorded_tetra_control_channel_is_confirmed() {
+    let recorded = ci16_le(include_bytes!(
+        "../../../../../fixtures/tetra_weak_offair_144k.sigmf-data"
+    ));
+    let mut iq = sdrmm_modem::synth::resample(&recorded, 144_000.0, RATE);
+    sdrmm_modem::synth::shift(&mut iq, 125_900.0, RATE);
+    let mut monitor = SpectrumMonitor::new(RATE, 467_787_500.0, keeping()).unwrap();
+    let mut output = run(&mut monitor, &iq, 0);
+    output.extend(monitor.finish(TransmissionState::Completed, None));
+    let tetra = transmissions(&output)
+        .into_iter()
+        .find(|t| t.decoder.as_deref() == Some("tetra"))
+        .unwrap_or_else(|| panic!("{:?}", transmissions(&output)));
+    assert!(tetra.decoder_confirmed);
+    assert_eq!(tetra.signal.modulation, Modulation::Psk4);
+    assert!((tetra.signal.frequency_hz - 467_912_500.0).abs() < 2_000.0);
+}
+
+#[test]
+fn drm_is_confirmed_in_every_robustness_mode_it_is_heard_in() {
+    use synth::drm::Robustness;
+    for mode in [Robustness::B, Robustness::D] {
+        let mut iq = sdrmm_modem::synth::resample(
+            &synth::drm::signal(synth::drm::defaults(mode), 3).expect("a synthetic signal"),
+            synth::drm::RATE_HZ,
+            RATE,
+        );
+        sdrmm_modem::synth::scale(&mut iq, 0.5);
+        sdrmm_modem::synth::shift(&mut iq, 125_000.0, RATE);
+        sdrmm_modem::synth::add_noise(&mut iq, 84, 0.02);
+        let mut monitor = SpectrumMonitor::new(RATE, 9_500_000.0, keeping()).unwrap();
+        let mut output = run(&mut monitor, &iq, 0);
+        output.extend(monitor.finish(TransmissionState::Completed, None));
+        assert!(
+            transmissions(&output)
+                .iter()
+                .any(|t| t.signal.modulation == Modulation::Ofdm
+                    && t.decoder.as_deref() == Some("drm")
+                    && t.decoder_confirmed),
+            "{mode:?}: {:?}",
+            transmissions(&output)
+        );
+    }
+}
+
+fn complex_noise(seed: u32, amp: f32, len: usize) -> Vec<Complex<f32>> {
+    let mut state = seed | 1;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        (state as f32 / u32::MAX as f32 * 2.0 - 1.0) * amp
+    };
+    (0..len).map(|_| Complex::new(next(), next())).collect()
+}
+
+fn ci16_le(bytes: &[u8]) -> Vec<Complex<f32>> {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|s| {
+            Complex::new(
+                f32::from(i16::from_le_bytes([s[0], s[1]])) / 32_768.0,
+                f32::from(i16::from_le_bytes([s[2], s[3]])) / 32_768.0,
+            )
+        })
+        .collect()
+}

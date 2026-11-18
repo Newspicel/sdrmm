@@ -9,7 +9,7 @@ use super::{
     sync::{Levels, Samples},
     transform::{Depth, ROW_MARGIN, RowKey, TransformPal},
 };
-use crate::VideoPicture;
+use sdrmm_decoder::VideoPicture;
 
 /// Luma noise, as a share of black to white, above which narrow bumps are taken for clicks.
 const REPAIR_NOISE: f32 = 0.008;

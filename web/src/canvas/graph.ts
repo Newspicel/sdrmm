@@ -1,4 +1,4 @@
-import { catalogType } from "../lib/catalog";
+import { catalogProcessor, catalogType } from "../lib/catalog";
 import { deepEqual } from "../lib/deepEqual";
 import { randomHex } from "../lib/hex";
 import { MAX_STREAMS } from "../lib/limits";
@@ -102,9 +102,22 @@ function specOf({
 
 export function catalogPorts(context: GraphContext, node: PatchNode): PortSpec[] {
   const entry = context.catalog.nodes.find((type) => type.kind === node.kind);
-  const declared =
-    entry?.picks === "decoder" ? (descriptorOf(context, node)?.ports ?? []) : entry?.ports;
-  return (declared ?? []).map((port) => ({ ...port, repeat: "once" as const }));
+  return (pickedPorts(context, node) ?? entry?.ports ?? []).map((port) => ({
+    ...port,
+    repeat: "once" as const,
+  }));
+}
+
+/** The ports of the decoder or processor a node runs, when it picks one. */
+function pickedPorts(context: GraphContext, node: PatchNode): PortSpec[] | undefined {
+  if (node.kind === "channel") {
+    return descriptorOf(context, node)?.ports ?? [];
+  }
+  if (node.kind === "processor") {
+    const typeId = node.data?.processor_type ?? "";
+    return context.catalog.processors?.find((type) => type.type_id === typeId)?.resolved_ports;
+  }
+  return undefined;
 }
 
 export function portOf(
@@ -147,12 +160,21 @@ export function opensDevice(kind: NodeKind): boolean {
   return nodeType(kind)?.role.role === "opens_radio";
 }
 
-export function faceOf(kind: NodeKind): Face {
-  return nodeType(kind)?.face ?? { width: FIT_MIN_W };
+/** A node kind, or a node whose picked processor may bring a face of its own. */
+export type Faced = NodeKind | PatchNode;
+
+export function faceOf(of: Faced): Face {
+  if (typeof of !== "string" && of.kind === "processor") {
+    const face = catalogProcessor(of.data?.processor_type ?? "")?.face;
+    if (face !== undefined) {
+      return face;
+    }
+  }
+  return nodeType(typeof of === "string" ? of : of.kind)?.face ?? { width: FIT_MIN_W };
 }
 
-export function nodeSize(kind: NodeKind): NodeSize {
-  const face = faceOf(kind);
+export function nodeSize(of: Faced): NodeSize {
+  const face = faceOf(of);
   return face.height == null ? { w: fixedWidth(face) } : { w: face.width, h: face.height };
 }
 
@@ -160,18 +182,18 @@ function fixedWidth(face: Face): number {
   return Math.max(face.dial === true ? DIAL_MIN_W : FIT_MIN_W, face.width);
 }
 
-export function isResizable(kind: NodeKind): boolean {
-  return faceOf(kind).height != null;
+export function isResizable(of: Faced): boolean {
+  return faceOf(of).height != null;
 }
 
 export const HEADER_PX = 26;
 export const PORT_STEP_PX = 22;
 export const PORT_TOP_PX = HEADER_PX + PORT_STEP_PX / 2;
 
-export function nodeMinSize(kind: NodeKind, ports: readonly PortSpec[]): { w: number; h: number } {
-  const face = faceOf(kind);
+export function nodeMinSize(of: Faced, ports: readonly PortSpec[]): { w: number; h: number } {
+  const face = faceOf(of);
   const base =
-    face.min == null ? { w: nodeSize(kind).w, h: 0 } : { w: face.min.width, h: face.min.height };
+    face.min == null ? { w: nodeSize(of).w, h: 0 } : { w: face.min.width, h: face.min.height };
   const deepest = Math.max(
     ports.filter((port) => port.direction === "in").length,
     ports.filter((port) => port.direction === "out").length,

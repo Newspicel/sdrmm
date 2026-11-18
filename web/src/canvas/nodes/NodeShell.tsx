@@ -177,7 +177,7 @@ export function NodeShell({
   const pinned = isPinned(workspace.rack, node.id);
   const selected = workspace.selected === node.id;
   const active = surface === "rack" || selected;
-  const minimum = nodeMinSize(node.kind, ports);
+  const minimum = nodeMinSize(node, ports);
   const wheelClaim = useRef<WheelClaim | null>(null);
   const holdWheel = useCallback<WheelHold>((claim) => {
     wheelClaim.current = claim;
@@ -190,13 +190,13 @@ export function NodeShell({
   return (
     <div
       ref={portalContainer}
-      style={surface === "canvas" ? canvasSize(node.kind, minimum.h, width) : undefined}
+      style={surface === "canvas" ? canvasSize(node, minimum.h, width) : undefined}
       className={`relative flex h-full min-h-0 w-full flex-col rounded-control border bg-linear-to-b from-panel-3 to-panel shadow-node ${
         selected ? "border-accent" : "border-line"
       }`}
     >
       <PortalContainerProvider container={portalContainer}>
-        {surface === "canvas" && isResizable(node.kind) && (
+        {surface === "canvas" && isResizable(node) && (
           <NodeResizer
             minWidth={minimum.w}
             minHeight={minimum.h}
@@ -321,14 +321,14 @@ function ProblemMark({ node }: { node: string }) {
 }
 
 function canvasSize(
-  kind: PatchNode["kind"],
+  node: PatchNode,
   minHeight: number,
   width: number | undefined,
 ): React.CSSProperties {
   if (width !== undefined) {
     return { minHeight, width };
   }
-  return isResizable(kind) ? { minHeight } : { minHeight, width: nodeSize(kind).w };
+  return isResizable(node) ? { minHeight } : { minHeight, width: nodeSize(node).w };
 }
 
 function useWheelRouting(

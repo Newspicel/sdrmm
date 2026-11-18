@@ -1,7 +1,7 @@
 use std::{thread, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
-use sdrmm_channels::{ChannelCtx, ChannelFilter, ChannelOutputs, ChannelRx};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelFilter, ChannelOutputs};
 use sdrmm_dsp::{Ddc, Decimator, design_lowpass};
 use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
@@ -26,7 +26,7 @@ impl FrontEnd {
         let params: ChannelParams =
             serde_json::from_value(serde_json::json!({ "type": signal.channel, "settings": {} }))
                 .with_context(|| format!("default settings for {}", signal.channel))?;
-        let input_rate = sdrmm_channels::descriptors()
+        let input_rate = sdrmm_decoder::descriptors()
             .into_iter()
             .find(|d| d.type_id == signal.channel)
             .with_context(|| format!("no channel called {}", signal.channel))?
@@ -49,14 +49,14 @@ impl FrontEnd {
     }
 
     pub fn filter(&self) -> Result<ChannelFilter> {
-        Ok(sdrmm_channels::channel_filter(&self.settings.params)?)
+        Ok(sdrmm_decoder::channel_filter(&self.settings.params)?)
     }
 
     /// What a reference hears: the signal's occupied band, not our decoder's own filter, which
     /// may leave room for its AFC.
     pub fn reference_filter(&self) -> ChannelFilter {
         const TAPS: usize = 129;
-        let (low, high) = sdrmm_channels::occupied_band(&self.settings.params);
+        let (low, high) = sdrmm_decoder::occupied_band(&self.settings.params);
         let half = low.abs().max(high.abs());
         ChannelFilter::Symmetric(Decimator::new(
             &design_lowpass(TAPS, half / self.input_rate),
@@ -69,7 +69,7 @@ pub fn decode(fixture: &Fixture, signal: &Signal, loops: usize) -> Result<Decode
     let front = FrontEnd::new(signal)?;
     let mut ddc = front.ddc(fixture.rate)?;
     let mut filter = front.filter()?;
-    let mut channel = sdrmm_channels::create(
+    let mut channel = sdrmm_decoder::create(
         ChannelCtx {
             input_rate: front.input_rate,
         },
@@ -96,7 +96,7 @@ pub fn decode(fixture: &Fixture, signal: &Signal, loops: usize) -> Result<Decode
 }
 
 fn settle(
-    channel: &mut dyn ChannelRx,
+    channel: &mut dyn Channel,
     out: &mut ChannelOutputs,
     keys: &mut Vec<String>,
     signal: &Signal,

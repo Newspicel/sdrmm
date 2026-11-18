@@ -4,7 +4,7 @@ use std::{
 };
 
 use axum::body::Bytes;
-use sdrmm_channels::VideoPicture;
+use sdrmm_decoder::VideoPicture;
 
 const QUALITY: u32 = 85;
 const REMEMBERED: usize = 8;

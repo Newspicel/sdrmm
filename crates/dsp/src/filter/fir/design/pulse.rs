@@ -5,8 +5,8 @@ use crate::math::special::sinc;
 
 /// Closer than this to a removable singularity, a pulse takes its limit.
 const SINGULARITY: f64 = 1e-9;
-/// The RDS shaping pulse's limit at its singularity, an eighth of a bit from the centre.
-const RDS_PULSE_LIMIT: f64 = 2.0;
+/// The cosine shaping pulse's limit at its singularity, an eighth of a bit from the centre.
+const COSINE_PULSE_LIMIT: f64 = 2.0;
 /// The biphase pulse's inverted copy follows half a bit behind.
 const BIPHASE_DELAY_SYMBOLS: f64 = 0.5;
 
@@ -47,13 +47,13 @@ pub fn design_rrc_unit_energy(sps: f64, alpha: f64, taps: usize) -> Vec<f32> {
 }
 
 #[must_use]
-pub fn design_rds_shaping(sps: f64, span: usize) -> Vec<f32> {
-    unit_abs_sum(&rds_taps(sps, span, false))
+pub fn design_cosine_shaping(sps: f64, span: usize) -> Vec<f32> {
+    unit_abs_sum(&cosine_taps(sps, span, false))
 }
 
 #[must_use]
-pub fn design_rds_biphase(sps: f64, span: usize) -> Vec<f32> {
-    unit_abs_sum(&rds_taps(sps, span, true))
+pub fn design_cosine_biphase(sps: f64, span: usize) -> Vec<f32> {
+    unit_abs_sum(&cosine_taps(sps, span, true))
 }
 
 fn odd(taps: usize) -> usize {
@@ -94,7 +94,7 @@ pub fn rrc_pulse(t: f64, alpha: f64) -> f64 {
     numerator / (pt * (1.0 - (4.0 * alpha * t).powi(2)))
 }
 
-fn rds_taps(sps: f64, span: usize, biphase: bool) -> Vec<f64> {
+fn cosine_taps(sps: f64, span: usize, biphase: bool) -> Vec<f64> {
     assert!(sps > 1.0, "need more than one sample per symbol");
     assert!(span >= 1, "span must cover at least one symbol");
     let half = (span as f64 * sps).round().max(1.0) as usize;
@@ -102,18 +102,18 @@ fn rds_taps(sps: f64, span: usize, biphase: bool) -> Vec<f64> {
         .map(|k| {
             let t = (k as f64 - half as f64) / sps;
             if biphase {
-                rds_shaping_pulse(t) - rds_shaping_pulse(t - BIPHASE_DELAY_SYMBOLS)
+                cosine_pulse(t) - cosine_pulse(t - BIPHASE_DELAY_SYMBOLS)
             } else {
-                rds_shaping_pulse(t)
+                cosine_pulse(t)
             }
         })
         .collect()
 }
 
-fn rds_shaping_pulse(symbols: f64) -> f64 {
+fn cosine_pulse(symbols: f64) -> f64 {
     let denom = 2.0 * PI * (1.0 / 16.0 - 4.0 * symbols * symbols);
     if denom.abs() < SINGULARITY {
-        return RDS_PULSE_LIMIT;
+        return COSINE_PULSE_LIMIT;
     }
     (4.0 * PI * symbols).cos() / denom
 }
@@ -131,7 +131,7 @@ fn unit_abs_sum(taps: &[f64]) -> Vec<f32> {
 mod tests {
     use super::{super::response_db, *};
 
-    const RDS_SPS: f64 = 9_600.0 / 1_187.5;
+    const SPS: f64 = 9_600.0 / 1_187.5;
 
     #[test]
     fn unit_energy_rrc_has_unit_energy_and_the_shape_of_the_unity_gain_one() {
@@ -181,11 +181,11 @@ mod tests {
     }
 
     #[test]
-    fn rds_shaping_is_a_cosine_lowpass_that_dies_at_twice_the_bit_rate() {
-        let h = design_rds_shaping(RDS_SPS, 5);
+    fn cosine_shaping_is_a_cosine_lowpass_that_dies_at_twice_the_bit_rate() {
+        let h = design_cosine_shaping(SPS, 5);
         let peak = response_db(&h, 0.0);
         for (symbols, expected_db) in [(0.0, 0.0), (0.5, -0.69), (1.0, -3.01), (1.5, -8.34)] {
-            let db = response_db(&h, symbols / RDS_SPS) - peak;
+            let db = response_db(&h, symbols / SPS) - peak;
             assert!(
                 (db - expected_db).abs() < 0.3,
                 "{symbols} bit rates: {db} dB, expected {expected_db}"
@@ -195,16 +195,16 @@ mod tests {
     }
 
     #[test]
-    fn rds_biphase_nulls_dc_and_peaks_at_the_bit_rate() {
-        let h = design_rds_biphase(RDS_SPS, 4);
-        let peak = response_db(&h, 1.0 / RDS_SPS);
+    fn cosine_biphase_nulls_dc_and_peaks_at_the_bit_rate() {
+        let h = design_cosine_biphase(SPS, 4);
+        let peak = response_db(&h, 1.0 / SPS);
         assert!(
             response_db(&h, 0.0) - peak < -60.0,
             "dc leak {} dB",
             response_db(&h, 0.0) - peak
         );
         for symbols in [0.5, 1.5] {
-            let db = response_db(&h, symbols / RDS_SPS) - peak;
+            let db = response_db(&h, symbols / SPS) - peak;
             assert!(db < 0.0, "{symbols} bit rates rose above the peak: {db} dB");
         }
         assert_band_edge_below_40_db(&h, peak);
@@ -213,14 +213,14 @@ mod tests {
     fn assert_band_edge_below_40_db(h: &[f32], peak: f64) {
         for i in 0..=40 {
             let symbols = 2.0 + 2.0 * f64::from(i) / 40.0;
-            let db = response_db(h, symbols / RDS_SPS) - peak;
+            let db = response_db(h, symbols / SPS) - peak;
             assert!(db < -40.0, "band edge leak {db} dB at {symbols} bit rates");
         }
     }
 
     #[test]
-    fn rds_biphase_is_antisymmetric_about_the_half_symbol() {
-        let h = design_rds_biphase(RDS_SPS, 4);
+    fn cosine_biphase_is_antisymmetric_about_the_half_symbol() {
+        let h = design_cosine_biphase(SPS, 4);
         let sum: f64 = h.iter().map(|&v| f64::from(v)).sum();
         assert!(sum.abs() < 1e-5, "the taps carry a dc component: {sum}");
     }

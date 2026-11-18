@@ -1,8 +1,8 @@
 use crate::lora::MeshcoreContent;
 
 use super::keys::{Channel, Keys, LONG_SECRET_LEN};
-use crate::crypto::{self, Aes};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
+use sdrmm_crypto::{self as crypto, Aes};
 
 pub(super) const MAC_LEN: usize = 2;
 pub(super) const BLOCK_LEN: usize = 16;

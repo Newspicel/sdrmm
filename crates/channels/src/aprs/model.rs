@@ -292,7 +292,6 @@ mod model_tests {
 
     #[test]
     fn a_mic_e_summary_names_the_message_beside_the_monitor_line() {
-        crate::registry::init();
         let mut packet = AprsPacket {
             tnc2: "DL1ABC-9>S32U6T:`(_fn\"Oj/".to_owned(),
             ..AprsPacket::default()
@@ -315,7 +314,7 @@ mod model_tests {
     }
 
     #[test]
-    fn only_amateur_decoders_carry_a_callsign() {
+    fn a_packet_carries_its_source_callsign() {
         let aprs = AprsPacket {
             source: "DL1ABC-9".to_owned(),
             ..AprsPacket::default()
@@ -324,29 +323,6 @@ mod model_tests {
             aprs.present(&EventKind::named("aprs")).callsign.as_deref(),
             Some("DL1ABC-9")
         );
-        let wspr: crate::weak_signal::WsprSpot = serde_json::from_str(
-            r#"{"text":"DL1ABC JO62 37","callsign":"DL1ABC","grid":"JO62","power_dbm":37,"snr_db":-20.0,"audio_hz":1500.0,"time_offset_s":0.0,"drift_hz":0.0}"#,
-        )
-        .expect("wspr fixture");
-        assert!(wspr.present(&EventKind::named("wspr")).callsign.is_some());
-        for (kind, text) in [("ft8", "CQ DL1ABC JO62"), ("ft4", "W1AW DL1ABC JO62")] {
-            let message = crate::weak_signal::WsjtMessage {
-                text: text.to_owned(),
-                snr_db: -12.0,
-                audio_hz: 1_500.0,
-                time_offset_s: 0.1,
-                hard_errors: 0,
-                slot: None,
-            };
-            let view = message.present(&EventKind::new(kind));
-            assert!(view.callsign.is_some(), "{kind}");
-        }
-        let aircraft = crate::adsb::AdsbMessage {
-            icao: "3C6444".to_owned(),
-            callsign: Some("DLH400".to_owned()),
-            ..crate::adsb::AdsbMessage::default()
-        };
-        assert_eq!(aircraft.present(&EventKind::named("adsb")).callsign, None);
     }
 
     #[test]
@@ -476,7 +452,7 @@ mod model_tests {
             tnc2: "DL1WX>APRS:_".to_owned(),
             ..AprsPacket::default()
         };
-        crate::testutil::assert_views_hold(
+        sdrmm_decoder_test_support::assert_views_hold(
             &aprs_kind(),
             &[DecoderEvent::of(&tracker), DecoderEvent::of(&weather)],
         );

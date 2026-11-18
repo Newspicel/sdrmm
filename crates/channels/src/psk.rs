@@ -1,24 +1,26 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_modem::{
     constellation::tables,
     linear::{
         CarrierLoop, DifferentialDetector, LinearDemod, LinearParams, LinearTiming, PhaseDetector,
     },
     pulse::{self, Norm},
+    varicode::VaricodeDecoder,
 };
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const INPUT_RATE_HZ: f64 = 8_000.0;
@@ -41,7 +43,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<PskParams, ChannelError> {
-    crate::settings_of::<PskParams>(settings)
+    sdrmm_decoder::settings_of::<PskParams>(settings)
 }
 
 fn demodulator(baud: f64) -> Result<LinearDemod, ChannelError> {
@@ -65,18 +67,15 @@ pub(crate) fn occupied_band(p: PskParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(p: PskParams) -> ChannelFilter {
-    let half = p.baud.rate() * BANDWIDTH_FACTOR;
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
-        1,
-    ))
+pub(crate) fn channel_filter(p: PskParams) -> FilterSpec {
+    let (_, half) = occupied_band(p);
+    FilterSpec::lowpass(FILTER_TAPS, half)
 }
 
 pub struct PskChannel {
     demod: LinearDemod,
     differential: DifferentialDetector,
-    decoder: VaricodeDecoder,
+    decoder: VaricodeText,
     baud: PskBaud,
     invert: bool,
     symbols: Vec<Complex<f32>>,
@@ -95,7 +94,7 @@ impl NativeChannel for PskChannel {
         Ok(Self {
             demod: demodulator(params.baud.rate())?,
             differential: DifferentialDetector::new(),
-            decoder: VaricodeDecoder::default(),
+            decoder: VaricodeText::default(),
             baud: params.baud,
             invert: params.invert,
             symbols: Vec::new(),
@@ -106,7 +105,7 @@ impl NativeChannel for PskChannel {
     }
 }
 
-impl ChannelRx for PskChannel {
+impl Channel for PskChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         self.demod = demodulator(params.baud.rate())?;
@@ -119,7 +118,7 @@ impl ChannelRx for PskChannel {
     fn retuned(&mut self) {
         self.demod.reset();
         self.differential.reset();
-        self.decoder = VaricodeDecoder::default();
+        self.decoder = VaricodeText::default();
         self.symbols.clear();
         self.products.clear();
         self.lock = 0.0;
@@ -168,28 +167,14 @@ fn binary_phase_fit(product: Complex<f32>) -> f32 {
 }
 
 #[derive(Default)]
-struct VaricodeDecoder {
-    code: u16,
-    bits: u8,
-    zero_run: u8,
+struct VaricodeText {
+    decoder: VaricodeDecoder,
     text: String,
 }
 
-impl VaricodeDecoder {
+impl VaricodeText {
     fn feed(&mut self, bit: bool) -> Option<String> {
-        if bit {
-            if self.zero_run == 1 {
-                self.push_bit(false);
-            }
-            self.zero_run = 0;
-            self.push_bit(true);
-        } else {
-            self.zero_run = self.zero_run.saturating_add(1);
-            if self.zero_run == 2 {
-                self.finish_character();
-            }
-        }
-
+        self.text.extend(self.decoder.push(bit));
         let line_end = self.text.ends_with('\n') || self.text.ends_with('\r');
         if !self.text.is_empty() && (line_end || self.text.chars().count() >= TEXT_FLUSH_CHARS) {
             Some(std::mem::take(&mut self.text))
@@ -197,169 +182,7 @@ impl VaricodeDecoder {
             None
         }
     }
-
-    fn push_bit(&mut self, bit: bool) {
-        if self.bits >= 10 {
-            self.bits = 11;
-            return;
-        }
-        self.code = (self.code << 1) | u16::from(bit);
-        self.bits += 1;
-    }
-
-    fn finish_character(&mut self) {
-        if self.bits <= 10
-            && let Some(index) = VARICODE
-                .iter()
-                .position(|candidate| code_matches(candidate, self.code, self.bits))
-            && let Some(ch) = char::from_u32(index as u32)
-            && (ch == '\n' || ch == '\r' || !ch.is_control())
-        {
-            self.text.push(ch);
-        }
-        self.code = 0;
-        self.bits = 0;
-    }
 }
-
-fn code_matches(candidate: &str, code: u16, bits: u8) -> bool {
-    candidate.len() == usize::from(bits)
-        && candidate
-            .bytes()
-            .fold(0u16, |value, bit| (value << 1) | u16::from(bit == b'1'))
-            == code
-}
-
-pub(crate) const VARICODE: [&str; 128] = [
-    "1010101011",
-    "1011011011",
-    "1011101101",
-    "1101110111",
-    "1011101011",
-    "1101011111",
-    "1011101111",
-    "1011111101",
-    "1011111111",
-    "11101111",
-    "11101",
-    "1101101111",
-    "1011011101",
-    "11111",
-    "1101110101",
-    "1110101011",
-    "1011110111",
-    "1011110101",
-    "1110101101",
-    "1110101111",
-    "1101011011",
-    "1101101011",
-    "1101101101",
-    "1101010111",
-    "1101111011",
-    "1101111101",
-    "1110110111",
-    "1101010101",
-    "1101011101",
-    "1110111011",
-    "1011111011",
-    "1101111111",
-    "1",
-    "111111111",
-    "101011111",
-    "111110101",
-    "111011011",
-    "1011010101",
-    "1010111011",
-    "101111111",
-    "11111011",
-    "11110111",
-    "101101111",
-    "111011111",
-    "1110101",
-    "110101",
-    "1010111",
-    "110101111",
-    "10110111",
-    "10111101",
-    "11101101",
-    "11111111",
-    "101110111",
-    "101011011",
-    "101101011",
-    "110101101",
-    "110101011",
-    "110110111",
-    "11110101",
-    "110111101",
-    "111101101",
-    "1010101",
-    "111010111",
-    "1010101111",
-    "1010111101",
-    "1111101",
-    "11101011",
-    "10101101",
-    "10110101",
-    "1110111",
-    "11011011",
-    "11111101",
-    "101010101",
-    "1111111",
-    "111111101",
-    "101111101",
-    "11010111",
-    "10111011",
-    "11011101",
-    "10101011",
-    "11010101",
-    "111011101",
-    "10101111",
-    "1101111",
-    "1101101",
-    "101010111",
-    "110110101",
-    "101011101",
-    "101110101",
-    "101111011",
-    "1010101101",
-    "111110111",
-    "111101111",
-    "111111011",
-    "1010111111",
-    "101101101",
-    "1011011111",
-    "1011",
-    "1011111",
-    "101111",
-    "101101",
-    "11",
-    "111101",
-    "1011011",
-    "101011",
-    "1101",
-    "111101011",
-    "10111111",
-    "11011",
-    "111011",
-    "1111",
-    "111",
-    "111111",
-    "110111111",
-    "10101",
-    "10111",
-    "101",
-    "110111",
-    "1111011",
-    "1101011",
-    "11011111",
-    "1011101",
-    "111010101",
-    "1010110111",
-    "110111011",
-    "1010110101",
-    "1011010111",
-    "1110110101",
-];
 
 const PSK_SPOTS: &[HzRange] = &[
     HzRange::spot_khz(3_580.0, 3.0),
@@ -403,12 +226,16 @@ fn psk_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn psk_decoder() -> Native<PskParams> {
-    Native::new::<PskChannel>(|p| occupied_band(*p))
+    let decoder = Native::new::<PskChannel>(|p| occupied_band(*p))
         .filter(|p| Ok(channel_filter(*p)))
         .home(14_070_000.0)
         .signatures(psk_signatures)
         .form(psk_form)
-        .kinds(psk_kinds)
+        .kinds(psk_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn psk_form() -> Vec<SettingField> {
@@ -423,32 +250,19 @@ fn psk_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
+    use sdrmm_modem::varicode::VARICODE;
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{synth, testutil::settings};
-
-    #[test]
-    fn varicode_is_complete_prefix_safe_and_unique() {
-        assert_eq!(VARICODE.len(), 128);
-        assert_eq!(VARICODE[usize::from(b' ')], "1");
-        assert_eq!(VARICODE[usize::from(b'e')], "11");
-        assert_eq!(VARICODE[usize::from(b'Z')], "1010101101");
-        let unique: HashSet<&str> = VARICODE.into_iter().collect();
-        assert_eq!(unique.len(), VARICODE.len());
-        for code in VARICODE {
-            assert!(code.starts_with('1') && code.ends_with('1'), "{code}");
-            assert!(!code.contains("00"), "{code}");
-            assert!(code.len() <= 10, "{code}");
-        }
-    }
+    use crate::synth;
+    use sdrmm_decoder_test_support::settings;
 
     #[test]
     fn decoder_recovers_varicode_and_flushes_a_line() {
-        let mut decoder = VaricodeDecoder::default();
+        let mut decoder = VaricodeText::default();
         let mut output = None;
         for ch in "CQ de DL1ABC\n".bytes() {
             for bit in VARICODE[usize::from(ch)].bytes().chain(*b"00") {
@@ -485,8 +299,8 @@ mod tests {
     #[test]
     fn a_quiet_band_decodes_to_nothing() {
         for seed in [0x0c0f_fee1, 0x1234_5678, 0xdead_beef] {
-            let mut iq = synth::silence((30.0 * INPUT_RATE_HZ) as usize);
-            synth::add_noise(&mut iq, seed, 0.3);
+            let mut iq = sdrmm_modem::synth::silence((30.0 * INPUT_RATE_HZ) as usize);
+            sdrmm_modem::synth::add_noise(&mut iq, seed, 0.3);
             assert_eq!(
                 decoded(PskBaud::Psk31, &iq),
                 Vec::new(),

@@ -11,6 +11,8 @@ use crate::{
     },
 };
 
+mod status;
+
 const FIX_ENTITY: &str = "fix";
 
 pub const RAY_LENGTH_M: f32 = 25_000.0;

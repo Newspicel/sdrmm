@@ -1,14 +1,17 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod carrier;
 pub(crate) mod modes;
 
 use std::sync::LazyLock;
 
-use carrier::{Carrier, TONE_HIGH_HZ, TONE_LOW_HZ, band_filter};
+use carrier::{Carrier, TONE_HIGH_HZ, TONE_LOW_HZ};
 use modes::{
     LEADER_HZ, Part, SYNC_HZ, Scan, VIS_BIT_MS, VIS_ONE_HZ, VIS_ZERO_HZ, hz_to_level, timing,
 };
@@ -16,9 +19,9 @@ use num_complex::Complex;
 use sdrmm_dsp::FmDemod;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    NativeChannel, VideoPicture, check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, DecodedImage, NativeChannel, VideoPicture,
+    check_input_rate,
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 16_000.0;
@@ -65,13 +68,13 @@ pub(crate) fn occupied_band(p: SstvParams) -> (f64, f64) {
     carrier::occupied_band(p.modulation)
 }
 
-pub(crate) fn channel_filter(p: SstvParams) -> ChannelFilter {
+pub(crate) fn channel_filter(p: SstvParams) -> FilterSpec {
     let (low, high) = occupied_band(p);
-    ChannelFilter::Sideband(band_filter(low, high, INPUT_RATE_HZ))
+    FilterSpec::band(carrier::TAPS, low, high)
 }
 
 fn params(settings: &ChannelSettings) -> Result<SstvParams, ChannelError> {
-    crate::settings_of::<SstvParams>(settings)
+    sdrmm_decoder::settings_of::<SstvParams>(settings)
 }
 
 fn samples(ms: f64, rate: f64) -> f64 {
@@ -608,7 +611,7 @@ impl SstvChannel {
         }));
         out.video.push(picture.clone());
         out.images.push(DecodedImage {
-            source: SOURCE,
+            source: SOURCE.into(),
             mode: self.picture.timing.mode.label().to_owned(),
             complete,
             lines,
@@ -643,7 +646,7 @@ impl NativeChannel for SstvChannel {
     }
 }
 
-impl ChannelRx for SstvChannel {
+impl Channel for SstvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         if p.mode != self.forced {
@@ -712,11 +715,15 @@ fn sstv_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn sstv_decoder() -> Native<SstvParams> {
-    Native::new::<SstvChannel>(|p| occupied_band(*p))
+    let decoder = Native::new::<SstvChannel>(|p| occupied_band(*p))
         .filter(|p| Ok(channel_filter(*p)))
         .signatures(sstv_signatures)
         .form(sstv_form)
-        .kinds(sstv_kinds)
+        .kinds(sstv_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn sstv_form() -> Vec<SettingField> {
@@ -742,8 +749,9 @@ fn sstv_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
-    use crate::nfm::NfmParams;
     use num_complex::Complex;
     use sdrmm_wire::ChannelParams;
 
@@ -751,13 +759,11 @@ mod tests {
         modes::{BREAK_MS, LEADER_MS},
         *,
     };
-    use crate::{
-        synth::{
-            self,
-            sstv::{Frame, bars, header, transmission},
-        },
-        testutil::{complex_noise, settings},
+    use crate::synth::{
+        self,
+        sstv::{Frame, bars, header, transmission},
     };
+    use sdrmm_decoder_test_support::{complex_noise, settings};
 
     const RATE: f64 = INPUT_RATE_HZ;
     const BLOCKS: [usize; 6] = [4_096, 1, 997, 65_536, 33, 12_288];
@@ -806,7 +812,7 @@ mod tests {
     }
 
     fn tail(ms: f64) -> Vec<Complex<f32>> {
-        synth::silence(samples(ms, RATE) as usize)
+        sdrmm_modem::synth::silence(samples(ms, RATE) as usize)
     }
 
     fn decode(mode: SstvMode, frame: &Frame) -> DecodedImage {
@@ -1063,7 +1069,9 @@ mod tests {
         let full = transmission(mode, &sent, RATE);
         let half = full.len() / 2;
         let mut iq = full[..half].to_vec();
-        iq.extend_from_slice(&synth::silence(samples(20_000.0, RATE) as usize));
+        iq.extend_from_slice(&sdrmm_modem::synth::silence(
+            samples(20_000.0, RATE) as usize
+        ));
 
         let mut chan = channel(SstvParams::default());
         let received = run(&mut chan, &iq, &BLOCKS);
@@ -1086,7 +1094,9 @@ mod tests {
         let mode = SstvMode::Robot36;
         let full = transmission(mode, &bars(mode), RATE);
         let mut iq = full[..full.len() / 2].to_vec();
-        iq.extend_from_slice(&synth::silence(samples(20_000.0, RATE) as usize));
+        iq.extend_from_slice(&sdrmm_modem::synth::silence(
+            samples(20_000.0, RATE) as usize
+        ));
 
         let mut chan = channel(SstvParams {
             keep_partial: false,
@@ -1118,7 +1128,7 @@ mod tests {
         let mode = SstvMode::MartinM2;
         let sent = bars(mode);
         let straight = transmission(mode, &sent, RATE);
-        let slanted = synth::resample(&straight, RATE, RATE * 1.0005);
+        let slanted = sdrmm_modem::synth::resample(&straight, RATE, RATE * 1.0005);
         let mut iq = slanted;
         iq.extend_from_slice(&tail(2_000.0));
 
@@ -1146,9 +1156,13 @@ mod tests {
         let mode = SstvMode::MartinM2;
         let sent = bars(mode);
         let mut iq = transmission(mode, &sent, RATE);
-        synth::add_noise(&mut iq, 0xabad_1dea, 0.25);
+        sdrmm_modem::synth::add_noise(&mut iq, 0xabad_1dea, 0.25);
         let mut filtered = Vec::new();
-        channel_filter(SstvParams::default()).process(&iq, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(
+            channel_filter(SstvParams::default()),
+            INPUT_RATE_HZ,
+        )
+        .process(&iq, &mut filtered);
         filtered.extend_from_slice(&tail(2_000.0));
 
         let mut chan = channel(SstvParams::default());
@@ -1206,13 +1220,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(SstvParams::default());
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("other")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = SstvChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("other")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -1255,7 +1267,7 @@ mod tests {
         match modulation {
             SstvModulation::Usb => audio.to_vec(),
             SstvModulation::Lsb => audio.iter().map(Complex::conj).collect(),
-            SstvModulation::Fm => synth::fm_modulate(&real, 5_000.0, RATE),
+            SstvModulation::Fm => sdrmm_modem::synth::fm_modulate(&real, 5_000.0, RATE),
             SstvModulation::Am => real
                 .iter()
                 .map(|&a| Complex::new(1.0 + 0.8 * a, 0.0))
@@ -1268,7 +1280,7 @@ mod tests {
             modulation,
             ..SstvParams::default()
         };
-        let mut filter = channel_filter(p);
+        let mut filter = sdrmm_decoder_test_support::built_filter(channel_filter(p), INPUT_RATE_HZ);
         let mut filtered = Vec::new();
         filter.process(iq, &mut filtered);
         run(&mut channel(p), &filtered, &BLOCKS)
@@ -1289,7 +1301,7 @@ mod tests {
         audio.extend_from_slice(&tail(2_000.0));
         for modulation in MODULATIONS {
             let mut iq = on_air(modulation, &audio);
-            synth::add_noise(&mut iq, 3, 0.05);
+            sdrmm_modem::synth::add_noise(&mut iq, 3, 0.05);
             let received = receive(modulation, &iq);
             assert_eq!(
                 received.images.len(),

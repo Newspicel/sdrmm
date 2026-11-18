@@ -1,6 +1,6 @@
 use std::{sync::Arc, thread::JoinHandle};
 
-use sdrmm_channels::AUDIO_RATE;
+use sdrmm_decoder::AUDIO_RATE;
 use tokio::sync::broadcast::{self, error::RecvError};
 
 use crate::{EngineError, runtime::DSP_BLOCK};

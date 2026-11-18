@@ -248,6 +248,6 @@ mod model_tests {
                 "name": "NORDIC", "call_sign": "DABC", "destination": "KIEL",
             })),
         ];
-        crate::testutil::assert_views_hold(&ais_kind(), &samples);
+        sdrmm_decoder_test_support::assert_views_hold(&ais_kind(), &samples);
     }
 }

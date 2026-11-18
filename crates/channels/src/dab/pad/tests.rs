@@ -1,7 +1,7 @@
 use super::*;
 
 fn crc(mut bytes: Vec<u8>) -> Vec<u8> {
-    bytes.extend_from_slice(&(!crc16_msb(0x1021, 0xffff, &bytes)).to_be_bytes());
+    sdrmm_dsp::push_crc16_genibus(&mut bytes);
     bytes
 }
 

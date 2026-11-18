@@ -1,6 +1,6 @@
 use std::{ops::Deref, sync::Arc};
 
-use sdrmm_channels::{ChannelError, Decoder};
+use sdrmm_decoder::{ChannelError, Decoder};
 use sdrmm_device::{DeviceError, check_stream_settings};
 use sdrmm_wire::{
     BandMiss, Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings,
@@ -23,7 +23,7 @@ impl Deref for Described {
 
 pub(crate) fn descriptor_for(params: &ChannelParams) -> Result<Described, EngineError> {
     let type_id = params.type_id();
-    sdrmm_channels::registry()
+    sdrmm_decoder::registry()
         .find(type_id)
         .cloned()
         .map(Described)
@@ -71,7 +71,7 @@ pub(crate) fn hears(
 }
 
 pub(crate) fn hears_at(center_hz: f64, rate: f64, settings: &ChannelSettings) -> bool {
-    let (low, high) = sdrmm_channels::occupied_band(&settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&settings.params);
     crate::runtime::reaches(settings.frequency_hz - center_hz, low, high, rate)
 }
 
@@ -89,7 +89,7 @@ pub(crate) fn band_miss(
     follows_decoders: bool,
     settings: &ChannelSettings,
 ) -> BandMiss {
-    let (low, high) = sdrmm_channels::occupied_band(&settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&settings.params);
     let Some(span) = tuning_span(settings.frequency_hz, low, high, rate) else {
         return BandMiss::TooWide {
             needs_hz: high - low,
@@ -252,7 +252,7 @@ pub(crate) fn tuning_span(frequency: f64, low: f64, high: f64, rate: f64) -> Opt
 }
 
 fn feasible_span(channel: &ChannelInfo, rate: f64) -> Option<Span> {
-    let (low, high) = sdrmm_channels::occupied_band(&channel.settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&channel.settings.params);
     tuning_span(channel.settings.frequency_hz, low, high, rate)
 }
 

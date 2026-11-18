@@ -8,7 +8,7 @@ use sdrmm_wire::Sideband;
 use serde::{Deserialize, Serialize};
 
 use super::{AUDIO_TAPS, DESCRIPTOR, PASSBAND_LOW_HZ, SsbParams, ssb_form};
-use crate::{
+use sdrmm_decoder::{
     AUDIO_RATE,
     encoder::{
         EncoderBase, EncoderError, Modulator, NativeEncoder, NativeModulator, TxPayload, tx_limiter,

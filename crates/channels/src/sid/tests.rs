@@ -1,11 +1,13 @@
-use crate::NativeChannel;
 use crate::sid::SidParams;
 use crate::sid::SidReport;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{RATE, SidChannel, stations::STATIONS};
-use crate::{ChannelCtx, ChannelOutputs, ChannelRx, synth::sid::carriers, testutil::settings};
+use crate::synth::sid::carriers;
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_decoder_test_support::settings;
 
 const CENTRE_HZ: f64 = 30_000.0;
 

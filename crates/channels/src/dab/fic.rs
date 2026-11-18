@@ -1,4 +1,7 @@
-use sdrmm_dsp::{ConvCode, DAB_DISPERSAL, Prbs, Soft, ViterbiK7, crc16_msb};
+use super::DISPERSAL;
+#[cfg(any(test, feature = "synth"))]
+use sdrmm_dsp::push_crc16_genibus;
+use sdrmm_dsp::{ConvCode, Prbs, Soft, ViterbiK7, crc16_genibus_ok};
 
 use super::protection::Protection;
 
@@ -10,15 +13,12 @@ pub const BLOCK_BITS: usize = 2_304;
 
 #[must_use]
 pub fn fib_crc_ok(fib: &[u8]) -> bool {
-    fib.len() == FIB_BYTES
-        && !crc16_msb(0x1021, 0xFFFF, &fib[..FIB_BYTES - 2])
-            == u16::from_be_bytes([fib[FIB_BYTES - 2], fib[FIB_BYTES - 1]])
+    fib.len() == FIB_BYTES && crc16_genibus_ok(fib)
 }
 
 #[cfg(any(test, feature = "synth"))]
 pub fn append_fib_crc(fib: &mut Vec<u8>) {
-    let crc = !crc16_msb(0x1021, 0xFFFF, fib);
-    fib.extend_from_slice(&crc.to_be_bytes());
+    push_crc16_genibus(fib);
 }
 
 pub struct FicDecoder {
@@ -97,7 +97,7 @@ impl FicDecoder {
         self.bits.clear();
         self.viterbi.decode_tailed(&self.mother, &mut self.bits);
         self.bits.truncate(self.protection.frame_bits());
-        let mut prbs = Prbs::new(DAB_DISPERSAL);
+        let mut prbs = Prbs::new(DISPERSAL);
         prbs.apply_bits(&mut self.bits);
         for index in 0..self.bits.len() / FIB_BITS {
             let mut fib = [0u8; FIB_BYTES];
@@ -160,7 +160,7 @@ impl FicEncoder {
                 }
             }
         }
-        Prbs::new(DAB_DISPERSAL).apply_bits(&mut self.bits);
+        Prbs::new(DISPERSAL).apply_bits(&mut self.bits);
         self.bits.extend([false; 6]);
         self.coded.clear();
         self.code.encode(&self.bits, &mut self.coded);
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn the_fib_crc_is_the_complemented_ccitt_false_register() {
-        assert_eq!(crc16_msb(0x1021, 0xFFFF, b"123456789"), 0x29B1);
+        assert_eq!(sdrmm_dsp::crc16_msb(0x1021, 0xFFFF, b"123456789"), 0x29B1);
         let mut body = b"123456789".to_vec();
         append_fib_crc(&mut body);
         assert_eq!(u16::from_be_bytes([body[9], body[10]]), !0x29B1);

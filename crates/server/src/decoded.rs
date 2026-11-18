@@ -302,7 +302,6 @@ mod tests {
 
     #[tokio::test]
     async fn amateur_callsigns_leave_with_their_country() {
-        sdrmm_channels::registry::init();
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("cty.dat"),

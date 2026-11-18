@@ -1,4 +1,3 @@
-use crate::NativeChannel;
 use crate::gsm::GsmBand;
 use crate::gsm::GsmFrame;
 use crate::gsm::GsmLogicalChannel;
@@ -6,16 +5,15 @@ use crate::gsm::GsmMessage;
 use crate::gsm::GsmParams;
 use crate::gsm::GsmSi;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, DecoderEvent};
 
 use super::{DESCRIPTOR, GsmChannel, burst::INPUT_RATE_HZ};
-use crate::{
-    ChannelCtx, ChannelRx,
-    synth::gsm::{Downlink, Scheduled, block},
-    testutil::{
-        at_snr, cf32_le, complex_noise, frequency_shift, multipath, realtime_budget, run_events,
-        sample_clock_offset, settings,
-    },
+use crate::synth::gsm::{Downlink, Scheduled, block};
+use sdrmm_decoder::{Channel, ChannelCtx};
+use sdrmm_decoder_test_support::{
+    at_snr, cf32_le, complex_noise, frequency_shift, multipath, realtime_budget, run_events,
+    sample_clock_offset, settings,
 };
 
 const FIXTURE: &[u8] = include_bytes!("../../../../fixtures/gsm_dcs1800_arfcn725_541k.sigmf-data");
@@ -79,7 +77,11 @@ fn cell() -> Downlink {
 
 fn decode(params: GsmParams, iq: &[Complex<f32>]) -> (Vec<GsmFrame>, u32) {
     let mut filtered = Vec::with_capacity(iq.len());
-    super::channel_filter().process(iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(iq, &mut filtered);
     let mut channel = channel(params);
     let frames = frames(&run_events(&mut channel, &filtered));
     (frames, channel.rejected())

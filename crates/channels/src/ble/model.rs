@@ -1,3 +1,7 @@
+use sdrmm_modem::ble::{
+    self as phy,
+    pdu::{AddressKind, Adi, AuxPhy, AuxPointer, Party, PduKind},
+};
 use sdrmm_wire::present::key_of;
 use sdrmm_wire::present::unique_keys;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView};
@@ -23,12 +27,6 @@ labelled! {
     }
 }
 
-pub const BLUETOOTH_RATE_HZ: f64 = 4_000_000.0;
-
-pub const BLUETOOTH_BAND_RATE_HZ: f64 = 20_000_000.0;
-
-pub const BLUETOOTH_CHANNEL_WIDTH_HZ: f64 = 2_000_000.0;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BleLink {
@@ -41,16 +39,16 @@ impl BleLink {
     #[must_use]
     pub fn input_rate_hz(self) -> f64 {
         match self {
-            Self::Channel => BLUETOOTH_RATE_HZ,
-            Self::Band => BLUETOOTH_BAND_RATE_HZ,
+            Self::Channel => phy::RATE_HZ,
+            Self::Band => phy::BAND_RATE_HZ,
         }
     }
 
     #[must_use]
     pub fn bandwidth_hz(self) -> f64 {
         match self {
-            Self::Channel => BLUETOOTH_CHANNEL_WIDTH_HZ,
-            Self::Band => BLUETOOTH_BAND_RATE_HZ - BLUETOOTH_CHANNEL_WIDTH_HZ,
+            Self::Channel => phy::CHANNEL_SPACING_HZ,
+            Self::Band => phy::BAND_RATE_HZ - phy::CHANNEL_SPACING_HZ,
         }
     }
 }
@@ -515,6 +513,72 @@ impl sdrmm_wire::DecoderSettings for BleParams {
     const TYPE_ID: &'static str = "ble";
 }
 
+impl From<PduKind> for BlePdu {
+    fn from(kind: PduKind) -> Self {
+        match kind {
+            PduKind::AdvInd => Self::AdvInd,
+            PduKind::AdvDirectInd => Self::AdvDirectInd,
+            PduKind::AdvNonconnInd => Self::AdvNonconnInd,
+            PduKind::ScanReq => Self::ScanReq,
+            PduKind::ScanRsp => Self::ScanRsp,
+            PduKind::ConnectInd => Self::ConnectInd,
+            PduKind::AdvScanInd => Self::AdvScanInd,
+            PduKind::AdvExtInd => Self::AdvExtInd,
+            PduKind::AuxAdvInd => Self::AuxAdvInd,
+            PduKind::AuxConnectRsp => Self::AuxConnectRsp,
+        }
+    }
+}
+
+impl From<AddressKind> for BleAddressKind {
+    fn from(kind: AddressKind) -> Self {
+        match kind {
+            AddressKind::Public => Self::Public,
+            AddressKind::RandomStatic => Self::RandomStatic,
+            AddressKind::ResolvablePrivate => Self::ResolvablePrivate,
+            AddressKind::NonResolvablePrivate => Self::NonResolvablePrivate,
+            AddressKind::Reserved => Self::Reserved,
+        }
+    }
+}
+
+impl From<AuxPhy> for BlePhy {
+    fn from(phy: AuxPhy) -> Self {
+        match phy {
+            AuxPhy::Le1m => Self::Le1m,
+            AuxPhy::Le2m => Self::Le2m,
+            AuxPhy::LeCoded => Self::LeCoded,
+        }
+    }
+}
+
+impl From<AuxPointer> for BleAuxPointer {
+    fn from(pointer: AuxPointer) -> Self {
+        Self {
+            channel: pointer.channel,
+            phy: pointer.phy.into(),
+            offset_us: pointer.offset_us,
+        }
+    }
+}
+
+impl From<Adi> for BleAdi {
+    fn from(adi: Adi) -> Self {
+        Self {
+            set: adi.set,
+            data_id: adi.data_id,
+        }
+    }
+}
+
+#[must_use]
+pub(crate) fn wire_address(party: Party) -> BleAddress {
+    BleAddress {
+        address: party.text(),
+        kind: party.kind().into(),
+    }
+}
+
 #[cfg(test)]
 mod model_tests {
     use super::*;
@@ -607,6 +671,9 @@ mod model_tests {
         advert.manufacturer.push(repeated);
         let view = advert.present(&EventKind::named("ble"));
         assert_eq!(view.field("vendor"), text_of("Apple").as_ref());
-        crate::testutil::assert_views_hold(&ble_kind(), &[sdrmm_wire::DecoderEvent::of(&advert)]);
+        sdrmm_decoder_test_support::assert_views_hold(
+            &ble_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&advert)],
+        );
     }
 }

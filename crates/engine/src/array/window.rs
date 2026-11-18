@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_channels::array_processor::{MAX_LANES, ResetCause};
+use sdrmm_array::{MAX_LANES, ResetCause};
 use sdrmm_device::{GapScope, LaneMark, UNKNOWN_ERROR};
 use sdrmm_wire::{ProcessorGate, SyncState};
 

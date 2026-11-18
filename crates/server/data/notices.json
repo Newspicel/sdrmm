@@ -7207,6 +7207,14 @@
       ]
     },
     {
+      "name": "xng-types",
+      "version": "0.21.0",
+      "license": "MIT OR Apache-2.0",
+      "source": "rust",
+      "url": "https://github.com/airframesio/xng",
+      "texts": []
+    },
+    {
       "name": "yasna",
       "version": "0.6.0",
       "license": "MIT OR Apache-2.0",

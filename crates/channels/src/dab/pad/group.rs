@@ -91,13 +91,12 @@ impl Assembler {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_dsp::crc16_msb;
 
     use super::*;
 
     fn indicator(length: u16) -> Vec<u8> {
         let mut bytes = length.to_be_bytes().to_vec();
-        bytes.extend((!crc16_msb(0x1021, 0xffff, &bytes)).to_be_bytes());
+        sdrmm_dsp::push_crc16_genibus(&mut bytes);
         bytes
     }
 

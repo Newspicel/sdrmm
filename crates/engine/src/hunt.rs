@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sdrmm_channels::hunt_sweep::SweepDf;
+use sdrmm_array::hunt_sweep::SweepDf;
 use sdrmm_wire::{
     DecodedRecord, DecoderEvent, DfBearing, EventOrigin, HuntSettings, HuntStatus, PositionFix,
     ServerEvent, StateScope,
@@ -311,7 +311,7 @@ pub(crate) struct Decoder {
 
 impl Decoder {
     pub(crate) fn of(channel: &sdrmm_wire::ChannelInfo) -> Self {
-        let (low, high) = sdrmm_channels::occupied_band(&channel.settings.params);
+        let (low, high) = sdrmm_decoder::occupied_band(&channel.settings.params);
         Self {
             stream: channel.stream,
             freq_hz: channel.settings.frequency_hz,

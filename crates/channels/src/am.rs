@@ -1,22 +1,26 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{ClickProfile, Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod encoder;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub(crate) use encoder::am_encoder;
 pub use encoder::{AmEncoderSettings, AmModulator};
 pub use model::*;
 use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::{Agc, Decimator, Deemphasis, design_lowpass};
+use sdrmm_dsp::{Agc, Deemphasis};
 use sdrmm_modem::analog::{AmDemod, AmDetector, AmMode, AmParams as AmWaveform, AmRx};
 use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily};
 
-use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, clamp_full_scale, voice_leveller,
+use sdrmm_decoder::{
+    AUDIO_RATE, Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+    voice_leveller,
 };
+use sdrmm_dsp::audio::clip::clamp_full_scale;
 
 const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
@@ -51,7 +55,7 @@ fn rolloff() -> Deemphasis {
 }
 
 fn params(settings: &ChannelSettings) -> Result<AmParams, ChannelError> {
-    crate::settings_of::<AmParams>(settings)
+    sdrmm_decoder::settings_of::<AmParams>(settings)
 }
 
 fn check_bandwidth(p: &AmParams) -> Result<(), ChannelError> {
@@ -66,13 +70,9 @@ fn check_bandwidth(p: &AmParams) -> Result<(), ChannelError> {
     }
 }
 
-pub(crate) fn channel_filter(p: &AmParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &AmParams) -> Result<FilterSpec, ChannelError> {
     check_bandwidth(p)?;
-    let cutoff = p.bandwidth_hz / 2.0 / DESCRIPTOR.input_rate_hz;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, cutoff),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, p.bandwidth_hz / 2.0))
 }
 
 fn waveform(p: &AmParams) -> Result<AmWaveform, ChannelError> {
@@ -119,7 +119,7 @@ impl NativeChannel for AmChannel {
     }
 }
 
-impl ChannelRx for AmChannel {
+impl Channel for AmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         self.demod = demodulator(&p)?;
@@ -166,12 +166,17 @@ fn am_tune(signal: &sdrmm_wire::IdentSignal, p: &mut AmParams) -> f64 {
 }
 
 pub(crate) fn am_decoder() -> Native<AmParams> {
-    Native::new::<AmChannel>(|p: &AmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
-        .filter(channel_filter)
-        .signatures(am_signatures)
-        .tune(am_tune)
-        .form(am_form)
-        .kinds(am_kinds)
+    let decoder =
+        Native::new::<AmChannel>(|p: &AmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
+            .filter(channel_filter)
+            .signatures(am_signatures)
+            .tune(am_tune)
+            .form(am_form)
+            .kinds(am_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 const BANDWIDTHS_HZ: [f64; 3] = [5_000.0, 8_000.0, 10_000.0];
@@ -189,14 +194,15 @@ fn am_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use std::f64::consts::TAU;
 
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::testutil::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power};
-    use crate::wfm::WfmParams;
+    use sdrmm_decoder_test_support::{am_iq, dominant_tone, rms, run_ragged, settings, tone_power};
 
     const RATE: f64 = 48_000.0;
 
@@ -284,9 +290,7 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(&AmParams::default());
-        let err = chan.apply(settings(
-            ChannelParams::new("wfm", &WfmParams::default()).expect("wfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("wfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 }

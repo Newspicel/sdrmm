@@ -1,6 +1,6 @@
 use serde_json::{Map, Value, json};
 
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 fn major(tmaj: u8) -> Option<&'static str> {
     Some(match tmaj {

@@ -145,7 +145,7 @@ fn reference(samples: &[f32]) -> BTreeSet<String> {
 #[test]
 #[ignore = "needs FT8_CORPUS=<dir of WSJT-X referenced wav files>; run in release"]
 fn ft8_corpus_against_mfsk_core() {
-    let Some(dir) = crate::reference_data::ft8_corpus() else {
+    let Some(dir) = sdrmm_test_support::reference_data::ft8_corpus() else {
         return;
     };
     let mut all = Vec::new();

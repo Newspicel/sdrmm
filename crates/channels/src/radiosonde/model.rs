@@ -262,6 +262,17 @@ impl sdrmm_wire::DecoderSettings for RadiosondeParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
+
+    #[test]
+    fn empty_settings_take_the_defaults() {
+        assert_eq!(
+            serde_json::from_str::<RadiosondeParams>("{}")
+                .unwrap()
+                .sonde,
+            None
+        );
+    }
+
     use sdrmm_wire::DecoderEvent;
 
     const SONDE: &str = r#"{"sonde":"rs41","serial":"S1234567","lat":52.2,"lon":14.1,"altitude_m":12000.0,"heading_deg":45.0,"errors_corrected":0,"forecast":{"burst":{"lat":52.4,"lon":14.3},"burst_altitude_m":31000.0,"burst_seen":false,"landing":{"lat":52.3,"lon":14.6},"landing_in_s":5400.0,"path":[{"lat":52.2,"lon":14.1},{"lat":52.4,"lon":14.3},{"lat":52.3,"lon":14.6}]}}"#;

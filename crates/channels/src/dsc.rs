@@ -1,19 +1,18 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{Capability, Hue, KindSpec, SettingField, Symbol};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
-use sdrmm_wire::{KindSpec, SettingField};
 mod model;
 pub use model::*;
 use std::sync::LazyLock;
 
-use crate::datalink::DataLinkMessage;
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-    datalink::{self, Quality},
+use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 mod demod;
@@ -74,7 +73,13 @@ pub(crate) fn dsc_form() -> Vec<SettingField> {
 }
 
 fn dsc_kinds() -> Vec<KindSpec> {
-    vec![crate::datalink::dsc_kind()]
+    vec![
+        KindSpec::tagged::<DataLinkMessage>(EventKind::named("dsc"), "DSC", "Vessels", Hue::Amber)
+            .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+            .symbol(Symbol::SHIP)
+            .sighting()
+            .build(),
+    ]
 }
 
 #[cfg(test)]
@@ -107,6 +112,9 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     emits: vec![EventKind::named("dsc")],
     ..ChannelDescriptor::default()
 });
+
+/// Where a DSC call keeps its envelope: the calling station and the nature of distress.
+const LINK: Fields = Fields::station(&["from"]).text(&["text", "message", "nature_description"]);
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -249,11 +257,12 @@ pub fn to_datalink(message: &DscMessage) -> DataLinkMessage {
         .iter()
         .map(|&symbol| symbol.clamp(0, 255) as u8)
         .collect();
-    datalink::message(
+    link::message(
         &Body::Dsc {
             kind: message.format.kind(),
             details: message,
         },
+        &LINK,
         Quality {
             crc_ok: message.ecc_ok(),
             ..Quality::default()
@@ -268,15 +277,15 @@ pub struct DscChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<DscParams, ChannelError> {
-    crate::settings_of::<DscParams>(settings)
+    sdrmm_decoder::settings_of::<DscParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
 
 impl NativeChannel for DscChannel {
@@ -293,7 +302,7 @@ impl NativeChannel for DscChannel {
     }
 }
 
-impl ChannelRx for DscChannel {
+impl Channel for DscChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings).map(|_| ())
     }
@@ -309,9 +318,11 @@ impl ChannelRx for DscChannel {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::{cf32_le, run_events, settings};
+    use sdrmm_decoder_test_support::{cf32_le, run_events, settings};
     use sdrmm_wire::ChannelParams;
 
     const DISTRESS: &[i32] = &[
@@ -352,7 +363,7 @@ mod tests {
         let events = run_events(&mut channel, &iq);
         let message = events
             .iter()
-            .find_map(|event| crate::datalink::read(event, "dsc"))
+            .find_map(|event| link::read(event, "dsc"))
             .expect("DSC message");
         assert!(message.crc_ok);
         assert_eq!(message.message_type, "distress_alert");
@@ -459,7 +470,8 @@ mod tests {
     fn decodes_a_coast_station_off_air() {
         let iq = cf32_le(include_bytes!("../../../fixtures/dsc_offair_8k.sigmf-data"));
         let mut filtered = Vec::new();
-        channel_filter().process(&iq, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(channel_filter(), DESCRIPTOR.input_rate_hz)
+            .process(&iq, &mut filtered);
         let out = decode_all(&filtered);
         assert_eq!(out.len(), 1, "{out:?}");
         let m = &out[0];

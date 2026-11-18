@@ -104,14 +104,13 @@ pub fn decide(powers: Powers, levels: u8) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::synth;
 
     #[test]
     fn each_tone_wins_its_own_bank_slot() {
         let rate = 48_000.0;
         for (index, frequency) in FREQUENCIES.into_iter().enumerate() {
             let mut iq = vec![Complex::new(1.0, 0.0); 60];
-            synth::shift(&mut iq, frequency, rate);
+            sdrmm_modem::synth::shift(&mut iq, frequency, rate);
             let mut bank = Bank::new(rate, 15);
             let powers = iq.iter().map(|&s| bank.push(s)).last().unwrap();
             assert_eq!(decide(powers, 4), index);
@@ -129,7 +128,7 @@ mod tests {
                 Complex::from_polar(1.0, phase as f32)
             })
             .collect();
-        synth::shift(&mut iq, 1_500.0, rate);
+        sdrmm_modem::synth::shift(&mut iq, 1_500.0, rate);
         let mut afc = Afc::new(rate);
         for &sample in &iq {
             afc.centre(sample, true);

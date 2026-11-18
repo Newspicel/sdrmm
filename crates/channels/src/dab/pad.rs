@@ -1,4 +1,4 @@
-use sdrmm_dsp::crc16_msb;
+use sdrmm_dsp::crc16_genibus_ok;
 use sdrmm_wire::BroadcastData;
 
 use self::{
@@ -15,8 +15,6 @@ mod xpad;
 #[cfg(test)]
 mod tests;
 
-const CRC_POLYNOMIAL: u16 = 0x1021;
-const CRC_INITIAL: u16 = 0xffff;
 const NO_FIXED_PAD: [u8; 2] = [0, 0];
 
 pub enum Event {
@@ -26,9 +24,7 @@ pub enum Event {
 }
 
 pub fn crc_ok(bytes: &[u8]) -> bool {
-    bytes.split_last_chunk::<2>().is_some_and(|(body, check)| {
-        !crc16_msb(CRC_POLYNOMIAL, CRC_INITIAL, body) == u16::from_be_bytes(*check)
-    })
+    crc16_genibus_ok(bytes)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

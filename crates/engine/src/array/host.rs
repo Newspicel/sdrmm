@@ -6,22 +6,18 @@ use std::{
     },
 };
 
-use sdrmm_channels::{
-    ChannelError,
-    array_processor::{
-        ArrayBlock, ArrayCtx, ArrayProcessor, EventBytes, Execution, LaneBuffer,
-        MAX_EVENTS_PER_BLOCK, MAX_LANE_PORTS, OutputSlots, OutputTally, ProcessorAction,
-        ProcessorDescriptor, ProcessorFaults, ProcessorNeeds, ProcessorOutput, ResetCause, Steer,
-        TuningNeed, create_processor, descriptor_for, reserved_reading,
-    },
-    df::reserved_bearing,
+use sdrmm_array::{
+    ArrayBlock, ArrayCtx, ArrayProcessor, Descriptor, EventBytes, Execution, LaneBuffer,
+    MAX_EVENTS_PER_BLOCK, MAX_LANE_PORTS, OutputSlots, OutputTally, Params, ProcessorAction,
+    ProcessorFaults, ProcessorNeeds, ProcessorOutput, Reading, ResetCause, Steer, TuningNeed,
+    create_processor, df::reserved_bearing,
 };
+use sdrmm_decoder::ChannelError;
 use sdrmm_dsp::array::manifold::ManifoldTable;
 use sdrmm_wire::{
     ArrayGeometry, ArrayTuningMode, Coherence, DecodedRecord, DecoderEvent, DfBearing, EventOrigin,
-    NO_CHANNEL, ProcessorGate, ProcessorParams, ProcessorReading, ProcessorStatus,
-    RangeDopplerOwned, SpatialSpectrumOwned, StreamKind, SurfaceFrame, VisibilityOwned,
-    patch::MAX_NODE_ID_LEN, plugin::read_events,
+    NO_CHANNEL, ProcessorGate, ProcessorStatus, RangeDopplerOwned, SpatialSpectrumOwned,
+    StreamKind, SurfaceFrame, VisibilityOwned, patch::MAX_NODE_ID_LEN, plugin::read_events,
 };
 use tokio::sync::broadcast;
 
@@ -291,7 +287,7 @@ impl ArrayShape {
 
 pub(crate) struct HostPlan {
     pub(crate) node: String,
-    pub(crate) params: ProcessorParams,
+    pub(crate) params: Params,
     pub(crate) shape: ArrayShape,
     pub(crate) sinks: Vec<Option<VirtualLaneSink>>,
     pub(crate) outputs: HostSinks,
@@ -314,7 +310,7 @@ enum Out {
 
 pub(crate) struct Packet {
     out: Out,
-    reading: Option<ProcessorReading>,
+    reading: Option<Reading>,
     surface: Option<SurfaceFrame>,
     bearing: DfBearing,
     events: EventBytes,
@@ -342,7 +338,7 @@ fn surface_slot(kind: Option<StreamKind>) -> Option<SurfaceFrame> {
 }
 
 pub(crate) struct Outputs {
-    report: Option<ProcessorReading>,
+    report: Option<Reading>,
     surface: Option<SurfaceFrame>,
     bearings: Vec<DfBearing>,
     events: Option<EventBytes>,
@@ -358,16 +354,12 @@ pub(crate) struct Outputs {
 }
 
 impl Outputs {
-    fn new(
-        plan: &mut HostPlan,
-        descriptor: &'static ProcessorDescriptor,
-        ctx: &ArrayCtx<'_>,
-    ) -> io::Result<Self> {
-        let ports = descriptor.lane_ports.len().min(MAX_LANE_PORTS);
+    fn new(plan: &mut HostPlan, descriptor: &Descriptor, ctx: &ArrayCtx<'_>) -> io::Result<Self> {
+        let ports = descriptor.lane_ports().len().min(MAX_LANE_PORTS);
         let mut lanes = Vec::with_capacity(ports);
         let mut lane_ratio = [1.0; MAX_LANE_PORTS];
         for (port, ratio) in lane_ratio.iter_mut().enumerate().take(ports) {
-            let format = (descriptor.lane_format)(&plan.params, ctx, port);
+            let format = descriptor.lane_format(&plan.params, ctx, port);
             lanes.push(LaneBuffer::new(format.capacity));
             if ctx.sample_rate > 0.0 && format.sample_rate > 0.0 {
                 *ratio = format.sample_rate / ctx.sample_rate;
@@ -375,18 +367,18 @@ impl Outputs {
         }
         let mut sinks: Vec<Option<VirtualLaneSink>> = std::mem::take(&mut plan.sinks);
         sinks.resize_with(ports, || None);
-        let reading = reserved_reading(&plan.params);
-        let room = descriptor.event_bytes;
-        let kind = descriptor.surface;
+        let reading = descriptor.reading();
+        let room = descriptor.event_bytes();
+        let kind = descriptor.surface();
         let node = plan.node.clone();
         let sink = plan.outputs.clone();
-        let params = plan.params.clone();
+        let maker = Arc::clone(descriptor);
         let publisher = Publisher::new(
             "sdrmm-array-pub",
             PUBLISH_SLOTS,
             || Packet {
                 out: Out::Report,
-                reading: reserved_reading(&params),
+                reading: maker.reading(),
                 surface: surface_slot(kind),
                 bearing: reserved_bearing(MAX_NODE_ID_LEN),
                 events: EventBytes::with_capacity(room),
@@ -635,7 +627,7 @@ pub(crate) struct GateInputs {
 
 pub(crate) struct ProcessorHost {
     node: String,
-    descriptor: &'static ProcessorDescriptor,
+    descriptor: Descriptor,
     needs: ProcessorNeeds,
     tuning: TuningNeed,
     banded: bool,
@@ -656,10 +648,10 @@ pub(crate) struct ProcessorHost {
 
 impl ProcessorHost {
     pub(crate) fn build(plan: HostPlan, frame: &LiveFrame) -> Result<BuiltHost, EngineError> {
-        let descriptor = descriptor_for(&plan.params)
+        let descriptor = sdrmm_array::descriptor(plan.params.type_id())
             .ok_or_else(|| ChannelError::UnknownType(plan.params.type_id().to_owned()))?;
         let ctx = plan.shape.ctx(&plan.node, frame);
-        let (host, dedicated) = match (descriptor.execution)(&plan.params, &ctx) {
+        let (host, dedicated) = match descriptor.execution(&plan.params, &ctx) {
             Execution::Inline => {
                 let processor = create_processor(&ctx, &plan.params)?;
                 (
@@ -675,7 +667,7 @@ impl ProcessorHost {
                 )
             }
             Execution::Dedicated => {
-                let (runner, built) = build_dedicated(descriptor, &ctx, &plan.params)?;
+                let (runner, built) = build_dedicated(descriptor.as_ref(), &ctx, &plan.params)?;
                 let runner = Runner::Dedicated(runner);
                 (
                     Self::assemble(plan, frame, descriptor, runner, true)?,
@@ -690,17 +682,16 @@ impl ProcessorHost {
     pub(crate) fn dedicated(
         plan: HostPlan,
         frame: &LiveFrame,
+        descriptor: Descriptor,
         runner: Box<dyn DedicatedRunner>,
     ) -> Result<Box<Self>, EngineError> {
-        let descriptor = descriptor_for(&plan.params)
-            .ok_or_else(|| ChannelError::UnknownType(plan.params.type_id().to_owned()))?;
         Self::assemble(plan, frame, descriptor, Runner::Dedicated(runner), true)
     }
 
     pub(crate) fn with_processor(
         plan: HostPlan,
         frame: &LiveFrame,
-        descriptor: &'static ProcessorDescriptor,
+        descriptor: Descriptor,
         processor: Box<dyn ArrayProcessor>,
     ) -> Result<Box<Self>, EngineError> {
         Self::assemble(plan, frame, descriptor, Runner::Inline(processor), true)
@@ -709,7 +700,7 @@ impl ProcessorHost {
     pub(crate) fn batched(
         mut plan: HostPlan,
         frame: &LiveFrame,
-        descriptor: &'static ProcessorDescriptor,
+        descriptor: Descriptor,
         processor: Box<dyn ArrayProcessor>,
         batch: usize,
     ) -> Result<Box<Self>, EngineError> {
@@ -717,7 +708,7 @@ impl ProcessorHost {
             let shape = plan.shape.clone();
             let node = plan.node.clone();
             let ctx = shape.ctx(&node, frame);
-            Outputs::new(&mut plan, descriptor, &ctx).map_err(|error| publisher_error(&error))?
+            Outputs::new(&mut plan, &descriptor, &ctx).map_err(|error| publisher_error(&error))?
         };
         let runner = BatchRunner::start(
             BatchStart {
@@ -737,7 +728,7 @@ impl ProcessorHost {
     fn assemble(
         mut plan: HostPlan,
         frame: &LiveFrame,
-        descriptor: &'static ProcessorDescriptor,
+        descriptor: Descriptor,
         runner: Runner,
         own_outputs: bool,
     ) -> Result<Box<Self>, EngineError> {
@@ -746,7 +737,7 @@ impl ProcessorHost {
             let node = plan.node.clone();
             let ctx = shape.ctx(&node, frame);
             Some(Box::new(
-                Outputs::new(&mut plan, descriptor, &ctx)
+                Outputs::new(&mut plan, &descriptor, &ctx)
                     .map_err(|error| publisher_error(&error))?,
             ))
         } else {
@@ -755,9 +746,9 @@ impl ProcessorHost {
         let base = plan.stats.faults();
         let base_dropped = plan.stats.dropped_samples.load(Ordering::Relaxed);
         Ok(Box::new(Self {
-            needs: (descriptor.needs)(&plan.params),
-            tuning: (descriptor.tuning)(&plan.params),
-            banded: (descriptor.band)(&plan.params).is_some(),
+            needs: descriptor.needs(&plan.params),
+            tuning: descriptor.tuning(&plan.params),
+            banded: descriptor.band(&plan.params).is_some(),
             node: plan.node,
             descriptor,
             runner,
@@ -981,10 +972,10 @@ impl ProcessorHost {
         }
     }
 
-    pub(crate) fn apply(&mut self, params: Box<ProcessorParams>) -> Option<Box<ProcessorParams>> {
-        let needs = (self.descriptor.needs)(&params);
-        let tuning = (self.descriptor.tuning)(&params);
-        let banded = (self.descriptor.band)(&params).is_some();
+    pub(crate) fn apply(&mut self, params: Box<Params>) -> Option<Box<Params>> {
+        let needs = self.descriptor.needs(&params);
+        let tuning = self.descriptor.tuning(&params);
+        let banded = self.descriptor.band(&params).is_some();
         let (applied, left) = match &mut self.runner {
             Runner::Inline(processor) => {
                 let applied = processor.apply(&params).is_ok();

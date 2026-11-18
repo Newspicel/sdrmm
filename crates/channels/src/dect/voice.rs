@@ -3,9 +3,10 @@ use sdrmm_dsp::{RealInterpolator, design_lowpass};
 use super::{
     bfield::{ADPCM_SAMPLES, BField, adpcm_codes},
     burst::{FRAME_SAMPLES, INPUT_RATE_HZ},
-    g726::{FULL_SCALE, G726},
 };
-use crate::{AUDIO_RATE, ChannelOutputs, clamp_full_scale};
+use sdrmm_codec::g726::{FULL_SCALE, G726};
+use sdrmm_decoder::{AUDIO_RATE, ChannelOutputs};
+use sdrmm_dsp::audio::clip::clamp_full_scale;
 
 const VOICE_RATE: u64 = 8_000;
 const UPSAMPLE: usize = (AUDIO_RATE as u64 / VOICE_RATE) as usize;
@@ -126,7 +127,7 @@ impl Playout {
 #[cfg(test)]
 mod tests {
     use super::{ADPCM_SAMPLES, LATENCY, Playout};
-    use crate::{AUDIO_RATE, ChannelOutputs};
+    use sdrmm_decoder::{AUDIO_RATE, ChannelOutputs};
 
     const fn frame(level: i16) -> [i16; ADPCM_SAMPLES] {
         [level; ADPCM_SAMPLES]

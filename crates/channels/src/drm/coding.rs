@@ -233,6 +233,7 @@ impl Plan {
         })
     }
 
+    #[cfg(any(test, feature = "synth"))]
     pub fn split(&self, bits: &[bool], level: usize, out: &mut Vec<bool>) {
         out.clear();
         if let Some((a, b, higher)) = self.level_offsets().nth(level) {

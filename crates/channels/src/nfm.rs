@@ -1,19 +1,19 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, EventContract, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod encoder;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub(crate) use encoder::nfm_encoder;
 pub use encoder::{NfmEncoderSettings, NfmModulator};
 pub use model::*;
-use std::{
-    f64::consts::{FRAC_1_SQRT_2, TAU},
-    sync::LazyLock,
-};
+use std::{f64::consts::FRAC_1_SQRT_2, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_dsp::{
-    Biquad, Compander, Decimator, Deemphasis, RealDecimator, design_lowpass, one_pole_coeff,
+    Biquad, Compander, Deemphasis, Preemphasis, RealDecimator, deemphasis_gain, design_lowpass,
 };
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{
@@ -21,15 +21,20 @@ use sdrmm_wire::{
     DecoderFamily,
 };
 
-use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, clamp_full_scale,
-    tone_squelch::{AUDIO_CORNER_HZ, ToneSquelch, is_standard_ctcss, is_standard_dcs},
-    voice_inversion::{
+use sdrmm_decoder::{
+    AUDIO_RATE, Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
+use sdrmm_dsp::audio::clip::clamp_full_scale;
+use sdrmm_modem::analog::{
+    inversion::{
         DEFAULT_INVERSION_HZ, Inversion, InversionDetector, MAX_INVERSION_HZ, MIN_INVERSION_HZ,
         VoiceInverter, is_supported_inversion,
     },
+    tone_squelch::{
+        AUDIO_CORNER_HZ, CTCSS_TONES_HZ, DCS_CODES, ToneSquelch, is_standard_ctcss, is_standard_dcs,
+    },
 };
+use sdrmm_wire::ToneSquelchStatus;
 
 const VOICE_CUTOFF_HZ: f64 = 3_400.0;
 const COMPANDER_REFERENCE_RMS: f32 = 0.25;
@@ -94,15 +99,8 @@ impl SubaudibleCut {
     }
 }
 
-fn emphasis_pole(rate: f64) -> f32 {
-    one_pole_coeff(rate, f64::from(EMPHASIS_TAU_US) * 1e-6)
-}
-
 fn emphasis_reference_gain(rate: f64) -> f32 {
-    let pole = f64::from(emphasis_pole(rate));
-    let kept = 1.0 - pole;
-    let turn = TAU * EMPHASIS_REFERENCE_HZ / rate;
-    (pole / (1.0 - kept * turn.cos()).hypot(kept * turn.sin())) as f32
+    deemphasis_gain(rate, EMPHASIS_TAU_US, EMPHASIS_REFERENCE_HZ)
 }
 
 struct AudioDeemphasis {
@@ -132,32 +130,8 @@ impl AudioDeemphasis {
     }
 }
 
-struct AudioPreemphasis {
-    kept: f32,
-    scale: f32,
-    previous: f32,
-}
-
-impl AudioPreemphasis {
-    fn new(rate: f64) -> Self {
-        let pole = emphasis_pole(rate);
-        Self {
-            kept: 1.0 - pole,
-            scale: emphasis_reference_gain(rate) / pole,
-            previous: 0.0,
-        }
-    }
-
-    fn process(&mut self, audio: &mut [f32]) {
-        if !self.previous.is_finite() {
-            self.previous = 0.0;
-        }
-        for s in audio {
-            let sample = if s.is_finite() { *s } else { 0.0 };
-            *s = self.scale * (sample - self.kept * self.previous);
-            self.previous = sample;
-        }
-    }
+fn audio_preemphasis(rate: f64) -> Preemphasis {
+    Preemphasis::new(rate, EMPHASIS_TAU_US, EMPHASIS_REFERENCE_HZ)
 }
 
 struct Scrambler {
@@ -313,7 +287,7 @@ impl Tone {
 }
 
 fn params(settings: &ChannelSettings) -> Result<NfmParams, ChannelError> {
-    crate::settings_of::<NfmParams>(settings)
+    sdrmm_decoder::settings_of::<NfmParams>(settings)
 }
 
 fn check_bandwidth(p: &NfmParams) -> Result<(), ChannelError> {
@@ -379,13 +353,9 @@ fn deviation_hz(p: &NfmParams) -> f64 {
     p.bandwidth_hz / DEVIATION_RATIO
 }
 
-pub(crate) fn channel_filter(p: &NfmParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &NfmParams) -> Result<FilterSpec, ChannelError> {
     check_bandwidth(p)?;
-    let cutoff = p.bandwidth_hz / 2.0 / DESCRIPTOR.input_rate_hz;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, cutoff),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, p.bandwidth_hz / 2.0))
 }
 
 fn audio_lowpass() -> RealDecimator {
@@ -426,7 +396,7 @@ impl NativeChannel for NfmChannel {
     }
 }
 
-impl ChannelRx for NfmChannel {
+impl Channel for NfmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = &params(&settings)?;
         check_params(p)?;
@@ -534,12 +504,17 @@ fn nfm_tune(signal: &sdrmm_wire::IdentSignal, p: &mut NfmParams) -> f64 {
 }
 
 pub(crate) fn nfm_decoder() -> Native<NfmParams> {
-    Native::new::<NfmChannel>(|p: &NfmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
-        .filter(channel_filter)
-        .signatures(nfm_signatures)
-        .tune(nfm_tune)
-        .form(nfm_form)
-        .kinds(nfm_kinds)
+    let decoder =
+        Native::new::<NfmChannel>(|p: &NfmParams| (-p.bandwidth_hz / 2.0, p.bandwidth_hz / 2.0))
+            .filter(channel_filter)
+            .signatures(nfm_signatures)
+            .tune(nfm_tune)
+            .form(nfm_form)
+            .kinds(nfm_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 const CTCSS_DEFAULT_HZ: f64 = 88.5;
@@ -594,22 +569,19 @@ fn nfm_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{
-        am::AmParams,
-        encoder::{EncoderError, Modulator, NativeModulator, TxPayload},
-        synth::{
-            burst, fm_modulate,
-            nfm::{ctcss_audio, dcs_audio, mix, speech_audio},
-            tone_audio,
-        },
-        testutil::{
-            complex_noise, dominant_tone, fm_iq, rms, run_ragged, settings, tone_amplitude,
-        },
+    use crate::synth::nfm::{ctcss_audio, dcs_audio, mix, speech_audio};
+    use sdrmm_decoder::encoder::burst;
+    use sdrmm_decoder::encoder::{EncoderError, Modulator, NativeModulator, TxPayload};
+    use sdrmm_decoder_test_support::{
+        complex_noise, dominant_tone, fm_iq, rms, run_ragged, settings, tone_amplitude,
     };
+    use sdrmm_modem::synth::{fm_modulate, tone_audio};
 
     const RATE: f64 = 48_000.0;
     const DEVIATION_HZ: f64 = 2_500.0;
@@ -687,13 +659,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel();
-        let err = chan.apply(settings(
-            ChannelParams::new("am", &AmParams::default()).expect("am settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("am")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = NfmChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("am", &AmParams::default()).expect("am settings")),
+            settings(ChannelParams::bare("am")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }
@@ -713,7 +683,7 @@ mod tests {
     const LINK_TOP_HZ: f64 = 2_400.0;
 
     fn curve_db(hz: f64) -> f64 {
-        let turn = |hz: f64| TAU * hz * f64::from(EMPHASIS_TAU_US) * 1e-6;
+        let turn = |hz: f64| std::f64::consts::TAU * hz * f64::from(EMPHASIS_TAU_US) * 1e-6;
         10.0 * ((1.0 + turn(EMPHASIS_REFERENCE_HZ).powi(2)) / (1.0 + turn(hz).powi(2))).log10()
     }
 
@@ -740,14 +710,14 @@ mod tests {
     #[test]
     fn pre_emphasis_is_the_mirror_image_of_de_emphasis() {
         for hz in EMPHASIS_PROBES {
-            let mut lift = AudioPreemphasis::new(RATE);
+            let mut lift = audio_preemphasis(RATE);
             let measured = response_db(hz, |audio| lift.process(audio));
             let want = -curve_db(hz);
             assert!(
                 (measured - want).abs() < 0.3,
                 "{hz} Hz: {measured:.2} dB against the curve's {want:.2} dB"
             );
-            let mut lift = AudioPreemphasis::new(RATE);
+            let mut lift = audio_preemphasis(RATE);
             let mut fall = AudioDeemphasis::new(RATE);
             let paired = response_db(hz, |audio| {
                 lift.process(audio);

@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod levels;
 
@@ -10,11 +13,10 @@ use num_complex::Complex;
 use sdrmm_dsp::measure::airtime::PowerFrames;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use levels::{Levels, Pair};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 const RATE: f64 = 500_000.0;
 const FFT_LEN: usize = 512;
@@ -39,7 +41,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<NoiseFigureParams, ChannelError> {
-    let params: NoiseFigureParams = crate::settings_of(settings)?;
+    let params: NoiseFigureParams = sdrmm_decoder::settings_of(settings)?;
     if params.enr_db.is_finite() && (MIN_ENR_DB..=MAX_ENR_DB).contains(&params.enr_db) {
         Ok(params)
     } else {
@@ -54,8 +56,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-MEASURED_HALF_HZ, MEASURED_HALF_HZ)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Passthrough
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 fn bin_of(offset_hz: f64) -> f64 {
@@ -186,7 +188,7 @@ impl NativeChannel for NoiseFigureChannel {
     }
 }
 
-impl ChannelRx for NoiseFigureChannel {
+impl Channel for NoiseFigureChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.meter.enr_db = params(&settings)?.enr_db;
         if settings.frequency_hz != self.frequency_hz {
@@ -219,10 +221,14 @@ impl ChannelRx for NoiseFigureChannel {
 }
 
 pub(crate) fn noise_figure_decoder() -> Native<NoiseFigureParams> {
-    Native::new::<NoiseFigureChannel>(|_| occupied_band())
+    let decoder = Native::new::<NoiseFigureChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .form(noise_figure_form)
-        .kinds(noise_figure_kinds)
+        .kinds(noise_figure_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn noise_figure_form() -> Vec<SettingField> {
@@ -240,5 +246,7 @@ fn noise_figure_kinds() -> Vec<KindSpec> {
     vec![noise_figure_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

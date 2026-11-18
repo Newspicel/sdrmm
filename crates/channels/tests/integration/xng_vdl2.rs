@@ -3,8 +3,9 @@
 use std::path::Path;
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_dsp::Ddc;
+use sdrmm_test_support::reference_data;
 use sdrmm_wire::{ChannelSettings, DecoderEvent};
 use xng_mode_vdl2::Vdl2ChannelDecoder;
 
@@ -29,12 +30,12 @@ fn load(dir: &Path, file: &str) -> Vec<Complex<f32>> {
 fn decode_ours(iq: &[Complex<f32>]) -> Vec<DecoderEvent> {
     let settings = ChannelSettings {
         frequency_hz: CENTER_HZ,
-        ..sdrmm_channels::default_settings("vdl2").unwrap()
+        ..sdrmm_decoder::default_settings("vdl2").unwrap()
     };
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut ddc = Ddc::new(CAPTURE_RATE, rate, settings.frequency_hz - CENTER_HZ).unwrap();
-    let mut filter = sdrmm_channels::channel_filter(&settings.params).unwrap();
-    let mut rx = sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).unwrap();
+    let mut filter = sdrmm_decoder::channel_filter(&settings.params).unwrap();
+    let mut rx = sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).unwrap();
     let mut narrow = Vec::new();
     let mut filtered = Vec::new();
     let mut outputs = ChannelOutputs::default();
@@ -67,7 +68,7 @@ fn compare(dir: &Path, file: &str) -> (usize, usize) {
     let ours: Vec<_> = decode_ours(&iq)
         .into_iter()
         .map(
-            |event| match event.payload::<sdrmm_channels::DataLinkMessage>() {
+            |event| match event.payload::<sdrmm_decoder::link::DataLinkMessage>() {
                 Some(message) if event.kind == "vdl2" => message,
                 _ => panic!("unexpected {event:?}"),
             },

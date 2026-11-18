@@ -1,5 +1,3 @@
-use crate::NativeChannel;
-use crate::ble::BleAddressKind;
 use crate::ble::BleAdvert;
 use crate::ble::BleBeacon;
 use crate::ble::BleLink;
@@ -7,15 +5,15 @@ use crate::ble::BleParams;
 use crate::ble::BlePdu;
 use crate::ble::BlePhy;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_modem::ble::BlePhy as ModemPhy;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
-use super::{BleChannel, ad::Fields, content, key, pdu::parse};
-use crate::{
-    ChannelCtx, ChannelOutputs, ChannelRx, channel_filter,
-    synth::{self, remote_id::bluetooth},
-    testutil::{cf32_le, settings},
-};
+use super::{BleChannel, ad::Fields, content, key};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs, channel_filter};
+use sdrmm_decoder_test_support::{cf32_le, settings};
+use sdrmm_modem::ble::pdu::{AddressKind, AuxPhy, PduKind, parse};
+use sdrmm_modem::ble::transmit::rf_packet;
 
 const ADDRESS: [u8; 6] = [0x55, 0x44, 0x33, 0x22, 0x11, 0xC0];
 const CHANNEL_38_HZ: f64 = 2_426e6;
@@ -38,10 +36,10 @@ fn ibeacon() -> Vec<u8> {
 fn legacy_adverts_name_their_sender_and_its_address_kind() {
     let pdu = advert(0x00, &[0x02, 0x01, 0x06]);
     let parsed = parse(&pdu, Some(38)).unwrap();
-    assert_eq!(parsed.kind, BlePdu::AdvInd);
+    assert_eq!(parsed.kind, PduKind::AdvInd);
     let sender = parsed.sender.unwrap();
     assert_eq!(sender.text(), "C0:11:22:33:44:55");
-    assert_eq!(sender.kind(), BleAddressKind::RandomStatic);
+    assert_eq!(sender.kind(), AddressKind::RandomStatic);
     assert_eq!(parsed.data, &[0x02, 0x01, 0x06]);
     assert_eq!(parse(&pdu[..5], Some(38)), None);
 }
@@ -52,8 +50,8 @@ fn a_scan_request_comes_from_the_scanner_to_the_advertiser() {
     pdu.extend([1, 2, 3, 4, 5, 0x4A]);
     pdu.extend(ADDRESS);
     let parsed = parse(&pdu, Some(37)).unwrap();
-    assert_eq!(parsed.kind, BlePdu::ScanReq);
-    assert_eq!(parsed.sender.unwrap().kind(), BleAddressKind::Public);
+    assert_eq!(parsed.kind, PduKind::ScanReq);
+    assert_eq!(parsed.sender.unwrap().kind(), AddressKind::Public);
     assert_eq!(parsed.target.unwrap().text(), "C0:11:22:33:44:55");
     assert!(parsed.target.unwrap().random);
 }
@@ -62,17 +60,17 @@ fn a_scan_request_comes_from_the_scanner_to_the_advertiser() {
 fn an_extended_advert_points_at_its_auxiliary_packet() {
     let pdu = [0x07, 0x07, 0x06, 0x18, 0x75, 0x0E, 0x05, 0x28, 0x40];
     let parsed = parse(&pdu, Some(37)).unwrap();
-    assert_eq!(parsed.kind, BlePdu::AdvExtInd);
+    assert_eq!(parsed.kind, PduKind::AdvExtInd);
     assert_eq!(parsed.sender, None);
     let extended = parsed.extended.unwrap();
     let aux = extended.aux.unwrap();
     assert_eq!(
         (aux.channel, aux.phy, aux.offset_us),
-        (5, BlePhy::LeCoded, 40 * 30)
+        (5, AuxPhy::LeCoded, 40 * 30)
     );
     let adi = extended.adi.unwrap();
     assert_eq!((adi.set, adi.data_id), (0, 0xE75));
-    assert_eq!(parse(&pdu, Some(5)).unwrap().kind, BlePdu::AuxAdvInd);
+    assert_eq!(parse(&pdu, Some(5)).unwrap().kind, PduKind::AuxAdvInd);
 }
 
 #[test]
@@ -136,7 +134,7 @@ fn a_partial_uuid_in_a_list_is_counted() {
 fn a_truncated_service_list_reaches_the_rejected_count() {
     let rate = BleLink::Channel.input_rate_hz();
     let data = [0x02, 0x01, 0x06, 0x04, 0x03, 0x0F, 0x18, 0x0A];
-    let packet = bluetooth(&advert(0x02, &data), 12, ModemPhy::Le1m, rate);
+    let packet = rf_packet(&advert(0x02, &data), 12, ModemPhy::Le1m, rate);
     let (adverts, rejected) = run(BleLink::Channel, CHANNEL_38_HZ, &air(&[packet], rate, 0.01));
     assert_eq!(adverts.len(), 1, "{adverts:?}");
     assert_eq!(adverts[0].services.len(), 1);
@@ -231,21 +229,21 @@ fn run(link: BleLink, frequency_hz: f64, iq: &[Complex<f32>]) -> (Vec<BleAdvert>
 
 fn air(packets: &[Vec<Complex<f32>>], rate: f64, gap_s: f64) -> Vec<Complex<f32>> {
     let gap = (gap_s * rate) as usize;
-    let mut iq = synth::silence(gap);
+    let mut iq = sdrmm_modem::synth::silence(gap);
     for packet in packets {
         let mut packet = packet.clone();
-        synth::scale(&mut packet, 0.3);
+        sdrmm_modem::synth::scale(&mut packet, 0.3);
         iq.extend(packet);
-        iq.extend(synth::silence(gap));
+        iq.extend(sdrmm_modem::synth::silence(gap));
     }
-    synth::add_noise(&mut iq, 3, 0.02);
+    sdrmm_modem::synth::add_noise(&mut iq, 3, 0.02);
     iq
 }
 
 #[test]
 fn packets_that_fail_their_crc_are_counted_with_nothing_heard() {
     let rate = BleLink::Channel.input_rate_hz();
-    let mut packet = bluetooth(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
+    let mut packet = rf_packet(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
     let middle = packet.len() / 2;
     for sample in &mut packet[middle..middle + 400] {
         *sample = sample.conj();
@@ -262,8 +260,8 @@ fn noise_alone_rejects_nothing() {
         (BleLink::Channel, CHANNEL_38_HZ),
         (BleLink::Band, CHANNEL_38_HZ),
     ] {
-        let mut iq = synth::silence(2_000_000);
-        synth::add_noise(&mut iq, 0xB1E, 0.3);
+        let mut iq = sdrmm_modem::synth::silence(2_000_000);
+        sdrmm_modem::synth::add_noise(&mut iq, 0xB1E, 0.3);
         let (adverts, rejected) = run(link, frequency_hz, &iq);
         assert!(adverts.is_empty(), "{link:?}");
         assert_eq!(rejected, 0, "{link:?}");
@@ -273,7 +271,7 @@ fn noise_alone_rejects_nothing() {
 #[test]
 fn a_beacon_on_channel_38_is_heard_once_per_hold() {
     let rate = BleLink::Channel.input_rate_hz();
-    let packet = bluetooth(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
+    let packet = rf_packet(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
     let iq = air(&vec![packet; 8], rate, 0.1);
     let adverts = decode(BleLink::Channel, CHANNEL_38_HZ, &iq);
     assert_eq!(adverts.len(), 1, "{adverts:?}");
@@ -293,7 +291,7 @@ fn a_beacon_on_channel_38_is_heard_once_per_hold() {
 #[test]
 fn a_held_device_reports_how_often_it_repeated() {
     let rate = BleLink::Channel.input_rate_hz();
-    let packet = bluetooth(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
+    let packet = rf_packet(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
     let iq = air(&vec![packet; 14], rate, 0.1);
     let adverts = decode(BleLink::Channel, CHANNEL_38_HZ, &iq);
     assert_eq!(adverts.len(), 2, "{adverts:?}");
@@ -305,8 +303,8 @@ fn new_content_is_reported_at_once() {
     let rate = BleLink::Channel.input_rate_hz();
     let named = advert(0x04, &[0x05, 0x09, b'L', b'a', b'm', b'p']);
     let packets = [
-        bluetooth(&advert(0x00, &[0x02, 0x01, 0x06]), 12, ModemPhy::Le1m, rate),
-        bluetooth(&named, 12, ModemPhy::Le1m, rate),
+        rf_packet(&advert(0x00, &[0x02, 0x01, 0x06]), 12, ModemPhy::Le1m, rate),
+        rf_packet(&named, 12, ModemPhy::Le1m, rate),
     ];
     let adverts = decode(BleLink::Channel, CHANNEL_38_HZ, &air(&packets, rate, 0.01));
     let kinds: Vec<BlePdu> = adverts.iter().map(|advert| advert.pdu).collect();
@@ -321,8 +319,8 @@ fn the_band_link_hears_long_range_on_a_data_channel() {
     aux.extend(ADDRESS);
     aux.extend([0x75, 0x0E, 0x05, 0x09, b'F', b'a', b'r', b'!']);
     aux[1] = (aux.len() - 2) as u8;
-    let mut far = bluetooth(&aux, 9, ModemPhy::CodedS8, rate);
-    synth::shift(&mut far, 2_420e6 - CHANNEL_38_HZ, rate);
+    let mut far = rf_packet(&aux, 9, ModemPhy::CodedS8, rate);
+    sdrmm_modem::synth::shift(&mut far, 2_420e6 - CHANNEL_38_HZ, rate);
     let adverts = decode(BleLink::Band, CHANNEL_38_HZ, &air(&[far], rate, 0.001));
     assert_eq!(adverts.len(), 1, "{adverts:?}");
     let advert = &adverts[0];

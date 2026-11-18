@@ -1,16 +1,20 @@
-use crate::registry::Native;
-use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{
+    Control, KindSpec, MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS, NumberSpec, SettingField,
+};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, datalink,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = 48_000.0;
@@ -71,7 +75,12 @@ fn params(settings: &ChannelSettings) -> Result<VorParams, ChannelError> {
 }
 
 fn check_params(params: &VorParams) -> Result<(), ChannelError> {
-    datalink::check_navaid_report_ms(params.report_ms)?;
+    sdrmm_decoder::check_range(
+        "navaid report interval",
+        "ms",
+        params.report_ms,
+        MIN_NAVAID_REPORT_MS..=MAX_NAVAID_REPORT_MS,
+    )?;
     match (params.station_lat, params.station_lon) {
         (None, None) | (Some(_), Some(_)) => Ok(()),
         _ => Err(ChannelError::InvalidSettings(
@@ -84,8 +93,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
 
 impl NativeChannel for VorChannel {
@@ -100,7 +109,7 @@ impl NativeChannel for VorChannel {
     }
 }
 
-impl ChannelRx for VorChannel {
+impl Channel for VorChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         check_params(&params)?;
@@ -234,12 +243,16 @@ fn vor_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn vor_decoder() -> Native<VorParams> {
-    Native::new::<VorChannel>(|_| occupied_band())
+    let decoder = Native::new::<VorChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(113_000_000.0)
         .signatures(vor_signatures)
         .form(vor_form)
-        .kinds(vor_kinds)
+        .kinds(vor_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn vor_form() -> Vec<SettingField> {
@@ -292,11 +305,13 @@ fn vor_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::testutil::{
+    use sdrmm_decoder_test_support::{
         THROUGHPUT_ATTEMPTS, fastest_seconds, realtime_budget, run_events, settings,
     };
     use sdrmm_wire::ChannelParams;

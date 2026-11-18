@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { NodeKind, NodeTypeInfo, PatchCatalog } from "./types";
+import type { NodeKind, NodeTypeInfo, PatchCatalog, ProcessorType } from "./types";
 
 interface CatalogStore {
   catalog: PatchCatalog | null;
@@ -20,4 +20,9 @@ export function loadCatalog(catalog: PatchCatalog): void {
 
 export function catalogType(kind: NodeKind): NodeTypeInfo | undefined {
   return useCatalogStore.getState().types.get(kind);
+}
+
+/** The processor type a processor node runs, as the loaded catalog lists it. */
+export function catalogProcessor(typeId: string): ProcessorType | undefined {
+  return useCatalogStore.getState().catalog?.processors?.find((type) => type.type_id === typeId);
 }

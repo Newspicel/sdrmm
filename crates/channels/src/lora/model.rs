@@ -269,7 +269,7 @@ pub struct LoraImplicitHeader {
     pub length: u8,
     #[serde(default)]
     pub coding_rate: LoraCodingRate,
-    #[serde(default = "crate::default_true")]
+    #[serde(default = "sdrmm_decoder::default_true")]
     pub crc: bool,
 }
 
@@ -1073,12 +1073,7 @@ impl sdrmm_wire::DecoderSettings for LoraParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
-    use crate::cw_skimmer::CwSkimmerSpot;
-    use crate::gnss::GnssFrame;
-    use crate::weak_signal::WsjtMessage;
-    use crate::weak_signal::WsprSpot;
     use sdrmm_wire::present::count;
-    use sdrmm_wire::present::text;
 
     use sdrmm_wire::IdentReport;
 
@@ -1138,34 +1133,6 @@ mod model_tests {
         );
     }
 
-    #[test]
-    fn gnss_says_when_it_is_still_acquiring() {
-        let frame = GnssFrame {
-            prn: 12,
-            doppler_hz: -1234.0,
-            code_phase_chips: 511.5,
-            cn0_db_hz: 44.25,
-            subframe: None,
-            tow_seconds: None,
-            week: None,
-            words: Vec::new(),
-        };
-        let view = frame.present(&EventKind::named("gnss"));
-        assert_eq!(
-            view.labels(),
-            ["Signal", "Doppler", "Code phase", "C/N0", "Subframe"]
-        );
-        assert_eq!(view.field("Subframe"), text(Some("acquiring")).as_ref());
-        assert_eq!(
-            view.field("C/N0"),
-            number(Some(44.25), Unit::DbHz, 1).as_ref()
-        );
-        assert_eq!(
-            view.field("Code phase"),
-            number(Some(511.5), Unit::Chips, 2).as_ref()
-        );
-    }
-
     const PLACED_NODE: &str = r#"{"spreading_factor":11,"bandwidth_hz":250000.0,"coding_rate":"4/5","sync_word":43,"implicit_header":false,"low_data_rate":false,"inverted_iq":false,"integrity":"crc_ok","fec_corrected":0,"snr_db":1.0,"frequency_error_hz":0.0,"payload":"00","decoded":{"protocol":"meshtastic","to":4294967295,"from":161,"id":1,"hop_limit":3,"hop_start":3,"want_ack":false,"via_mqtt":false,"channel_hash":8,"next_hop":0,"relay_node":0,"encryption":"channel","content":{"type":"position","lat":47.5,"lon":8.25}}}"#;
 
     fn placed_node() -> LoraFrame {
@@ -1197,23 +1164,6 @@ mod model_tests {
                 lon: 8.25
             })
         );
-    }
-
-    #[test]
-    fn a_skimmer_spot_shows_offset_speed_and_snr() {
-        let view = CwSkimmerSpot {
-            offset_hz: -120.0,
-            text: "CQ DL1ABC".to_owned(),
-            wpm: 24.0,
-            snr_db: 11.5,
-        }
-        .present(&EventKind::named("cw_skimmer"));
-        assert_eq!(view.labels(), ["Signal", "Offset", "Speed", "SNR", "Text"]);
-        assert_eq!(
-            view.field("Offset"),
-            number(Some(-120.0_f32), Unit::Hz, 0).as_ref()
-        );
-        assert_eq!(view.text, None);
     }
 
     #[test]
@@ -1261,53 +1211,6 @@ mod model_tests {
         assert_eq!(
             view.field("Decoder"),
             text_of("POCSAG (confirmed)").as_ref()
-        );
-    }
-
-    #[test]
-    fn wspr_shows_timing_and_link_measurements() {
-        let view = serde_json::from_value::<WsprSpot>(serde_json::json!({
-            "text": "K1ABC FN42 37", "callsign": "K1ABC", "grid": "FN42", "power_dbm": 37,
-            "snr_db": -21.0, "audio_hz": 1501.25, "time_offset_s": 0.75, "drift_hz": -0.2,
-        }))
-        .unwrap()
-        .present(&EventKind::named("wspr"));
-        assert_eq!(
-            view.labels(),
-            [
-                "Callsign",
-                "Grid",
-                "Power",
-                "SNR",
-                "Audio",
-                "Time offset",
-                "Drift",
-                "Message"
-            ]
-        );
-        assert_eq!(view.field("Power"), number(Some(37), Unit::Dbm, 0).as_ref());
-        assert_eq!(
-            view.field("Time offset"),
-            number(Some(0.75_f32), Unit::Seconds, 2).as_ref()
-        );
-        assert_eq!(view.field("Message"), text(Some("K1ABC FN42 37")).as_ref());
-    }
-
-    #[test]
-    fn ft8_counts_hard_errors() {
-        let view = WsjtMessage {
-            text: "CQ DL1ABC JO62".to_owned(),
-            snr_db: -12.0,
-            audio_hz: 1234.5,
-            time_offset_s: 0.1,
-            hard_errors: 3,
-            slot: None,
-        }
-        .present(&EventKind::named("ft8"));
-        assert_eq!(view.field("Hard errors"), count(Some(3)).as_ref());
-        assert_eq!(
-            view.field("SNR"),
-            number(Some(-12.0_f32), Unit::Db, 0).as_ref()
         );
     }
 
@@ -1504,7 +1407,7 @@ mod model_tests {
         });
         let view = telemetry.present(&LoraFrame::KIND);
         assert!(view.keys().contains(&"snr_2"), "{:?}", view.keys());
-        crate::testutil::assert_views_hold(
+        sdrmm_decoder_test_support::assert_views_hold(
             &lora_kind(),
             &[
                 sdrmm_wire::DecoderEvent::of(&placed_node()),

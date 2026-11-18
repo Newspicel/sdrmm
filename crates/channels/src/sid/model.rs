@@ -190,42 +190,15 @@ impl DecoderSettings for SidParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
-    use crate::noise_figure::NoiseFigureReport;
-    use crate::per::PerReport;
 
     #[test]
-    fn summaries_lead_with_the_measurement() {
-        let mut nf = NoiseFigureReport {
-            window_ms: 1_000,
-            level_dbfs: -60.04,
-            settled_s: 3.0,
-            source_on: None,
-            hot_dbfs: None,
-            cold_dbfs: None,
-            y_db: None,
-            nf_db: None,
-            temperature_k: None,
-        };
-        assert_eq!(nf.summary(), "-60.0 dBFS · toggle the noise source");
-        nf.y_db = Some(10.5);
-        nf.nf_db = Some(4.75);
-        assert_eq!(nf.summary(), "NF 4.75 dB · Y 10.50 dB");
-        let per = PerReport {
-            received: 990,
-            expected: 1_000,
-            missed: 10,
-            per: 0.01,
-            bits: 256_000,
-            bit_errors: 80,
-            ber: Some(3.125e-4),
-            ..PerReport::default()
-        };
-        assert_eq!(per.summary(), "PER 1.00% · 990/1000 · BER 3.1e-4");
-        let clean = PerReport {
-            ber: Some(0.0),
-            ..per.clone()
-        };
-        assert!(clean.summary().ends_with("BER 0"), "{}", clean.summary());
+    fn empty_settings_take_the_defaults() {
+        let sid: SidParams = serde_json::from_str("{}").unwrap();
+        assert_eq!(sid, SidParams::default());
+    }
+
+    #[test]
+    fn the_summary_leads_with_the_strongest_station() {
         let mut sid = SidReport {
             window_ms: 5_000,
             floor_dbfs_hz: -110.0,
@@ -309,7 +282,10 @@ mod model_tests {
             floor_dbfs_hz: -120.0,
             stations,
         };
-        crate::testutil::assert_views_hold(&sid_kind(), &[sdrmm_wire::DecoderEvent::of(&report)]);
+        sdrmm_decoder_test_support::assert_views_hold(
+            &sid_kind(),
+            &[sdrmm_wire::DecoderEvent::of(&report)],
+        );
     }
 
     #[test]

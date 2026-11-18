@@ -1,4 +1,4 @@
-use crate::NativeChannel;
+use sdrmm_decoder::NativeChannel;
 use std::{collections::BTreeMap, f64::consts::TAU};
 
 use crate::dect::DectBand;
@@ -11,11 +11,11 @@ use num_complex::Complex;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelOutputs, ChannelRx,
     dect::{DectChannel, input_rate},
     synth::dect::{self as sig, Air, Call, Station},
-    testutil::settings,
 };
+use sdrmm_decoder::{AUDIO_RATE, Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_decoder_test_support::settings;
 
 const CLASS_A_RFPI: u64 = 0x0001_234D_5E6D;
 const PMID: u32 = 0x1_2345;
@@ -185,7 +185,7 @@ fn wideband_noise_alone_rejects_nothing() {
         ..DectParams::default()
     };
     let mut chan = build(params, band.center_hz());
-    let noise = crate::testutil::complex_noise(0xBA5D, 0.3, input_rate(params) as usize);
+    let noise = sdrmm_decoder_test_support::complex_noise(0xBA5D, 0.3, input_rate(params) as usize);
     let (frames, _) = run(&mut chan, &noise);
     assert!(frames.is_empty(), "{frames:?}");
     assert_eq!(chan.rejected(), 0);
@@ -313,7 +313,7 @@ fn a_base_without_part_two_reports_no_dsaa2() {
 }
 
 fn load_wav(path: &std::path::Path) -> (Vec<Complex<f32>>, f64) {
-    let bytes = crate::reference_data::read(path);
+    let bytes = sdrmm_test_support::reference_data::read(path);
     assert!(bytes.len() > 44, "{} is truncated", path.display());
     let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
     let data = bytes
@@ -338,7 +338,7 @@ fn load_wav(path: &std::path::Path) -> (Vec<Complex<f32>>, f64) {
 #[test]
 #[ignore = "needs DECT_SIGID_WAV=<SigIDWiki Dect.zip dect.wav>"]
 fn decodes_two_real_base_stations_off_air() {
-    let Some(path) = crate::reference_data::dect_sigid_wav() else {
+    let Some(path) = sdrmm_test_support::reference_data::dect_sigid_wav() else {
         return;
     };
     let (iq, rate) = load_wav(&path);
@@ -398,7 +398,7 @@ fn relocate(iq: &[Complex<f32>], rate: f64, band: DectBand, carrier: u8) -> Vec<
 #[test]
 #[ignore = "needs DECT_SIGID_WAV=<SigIDWiki Dect.zip dect.wav>"]
 fn separates_real_bases_moved_onto_two_carriers_of_a_wideband_capture() {
-    let Some(path) = crate::reference_data::dect_sigid_wav() else {
+    let Some(path) = sdrmm_test_support::reference_data::dect_sigid_wav() else {
         return;
     };
     let (iq, rate) = load_wav(&path);

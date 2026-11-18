@@ -1,3 +1,4 @@
+use sdrmm_wire::default_navaid_report_ms;
 use sdrmm_wire::{Capability, DecoderSettings, EventContract, Hue, KindSpec, Symbol};
 use serde::{Deserialize, Serialize};
 
@@ -19,19 +20,11 @@ use sdrmm_wire::present::position;
 use sdrmm_wire::present::text;
 use sdrmm_wire::present::trimmed;
 
-pub const MIN_NAVAID_REPORT_MS: u32 = 250;
-
-pub const MAX_NAVAID_REPORT_MS: u32 = 5_000;
-
 /// Annex 10 holds a VOR's radial to about 2 degrees; a weaker reading widens it.
 const RADIAL_SIGMA_DEG: f32 = 2.0;
 const MIN_SIGMA_CONFIDENCE: f32 = 0.1;
 /// Far enough to cross a radial from a VOR heard at the edge of its service volume.
 const RADIAL_RAY_M: f32 = 200_000.0;
-
-pub(crate) fn default_navaid_report_ms() -> u32 {
-    500
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VorParams {

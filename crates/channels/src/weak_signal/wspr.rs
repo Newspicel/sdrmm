@@ -13,6 +13,7 @@ use sdrmm_dsp::math::fft::Transform;
 use fano::{CODED_BITS, SYNC};
 use message::CallBook;
 pub(crate) use message::Message;
+use sdrmm_dsp::coding::fec::fano::Fano;
 
 pub(crate) const SAMPLE_RATE: f32 = 12_000.0;
 pub(crate) const SLOT_SAMPLES: usize = 1_440_000;
@@ -122,6 +123,7 @@ pub(crate) struct WsprDecoder {
     twiddle_re: [[f32; FINE_SYMBOL]; 4],
     twiddle_im: [[f32; FINE_SYMBOL]; 4],
     book: CallBook,
+    fano: Fano<'static>,
 }
 
 impl WsprDecoder {
@@ -138,6 +140,7 @@ impl WsprDecoder {
             baseband: vec![Complex::default(); BASEBAND],
             fine: vec![Complex::default(); FINE_SAMPLES],
             power: Vec::new(),
+            fano: fano::decoder(),
             twiddle_re: std::array::from_fn(|tone| {
                 std::array::from_fn(|n| {
                     (TAU * (tone as f32 - 1.5) * n as f32 / FINE_SYMBOL as f32).cos()
@@ -467,7 +470,7 @@ impl WsprDecoder {
         }
     }
 
-    fn decode_track(&self, track: Track) -> Option<(u64, f32)> {
+    fn decode_track(&mut self, track: Track) -> Option<(u64, f32)> {
         let (energy, noise) = signal_to_noise(&self.powers(track));
         let amplitudes = self.amplitudes(track);
         let scale = 2.0 * energy.sqrt() / noise;
@@ -475,7 +478,8 @@ impl WsprDecoder {
             .iter()
             .zip(FANO_CYCLES)
             .find_map(|(&block, cycles)| {
-                fano::decode(&soft_metrics(&amplitudes, block, scale), FANO_DELTA, cycles)
+                let metrics = soft_metrics(&amplitudes, block, scale);
+                fano::decode(&mut self.fano, &metrics, FANO_DELTA, cycles)
             })
             .map(|decoded| (decoded, energy / noise))
     }

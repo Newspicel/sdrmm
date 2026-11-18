@@ -341,7 +341,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_feed_frames_only_its_kinds_from_records_sent_to_it() {
-        sdrmm_channels::registry::init();
         let mut outputs = Outputs::default();
         let (address, mut observed) = served(&mut outputs).await;
         let mut first = TcpStream::connect(address).await.unwrap();
@@ -379,7 +378,6 @@ mod tests {
 
     #[tokio::test]
     async fn removing_a_feed_closes_its_clients() {
-        sdrmm_channels::registry::init();
         let mut outputs = Outputs::default();
         let (address, mut observed) = served(&mut outputs).await;
         let mut client = TcpStream::connect(address).await.unwrap();
@@ -423,7 +421,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_bind_failure_and_lost_events_are_visible() {
-        sdrmm_channels::registry::init();
         let busy = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut outputs = Outputs::default();
         outputs.configure(&[Binding {
@@ -457,7 +454,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_feed_that_moves_on_its_address_keeps_listening() {
-        sdrmm_channels::registry::init();
         let address = free_address();
         let mut outputs = Outputs::default();
         outputs.configure(&[binding("first", &address)]);
@@ -476,7 +472,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_feed_listens_once_its_address_frees_up() {
-        sdrmm_channels::registry::init();
         let busy = std::net::TcpListener::bind("127.0.0.1:0").expect("busy");
         let address = busy.local_addr().expect("address").to_string();
         let mut outputs = Outputs::default();
@@ -494,7 +489,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_format_no_decoder_offers_is_visible() {
-        sdrmm_channels::registry::init();
         let mut outputs = Outputs::default();
         outputs.configure(&[Binding {
             node: "odd".to_owned(),

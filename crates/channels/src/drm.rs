@@ -1,11 +1,12 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
-pub(crate) mod aac;
 pub(crate) mod audio;
-pub(crate) mod bits;
 pub(crate) mod cells;
 mod channel;
 pub(crate) mod coding;
@@ -16,16 +17,16 @@ pub(crate) mod mlc;
 pub(crate) mod mode;
 pub(crate) mod msc;
 mod ofdm;
+mod playout;
 mod receiver;
 pub(crate) mod sdc;
 pub(crate) mod text;
 
-use sdrmm_dsp::{FirC, design_lowpass};
 use sdrmm_wire::ChannelSettings;
 
 pub use channel::DrmChannel;
 
-use crate::{ChannelError, ChannelFilter};
+use sdrmm_decoder::ChannelError;
 
 const INPUT_RATE_HZ: f64 = 192_000.0;
 const MIN_DRM30_BANDWIDTH_HZ: f64 = 4_500.0;
@@ -79,17 +80,12 @@ pub(crate) fn occupied_band(p: &DrmParams) -> (f64, f64) {
     }
 }
 
-pub(crate) fn channel_filter(p: &DrmParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(p: &DrmParams) -> Result<FilterSpec, ChannelError> {
     let p = checked(*p)?;
     let (low, high) = occupied_band(&p);
     let low = (low - FILTER_MARGIN_HZ).max(-INPUT_RATE_HZ * 0.45);
     let high = (high + FILTER_MARGIN_HZ).min(INPUT_RATE_HZ * 0.45);
-    let half_width = (high - low) / 2.0 / INPUT_RATE_HZ;
-    let centre = f64::midpoint(high, low) / INPUT_RATE_HZ;
-    Ok(ChannelFilter::Sideband(FirC::from_lowpass(
-        &design_lowpass(FILTER_TAPS, half_width),
-        centre,
-    )))
+    Ok(FilterSpec::band(FILTER_TAPS, low, high))
 }
 
 const HF: &[HzRange] = &[HzRange::khz(150.0, 30_000.0)];
@@ -141,16 +137,19 @@ pub(crate) fn drm_form() -> Vec<SettingField> {
         SettingField::new(
             "mode",
             "Mode",
-            Control::choice_showing(DrmMode::Auto, crate::broadcast_media::SYSTEM_READOUT),
+            Control::choice_showing(DrmMode::Auto, sdrmm_decoder::broadcast::SYSTEM_READOUT),
         )
         .title("DRM mode")
         .quiet(DrmMode::Auto),
         SettingField::bandwidth(&DRM30_BANDWIDTHS_HZ).when("mode", [DrmMode::Drm30]),
-        crate::broadcast_media::service_field("service", 3.0),
+        sdrmm_decoder::broadcast::service_field("service", 3.0),
     ]
 }
 
 /// The service picker the running decoder fills from its status.
 fn drm_kinds() -> Vec<KindSpec> {
-    vec![crate::broadcast_media::broadcast_kind()]
+    vec![sdrmm_decoder::broadcast::broadcast_kind()]
 }
+
+#[cfg(test)]
+pub(crate) mod fixture;

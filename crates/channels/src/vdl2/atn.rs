@@ -1589,9 +1589,9 @@ fn parse_cotp(b: &[u8]) -> Option<Value> {
 }
 
 pub fn parse_cotp_user_app(user: &[u8]) -> Option<Value> {
-    super::cpdlc::parse_apdu(user)
-        .or_else(|| super::cpdlc::parse_cm_logon(user))
-        .or_else(|| super::cpdlc::parse_cm_ground(user))
+    sdrmm_aviation::cpdlc::atn::parse_apdu(user)
+        .or_else(|| sdrmm_aviation::cpdlc::atn::parse_cm_logon(user))
+        .or_else(|| sdrmm_aviation::cpdlc::atn::parse_cm_ground(user))
 }
 
 #[cfg(test)]

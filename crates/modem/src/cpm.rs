@@ -1,3 +1,4 @@
+pub mod c4fm;
 mod coherent;
 mod demod;
 mod known_symbols;

@@ -99,8 +99,11 @@
         },
         {
           "id": "df",
-          "kind": "df",
-          "data": {},
+          "kind": "processor",
+          "data": {
+            "processor_type": "df",
+            "settings": {}
+          },
           "position": {
             "x": 1040.0,
             "y": 0.0

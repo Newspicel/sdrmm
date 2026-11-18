@@ -49,6 +49,8 @@ impl Drop for TestServer {
 }
 
 pub async fn spawn_server() -> TestServer {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     let dir = tempfile::tempdir().expect("tempdir");
     let mut registry = sdrmm_device::DeviceRegistry::new();
     registry.register(1, Box::new(sdrmm_device_virtual::VirtualDriver::new()));

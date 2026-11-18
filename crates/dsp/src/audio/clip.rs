@@ -21,9 +21,23 @@ pub fn clips(samples: &[Complex<f32>]) -> bool {
     clipping(clipped_and_peak(samples).0, samples.len() as u64)
 }
 
+/// Holds every sample to the rails a sound card takes.
+pub fn clamp_full_scale(pcm: &mut [f32]) {
+    for s in pcm {
+        *s = s.clamp(-1.0, 1.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_scale_clamping_stops_at_the_rails_and_keeps_the_rest() {
+        let mut pcm = [-3.0, -0.5, 0.0, 0.25, 1.0, 7.5];
+        clamp_full_scale(&mut pcm);
+        assert_eq!(pcm, [-1.0, -0.5, 0.0, 0.25, 1.0, 1.0]);
+    }
 
     fn quiet(len: usize) -> Vec<Complex<f32>> {
         vec![Complex::new(0.1, -0.2); len]

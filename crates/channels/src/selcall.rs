@@ -1,18 +1,20 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, ToneCorrelator, design_lowpass};
+use sdrmm_dsp::ToneCorrelator;
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const INPUT_RATE_HZ: f64 = 48_000.0;
@@ -109,18 +111,15 @@ pub struct SelcallChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<SelcallParams, ChannelError> {
-    crate::settings_of::<SelcallParams>(settings)
+    sdrmm_decoder::settings_of::<SelcallParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-BANDWIDTH_HZ / 2.0, BANDWIDTH_HZ / 2.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, BANDWIDTH_HZ / 2.0 / INPUT_RATE_HZ),
-        1,
-    ))
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::lowpass(CHANNEL_TAPS, BANDWIDTH_HZ / 2.0)
 }
 
 fn demodulator() -> AngleDemod {
@@ -150,7 +149,7 @@ impl NativeChannel for SelcallChannel {
     }
 }
 
-impl ChannelRx for SelcallChannel {
+impl Channel for SelcallChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.system != self.decoder.system {
@@ -349,12 +348,16 @@ fn selcall_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn selcall_decoder() -> Native<SelcallParams> {
-    Native::new::<SelcallChannel>(|_| occupied_band())
+    let decoder = Native::new::<SelcallChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .signatures(selcall_signatures)
         .trial(selcall_trial)
         .form(selcall_form)
-        .kinds(selcall_kinds)
+        .kinds(selcall_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn selcall_form() -> Vec<SettingField> {
@@ -369,11 +372,14 @@ fn selcall_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{synth, testutil::settings};
+    use crate::synth;
+    use sdrmm_decoder_test_support::settings;
 
     fn calls(events: &[DecoderEvent]) -> Vec<Option<SelcallSequence>> {
         events
@@ -543,7 +549,7 @@ mod tests {
     fn noise_and_short_tones_do_not_form_a_call() {
         let mut decoder = Decoder::new(SelcallSystem::Ccir1);
         let mut out = ChannelOutputs::default();
-        for sample in synth::tone_audio(1_124.0, 0.8, INPUT_RATE_HZ, 800) {
+        for sample in sdrmm_modem::synth::tone_audio(1_124.0, 0.8, INPUT_RATE_HZ, 800) {
             decoder.push(sample, &mut out);
         }
         assert!(out.events.is_empty());

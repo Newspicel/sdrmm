@@ -40,6 +40,7 @@ mod fallback {
         }
     }
 
+    #[expect(clippy::unused_self, reason = "same interface as the SIMD Isa")]
     impl Isa {
         pub(crate) fn detect() -> Self {
             Self

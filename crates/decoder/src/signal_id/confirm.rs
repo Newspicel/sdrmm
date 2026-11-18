@@ -1,0 +1,295 @@
+use num_complex::Complex;
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, ProtocolMatch};
+
+use super::{Catalog, detect::Band};
+use crate::{Channel, ChannelCtx, ChannelError, ChannelFront, ChannelOutputs, create};
+
+const MAX_TRIALS: usize = 3;
+
+const MAX_LIVE: usize = 12;
+
+const DEMOTION: f32 = 0.4;
+
+const SAME_CENTRE: f64 = 0.5;
+
+/// `event` proves the trial: one of the decoder's proof kinds, not failing its own check.
+pub fn decoded(descriptor: &ChannelDescriptor, catalog: &Catalog, event: &DecoderEvent) -> bool {
+    descriptor
+        .trial
+        .as_ref()
+        .is_some_and(|trial| trial.proof.contains(&event.kind))
+        && catalog.events().present(event).verified != Some(false)
+}
+
+/// Whether `type_id` declares a trial that can prove it on the air.
+pub fn confirmable(catalog: &Catalog, type_id: &str) -> bool {
+    catalog
+        .descriptor(type_id)
+        .is_some_and(|descriptor| descriptor.trial.is_some())
+}
+
+struct Live {
+    type_id: String,
+    center_hz: f64,
+    bandwidth_hz: f64,
+    front: ChannelFront,
+    channel: Box<dyn Channel>,
+    seen: bool,
+}
+
+struct Refused {
+    type_id: String,
+    why: String,
+}
+
+pub struct Confirmer {
+    live: Vec<Live>,
+    refused: Vec<Refused>,
+    filtered: Vec<Complex<f32>>,
+    out: ChannelOutputs,
+}
+
+impl Default for Confirmer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Confirmer {
+    pub fn new() -> Self {
+        Self {
+            live: Vec::new(),
+            refused: Vec::new(),
+            filtered: Vec::new(),
+            out: ChannelOutputs::default(),
+        }
+    }
+
+    /// How many decoders would not start and are not tried again.
+    #[must_use]
+    pub fn refused(&self) -> usize {
+        self.refused.len()
+    }
+
+    pub fn forget(&mut self) {
+        self.live.clear();
+        self.refused.clear();
+    }
+
+    pub fn sweep(&mut self) {
+        self.live.retain(|live| live.seen);
+        for live in &mut self.live {
+            live.seen = false;
+        }
+    }
+
+    pub fn confirm(
+        &mut self,
+        candidates: &mut Vec<ProtocolMatch>,
+        catalog: &Catalog,
+        iq: &[Complex<f32>],
+        rate: f64,
+        band: &Band,
+        frequency_hz: f64,
+    ) {
+        let mut confirmed_any = self.feed_live(candidates, catalog, iq, band);
+        let mut trials = 0;
+        for candidate in candidates.iter_mut() {
+            if trials >= MAX_TRIALS {
+                break;
+            }
+            let Some(descriptor) = candidate
+                .type_id
+                .as_deref()
+                .and_then(|type_id| catalog.descriptor(type_id))
+                .filter(|descriptor| descriptor.trial.is_some())
+            else {
+                continue;
+            };
+            let type_id = descriptor.type_id.clone();
+            if candidate.confirmed || self.is_live(&type_id, band) {
+                continue;
+            }
+            if let Some(why) = self.refusal(&type_id) {
+                candidate.why = why.to_owned();
+                continue;
+            }
+            trials += 1;
+            for settings in variants(descriptor, frequency_hz) {
+                if self.live.len() >= MAX_LIVE {
+                    break;
+                }
+                let live = match start(descriptor, &settings, rate, band) {
+                    Ok(live) => live,
+                    Err(error) => {
+                        self.refuse(&type_id, candidate, &error);
+                        break;
+                    }
+                };
+                self.live.push(live);
+                let last = self.live.len() - 1;
+                let frames = self.run(last, catalog, iq, band);
+                if frames > 0 {
+                    mark(candidate, frames);
+                    confirmed_any = true;
+                }
+            }
+        }
+        if confirmed_any {
+            for candidate in candidates.iter_mut() {
+                let rival = candidate
+                    .type_id
+                    .as_deref()
+                    .is_some_and(|type_id| confirmable(catalog, type_id));
+                if rival && !candidate.confirmed {
+                    candidate.score *= DEMOTION;
+                }
+            }
+            candidates.sort_by(|a, b| {
+                b.confirmed
+                    .cmp(&a.confirmed)
+                    .then(b.score.total_cmp(&a.score))
+            });
+        }
+    }
+
+    fn feed_live(
+        &mut self,
+        candidates: &mut Vec<ProtocolMatch>,
+        catalog: &Catalog,
+        iq: &[Complex<f32>],
+        band: &Band,
+    ) -> bool {
+        let mut confirmed_any = false;
+        for index in 0..self.live.len() {
+            if self.live[index].seen || !same_signal(&self.live[index], band) {
+                continue;
+            }
+            let frames = self.run(index, catalog, iq, band);
+            if frames == 0 {
+                continue;
+            }
+            let type_id = self.live[index].type_id.clone();
+            match candidates
+                .iter_mut()
+                .find(|c| c.type_id.as_deref() == Some(type_id.as_str()))
+            {
+                Some(candidate) => mark(candidate, frames),
+                None => {
+                    if let Some(descriptor) = catalog.descriptor(&type_id) {
+                        let mut candidate = ProtocolMatch {
+                            name: descriptor.name.clone(),
+                            type_id: Some(type_id),
+                            score: 1.0,
+                            confirmed: false,
+                            why: String::new(),
+                        };
+                        mark(&mut candidate, frames);
+                        candidates.push(candidate);
+                    }
+                }
+            }
+            confirmed_any = true;
+        }
+        confirmed_any
+    }
+
+    fn refusal(&self, type_id: &str) -> Option<&str> {
+        self.refused
+            .iter()
+            .find(|refused| refused.type_id == type_id)
+            .map(|refused| refused.why.as_str())
+    }
+
+    fn refuse(&mut self, type_id: &str, candidate: &mut ProtocolMatch, error: &ChannelError) {
+        let why = format!("the {} decoder will not start: {error}", candidate.name);
+        candidate.why.clone_from(&why);
+        self.refused.push(Refused {
+            type_id: type_id.to_owned(),
+            why,
+        });
+    }
+
+    fn is_live(&self, type_id: &str, band: &Band) -> bool {
+        self.live
+            .iter()
+            .any(|live| live.type_id == type_id && same_signal(live, band))
+    }
+
+    fn run(&mut self, index: usize, catalog: &Catalog, iq: &[Complex<f32>], band: &Band) -> usize {
+        let live = &mut self.live[index];
+        live.seen = true;
+        live.center_hz = band.center_hz;
+        live.bandwidth_hz = band.bandwidth_hz;
+        live.front.process(iq, &mut self.filtered);
+        self.out.reset();
+        live.channel.process(&self.filtered, &mut self.out);
+        let Some(descriptor) = catalog.descriptor(&live.type_id) else {
+            return 0;
+        };
+        self.out
+            .events
+            .iter()
+            .filter(|event| decoded(descriptor, catalog, event))
+            .count()
+    }
+}
+
+fn mark(candidate: &mut ProtocolMatch, frames: usize) {
+    candidate.confirmed = true;
+    candidate.score = 1.0;
+    candidate.why = format!(
+        "the {} decoder read {frames} frame{} from the signal",
+        candidate.name,
+        if frames == 1 { "" } else { "s" }
+    );
+}
+
+fn same_signal(live: &Live, band: &Band) -> bool {
+    let narrower = live.bandwidth_hz.min(band.bandwidth_hz).max(1.0);
+    (live.center_hz - band.center_hz).abs() <= narrower * SAME_CENTRE
+}
+
+fn variants(descriptor: &ChannelDescriptor, frequency_hz: f64) -> Vec<ChannelSettings> {
+    let Some(mut settings) = descriptor.defaults.clone() else {
+        return Vec::new();
+    };
+    settings.frequency_hz = frequency_hz;
+    let tried = descriptor
+        .trial
+        .as_ref()
+        .map_or(&[][..], |trial| trial.settings.as_slice());
+    if tried.is_empty() {
+        return vec![settings];
+    }
+    tried
+        .iter()
+        .map(|params| ChannelSettings {
+            params: params.clone(),
+            ..settings.clone()
+        })
+        .collect()
+}
+
+fn start(
+    descriptor: &ChannelDescriptor,
+    settings: &ChannelSettings,
+    rate: f64,
+    band: &Band,
+) -> Result<Live, ChannelError> {
+    let front = ChannelFront::new(&settings.params, rate, band.center_hz)?;
+    let channel = create(
+        ChannelCtx {
+            input_rate: descriptor.input_rate_hz,
+        },
+        settings,
+    )?;
+    Ok(Live {
+        type_id: descriptor.type_id.clone(),
+        center_hz: band.center_hz,
+        bandwidth_hz: band.bandwidth_hz,
+        front,
+        channel,
+        seen: false,
+    })
+}

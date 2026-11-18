@@ -135,3 +135,57 @@ impl EventContract for GnssFrame {
 impl sdrmm_wire::DecoderSettings for GnssParams {
     const TYPE_ID: &'static str = "gnss";
 }
+
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+    use sdrmm_wire::DecoderEvent;
+    use sdrmm_wire::present::{Unit, number, text};
+
+    #[test]
+    fn gnss_says_when_it_is_still_acquiring() {
+        let frame = GnssFrame {
+            prn: 12,
+            doppler_hz: -1234.0,
+            code_phase_chips: 511.5,
+            cn0_db_hz: 44.25,
+            subframe: None,
+            tow_seconds: None,
+            week: None,
+            words: Vec::new(),
+        };
+        let view = frame.present(&EventKind::named("gnss"));
+        assert_eq!(
+            view.labels(),
+            ["Signal", "Doppler", "Code phase", "C/N0", "Subframe"]
+        );
+        assert_eq!(view.field("Subframe"), text(Some("acquiring")).as_ref());
+        assert_eq!(
+            view.field("C/N0"),
+            number(Some(44.25), Unit::DbHz, 1).as_ref()
+        );
+        assert_eq!(
+            view.field("Code phase"),
+            number(Some(511.5), Unit::Chips, 2).as_ref()
+        );
+    }
+
+    #[test]
+    fn a_gnss_summary_keeps_the_measurements_used_by_the_live_log() {
+        let gnss = DecoderEvent::of(&GnssFrame {
+            prn: 7,
+            doppler_hz: 1_000.0,
+            code_phase_chips: 158.34,
+            cn0_db_hz: 44.5,
+            subframe: None,
+            tow_seconds: None,
+            week: None,
+            words: Vec::new(),
+        });
+        assert_eq!(
+            gnss.present().summary,
+            "GPS PRN 7 · +1000 Hz · 44.5 dB-Hz · acquired"
+        );
+        assert_eq!(gnss.present().entity.as_deref(), Some("GPS-7"));
+    }
+}

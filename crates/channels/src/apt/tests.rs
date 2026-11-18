@@ -1,7 +1,6 @@
 use crate::apt::AptImage;
 use crate::apt::AptParams;
 use crate::apt::AvhrrChannel;
-use crate::nfm::NfmParams;
 use num_complex::Complex;
 use sdrmm_wire::ChannelParams;
 
@@ -9,14 +8,9 @@ use super::{
     geometry::{LINE_WORDS, Side},
     *,
 };
-use crate::{
-    VideoPicture,
-    synth::{
-        self,
-        apt::{doppler, image_a, image_b, transmission},
-    },
-    testutil::{complex_noise, settings},
-};
+use crate::synth::apt::{doppler, image_a, image_b, transmission};
+use sdrmm_decoder::VideoPicture;
+use sdrmm_decoder_test_support::{complex_noise, settings};
 
 const RATE: f64 = INPUT_RATE_HZ;
 const BLOCKS: [usize; 6] = [4_096, 1, 997, 65_536, 33, 12_288];
@@ -66,7 +60,7 @@ fn run(chan: &mut AptChannel, iq: &[Complex<f32>], lens: &[usize]) -> Received {
 }
 
 fn tail(seconds: f64) -> Vec<Complex<f32>> {
-    synth::silence((seconds * RATE) as usize)
+    sdrmm_modem::synth::silence((seconds * RATE) as usize)
 }
 
 fn pass(lines: u16) -> Vec<Complex<f32>> {
@@ -146,9 +140,10 @@ fn ragged_block_splits_decode_identically() {
 fn doppler_and_noise_still_decode() {
     let mut iq = transmission(160, AvhrrChannel::Ch2, AvhrrChannel::Ch4, RATE);
     doppler(&mut iq, 3_000.0, 1_000.0, RATE);
-    synth::add_noise(&mut iq, 0x5eed_1234, 0.3);
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5eed_1234, 0.3);
     let mut filtered = Vec::new();
-    channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(channel_filter(), super::DESCRIPTOR.input_rate_hz)
+        .process(&iq, &mut filtered);
     filtered.extend_from_slice(&tail(10.0));
     let (image, event) = decode_one(&filtered);
     assert!(image.complete);
@@ -161,7 +156,7 @@ fn doppler_and_noise_still_decode() {
 #[test]
 fn a_slanted_clock_still_lands_in_frame() {
     let straight = transmission(160, AvhrrChannel::Ch2, AvhrrChannel::Ch4, RATE);
-    let mut iq = synth::resample(&straight, RATE, RATE * 1.0005);
+    let mut iq = sdrmm_modem::synth::resample(&straight, RATE, RATE * 1.0005);
     iq.extend_from_slice(&tail(10.0));
     let (image, _) = decode_one(&iq);
     let error = pixel_error(&image.picture);
@@ -259,13 +254,11 @@ fn retuning_keeps_a_partial_when_asked() {
 #[test]
 fn mismatched_params_variant_is_rejected() {
     let mut chan = channel(AptParams::default());
-    let err = chan.apply(settings(
-        ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-    ));
+    let err = chan.apply(settings(ChannelParams::bare("nfm")));
     assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     let built = AptChannel::new(
         ChannelCtx { input_rate: RATE },
-        settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+        settings(ChannelParams::bare("nfm")),
     );
     assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
 }

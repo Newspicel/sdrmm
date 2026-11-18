@@ -2,13 +2,12 @@
 
 use sdrmm_channels::AdsbMessage;
 use sdrmm_channels::PocsagMessage;
-use sdrmm_channels::ToneSquelchStatus;
+use sdrmm_wire::ToneSquelchStatus;
 use std::{path::Path, sync::Arc, time::Duration};
 
 use num_complex::Complex;
 use sdrmm_channels::NfmParams;
 use sdrmm_channels::PocsagParams;
-use sdrmm_channels::synth::catalog::CATALOG;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{
@@ -28,7 +27,10 @@ const DECODE_TIMEOUT: Duration = Duration::from_secs(90);
 fn engine_for(dir: &Path) -> Arc<Engine> {
     let mut registry = DeviceRegistry::new();
     registry.register(10, Box::new(RecordingDriver::new(Some(dir.to_path_buf()))));
-    registry.register(10, Box::new(VirtualDriver::bare().with_signals(&CATALOG)));
+    registry.register(
+        10,
+        Box::new(VirtualDriver::bare().with_signals(sdrmm_decoder::signal_catalog())),
+    );
     Engine::with_registry(registry, Some(dir.to_path_buf()))
 }
 
@@ -224,7 +226,7 @@ async fn every_signal_the_catalog_offers_can_be_selected_on_a_running_generator(
     engine.adopt_device(&device).expect("named");
     let ds = engine.create_device_set(&device).unwrap();
 
-    for signal in CATALOG.signals {
+    for signal in sdrmm_decoder::signal_catalog().signals.iter() {
         let (_, settings) = generator("signal_gen-sweep", signal.id);
         engine
             .patch_device(ds, settings)

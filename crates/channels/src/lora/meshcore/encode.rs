@@ -2,7 +2,7 @@ use super::advert_data::{COORDINATE_SCALE, HAS_LOCATION, HAS_NAME, MAX_APP_DATA_
 use super::frame::MAX_PAYLOAD_BYTES;
 use super::group::{self, BLOCK_LEN, MAC_LEN};
 use super::keys::channel_hash;
-use crate::crypto;
+use sdrmm_crypto as crypto;
 
 const FLOOD: u8 = 0x01;
 const ADVERT: u8 = 0x04;

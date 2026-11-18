@@ -2,7 +2,7 @@
 //! counts the type byte; the length `0x85` instead carries a two-byte message ID.
 
 use super::BssPacket;
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 pub(super) const MARKER: u8 = 0x01;
 const MESSAGE_ID: u8 = 0x85;
@@ -110,8 +110,10 @@ fn degrees(be24: [u8; 3]) -> f64 {
 }
 
 /// A BSS frame laid out the way a handheld keys one, for the signal generator and tests.
+#[cfg(any(test, feature = "synth"))]
 pub(crate) struct Compose(Vec<u8>);
 
+#[cfg(any(test, feature = "synth"))]
 impl Compose {
     pub(crate) fn from(source: &str) -> Self {
         let mut frame = Self(vec![MARKER]);
@@ -156,6 +158,7 @@ impl Compose {
     }
 }
 
+#[cfg(any(test, feature = "synth"))]
 fn units(degrees: f64) -> [u8; 3] {
     let raw = (degrees * UNITS_PER_DEGREE).round() as i32;
     let [_, high, mid, low] = raw.to_be_bytes();

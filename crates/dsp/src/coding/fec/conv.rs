@@ -11,6 +11,7 @@ const REGISTER_MASK: u8 = (1 << CONSTRAINT) - 1;
 /// Where every state but the start begins: far below any reachable metric yet clear of
 /// overflow when branches are added.
 const UNREACHED_METRIC: i32 = i32::MIN / 4;
+const MAX_OUTPUTS: usize = 4;
 const G1: u8 = 0b1_1001;
 const G2: u8 = 0b1_0111;
 
@@ -24,18 +25,23 @@ pub fn encode(bits: &[bool], out: &mut Vec<bool>) {
 }
 
 pub fn encode_with(g1: u8, g2: u8, bits: &[bool], out: &mut Vec<bool>) {
+    encode_polys(&[g1, g2], bits, out);
+}
+
+/// Rate 1/n K=5 encoding: one output per generator, newest input in the low bit.
+pub fn encode_polys(polys: &[u8], bits: &[bool], out: &mut Vec<bool>) {
     let mut reg = 0u8;
     for &bit in bits {
         reg = (reg << 1 | u8::from(bit)) & REGISTER_MASK;
-        out.push((reg & g1).count_ones() % 2 == 1);
-        out.push((reg & g2).count_ones() % 2 == 1);
+        out.extend(polys.iter().map(|&g| (reg & g).count_ones() % 2 == 1));
     }
 }
 
+/// Soft Viterbi for rate 1/n K=5 codes, n up to four.
 #[derive(Clone, Debug)]
 pub struct Viterbi5 {
-    g1: u8,
-    g2: u8,
+    polys: [u8; MAX_OUTPUTS],
+    outputs: usize,
     decisions: Vec<u16>,
     metrics: [i32; STATES],
     next: [i32; STATES],
@@ -55,39 +61,71 @@ impl Viterbi5 {
 
     #[must_use]
     pub fn with_generators(g1: u8, g2: u8) -> Self {
+        Self::with_polys(&[g1, g2])
+    }
+
+    #[must_use]
+    pub fn with_polys(polys: &[u8]) -> Self {
+        assert!(
+            (1..=MAX_OUTPUTS).contains(&polys.len()),
+            "one to four generators"
+        );
+        let mut masked = [0u8; MAX_OUTPUTS];
+        for (slot, &g) in masked.iter_mut().zip(polys) {
+            *slot = g & REGISTER_MASK;
+        }
         Self {
-            g1: g1 & REGISTER_MASK,
-            g2: g2 & REGISTER_MASK,
+            polys: masked,
+            outputs: polys.len(),
             decisions: Vec::new(),
             metrics: [0; STATES],
             next: [0; STATES],
         }
     }
 
+    /// Decodes and traces back from the best final state.
     pub fn decode(&mut self, coded: &[Soft], out: &mut Vec<bool>) -> i32 {
+        self.run(coded, out, None)
+    }
+
+    /// Decodes a block flushed by a zero tail, tracing back from state 0.
+    pub fn decode_terminated(&mut self, coded: &[Soft], out: &mut Vec<bool>) -> i32 {
+        self.run(coded, out, Some(0))
+    }
+
+    fn branch(&self, reg: u8, received: &[Soft]) -> i32 {
+        self.polys[..self.outputs]
+            .iter()
+            .zip(received)
+            .map(|(&g, &r)| {
+                let r = i32::from(r);
+                if (reg & g).count_ones() % 2 == 1 {
+                    r
+                } else {
+                    -r
+                }
+            })
+            .sum()
+    }
+
+    fn run(&mut self, coded: &[Soft], out: &mut Vec<bool>, end: Option<usize>) -> i32 {
         assert!(
-            coded.len().is_multiple_of(2),
-            "rate 1/2 needs an even number of bits"
+            coded.len().is_multiple_of(self.outputs),
+            "the code needs whole symbols"
         );
-        let steps = coded.len() / 2;
+        let steps = coded.len() / self.outputs;
         self.decisions.clear();
         self.decisions.resize(steps, 0);
         self.metrics = [UNREACHED_METRIC; STATES];
         self.metrics[0] = 0;
-
-        let (pairs, _) = coded.as_chunks::<2>();
-        for (step, &[first, second]) in pairs.iter().enumerate() {
-            let (r1, r2) = (i32::from(first), i32::from(second));
+        for (step, received) in coded.chunks_exact(self.outputs).enumerate() {
             let mut decisions = 0u16;
             for state in 0..STATES {
                 let mut best = (i32::MIN, false);
                 for prev_high in [false, true] {
                     let prev = state >> 1 | usize::from(prev_high) << OLDEST_STATE_BIT;
                     let reg = (prev << 1 | state & 1) as u8;
-                    let b1 = (reg & self.g1).count_ones() % 2 == 1;
-                    let b2 = (reg & self.g2).count_ones() % 2 == 1;
-                    let branch = if b1 { r1 } else { -r1 } + if b2 { r2 } else { -r2 };
-                    let metric = self.metrics[prev].saturating_add(branch);
+                    let metric = self.metrics[prev].saturating_add(self.branch(reg, received));
                     if metric > best.0 {
                         best = (metric, prev_high);
                     }
@@ -98,10 +136,11 @@ impl Viterbi5 {
             self.decisions[step] = decisions;
             self.metrics = self.next;
         }
-
-        let mut state = (0..STATES)
-            .max_by_key(|&s| self.metrics[s])
-            .unwrap_or_default();
+        let mut state = end.unwrap_or_else(|| {
+            (0..STATES)
+                .max_by_key(|&s| self.metrics[s])
+                .unwrap_or_default()
+        });
         let metric = self.metrics[state];
         let start = out.len();
         for step in (0..steps).rev() {
@@ -148,6 +187,39 @@ mod tests {
         let mut out = Vec::new();
         Viterbi5::with_generators(0b1_1001, 0b1_1011).decode(&received, &mut out);
         assert_eq!(out, bits);
+    }
+
+    #[test]
+    fn a_rate_one_quarter_terminated_block_repairs_errors() {
+        let polys = [0b1_0011, 0b1_1101, 0b1_0111, 0b1_1011];
+        let mut bits = message(120, 17);
+        bits.extend([false; 4]);
+        let mut coded = Vec::new();
+        encode_polys(&polys, &bits, &mut coded);
+        assert_eq!(coded.len(), bits.len() * 4);
+        let mut received = softs(&coded);
+        for bit in [5usize, 6, 7, 200, 333, 460] {
+            received[bit] = -received[bit];
+        }
+        for bit in (1..received.len()).step_by(3) {
+            received[bit] = ERASURE;
+        }
+        let mut out = Vec::new();
+        Viterbi5::with_polys(&polys).decode_terminated(&received, &mut out);
+        assert_eq!(out, bits);
+    }
+
+    #[test]
+    fn a_terminated_decode_ends_in_state_zero() {
+        let mut coded = Vec::new();
+        encode(&[true, true, false, true], &mut coded);
+        let mut free = Vec::new();
+        Viterbi5::new().decode(&softs(&coded), &mut free);
+        assert_eq!(free, [true, true, false, true]);
+        let mut ended = Vec::new();
+        Viterbi5::new().decode_terminated(&softs(&coded), &mut ended);
+        assert_eq!(ended.len(), 4);
+        assert!(!ended[3], "the last bit must leave the register at zero");
     }
 
     #[test]

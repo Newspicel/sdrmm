@@ -22,7 +22,7 @@ fn settled(
 }
 
 fn heard(center_hz: f64, channel: &ChannelInfo) -> bool {
-    let (low, high) = sdrmm_channels::occupied_band(&channel.settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&channel.settings.params);
     crate::runtime::reaches(
         channel.settings.frequency_hz - center_hz,
         low,
@@ -272,7 +272,7 @@ fn a_decoder_too_wide_to_clear_the_spike_is_held_as_far_off_it_as_the_window_all
         (300_000.0..=700_000.0).contains(&off_by),
         "the spike sits {off_by} Hz from the carrier; half the slack is 500 kHz"
     );
-    let (low, high) = sdrmm_channels::occupied_band(&wide.settings.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&wide.settings.params);
     assert!(
         ADSB_CENTER_HZ + low >= moved - 2_000_000.0 && ADSB_CENTER_HZ + high <= moved + 2_000_000.0,
         "the decoder was pushed out of the window"
@@ -455,9 +455,9 @@ fn a_decoder_wider_than_the_window_names_the_width_it_needs() {
     };
     let wfm = ChannelSettings {
         frequency_hz: TEST_CENTER_HZ,
-        ..sdrmm_channels::default_settings("wfm").expect("wfm")
+        ..sdrmm_decoder::default_settings("wfm").expect("wfm")
     };
-    let (low, high) = sdrmm_channels::occupied_band(&wfm.params);
+    let (low, high) = sdrmm_decoder::occupied_band(&wfm.params);
     assert_eq!(
         band_miss(&capabilities, 100_000.0, true, &wfm),
         BandMiss::TooWide {

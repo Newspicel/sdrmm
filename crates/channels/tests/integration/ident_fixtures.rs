@@ -1,8 +1,6 @@
 use num_complex::Complex;
-use sdrmm_channels::synth::{
-    decoder_fixtures::recipe,
-    ident_fixtures::{Expect, FIXTURES, Fixture, identify, judge, samples},
-};
+use sdrmm_channels::synth::ident_fixtures::{Expect, FIXTURES, Fixture, identify, judge, samples};
+use sdrmm_decoder::recipe;
 
 fn is_recorded(fixture: &Fixture) -> bool {
     recipe(fixture.stem).is_none()

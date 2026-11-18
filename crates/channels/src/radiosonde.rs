@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod demod;
 pub(crate) mod dfm;
@@ -12,10 +15,14 @@ pub(crate) mod m20;
 pub(crate) mod meteomodem;
 pub(crate) mod rs41;
 pub(crate) fn radiosonde_decoder() -> Native<RadiosondeParams> {
-    Native::new::<RadiosondeChannel>(|_| occupied_band())
+    let decoder = Native::new::<RadiosondeChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .form(radiosonde_form)
-        .kinds(radiosonde_kinds)
+        .kinds(radiosonde_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn radiosonde_form() -> Vec<SettingField> {
@@ -49,24 +56,24 @@ fn radiosonde_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use demod::{CHUNK, FrontEnd};
 use dfm::Dfm;
 use forecast::Flights;
 use imet::Imet;
 use meteomodem::{Accept, Meteomodem};
 use rs41::Rs41;
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 pub(crate) const INPUT_RATE_HZ: f64 = demod::RATE;
 const FILTER_TAPS: usize = 127;
@@ -89,16 +96,13 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
+pub(crate) fn channel_filter() -> FilterSpec {
     let (_, half) = occupied_band();
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(FILTER_TAPS, half / INPUT_RATE_HZ),
-        1,
-    ))
+    FilterSpec::lowpass(FILTER_TAPS, half)
 }
 
 fn params(settings: &ChannelSettings) -> Result<RadiosondeParams, ChannelError> {
-    crate::settings_of::<RadiosondeParams>(settings)
+    sdrmm_decoder::settings_of::<RadiosondeParams>(settings)
 }
 
 fn runs(params: &RadiosondeParams, sonde: SondeType) -> bool {
@@ -143,7 +147,7 @@ impl NativeChannel for RadiosondeChannel {
     }
 }
 
-impl ChannelRx for RadiosondeChannel {
+impl Channel for RadiosondeChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.params = params(&settings)?;
         self.meteomodem.set_accept(accept(&self.params));

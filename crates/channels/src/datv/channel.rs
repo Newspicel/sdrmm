@@ -1,18 +1,19 @@
+use sdrmm_wire::FilterSpec;
 use std::sync::LazyLock;
 
-use crate::broadcast_media::BroadcastService;
-use crate::broadcast_media::BroadcastServiceKind;
-use crate::broadcast_media::BroadcastSystem;
-use crate::broadcast_media::{BroadcastStatus, publish_status};
+use crate::datv::DatvCodeRate;
 use crate::datv::DatvParams;
 use crate::datv::DatvRollOff;
 use crate::datv::DatvStandard;
 use crate::datv::MAX_DATV_SYMBOL_RATE;
 use crate::datv::MAX_SUPERFRAME_CODE;
 use crate::datv::MIN_DATV_SYMBOL_RATE;
-use crate::datv::SuperframeStatus;
+use crate::datv::{SUPERFRAME_KEY, SuperframeStatus};
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, FracResampler, design_lowpass, flat_bandwidth_hz};
+use sdrmm_decoder::broadcast::{
+    BroadcastService, BroadcastServiceKind, BroadcastStatus, publish_status,
+};
+use sdrmm_dsp::{FracResampler, flat_bandwidth_hz};
 use sdrmm_modem::{
     constellation::tables,
     linear::{CarrierLoop, LinearDemod, LinearParams, LinearTiming, PhaseDetector},
@@ -25,19 +26,17 @@ use sdrmm_wire::{
 
 use super::{
     acquire::{Acquired, Acquisition},
-    dvbs::{DvbsDecoder, PACKET},
     dvbs2::{
-        bb::StreamKind,
         gse::protocol_name,
         receiver::{Dvbs2Decoder, Dvbs2Output},
         superframe::Settings as SuperframeSettings,
     },
-    ts::{PesUnit, StreamKind as ElementaryKind, TsDemux},
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    broadcast_media::{BroadcastMedia, Kind as MediaKind},
-    check_rate,
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
+use sdrmm_media::{Codec, Media};
+use sdrmm_modem::{
+    dvb::{PACKET, bb::StreamKind, dvbs::DvbsDecoder},
+    mpegts::{PesUnit, StreamKind as ElementaryKind, TsDemux},
 };
 
 const MIN_INPUT_RATE_HZ: f64 = 2_000_000.0;
@@ -110,15 +109,14 @@ pub fn occupied_band(p: &DatvParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub fn channel_filter(p: &DatvParams) -> Result<ChannelFilter, ChannelError> {
+pub fn channel_filter(p: &DatvParams) -> Result<FilterSpec, ChannelError> {
     let p = checked(*p)?;
     let (_, half) = occupied_band(&p);
     let rate = input_rate_hz(&p);
-    let pass = half.min(flat_bandwidth_hz(rate) / 2.0);
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(127, pass / rate),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(
+        127,
+        half.min(flat_bandwidth_hz(rate) / 2.0),
+    ))
 }
 
 fn demodulator(standard: DatvStandard, roll_off: DatvRollOff) -> Result<LinearDemod, ChannelError> {
@@ -146,20 +144,6 @@ struct MediaSelection {
     video: Option<(u16, ElementaryKind)>,
 }
 
-pub(super) fn media_kind(kind: ElementaryKind) -> Option<MediaKind> {
-    match kind {
-        ElementaryKind::Mpeg1Audio | ElementaryKind::Mpeg2Audio => Some(MediaKind::Mp2),
-        ElementaryKind::Eac3Audio => Some(MediaKind::Eac3),
-        ElementaryKind::AacAudio => Some(MediaKind::Aac),
-        ElementaryKind::LatmAudio => Some(MediaKind::Latm),
-        ElementaryKind::Ac3Audio => Some(MediaKind::Ac3),
-        ElementaryKind::Mpeg2Video => Some(MediaKind::Mpeg2),
-        ElementaryKind::H264Video => Some(MediaKind::H264),
-        ElementaryKind::H265Video => Some(MediaKind::H265),
-        ElementaryKind::Other(_) => None,
-    }
-}
-
 pub struct DatvChannel {
     params: DatvParams,
     acquisition: Acquisition,
@@ -178,7 +162,7 @@ pub struct DatvChannel {
     last: Acquired,
     video_units: u64,
     audio_units: u64,
-    media: BroadcastMedia,
+    media: Media,
     media_selection: Option<MediaSelection>,
 }
 
@@ -188,7 +172,7 @@ impl DatvChannel {
         self.acquisition = Acquisition::new(self.params.symbol_rate, rate);
         self.resampler = FracResampler::new(SPS as f64 * self.params.symbol_rate / rate);
         self.demod = demodulator(self.params.standard, self.params.roll_off)?;
-        self.decoder = DvbsDecoder::new(self.params.code_rate, self.params.symbol_rate);
+        self.decoder = DvbsDecoder::new(self.params.code_rate.puncture(), self.params.symbol_rate);
         self.second = Dvbs2Decoder::new();
         self.demux = TsDemux::new();
         self.demux.select(self.params.program);
@@ -203,13 +187,6 @@ impl DatvChannel {
         self.media.reset();
         self.media_selection = None;
         Ok(())
-    }
-
-    fn system(&self) -> BroadcastSystem {
-        match self.params.standard {
-            DatvStandard::DvbS => BroadcastSystem::DvbS,
-            DatvStandard::DvbS2 => BroadcastSystem::DvbS2,
-        }
     }
 
     fn count(&mut self) {
@@ -265,15 +242,15 @@ impl DatvChannel {
             for unit in &self.units {
                 if let Some((pid, kind)) = selection.audio
                     && unit.pid == pid
-                    && let Some(kind) = media_kind(kind)
+                    && let Some(codec) = Codec::of_stream(kind)
                 {
-                    self.media.push(kind, &unit.payload, unit.pts, None);
+                    self.media.push(&codec, &unit.payload, unit.pts);
                 }
                 if let Some((pid, kind)) = selection.video
                     && unit.pid == pid
-                    && let Some(kind) = media_kind(kind)
+                    && let Some(codec) = Codec::of_stream(kind)
                 {
-                    self.media.push(kind, &unit.payload, unit.pts, None);
+                    self.media.push(&codec, &unit.payload, unit.pts);
                 }
             }
         }
@@ -356,7 +333,11 @@ impl DatvChannel {
             DatvStandard::DvbS => self
                 .decoder
                 .running()
-                .then(|| self.decoder.lock().map(|lock| lock.rate.label().to_owned()))
+                .then(|| {
+                    self.decoder
+                        .lock()
+                        .map(|lock| DatvCodeRate::from(lock.rate).label().to_owned())
+                })
                 .flatten(),
             DatvStandard::DvbS2 => self.second.very_low_mode().map_or_else(
                 || {
@@ -395,6 +376,22 @@ impl DatvChannel {
         }
     }
 
+    /// The DVB-S2X superframe found, under the `superframe` key the status carries it in.
+    fn superframe(&self) -> Option<(String, serde_json::Value)> {
+        let identity = self.second.superframe_identity()?;
+        let found = SuperframeStatus {
+            format: identity.format?,
+            sosf: identity.sosf,
+            pilot: identity.pilot,
+            trailer: identity.trailer,
+            reference: identity.reference,
+            payload: identity.payload,
+        };
+        serde_json::to_value(found)
+            .ok()
+            .map(|found| (SUPERFRAME_KEY.to_owned(), found))
+    }
+
     fn report(&mut self, acquired: Acquired, out: &mut ChannelOutputs) {
         self.last = acquired;
         let metrics = self.decoder.metrics();
@@ -402,7 +399,6 @@ impl DatvChannel {
         publish_status(
             out,
             &BroadcastStatus {
-                system: self.system(),
                 audio_frames_ok: self.media.audio_frames,
                 audio_frames_bad: self.media.audio_errors,
                 audio_error: self.media.audio_error.clone(),
@@ -440,18 +436,10 @@ impl DatvChannel {
                     }),
                 text: self.text(),
                 services: self.services(),
-                superframe: self.second.superframe_identity().and_then(|identity| {
-                    Some(SuperframeStatus {
-                        format: identity.format?,
-                        sosf: identity.sosf,
-                        pilot: identity.pilot,
-                        trailer: identity.trailer,
-                        reference: identity.reference,
-                        payload: identity.payload,
-                    })
-                }),
+                extra: self.superframe().into_iter().collect(),
                 ..BroadcastStatus::default()
-            },
+            }
+            .with_system(self.params.standard),
             "program",
         );
     }
@@ -471,7 +459,7 @@ impl NativeChannel for DatvChannel {
             reports: Vec::new(),
             resampler: FracResampler::new(SPS as f64 * params.symbol_rate / rate),
             demod: demodulator(params.standard, params.roll_off)?,
-            decoder: DvbsDecoder::new(params.code_rate, params.symbol_rate),
+            decoder: DvbsDecoder::new(params.code_rate.puncture(), params.symbol_rate),
             second: Dvbs2Decoder::new(),
             demux: TsDemux::new(),
             resampled: Vec::new(),
@@ -483,7 +471,7 @@ impl NativeChannel for DatvChannel {
             last: Acquired::default(),
             video_units: 0,
             audio_units: 0,
-            media: BroadcastMedia::new()?,
+            media: Media::new()?,
             media_selection: None,
         };
         channel.media.enable_clock();
@@ -497,7 +485,7 @@ impl NativeChannel for DatvChannel {
     }
 }
 
-impl ChannelRx for DatvChannel {
+impl Channel for DatvChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = params(&settings)?;
         let rebuild = wanted.symbol_rate != self.params.symbol_rate
@@ -589,8 +577,9 @@ impl ChannelRx for DatvChannel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::broadcast_media::latest_status;
-    use crate::{synth, testutil::realtime_budget};
+    use crate::synth;
+    use sdrmm_decoder::broadcast::latest_status;
+    use sdrmm_decoder_test_support::realtime_budget;
     use sdrmm_wire::ChannelParams;
 
     fn settings_of(params: DatvParams) -> ChannelSettings {
@@ -675,7 +664,7 @@ mod tests {
         let statuses = drive(&mut channel, &iq);
         let status = statuses.last().expect("a broadcast status");
         assert!(status.locked, "{status:?}");
-        assert_eq!(status.system, BroadcastSystem::DvbS);
+        assert_eq!(status.system, "dvb_s");
         assert_eq!(status.code_rate.as_deref(), Some("3/4"));
         assert_eq!(status.label.as_deref(), Some(synth::datv::PROGRAM_NAME));
         assert_eq!(
@@ -731,7 +720,7 @@ mod tests {
         let mut channel = second_generation();
         let statuses = drive(&mut channel, &iq);
         let status = statuses.last().expect("a broadcast status");
-        assert_eq!(status.system, BroadcastSystem::DvbS2);
+        assert_eq!(status.system, "dvb_s2");
         assert_eq!(status.code_rate.as_deref(), Some("QPSK 3/4"));
         assert_eq!(status.label.as_deref(), Some(synth::datv::PROGRAM_NAME));
         assert!(status.frames_ok > 3, "{status:?}");
@@ -741,7 +730,8 @@ mod tests {
 
     #[test]
     fn the_higher_order_constellations_reach_the_program_table() {
-        use crate::datv::dvbs2::{frame::Modulation, ldpc::Rate};
+        use crate::datv::dvbs2::frame::Modulation;
+        use sdrmm_modem::dvb::ldpc::Rate;
 
         for (modulation, rate, label) in [
             (Modulation::Psk8, Rate::R3_5, "8PSK 3/5"),
@@ -753,7 +743,7 @@ mod tests {
             let mut channel = second_generation();
             let statuses = drive(&mut channel, &iq);
             let status = statuses.last().expect("a broadcast status");
-            assert_eq!(status.system, BroadcastSystem::DvbS2);
+            assert_eq!(status.system, "dvb_s2");
             assert_eq!(status.code_rate.as_deref(), Some(label));
             assert!(status.frames_ok > 0, "{label}: {status:?}");
             assert_eq!(status.frames_bad, 0, "{label}: {status:?}");
@@ -768,7 +758,8 @@ mod tests {
 
     #[test]
     fn s2x_high_order_iq_reaches_programmes_at_a_bounded_cost() {
-        use crate::datv::dvbs2::{frame::Modulation, ldpc::Rate};
+        use crate::datv::dvbs2::frame::Modulation;
+        use sdrmm_modem::dvb::ldpc::Rate;
         /// Four times the signal's own duration, not once: these are the heaviest modcods
         /// the standard defines, and a hosted runner's speed moves by nearly two to one
         /// between runs. A tighter bound would report which machine picked up the job; this
@@ -806,7 +797,7 @@ mod tests {
         let mut channel = second_generation();
         let statuses = drive(&mut channel, &iq);
         let status = statuses.last().expect("a broadcast status");
-        assert_eq!(status.system, BroadcastSystem::DvbS2);
+        assert_eq!(status.system, "dvb_s2");
         assert_eq!(status.text.as_deref(), Some("GSE + IPv4"));
         assert_eq!(status.code_rate.as_deref(), Some("16APSK 3/4"));
         assert!(status.frames_ok > 4, "{status:?}");
@@ -849,7 +840,7 @@ mod tests {
             let mut channel = second_generation();
             let statuses = drive(&mut channel, &iq);
             let status = statuses.last().expect("a broadcast status");
-            assert_eq!(status.system, BroadcastSystem::DvbS2);
+            assert_eq!(status.system, "dvb_s2");
             assert_eq!(status.code_rate.as_deref(), Some(label));
             assert!(status.frames_ok > 0, "{label}: {status:?}");
             assert_eq!(status.frames_bad, 0, "{label}: {status:?}");
@@ -884,7 +875,8 @@ mod tests {
 
     #[test]
     fn the_higher_order_constellations_keep_ahead_of_the_channel_rate() {
-        use crate::datv::dvbs2::{frame::Modulation, ldpc::Rate};
+        use crate::datv::dvbs2::frame::Modulation;
+        use sdrmm_modem::dvb::ldpc::Rate;
 
         let iq = synth::datv::dvbs2_mode(2, Modulation::Apsk32, Rate::R5_6, false, true)
             .expect("a synthetic signal");
@@ -937,7 +929,7 @@ mod tests {
 
     fn s2_frames(
         modulation: crate::datv::dvbs2::frame::Modulation,
-        rate: crate::datv::dvbs2::ldpc::Rate,
+        rate: sdrmm_modem::dvb::ldpc::Rate,
         pilots: bool,
         esn0_db: f32,
         offset: f32,
@@ -977,7 +969,8 @@ mod tests {
 
     #[test]
     fn second_generation_decodes_near_threshold_with_a_carrier_offset() {
-        use crate::datv::dvbs2::{frame::Modulation, ldpc::Rate};
+        use crate::datv::dvbs2::frame::Modulation;
+        use sdrmm_modem::dvb::ldpc::Rate;
         for (name, modulation, rate, pilots, esn0_db, offset) in [
             (
                 "QPSK 1/2 with pilots",
@@ -1087,7 +1080,7 @@ mod tests {
             assert!(status.frames_ok >= 8, "format {format}: {status:?}");
             assert_eq!(status.frames_bad, 0, "format {format}: {status:?}");
             assert_eq!(
-                status.superframe.map(|superframe| superframe.format),
+                SuperframeStatus::of(status).map(|superframe| superframe.format),
                 Some(format)
             );
             assert!(status.data_error.is_none(), "format {format}: {status:?}");

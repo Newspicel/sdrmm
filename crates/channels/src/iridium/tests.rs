@@ -1,6 +1,6 @@
-use crate::NativeChannel;
 use crate::iridium::IridiumParams;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::ChannelParams;
 use serde_json::Value;
 
@@ -14,8 +14,8 @@ use super::ira::IridiumFrame;
 use super::modulate::modulate;
 use super::receiver::ChannelDecoder;
 use super::{CHANNEL_RATE, IridiumChannel};
-use crate::testutil::{run_events, settings};
-use crate::{ChannelCtx, ChannelRx};
+use sdrmm_decoder::{Channel, ChannelCtx};
+use sdrmm_decoder_test_support::{run_events, settings};
 
 const OFF_AIR_RA: &str = "0011000000110000111100111111100001001010010011010011101101101100001001101011100001110011001100110000000111100010010011010011101011110101110100010010011010000111000101000111100110001000111111111111111111111111111111111111111111111111111111111111111110010111";
 const OFF_AIR_IDA: &str = "0011000000110000111100110011000110001101111001011111011101001001100100101110100110001000000101000000000101001100010000001100000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010001000010010001100000000000000110010001000000010001000110000";
@@ -29,8 +29,8 @@ const ORACLE_DA: &str = "0011000000110000111100111100110011001100100000000001001
 
 type Snapshot = (String, Value, Option<Value>);
 
-pub(crate) fn fixture() -> crate::fixtures::Fixture {
-    crate::fixtures::Fixture::new(
+pub(crate) fn fixture() -> crate::builtin::fixtures::Fixture {
+    crate::builtin::fixtures::Fixture::new(
         ChannelParams::new("iridium", &IridiumParams::default()).expect("iridium settings"),
         place(
             &[modulate(&canonical(OFF_AIR_RA), 64, CHANNEL_RATE, 0.0, 0.5)],
@@ -246,7 +246,7 @@ fn decodes_a_remodulated_off_air_ring_alert() {
     assert!(
         events
             .iter()
-            .filter_map(|event| crate::datalink::read(event, "iridium"))
+            .filter_map(|event| sdrmm_decoder::link::read(event, "iridium"))
             .any(|message| message.message_type == "ring-alert"
                 && message.crc_ok
                 && message
@@ -386,7 +386,7 @@ fn da_roundtrip() {
     assert_eq!(f[0].details["crc_ok"], true);
     assert_eq!(
         f[0].details["data_hex"],
-        crate::datalink::hex(&payload).as_str()
+        sdrmm_crypto::hex_string(&payload).as_str()
     );
 }
 

@@ -1,3 +1,7 @@
+mod spectrum;
+
+pub use spectrum::{MonitorOutput, SpectrumMonitor};
+
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -5,7 +9,6 @@ use std::sync::{
 };
 
 use num_complex::Complex;
-use sdrmm_channels::monitor::{MonitorOutput, SpectrumMonitor};
 use sdrmm_wire::{SpectrumMonitorNode, TransmissionState};
 
 use crate::{

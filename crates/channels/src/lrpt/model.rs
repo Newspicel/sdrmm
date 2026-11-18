@@ -151,6 +151,23 @@ mod model_tests {
     use super::*;
 
     #[test]
+    fn empty_settings_take_the_defaults() {
+        assert_eq!(
+            serde_json::from_str::<LrptParams>("{}").unwrap().mode,
+            LrptMode::Oqpsk72
+        );
+    }
+
+    #[test]
+    fn a_picture_names_no_station() {
+        let picture: LrptImage = serde_json::from_str(
+            r#"{"seq":1,"mode":"qpsk72","width":1568,"lines":800,"complete":true,"duration_ms":600000,"apids":[64,65,66],"frames":100,"frames_corrected":2,"frames_failed":0,"packets_lost":0}"#,
+        )
+        .expect("picture fixture");
+        assert_eq!(picture.present(&EventKind::named("lrpt")).entity, None);
+    }
+
+    #[test]
     fn lrpt_shows_link_quality() {
         let view = LrptImage {
             seq: 1,

@@ -1,7 +1,8 @@
+#[cfg(test)]
 use sdrmm_dsp::crc16_x25;
+use sdrmm_dsp::{HdlcDeframer, hdlc_fcs_ok};
 use serde::Serialize;
 
-const FLAG: u8 = 0x7E;
 const MIN_FRAME_OCTETS: usize = 4 + 4 + 1 + 2;
 const MAX_FRAME_OCTETS: usize = 8192;
 
@@ -358,116 +359,51 @@ pub fn parse_xid(info: &[u8]) -> Option<Vec<XidParam>> {
     }
 }
 
-pub fn scan(bits: &[u8]) -> Vec<AvlcFrame> {
-    let mut frames = Vec::new();
-    let mut shift: u8 = 0;
-    let mut collecting = false;
-    let mut ones = 0u32;
-    let mut buf: Vec<u8> = Vec::new();
+pub fn deframer() -> HdlcDeframer {
+    HdlcDeframer::new(MIN_FRAME_OCTETS, MAX_FRAME_OCTETS)
+}
 
-    let close = |buf: &[u8], frames: &mut Vec<AvlcFrame>| {
-        if buf.len() < MIN_FRAME_OCTETS * 8 || !buf.len().is_multiple_of(8) {
-            return;
-        }
-        let octets: Vec<u8> = buf
-            .as_chunks::<8>()
-            .0
-            .iter()
-            .map(|c| c.iter().enumerate().fold(0u8, |b, (i, &v)| b | (v << i)))
-            .collect();
-        if octets.len() > MAX_FRAME_OCTETS {
-            return;
-        }
-        let n = octets.len();
-        let fcs = crc16_x25(&octets[..n - 2]);
-        let le = u16::from_le_bytes([octets[n - 2], octets[n - 1]]);
-        if fcs != le {
-            return;
-        }
-        let dst = parse_address(&octets[0..4]);
-        let src = parse_address(&octets[4..8]);
-        let control = parse_control(octets[8]);
-        let info = octets[9..n - 2].to_vec();
-        let payload = match (&control, info.first()) {
-            (Control::Unnumbered { kind: "XID", .. }, _) => Payload::Xid,
-            (_, Some(0xFF)) => Payload::Acars,
-            (_, Some(&ipi @ (0x81..=0x83))) => Payload::Atn { ipi },
-            (_, Some(&first)) => Payload::Other { first },
-            (_, None) => Payload::Empty,
-        };
-        frames.push(AvlcFrame {
-            dst,
-            src,
-            control,
-            payload,
-            info,
-            raw: octets,
-        });
-    };
+/// The frames of one burst, each closed by a flag and checked against its FCS.
+pub fn scan(deframer: &mut HdlcDeframer, bits: &[u8]) -> Vec<AvlcFrame> {
+    deframer.reset();
+    bits.iter()
+        .filter_map(|&bit| deframer.push(bit == 1).and_then(parse_frame))
+        .collect()
+}
 
-    for &bit in bits {
-        shift = (shift >> 1) | (bit << 7);
-        if !collecting {
-            if shift == FLAG {
-                collecting = true;
-                buf.clear();
-                ones = 0;
-            }
-            continue;
-        }
-        if bit == 1 {
-            ones += 1;
-            if ones > 6 {
-                collecting = false;
-                continue;
-            }
-            buf.push(1);
-        } else if ones == 5 {
-            ones = 0;
-        } else if ones == 6 {
-            let len = buf.len().saturating_sub(7);
-            close(&buf[..len], &mut frames);
-            buf.clear();
-            ones = 0;
-        } else {
-            buf.push(0);
-            ones = 0;
-            if buf.len() > MAX_FRAME_OCTETS * 8 {
-                collecting = false;
-            }
-        }
+fn parse_frame(octets: &[u8]) -> Option<AvlcFrame> {
+    if !hdlc_fcs_ok(octets) {
+        return None;
     }
-    frames
+    let n = octets.len();
+    let control = parse_control(octets[8]);
+    let info = octets[9..n - 2].to_vec();
+    let payload = match (&control, info.first()) {
+        (Control::Unnumbered { kind: "XID", .. }, _) => Payload::Xid,
+        (_, Some(0xFF)) => Payload::Acars,
+        (_, Some(&ipi @ (0x81..=0x83))) => Payload::Atn { ipi },
+        (_, Some(&first)) => Payload::Other { first },
+        (_, None) => Payload::Empty,
+    };
+    Some(AvlcFrame {
+        dst: parse_address(&octets[0..4]),
+        src: parse_address(&octets[4..8]),
+        control,
+        payload,
+        info,
+        raw: octets.to_vec(),
+    })
 }
 
 #[cfg(test)]
 pub fn build(frames: &[Vec<u8>]) -> Vec<u8> {
-    let flag = [0u8, 1, 1, 1, 1, 1, 1, 0];
-    let mut bits: Vec<u8> = Vec::new();
-    bits.extend(flag);
+    let mut framer = sdrmm_dsp::HdlcFramer::new();
+    let mut bits = Vec::new();
+    framer.push_flags(&mut bits, 1);
     for frame in frames {
-        let mut octets = frame.clone();
-        let fcs = crc16_x25(&octets);
-        octets.extend(fcs.to_le_bytes());
-        let mut ones = 0;
-        for &o in &octets {
-            for i in 0..8 {
-                let b = (o >> i) & 1;
-                bits.push(b);
-                if b == 1 {
-                    ones += 1;
-                    if ones == 5 {
-                        bits.push(0);
-                        ones = 0;
-                    }
-                } else {
-                    ones = 0;
-                }
-            }
-        }
-        bits.extend(flag);
+        framer.push_frame(&mut bits, frame);
     }
-    bits
+    bits.into_iter().map(u8::from).collect()
 }
 
 #[cfg(test)]
@@ -531,7 +467,7 @@ mod tests {
     #[test]
     fn roundtrip_frame() {
         let bits = build(&[test_frame()]);
-        let frames = scan(&bits);
+        let frames = scan(&mut deframer(), &bits);
         assert_eq!(frames.len(), 1);
         let f = &frames[0];
         assert_eq!(f.dst.kind, AddressType::Aircraft);
@@ -556,7 +492,7 @@ mod tests {
         let mut f2 = test_frame();
         f2[8] = 0x01;
         let bits = build(&[test_frame(), f2]);
-        let frames = scan(&bits);
+        let frames = scan(&mut deframer(), &bits);
         assert_eq!(frames.len(), 2);
         assert!(matches!(
             frames[1].control,
@@ -568,7 +504,7 @@ mod tests {
     fn bad_fcs_rejected() {
         let mut bits = build(&[test_frame()]);
         bits[8 * 12 + 2] ^= 1;
-        assert!(scan(&bits).is_empty());
+        assert!(scan(&mut deframer(), &bits).is_empty());
     }
 
     #[test]
@@ -620,7 +556,7 @@ mod tests {
         }
         bits.extend(flag);
         assert!(
-            scan(&bits).is_empty(),
+            scan(&mut deframer(), &bits).is_empty(),
             "byte-swapped FCS must not be accepted"
         );
     }
@@ -634,7 +570,7 @@ mod body_tests {
     fn off_air_s_frame_parses_as_rr() {
         let octets = [0x14u8, 0x22, 0xcc, 0x54, 0xb2, 0x0c, 0x42, 0xb5, 0xa1];
         let bits = build(&[octets.to_vec()]);
-        let frames = scan(&bits);
+        let frames = scan(&mut deframer(), &bits);
         assert_eq!(frames.len(), 1);
         let f = &frames[0];
         assert_eq!(

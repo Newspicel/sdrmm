@@ -1,11 +1,10 @@
 use sdrmm_wire::ChannelParams;
 
 use super::*;
-use crate::{
-    AUDIO_RATE, VideoPicture,
-    nfm::NfmParams,
-    synth::atv::{AtvSource, BAR_LEVELS, COLOR_BARS, bars, color_bars_with_tone, picture},
-    testutil::{THROUGHPUT_ATTEMPTS, dominant_tone, fastest_seconds, realtime_budget, settings},
+use crate::synth::atv::{AtvSource, BAR_LEVELS, COLOR_BARS, bars, color_bars_with_tone, picture};
+use sdrmm_decoder::{AUDIO_RATE, VideoPicture};
+use sdrmm_decoder_test_support::{
+    THROUGHPUT_ATTEMPTS, dominant_tone, fastest_seconds, realtime_budget, settings,
 };
 
 fn channel(p: &AtvParams) -> AtvChannel {
@@ -214,7 +213,7 @@ fn fm_holds_its_picture_three_megahertz_off_tune() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
     for offset in [-3_000_000.0, 3_000_000.0] {
         let mut iq = bars(&AtvSource::new(&p, p.rate_hz).with_swing(6_000_000.0), 3);
-        crate::synth::shift(&mut iq, offset, p.rate_hz);
+        sdrmm_modem::synth::shift(&mut iq, offset, p.rate_hz);
         let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
         assert_bars_ascend(&picture, &format!("offset {offset}"));
     }
@@ -224,7 +223,7 @@ fn fm_holds_its_picture_three_megahertz_off_tune() {
 fn a_weak_fm_carrier_still_scans_a_clean_picture() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Fm);
     let mut iq = bars(&AtvSource::new(&p, p.rate_hz).with_swing(6_000_000.0), 3);
-    crate::synth::add_noise(&mut iq, 0xA7C3, 0.4);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xA7C3, 0.4);
     let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let row = usize::from(picture.height) / 2;
     for (bar, &level) in BAR_LEVELS.iter().enumerate() {
@@ -265,7 +264,7 @@ fn progressive_sources_fill_every_row() {
 fn a_noisy_am_channel_still_scans_a_recognizable_picture() {
     let p = params_for(AtvStandard::Ccir625, AtvModulation::Am);
     let mut iq = bars(&AtvSource::new(&p, p.rate_hz), 3);
-    crate::synth::add_noise(&mut iq, 0xA7C3, 0.08);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xA7C3, 0.08);
     let picture = run(&mut channel(&p), &iq).pop().expect("a picture");
     let row = usize::from(picture.height) / 2;
     let black = bar_luma(&picture, row, 0);
@@ -340,7 +339,7 @@ fn the_rate_setting_sets_the_input_rate() {
         ..AtvParams::default()
     };
     let params = ChannelParams::of(&p).expect("atv settings");
-    assert_eq!(crate::input_rate(&params), 12_000_000.0);
+    assert_eq!(sdrmm_decoder::input_rate(&params), 12_000_000.0);
 }
 
 #[test]
@@ -365,9 +364,7 @@ fn colour_needs_a_rate_that_carries_the_subcarrier() {
 fn mismatched_params_variant_is_rejected() {
     let mut chan = channel(&AtvParams::default());
     assert!(matches!(
-        chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")
-        )),
+        chan.apply(settings(ChannelParams::bare("nfm"))),
         Err(ChannelError::InvalidSettings(_))
     ));
 }
@@ -694,7 +691,7 @@ fn a_very_weak_am_carrier_still_locks_and_noise_alone_does_not() {
     let p = coloured(AtvColor::Pal, AtvStandard::Ccir625, AtvModulation::Am);
     let source = AtvSource::new(&p, p.rate_hz).vestigial();
     let mut iq = color_bars_with_tone(&source, 6);
-    crate::synth::add_noise(&mut iq, 7, 1.6);
+    sdrmm_modem::synth::add_noise(&mut iq, 7, 1.6);
     let pictures = run(&mut channel(&p), &iq);
     assert!(
         (8..=12).contains(&pictures.len()),
@@ -702,7 +699,7 @@ fn a_very_weak_am_carrier_still_locks_and_noise_alone_does_not() {
         pictures.len()
     );
     let mut noise = vec![Complex::new(0.0, 0.0); iq.len()];
-    crate::synth::add_noise(&mut noise, 11, 1.0);
+    sdrmm_modem::synth::add_noise(&mut noise, 11, 1.0);
     assert!(
         run(&mut channel(&p), &noise).len() <= 1,
         "noise alone drew pictures"

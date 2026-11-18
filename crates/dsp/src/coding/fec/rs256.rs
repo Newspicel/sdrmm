@@ -1,10 +1,14 @@
 const SIZE: usize = 256;
 const ORDER: usize = SIZE - 1;
 
-pub const DVB_PRIMITIVE: u16 = 0x11D;
+/// x^8 + x^4 + x^3 + x^2 + 1, the field most byte-wide Reed-Solomon codes use.
+pub const GF256_PRIMITIVE: u16 = 0x11D;
 
+/// Reed-Solomon over GF(2^m), m up to 8, with any first consecutive root: errors and erasures,
+/// shortened codewords included.
 #[derive(Clone, Debug)]
 pub struct ReedSolomon {
+    order: usize,
     exp: [u8; 2 * ORDER],
     log: [u8; SIZE],
     generator: Vec<u8>,
@@ -14,21 +18,33 @@ pub struct ReedSolomon {
 }
 
 impl ReedSolomon {
+    /// A code over GF(256).
     #[must_use]
     pub fn new(primitive: u16, first_root: u8, parity: usize) -> Self {
+        Self::with_field(u8::BITS, primitive, first_root, parity)
+    }
+
+    /// A code over GF(2^`bits`) built on `primitive`, whose roots are consecutive powers of x
+    /// from x^`first_root`.
+    #[must_use]
+    pub fn with_field(bits: u32, primitive: u16, first_root: u8, parity: usize) -> Self {
+        assert!((2..=u8::BITS).contains(&bits), "symbols of 2 to 8 bits");
+        let size = 1usize << bits;
+        let order = size - 1;
         let mut exp = [0u8; 2 * ORDER];
         let mut log = [0u8; SIZE];
         let mut value = 1u16;
-        for index in 0..ORDER {
+        for index in 0..order {
             exp[index] = value as u8;
-            exp[index + ORDER] = value as u8;
+            exp[index + order] = value as u8;
             log[value as usize] = index as u8;
             value <<= 1;
-            if value & SIZE as u16 != 0 {
+            if value & size as u16 != 0 {
                 value ^= primitive;
             }
         }
         let mut code = Self {
+            order,
             exp,
             log,
             generator: Vec::new(),
@@ -36,7 +52,7 @@ impl ReedSolomon {
             first_root,
             root_multiples: Vec::new(),
         };
-        assert!(parity < SIZE, "GF(256) parity length");
+        assert!(parity < size, "parity longer than the field");
         code.generator = code.build_generator();
         code.root_multiples = (0..parity)
             .map(|index| {
@@ -63,7 +79,7 @@ impl ReedSolomon {
     }
 
     fn power(&self, exponent: u32) -> u8 {
-        self.exp[(exponent % ORDER as u32) as usize]
+        self.exp[(exponent % self.order as u32) as usize]
     }
 
     fn mul(&self, a: u8, b: u8) -> u8 {
@@ -74,7 +90,7 @@ impl ReedSolomon {
     }
 
     fn inv(&self, a: u8) -> u8 {
-        self.exp[ORDER - usize::from(self.log[usize::from(a)])]
+        self.exp[self.order - usize::from(self.log[usize::from(a)])]
     }
 
     fn evaluate(&self, ascending: &[u8], at: u8) -> u8 {
@@ -85,6 +101,12 @@ impl ReedSolomon {
             term = self.mul(term, at);
         }
         sum
+    }
+
+    /// The longest codeword the field allows.
+    #[must_use]
+    pub const fn max_len(&self) -> usize {
+        self.order
     }
 
     #[must_use]
@@ -171,7 +193,8 @@ impl ReedSolomon {
         let mut positions = [0usize; SIZE];
         let mut count = 0;
         for position in 0..length {
-            if self.evaluate(locator, self.power((ORDER - position % ORDER) as u32)) == 0 {
+            let inverse = self.power((self.order - position % self.order) as u32);
+            if self.evaluate(locator, inverse) == 0 {
                 positions[count] = position;
                 count += 1;
             }
@@ -192,20 +215,20 @@ impl ReedSolomon {
     }
 
     fn magnitude(&self, evaluator: &[u8], derivative: &[u8], position: usize) -> Option<u8> {
-        let inverse = self.power((ORDER - position % ORDER) as u32);
+        let inverse = self.power((self.order - position % self.order) as u32);
         let denominator = self.evaluate(derivative, inverse);
         if denominator == 0 {
             return None;
         }
         let ratio = self.mul(self.evaluate(evaluator, inverse), self.inv(denominator));
-        let exponent = (ORDER as u32 * SIZE as u32
-            - u32::from(self.first_root) * position as u32 % ORDER as u32)
-            % ORDER as u32;
+        let order = self.order as u32;
+        let exponent =
+            (order * SIZE as u32 - u32::from(self.first_root) * position as u32 % order) % order;
         Some(self.mul(ratio, self.power(exponent)))
     }
 
     pub fn decode(&self, codeword: &mut [u8]) -> Option<u32> {
-        if codeword.len() > ORDER || codeword.len() < self.parity {
+        if codeword.len() > self.order || codeword.len() < self.parity {
             return None;
         }
         let storage = self.syndromes(codeword);
@@ -245,7 +268,7 @@ impl ReedSolomon {
 impl ReedSolomon {
     pub fn decode_with_erasures(&self, codeword: &mut [u8], erasures: &[usize]) -> Option<u32> {
         let len = codeword.len();
-        if len > ORDER
+        if len > self.order
             || len < self.parity
             || erasures.len() > self.parity
             || erasures.iter().any(|&index| index >= len)
@@ -319,11 +342,11 @@ mod tests {
     use super::{super::test_data::random_bytes as payload, *};
 
     fn dvb() -> ReedSolomon {
-        ReedSolomon::new(DVB_PRIMITIVE, 0, 16)
+        ReedSolomon::new(GF256_PRIMITIVE, 0, 16)
     }
 
     fn dab_plus() -> ReedSolomon {
-        ReedSolomon::new(DVB_PRIMITIVE, 0, 10)
+        ReedSolomon::new(GF256_PRIMITIVE, 0, 10)
     }
 
     #[test]
@@ -336,7 +359,7 @@ mod tests {
 
     #[test]
     fn the_generator_is_monic_and_vanishes_at_every_root() {
-        for code in [dvb(), dab_plus(), ReedSolomon::new(DVB_PRIMITIVE, 1, 8)] {
+        for code in [dvb(), dab_plus(), ReedSolomon::new(GF256_PRIMITIVE, 1, 8)] {
             assert_eq!(code.generator[0], 1);
             assert_eq!(code.generator.len(), code.parity() + 1);
             let ascending: Vec<u8> = code.generator.iter().rev().copied().collect();
@@ -413,7 +436,7 @@ mod tests {
 
     #[test]
     fn a_code_with_a_non_zero_first_root_still_corrects() {
-        let code = ReedSolomon::new(DVB_PRIMITIVE, 1, 8);
+        let code = ReedSolomon::new(GF256_PRIMITIVE, 1, 8);
         let mut codeword = Vec::new();
         code.encode(&payload(100, 41), &mut codeword);
         let clean = codeword.clone();
@@ -444,6 +467,52 @@ mod tests {
         erasure_trial(&code, 255, &[], &erasures);
         erasure_trial(&code, 204, &[3, 77, 150], &erasures[..10]);
         erasure_trial(&code, 120, &[5, 6, 7, 8, 9, 10, 11, 12], &[]);
+    }
+
+    #[test]
+    fn a_six_bit_code_corrects_to_each_codes_capacity() {
+        for (data_symbols, parity_symbols) in [(12, 12), (16, 8), (20, 16)] {
+            let code = ReedSolomon::with_field(6, 0x43, 1, parity_symbols);
+            let data: Vec<u8> = (0..data_symbols)
+                .map(|index| (index * 7 + 3) as u8 & 0x3F)
+                .collect();
+            let mut clean = Vec::new();
+            code.encode(&data, &mut clean);
+            assert!(clean.iter().all(|&symbol| symbol < 64));
+            assert_eq!(code.decode(&mut clean.clone()), Some(0));
+            let mut damaged = clean.clone();
+            for index in 0..parity_symbols / 2 {
+                damaged[index * 2] ^= (index as u8 + 1) & 0x3F;
+            }
+            assert_eq!(code.decode(&mut damaged), Some((parity_symbols / 2) as u32));
+            assert_eq!(damaged, clean);
+        }
+    }
+
+    #[test]
+    fn a_six_bit_code_with_a_high_first_root_round_trips() {
+        let code = ReedSolomon::with_field(6, 0x43, 54, 10);
+        assert_eq!(code.max_len(), 63);
+        let data: Vec<u8> = (0..42).map(|index| (index * 11 + 5) as u8 & 0x3F).collect();
+        let mut clean = Vec::new();
+        code.encode(&data, &mut clean);
+        let mut damaged = clean.clone();
+        for (k, position) in [0usize, 9, 23, 40, 51].into_iter().enumerate() {
+            damaged[position] ^= 0x15 + k as u8;
+        }
+        assert_eq!(code.decode(&mut damaged), Some(5));
+        assert_eq!(damaged, clean);
+        let mut too_many = clean;
+        for position in [1usize, 2, 3, 4, 5, 6] {
+            too_many[position] ^= 0x2A;
+        }
+        assert_ne!(code.decode(&mut too_many), Some(6));
+    }
+
+    #[test]
+    fn a_codeword_longer_than_the_field_is_refused() {
+        let code = ReedSolomon::with_field(6, 0x43, 1, 8);
+        assert_eq!(code.decode(&mut [0u8; 64]), None);
     }
 
     #[test]

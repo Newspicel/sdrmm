@@ -65,7 +65,11 @@ function replay(stem: string): WorkspaceSnapshot {
         ),
         array(),
         site(),
-        node("finder", { kind: "df", data: {} }, { x: 960, y: 0, w: 380, h: 640 }),
+        node(
+          "finder",
+          { kind: "processor", data: { processor_type: "df", settings: {} } },
+          { x: 960, y: 0, w: 380, h: 640 },
+        ),
       ],
       edges: [
         ...laneWires("rec", "arr", LANES),

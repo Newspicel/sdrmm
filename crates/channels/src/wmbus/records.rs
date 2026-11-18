@@ -2,7 +2,7 @@ use crate::wmbus::WmbusFunction;
 use crate::wmbus::WmbusQuantity;
 use crate::wmbus::WmbusRecord;
 
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 const FILLER: u8 = 0x2F;
 const MANUFACTURER: u8 = 0x0F;

@@ -1,3 +1,6 @@
+use crate::coding::fec::crc16_x25;
+
+pub const HDLC_FLAG: u8 = 0x7E;
 /// Ones in a row after which the sender stuffs a zero.
 const STUFF_ONES: u8 = 5;
 const FLAG_ONES: u8 = 6;
@@ -108,6 +111,50 @@ impl HdlcDeframer {
     }
 }
 
+/// Bytes in, HDLC bits out: flags, then each byte LSB first with a zero stuffed after five ones.
+#[derive(Clone, Debug, Default)]
+pub struct HdlcFramer {
+    ones: u8,
+}
+
+impl HdlcFramer {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { ones: 0 }
+    }
+
+    pub fn push_flags(&mut self, bits: &mut Vec<bool>, count: usize) {
+        for _ in 0..count {
+            bits.extend((0..8).map(|i| HDLC_FLAG >> i & 1 == 1));
+        }
+        self.ones = 0;
+    }
+
+    pub fn push_bit(&mut self, bits: &mut Vec<bool>, bit: bool) {
+        bits.push(bit);
+        self.ones = if bit { self.ones + 1 } else { 0 };
+        if self.ones == STUFF_ONES {
+            bits.push(false);
+            self.ones = 0;
+        }
+    }
+
+    pub fn push_bytes(&mut self, bits: &mut Vec<bool>, bytes: &[u8]) {
+        for &byte in bytes {
+            for i in 0..8 {
+                self.push_bit(bits, byte >> i & 1 == 1);
+            }
+        }
+    }
+
+    /// `frame`, its CRC-16/X.25 FCS, then the closing flag.
+    pub fn push_frame(&mut self, bits: &mut Vec<bool>, frame: &[u8]) {
+        self.push_bytes(bits, frame);
+        self.push_bytes(bits, &crc16_x25(frame).to_le_bytes());
+        self.push_flags(bits, 1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +183,33 @@ mod tests {
         bits.extend(stuff(payload));
         bits.extend(FLAG);
         bits
+    }
+
+    #[test]
+    fn framed_bits_deframe_to_the_frame_and_its_fcs() {
+        let payload = [0xFFu8, 0x7E, 0x3F, 0x00, 0xF8];
+        let mut framer = HdlcFramer::new();
+        let mut bits = Vec::new();
+        framer.push_flags(&mut bits, 2);
+        framer.push_frame(&mut bits, &payload);
+        let frames = deframe(&mut HdlcDeframer::new(2, 64), &bits);
+        let mut expected = payload.to_vec();
+        expected.extend(crc16_x25(&payload).to_le_bytes());
+        assert_eq!(frames, vec![expected]);
+    }
+
+    #[test]
+    fn the_framer_breaks_every_run_of_five_ones() {
+        let mut framer = HdlcFramer::new();
+        let mut bits = Vec::new();
+        framer.push_bytes(&mut bits, &[0xFF; 4]);
+        let longest = bits
+            .chunk_by(|a, b| a == b)
+            .filter(|run| run[0])
+            .map(<[bool]>::len)
+            .max();
+        assert_eq!(longest, Some(5));
+        assert_eq!(bits.len(), 32 + 6);
     }
 
     fn deframe(deframer: &mut HdlcDeframer, bits: &[bool]) -> Vec<Vec<u8>> {

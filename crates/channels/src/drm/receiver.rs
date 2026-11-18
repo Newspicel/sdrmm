@@ -1,8 +1,9 @@
 use num_complex::Complex;
 use sdrmm_dsp::pack_msb_into;
 
+use sdrmm_codec::aac::{AudioConfig, Coding};
+
 use super::{
-    aac::{AudioConfig, Coding},
     audio::{
         Superframes, XheAssembler, aac_frames, aac_superframe, frame_audio_frames, join_protected,
         split_text,
@@ -13,10 +14,11 @@ use super::{
     mlc::MlcDecoder,
     mode::Robustness,
     msc::{Cell, CellDeinterleaver, MscConfig, plan as msc_plan, stream},
+    playout::Playout,
     sdc::{Multiplex, Sdc},
     text::TextMessage,
 };
-use crate::broadcast_media::BroadcastMedia;
+use sdrmm_media::Media;
 
 const SNR_SMOOTHING: f32 = 0.8;
 const FAC_HOLD: u32 = 4;
@@ -93,6 +95,7 @@ pub struct Receiver {
     unit: Vec<u8>,
     ranges: Vec<(u8, std::ops::Range<usize>)>,
     joined: Vec<u8>,
+    playout: Playout,
     pub selection: Option<Selection>,
     pub wanted: Option<u8>,
     pub changed: bool,
@@ -156,6 +159,7 @@ impl Receiver {
             unit: Vec::new(),
             ranges: Vec::new(),
             joined: Vec::new(),
+            playout: Playout::default(),
             selection: None,
             wanted: None,
             changed: false,
@@ -248,7 +252,7 @@ impl Receiver {
         self.xhe.reset();
     }
 
-    pub fn frame(&mut self, media: &mut BroadcastMedia) -> Option<u8> {
+    pub fn frame(&mut self, media: &mut Media) -> Option<u8> {
         let decoded = self.decode_fac();
         let mut occupancy = None;
         let index = if let Some(fac) = decoded {
@@ -319,7 +323,7 @@ impl Receiver {
         }
     }
 
-    fn collect_msc(&mut self, index: usize, media: &mut BroadcastMedia) {
+    fn collect_msc(&mut self, index: usize, media: &mut Media) {
         let Some(layout) = self.layout.as_ref() else {
             return;
         };
@@ -346,7 +350,7 @@ impl Receiver {
         }
     }
 
-    fn multiplex(&mut self, frame: &[Cell], position: usize, media: &mut BroadcastMedia) {
+    fn multiplex(&mut self, frame: &[Cell], position: usize, media: &mut Media) {
         let Some(fac) = self.fac else {
             return;
         };
@@ -371,7 +375,7 @@ impl Receiver {
         self.deinterleaved = deinterleaved;
     }
 
-    fn decode_multiplex(&mut self, cells: &[Cell], logical: usize, media: &mut BroadcastMedia) {
+    fn decode_multiplex(&mut self, cells: &[Cell], logical: usize, media: &mut Media) {
         let (Some(fac), Some(multiplex)) = (self.fac, self.sdc.multiplex.as_ref()) else {
             return;
         };
@@ -449,7 +453,7 @@ impl Receiver {
         }
     }
 
-    fn play(&mut self, logical: &[u8], index: usize, media: &mut BroadcastMedia) {
+    fn play(&mut self, logical: &[u8], index: usize, media: &mut Media) {
         let Some(selection) = self.selection.as_ref() else {
             return;
         };
@@ -480,13 +484,7 @@ impl Receiver {
         self.audio = superframe;
     }
 
-    fn aac(
-        &mut self,
-        superframe: &[u8],
-        config: &AudioConfig,
-        higher: usize,
-        media: &mut BroadcastMedia,
-    ) {
+    fn aac(&mut self, superframe: &[u8], config: &AudioConfig, higher: usize, media: &mut Media) {
         let Some(count) = aac_frames(self.mode.plus(), config.rate_hz) else {
             media.audio_gap(0, 1, "Unsupported DRM AAC sampling rate");
             return;
@@ -513,7 +511,7 @@ impl Receiver {
                     self.unit.clear();
                     self.unit.push(*check);
                     self.unit.extend_from_slice(&superframe[range.clone()]);
-                    media.push_drm(&self.unit, *config);
+                    self.playout.frame(&self.unit, config, media);
                 }
             }
             Err(reason) => {
@@ -530,14 +528,9 @@ impl Receiver {
         self.joined = joined;
     }
 
-    fn xhe_superframe(
-        &mut self,
-        superframe: &[u8],
-        config: &AudioConfig,
-        media: &mut BroadcastMedia,
-    ) {
+    fn xhe_superframe(&mut self, superframe: &[u8], config: &AudioConfig, media: &mut Media) {
         let pushed = self.xhe.push(superframe, |frame| match frame {
-            Ok(body) => media.push_drm(body, *config),
+            Ok(body) => self.playout.frame(body, config, media),
             Err(reason) => media.audio_gap(0, 1, reason),
         });
         if let Err(reason) = pushed {

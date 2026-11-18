@@ -1,7 +1,6 @@
-use crate::NativeChannel;
-use crate::datalink::DataLinkMessage;
 use crate::inmarsat_aero::InmarsatAeroParams;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::ChannelParams;
 use serde_json::Value;
 
@@ -15,11 +14,10 @@ use super::{
     oqpsk::{self, HrFramer, hr_frame_bits, modulate_oqpsk},
     su, to_message,
 };
-use crate::{
-    ChannelCtx, ChannelOutputs, ChannelRx,
-    datalink::{self, Quality},
-    testutil::settings,
-};
+use sdrmm_decoder::link::{self, DataLinkMessage, Quality};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_decoder_test_support::settings;
+use sdrmm_decoder_test_support::xng;
 
 const ADSC_TEXT: &str =
     "/BOMASAI.ADS.VT-ANB072501A070A988CA73248F0E5DC10200000F5EE1ABC000102B885E0A19F5";
@@ -176,7 +174,7 @@ pub(super) fn ours(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
         messages.extend(
             out.events
                 .drain(..)
-                .filter_map(|event| crate::datalink::read(&event, "inmarsat_aero")),
+                .filter_map(|event| sdrmm_decoder::link::read(&event, "inmarsat_aero")),
         );
     }
     messages
@@ -197,8 +195,9 @@ pub(super) fn reference(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
     for chunk in chunked(iq) {
         for event in decoder.process(chunk) {
             let message = xng_mode_aero::to_message(&event, 0, 0.0, source.clone());
-            messages.push(datalink::message(
+            messages.push(link::message(
                 &message.body,
+                &xng::FIELDS,
                 Quality {
                     crc_ok: message.decode.crc_ok,
                     fec_corrected: message.decode.fec_corrected,

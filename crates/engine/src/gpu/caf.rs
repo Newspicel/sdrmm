@@ -5,7 +5,7 @@ use std::sync::{
 
 use bytemuck::{Pod, Zeroable};
 use num_complex::Complex;
-use sdrmm_channels::passive_radar::{CpiJob, CubeOut, RadarPlan};
+use sdrmm_array::kernel::{CafKernel, CafPlan, CpiJob, CubeOut};
 use sdrmm_dsp::radar::{
     batch::BatchShape,
     wiener::{GroupPlan, GroupSums, MixTerm, WeightTable, WienerSolver},
@@ -191,13 +191,13 @@ struct Eca {
 impl Eca {
     fn new(
         context: &Context,
-        plan: &RadarPlan,
+        plan: &CafPlan<'_>,
         groups: &GroupPlan,
         pipeline: &wgpu::ComputePipeline,
         bound: &Bound<'_>,
     ) -> Result<(Self, wgpu::Buffer, wgpu::Buffer), String> {
         let shape = plan.shape;
-        let solver = WienerSolver::new(shape, groups, plan.params.clutter.loading)
+        let solver = WienerSolver::new(shape, groups, plan.loading)
             .map_err(|error| format!("clutter solver: {error}"))?;
         let sums = GroupSums::new(&shape, groups);
         let table =
@@ -302,15 +302,21 @@ pub(crate) struct GpuCaf {
     eca: Option<Eca>,
 }
 
+impl CafKernel for GpuCaf {
+    fn run(&mut self, job: &CpiJob, out: &mut CubeOut) -> Result<(), String> {
+        Self::run(self, job, out)
+    }
+}
+
 impl GpuCaf {
-    pub(crate) fn new(context: Arc<Context>, plan: &RadarPlan) -> Result<Self, String> {
+    pub(crate) fn new(context: Arc<Context>, plan: &CafPlan<'_>) -> Result<Self, String> {
         let shape = plan.shape;
         check_size(shape.fft_len)?;
         check_size(shape.batches)?;
         if plan.window.len() != shape.batches {
             return Err("Doppler window does not match the plan".to_owned());
         }
-        let groups = plan.groups.as_ref().filter(|_| shape.eca());
+        let groups = plan.groups.filter(|_| shape.eca());
         let footprint = Footprint::of(&shape, groups)?;
         footprint.fits(&context.device.limits())?;
         let device = context.device.clone();
@@ -319,7 +325,7 @@ impl GpuCaf {
 
     fn build(
         context: Arc<Context>,
-        plan: &RadarPlan,
+        plan: &CafPlan<'_>,
         footprint: Footprint,
     ) -> Result<Self, String> {
         let shape = plan.shape;
@@ -342,10 +348,10 @@ impl GpuCaf {
             footprint.cube,
             storage | wgpu::BufferUsages::COPY_SRC,
         );
-        let taper = initialized(&context, &plan.window);
+        let taper = initialized(&context, plan.window);
         let module = module(&context, include_str!("caf_batch.wgsl"), "caf batch");
         let pipeline = |entry: &str| compile(&context, &module, entry);
-        let groups = plan.groups.as_ref().filter(|_| shape.eca());
+        let groups = plan.groups.filter(|_| shape.eca());
         let layout = layout_of(&shape, groups)?;
         let layout = context
             .device

@@ -1,10 +1,12 @@
 mod rotation;
+mod tone_array;
 
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
 
 pub use rotation::{conj_product, derotate, derotate_from, rotor};
+pub use tone_array::ToneArray;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Repetition {

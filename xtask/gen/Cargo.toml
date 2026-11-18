@@ -26,6 +26,8 @@ sdrmm-device-kiwisdr.workspace = true
 sdrmm-device-ad936x.workspace = true
 sdrmm-device-spyserver.workspace = true
 sdrmm-channels = { workspace = true, features = ["fixtures"] }
+sdrmm-decoder.workspace = true
+sdrmm-array.workspace = true
 # The APRS fixture is keyed by the real modulator, which is configured with wire types.
 sdrmm-wire.workspace = true
 sdrmm-modem-test-support.workspace = true

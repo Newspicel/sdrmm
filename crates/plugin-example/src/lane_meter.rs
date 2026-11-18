@@ -1,20 +1,29 @@
-//! Lane meter: each lane's power and its phase against the first, the array half of the
-//! example plugin.
+//! Lane meter: each lane's power and its phase against the first, and every lane summed into a
+//! lane of its own, the array half of the example plugin. Written like a built-in processor.
 
 use sdrmm_plugin::{
-    ArrayOutputs, Complex, Lanes, Processor,
-    processor::defaults,
+    Complex,
+    array::{
+        ArrayBlock, ArrayCtx, ArrayProcessor, Params, PluginReading, ProcessorAction,
+        ProcessorFaults, ProcessorOutput, ResetCause, Settings,
+    },
+    decoder::ChannelError,
+    defaults,
     wire::{
-        ArrayNeeds, NumberSpec, ProcessorFacets, ProcessorType, ReadoutSpec, SettingField,
-        plugin::processor::ArrayFacts, present::Unit,
+        ArrayNeeds, Face, NumberSpec, ProcessorFacets, ProcessorPort, ProcessorType, ReadoutSpec,
+        SettingField, present::Unit,
     },
 };
 use serde::{Deserialize, Serialize};
 
 pub const TYPE_ID: &str = "lane_meter";
 pub const MAX_LANES: usize = 4;
+/// The lane every lane is summed into.
+pub const SUM_PORT: &str = "sum";
+const SUM: usize = 0;
 const POWER_KEYS: [&str; MAX_LANES] = ["power_1", "power_2", "power_3", "power_4"];
 const PHASE_KEYS: [&str; MAX_LANES - 1] = ["phase_2", "phase_3", "phase_4"];
+const TOO_MANY: &str = "The lane meter shows 4 lanes at most";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -26,6 +35,14 @@ pub struct LaneMeterSettings {
 impl Default for LaneMeterSettings {
     fn default() -> Self {
         Self { blocks: 8 }
+    }
+}
+
+impl Settings for LaneMeterSettings {
+    const TYPE_ID: &'static str = TYPE_ID;
+
+    fn problem(&self) -> Option<&'static str> {
+        (self.blocks == 0).then_some("Average out of range")
     }
 }
 
@@ -60,15 +77,30 @@ pub fn kind() -> ProcessorType {
         emits: Vec::new(),
         defaults: defaults::<LaneMeterSettings>(),
         facets: ProcessorFacets::default(),
+        face: Face::fit(400),
+        ports: vec![ProcessorPort::Lane {
+            name: SUM_PORT.to_owned(),
+            note: Some("Every lane summed".to_owned()),
+        }],
+        band: None,
+        resolved_ports: Vec::new(),
     }
+}
+
+fn settings(params: &Params) -> Result<&LaneMeterSettings, ChannelError> {
+    params
+        .get::<LaneMeterSettings>()
+        .ok_or_else(|| ChannelError::UnknownType(params.type_id().to_owned()))
 }
 
 pub struct LaneMeter {
     settings: LaneMeterSettings,
+    lanes: usize,
     power: [f64; MAX_LANES],
     cross: [Complex<f64>; MAX_LANES],
     samples: usize,
     blocks: u32,
+    faults: ProcessorFaults,
 }
 
 impl LaneMeter {
@@ -79,9 +111,9 @@ impl LaneMeter {
         self.blocks = 0;
     }
 
-    fn accumulate(&mut self, lanes: Lanes<'_>) {
-        let first = lanes.lane(0);
-        for (index, lane) in lanes.iter().take(MAX_LANES).enumerate() {
+    fn accumulate(&mut self, block: &ArrayBlock<'_>) {
+        let first = block.lanes[0];
+        for (index, lane) in block.lanes.iter().take(MAX_LANES).enumerate() {
             for (sample, reference) in lane.iter().zip(first) {
                 let sample = Complex::new(f64::from(sample.re), f64::from(sample.im));
                 let reference = Complex::new(f64::from(reference.re), f64::from(reference.im));
@@ -89,113 +121,157 @@ impl LaneMeter {
                 self.cross[index] += sample * reference.conj();
             }
         }
-        self.samples += lanes.len();
+        self.samples += block.len();
         self.blocks += 1;
     }
 
-    fn report(&self, count: usize, out: &mut ArrayOutputs) {
+    fn sum(block: &ArrayBlock<'_>, out: &mut ProcessorOutput<'_>) {
+        let Some(mut lane) = out.lane(SUM) else {
+            return;
+        };
+        let scale = 1.0 / block.lanes.len().max(1) as f32;
+        for at in 0..block.len() {
+            let total: Complex<f32> = block.lanes.iter().map(|lane| lane[at]).sum();
+            lane.push(total * scale);
+        }
+    }
+
+    fn report(&self, count: usize, out: &mut ProcessorOutput<'_>) {
+        let Some(reading) = out.report_as::<PluginReading>() else {
+            return;
+        };
         let samples = self.samples.max(1) as f64;
-        for (lane, &total) in self.power.iter().enumerate() {
+        let power = self.power.iter().enumerate().map(|(lane, &total)| {
             let power = total / samples;
             if lane < count && power > 0.0 {
-                out.set(lane, 10.0 * power.log10());
+                10.0 * power.log10()
             } else {
-                out.unset(lane);
+                f64::NAN
             }
-        }
-        for (lane, cross) in self.cross.iter().enumerate().skip(1) {
-            let slot = MAX_LANES + lane - 1;
+        });
+        let phase = self.cross.iter().enumerate().skip(1).map(|(lane, cross)| {
             if lane < count {
-                out.set(slot, cross.arg().to_degrees());
+                cross.arg().to_degrees()
             } else {
-                out.unset(slot);
+                f64::NAN
             }
-        }
+        });
+        reading.fill(power.chain(phase));
+        out.publish_report();
     }
 }
 
-impl Processor for LaneMeter {
-    type Settings = LaneMeterSettings;
-
-    fn open(facts: &ArrayFacts, settings: LaneMeterSettings) -> Result<Self, String> {
-        if facts.lanes as usize > MAX_LANES {
-            return Err(format!("the lane meter shows {MAX_LANES} lanes at most"));
+impl ArrayProcessor for LaneMeter {
+    fn new(ctx: &ArrayCtx<'_>, params: &Params) -> Result<Self, ChannelError> {
+        if ctx.lanes > MAX_LANES {
+            return Err(ChannelError::Refused(TOO_MANY));
         }
         Ok(Self {
-            settings,
+            settings: settings(params)?.clone(),
+            lanes: ctx.lanes,
             power: [0.0; MAX_LANES],
             cross: [Complex::new(0.0, 0.0); MAX_LANES],
             samples: 0,
             blocks: 0,
+            faults: ProcessorFaults::default(),
         })
     }
 
-    fn apply(&mut self, settings: LaneMeterSettings) -> Result<(), String> {
-        self.settings = settings;
+    fn apply(&mut self, params: &Params) -> Result<(), ChannelError> {
+        self.settings = settings(params)?.clone();
         self.clear();
         Ok(())
     }
 
-    fn retune(&mut self, facts: &ArrayFacts) -> Result<(), String> {
-        if facts.lanes as usize > MAX_LANES {
-            return Err(format!("the lane meter shows {MAX_LANES} lanes at most"));
+    fn retune(&mut self, ctx: &ArrayCtx<'_>) -> Result<(), ChannelError> {
+        if ctx.lanes > MAX_LANES {
+            return Err(ChannelError::Refused(TOO_MANY));
         }
+        self.lanes = ctx.lanes;
         self.clear();
         Ok(())
     }
 
-    fn reset(&mut self, _: sdrmm_plugin::processor::Reset) {
+    fn reset(&mut self, _: ResetCause) {
         self.clear();
     }
 
-    fn process(&mut self, lanes: Lanes<'_>, out: &mut ArrayOutputs) {
-        if lanes.is_empty() {
+    fn action(&mut self, _: ProcessorAction) -> Result<(), ChannelError> {
+        Err(ChannelError::Refused("No actions"))
+    }
+
+    fn process(&mut self, block: &ArrayBlock<'_>, out: &mut ProcessorOutput<'_>) {
+        if block.is_empty() || !self.faults.lanes_match(block, self.lanes) {
             return;
         }
-        self.accumulate(lanes);
+        Self::sum(block, out);
+        self.accumulate(block);
         if self.blocks >= self.settings.blocks.max(1) {
-            self.report(lanes.count(), out);
+            self.report(block.lanes.len(), out);
             self.clear();
         }
+    }
+
+    fn faults(&self) -> ProcessorFaults {
+        self.faults
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use sdrmm_plugin::{
+        Hosted,
+        wire::plugin::processor::{ArrayFacts, ArrayOpen, BlockContext},
+    };
+
     use super::*;
 
-    fn facts(lanes: u32) -> ArrayFacts {
-        ArrayFacts {
-            lanes,
-            sample_rate: 48_000.0,
-            ..ArrayFacts::default()
-        }
+    fn opened(lanes: u32, blocks: u32) -> Result<Hosted, String> {
+        Hosted::open::<LaneMeter, LaneMeterSettings>(
+            &kind(),
+            ArrayOpen {
+                facts: ArrayFacts {
+                    lanes,
+                    sample_rate: 48_000.0,
+                    max_block: 1_024,
+                    ..ArrayFacts::default()
+                },
+                settings: sdrmm_plugin::serde_json::json!({ "blocks": blocks }),
+            },
+        )
     }
 
-    fn block(phases_deg: &[f64], amplitude: f32, len: usize) -> Vec<Complex<f32>> {
-        phases_deg
-            .iter()
-            .flat_map(|deg| {
-                let shift = Complex::from_polar(amplitude, deg.to_radians() as f32);
-                (0..len).map(move |n| {
-                    let tone = Complex::from_polar(1.0f32, n as f32 * 0.1);
-                    tone * shift
-                })
-            })
-            .collect()
+    fn run(meter: &mut Hosted, phases_deg: &[f64], amplitude: f32, len: usize) -> Vec<f64> {
+        let input = meter.input(phases_deg.len(), len);
+        for (lane, deg) in input.chunks_exact_mut(len).zip(phases_deg) {
+            let shift = Complex::from_polar(amplitude, deg.to_radians() as f32);
+            for (n, sample) in lane.iter_mut().enumerate() {
+                *sample = Complex::from_polar(1.0f32, n as f32 * 0.1) * shift;
+            }
+        }
+        let context = BlockContext {
+            lanes: u32::try_from(phases_deg.len()).unwrap_or_default(),
+            ..BlockContext::default()
+        };
+        meter.context().copy_from_slice(&context.to_bytes());
+        let staged = meter.process(len);
+        assert_eq!(
+            staged.lanes[SUM].len(),
+            2 * len,
+            "the sum lane carries every sample"
+        );
+        if staged.header.report == 0 {
+            Vec::new()
+        } else {
+            staged.values.clone()
+        }
     }
 
     #[test]
     fn a_report_carries_each_lanes_power_and_phase() {
-        let settings = LaneMeterSettings { blocks: 2 };
-        let mut meter = LaneMeter::open(&facts(3), settings).expect("opens");
-        let samples = block(&[0.0, 90.0, -45.0], 0.5, 256);
-        let mut out = ArrayOutputs::default();
-        meter.process(Lanes::new(&samples, 3), &mut out);
-        assert!(!out.reports());
-        meter.process(Lanes::new(&samples, 3), &mut out);
-        assert!(out.reports());
-        let values = out.values();
+        let mut meter = opened(3, 2).expect("opens");
+        assert!(run(&mut meter, &[0.0, 90.0, -45.0], 0.5, 256).is_empty());
+        let values = run(&mut meter, &[0.0, 90.0, -45.0], 0.5, 256);
         assert!(
             (values[0] - 20.0 * 0.5f64.log10()).abs() < 0.1,
             "{}",
@@ -212,13 +288,14 @@ mod tests {
 
     #[test]
     fn more_lanes_than_it_shows_are_refused() {
-        assert!(LaneMeter::open(&facts(5), LaneMeterSettings::default()).is_err());
+        assert!(opened(5, 8).is_err());
     }
 
     #[test]
-    fn its_declaration_lists_every_readout_once() {
+    fn its_declaration_lists_every_readout_once_and_its_sum_lane() {
         let kind = kind();
         assert_eq!(kind.readouts.len(), 2 * MAX_LANES - 1);
         assert_eq!(kind.defaults["blocks"], 8);
+        assert_eq!(kind.lane_ports().collect::<Vec<_>>(), [SUM_PORT]);
     }
 }

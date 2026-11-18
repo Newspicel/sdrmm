@@ -1,4 +1,4 @@
-use sdrmm_dsp::{DVB_PRIMITIVE, ReedSolomon, crc32_mpeg};
+use sdrmm_dsp::{GF256_PRIMITIVE, ReedSolomon, crc32_mpeg};
 use sdrmm_wire::BroadcastData;
 
 use super::pad::{Event, crc_ok, mot::Mot};
@@ -6,7 +6,7 @@ use super::pad::{Event, crc_ok, mot::Mot};
 mod group;
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;
 
 const APPLICATION: usize = 2256;
 const FEC_FRAME: usize = 2472;
@@ -46,7 +46,7 @@ impl PacketData {
             continuity: None,
             mot: Mot::default(),
             groups: group::Groups::default(),
-            rs: ReedSolomon::new(DVB_PRIMITIVE, 0, 16),
+            rs: ReedSolomon::new(GF256_PRIMITIVE, 0, 16),
             sequence: 0,
         }
     }

@@ -1,4 +1,4 @@
-use crate::airtime::IsmKind;
+use super::IsmKind;
 
 const MHZ: f64 = 1e6;
 const NARROW_HZ: f64 = 3.0 * MHZ;

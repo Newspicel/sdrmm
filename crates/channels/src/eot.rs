@@ -1,7 +1,10 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod frame;
 
@@ -11,11 +14,10 @@ use num_complex::Complex;
 use sdrmm_dsp::{BitSync, Decimator, FmDemod, Nco, RealDecimator, SyncDetector, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use frame::{Decoded, HEAD, HEAD_BLOCK_BITS, HEAD_COPIES, REAR, REAR_BITS};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 const RATE: f64 = 48_000.0;
 pub(crate) const BAUD: f64 = 1_200.0;
@@ -197,7 +199,7 @@ pub struct EotChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<EotParams, ChannelError> {
-    crate::settings_of::<EotParams>(settings)
+    sdrmm_decoder::settings_of::<EotParams>(settings)
 }
 
 fn check_params(params: &EotParams) -> Result<(), ChannelError> {
@@ -219,13 +221,9 @@ pub(crate) fn occupied_band(params: &EotParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &EotParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: &EotParams) -> Result<FilterSpec, ChannelError> {
     check_params(params)?;
-    let half = params.bandwidth_hz / 2.0;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / RATE),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, params.bandwidth_hz / 2.0))
 }
 
 impl EotChannel {
@@ -366,7 +364,7 @@ impl NativeChannel for EotChannel {
     }
 }
 
-impl ChannelRx for EotChannel {
+impl Channel for EotChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         check_params(&params(&settings)?)
     }
@@ -390,6 +388,8 @@ impl ChannelRx for EotChannel {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 pub(crate) mod tests;
 
@@ -419,12 +419,16 @@ fn eot_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn eot_decoder() -> Native<EotParams> {
-    Native::new::<EotChannel>(occupied_band)
+    let decoder = Native::new::<EotChannel>(occupied_band)
         .filter(channel_filter)
         .signatures(eot_signatures)
         .trial(eot_trial)
         .form(eot_form)
-        .kinds(eot_kinds)
+        .kinds(eot_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn eot_form() -> Vec<SettingField> {

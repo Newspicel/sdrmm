@@ -1,16 +1,13 @@
 //! Runs a plugin processor on blocks of synthetic lanes the way the engine's worker does.
 
 use num_complex::Complex;
-use sdrmm_channels::{
-    ChannelError,
-    array_processor::{
-        ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, EventBytes, OutputSlots,
-        OutputTally, Pose, ProcessorFactory, ProcessorOutput,
-    },
+use sdrmm_array::{
+    ArrayBlock, ArrayCtx, ArrayProcessor, CalView, CorrectionView, EventBytes, LaneBuffer,
+    OutputSlots, OutputTally, PluginReading, PluginSettings, Pose, ProcessorFactory,
+    ProcessorOutput, Reading, Steer,
 };
-use sdrmm_wire::{
-    ArrayGeometry, ArrayTuningMode, Coherence, PluginReading, ProcessorReading, ProcessorType,
-};
+use sdrmm_decoder::ChannelError;
+use sdrmm_wire::{ArrayGeometry, ArrayTuningMode, Coherence, ProcessorType, SurfaceFrame};
 
 pub const RATE_HZ: f64 = 48_000.0;
 const EVENT_ROOM: usize = 4_096;
@@ -32,8 +29,11 @@ pub struct Rig {
     centers: Vec<f64>,
     positions: Vec<[f64; 3]>,
     geometry: ArrayGeometry,
-    pub reading: ProcessorReading,
+    pub reading: Reading,
     pub events: EventBytes,
+    pub surface: Option<SurfaceFrame>,
+    pub lanes: Vec<LaneBuffer>,
+    pub steer: Option<Steer>,
 }
 
 impl Rig {
@@ -44,8 +44,11 @@ impl Rig {
                 .map(|lane| [lane as f64 * 0.5, 0.0, 0.0])
                 .collect(),
             geometry: ArrayGeometry::default(),
-            reading: ProcessorReading::Plugin(PluginReading::reserved(kind)),
+            reading: Reading::new(&kind.type_id, PluginReading::reserved(kind)),
             events: EventBytes::with_capacity(EVENT_ROOM),
+            surface: None,
+            lanes: kind.lane_ports().map(|_| LaneBuffer::new(4_096)).collect(),
+            steer: None,
         }
     }
 
@@ -70,7 +73,7 @@ impl Rig {
         factory: &dyn ProcessorFactory,
         settings: serde_json::Value,
     ) -> Result<Box<dyn ArrayProcessor>, ChannelError> {
-        factory.create(&self.ctx(), &factory.kind().params(settings))
+        factory.create(&self.ctx(), &PluginSettings { settings })
     }
 
     pub fn run(
@@ -91,21 +94,26 @@ impl Rig {
             cal: CalView::default(),
             pose: Pose::default(),
         };
+        for lane in &mut self.lanes {
+            lane.clear();
+        }
         let mut out = ProcessorOutput::new(OutputSlots {
             report: Some(&mut self.reading),
-            surface: None,
+            surface: self.surface.as_mut(),
             bearings: &mut [],
-            lanes: &mut [],
+            lanes: &mut self.lanes,
         })
         .with_events(Some(&mut self.events));
         processor.process(&block, &mut out);
-        out.tally()
+        let tally = out.tally();
+        self.steer = tally.steer;
+        tally
     }
 
     pub fn plugin_reading(&self) -> &PluginReading {
-        match &self.reading {
-            ProcessorReading::Plugin(reading) => reading,
-            other => panic!("a plugin reading, got {}", other.type_id()),
+        match self.reading.get::<PluginReading>() {
+            Some(reading) => reading,
+            None => panic!("a plugin reading, got {}", self.reading.type_id()),
         }
     }
 

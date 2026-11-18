@@ -1,7 +1,7 @@
-use super::{
-    aac::{AudioConfig, AudioMode, Coding, MAX_CONFIG},
-    bits::{BitReader, BitWriter, byte_bits, crc},
-};
+use sdrmm_codec::aac::{AudioConfig, AudioMode, Coding, MAX_CONFIG};
+#[cfg(any(test, feature = "synth"))]
+use sdrmm_dsp::coding::bits::BitWriter;
+use sdrmm_dsp::coding::bits::{BitReader, byte_bits, crc_msb_inverted as crc};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stream {
@@ -292,6 +292,7 @@ impl Sdc {
     }
 }
 
+#[cfg(any(test, feature = "synth"))]
 fn entity(writer: &mut BitWriter, kind: u32, body: &BitWriter) {
     let length = (body.bit_len() - 4).div_ceil(8);
     writer.put(length as u32, 7);
@@ -304,6 +305,7 @@ fn entity(writer: &mut BitWriter, kind: u32, body: &BitWriter) {
     }
 }
 
+#[cfg(any(test, feature = "synth"))]
 #[must_use]
 pub fn encode(sdc: &Sdc, data_bytes: usize, total_bits: usize) -> Option<Vec<bool>> {
     let mut data = BitWriter::with_capacity(data_bytes);

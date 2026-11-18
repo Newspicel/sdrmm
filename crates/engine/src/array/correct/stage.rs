@@ -9,7 +9,7 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_channels::array_processor::MAX_LANES;
+use sdrmm_array::MAX_LANES;
 
 use super::{CORR_FFT, CorrectionSet, Corrector};
 use crate::{

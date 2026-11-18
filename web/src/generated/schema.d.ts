@@ -1789,8 +1789,6 @@ export interface components {
             title: string;
         };
         /** @enum {string} */
-        Adaptation: "nlms" | "rls";
-        /** @enum {string} */
         Admit: "always" | "channel_free" | "color_code_free" | "different_color_code" | "tone_free";
         Agc: {
             /** @enum {string} */
@@ -2017,8 +2015,6 @@ export interface components {
             segments: number;
             to: components["schemas"]["AntennaPoint"];
         };
-        /** @enum {string} */
-        AoaState: "off" | "ready" | "phase_unknown" | "one_lane";
         ApiError: {
             code?: components["schemas"]["ErrorCode"] | null;
             detail?: string | null;
@@ -2485,6 +2481,14 @@ export interface components {
             hz: number;
             name: string;
         };
+        /**
+         * @description The settings keys a processor keeps its band in: an offset from the array centre and a
+         *     width, both in hertz.
+         */
+        BandKeys: {
+            offset: string;
+            width: string;
+        };
         BandLane: {
             blocks: components["schemas"]["BandBlock"][];
             id: string;
@@ -2566,137 +2570,6 @@ export interface components {
             /** @default false */
             recording: boolean;
         };
-        Baseline: {
-            /** Format: int32 */
-            a: number;
-            /** Format: float */
-            azimuth_deg?: number;
-            /** Format: int32 */
-            b: number;
-            /** Format: float */
-            coherence: number;
-            /** Format: float */
-            delay_ns: number;
-            /** Format: float */
-            length_m?: number;
-            /** Format: float */
-            phase_deg?: number;
-            /** Format: float */
-            snr_db?: number;
-        };
-        BeamformerNode: {
-            settings?: components["schemas"]["BeamformerParams"];
-        };
-        BeamformerParams: {
-            /** @default nlms */
-            adaptation: components["schemas"]["Adaptation"];
-            /** @default false */
-            auto_nulls: boolean;
-            /**
-             * Format: double
-             * @default 200000
-             */
-            bandwidth_hz: number | null;
-            /**
-             * Format: float
-             * @default 0.699999988079071
-             */
-            carry_over: number;
-            /**
-             * Format: int32
-             * @default 20
-             */
-            crossfade_ms: number;
-            /**
-             * Format: float
-             * @default 0.9990000128746033
-             */
-            forget: number;
-            /**
-             * Format: float
-             * @default 0.10000000149011612
-             */
-            loading: number;
-            /**
-             * Format: int32
-             * @default 0
-             */
-            main_lane: number;
-            /** @default mrc */
-            mode: components["schemas"]["BeamMode"];
-            /** @default measured */
-            noise: components["schemas"]["NoiseModel"];
-            /** @default [] */
-            nulls_deg: number[];
-            /**
-             * Format: double
-             * @default 0
-             */
-            offset_hz: number;
-            /** @default [] */
-            reference_lanes: number[];
-            /**
-             * @default {
-             *       "kind": "wired"
-             *     }
-             */
-            steer: components["schemas"]["SteerSource"];
-            /**
-             * Format: int32
-             * @default 5000
-             */
-            steer_timeout_ms: number;
-            /**
-             * Format: float
-             * @default 0.05000000074505806
-             */
-            step: number;
-            /**
-             * Format: int32
-             * @default 1
-             */
-            taps: number;
-            /**
-             * Format: int32
-             * @default 200
-             */
-            update_ms: number;
-        };
-        BeamformerReading: {
-            at: string;
-            band_full?: boolean;
-            /** Format: float */
-            cancelled_db?: number | null;
-            diverged?: boolean;
-            /** Format: float */
-            loading_used?: number;
-            mode?: components["schemas"]["BeamMode"];
-            no_steer?: boolean;
-            null_depths_db?: number[];
-            nulls_deg: number[];
-            /** Format: double */
-            out_center_hz?: number;
-            /** Format: double */
-            out_rate?: number;
-            /** Format: float */
-            output_db: number;
-            pattern?: number[];
-            /** Format: int32 */
-            resets?: number;
-            singular?: boolean;
-            /** Format: float */
-            sinr_gain_db?: number | null;
-            /** Format: float */
-            snr_db?: number | null;
-            /** Format: int32 */
-            steer_age_ms?: number | null;
-            /** Format: float */
-            steer_deg?: number | null;
-            steer_stale?: boolean;
-            weights: components["schemas"]["LaneWeight"][];
-        };
-        /** @enum {string} */
-        BeamMode: "mrc" | "das" | "mvdr" | "lcmv" | "gsc" | "canceller" | "cma";
         BearingRay: {
             /** Format: float */
             confidence: number;
@@ -2823,70 +2696,6 @@ export interface components {
             text: string;
             title?: string | null;
         };
-        CfarKind: {
-            /** @enum {string} */
-            kind: "ca";
-        } | {
-            /** @enum {string} */
-            kind: "os";
-            /** Format: float */
-            rank: number;
-        } | {
-            /** @enum {string} */
-            kind: "go";
-        };
-        CfarParams: {
-            /**
-             * Format: int32
-             * @default 1
-             */
-            guard_doppler: number;
-            /**
-             * Format: int32
-             * @default 2
-             */
-            guard_range: number;
-            /**
-             * @default {
-             *       "kind": "ca"
-             *     }
-             */
-            kind: components["schemas"]["CfarKind"];
-            /**
-             * Format: float
-             * @default 5
-             */
-            min_doppler_hz: number;
-            /**
-             * Format: float
-             * @default 1
-             */
-            min_range_km: number;
-            /**
-             * Format: float
-             * @default 8
-             */
-            min_snr_db: number;
-            /**
-             * Format: double
-             * @default 0.00001
-             */
-            pfa: number;
-            /**
-             * Format: int32
-             * @default 4
-             */
-            train_doppler: number;
-            /**
-             * Format: int32
-             * @default 8
-             */
-            train_range: number;
-            /** @default range */
-            window: components["schemas"]["CfarWindow"];
-        };
-        /** @enum {string} */
-        CfarWindow: "range" | "plane";
         Channel: components["schemas"]["ChannelMode"] & {
             name: string;
             power?: components["schemas"]["Power"];
@@ -3084,6 +2893,17 @@ export interface components {
         /** @enum {string} */
         CheckStatus: "ok" | "warn" | "fail";
         /**
+         * @description A chirp spread spectrum family Signal ID dechirps a sweeping signal against: the sweep
+         *     widths and the spreading factors, chips per symbol as a power of two, it may use.
+         */
+        ChirpSweep: {
+            bandwidths_hz: number[];
+            /** Format: int32 */
+            max_spreading_factor: number;
+            /** Format: int32 */
+            min_spreading_factor: number;
+        };
+        /**
          * @description The shape of the impulses a click remover looks for in this decoder's audio.
          * @enum {string}
          */
@@ -3183,49 +3003,6 @@ export interface components {
             lane: number;
             /** Format: int32 */
             lanes: number;
-        };
-        /** @enum {string} */
-        ClutterMethod: "eca_batch" | "eca_sliding" | "nlms" | "block_nlms" | "off";
-        ClutterParams: {
-            /**
-             * Format: float
-             * @default 50
-             */
-            batch_ms: number;
-            /**
-             * Format: int32
-             * @default 0
-             */
-            doppler_taps: number;
-            /**
-             * Format: float
-             * @default 25
-             */
-            extension_ms: number;
-            /**
-             * Format: int32
-             * @default 2
-             */
-            lead: number;
-            /**
-             * Format: float
-             * @default 0.00009999999747378752
-             */
-            loading: number;
-            /** @default eca_batch */
-            method: components["schemas"]["ClutterMethod"];
-            /**
-             * Format: float
-             * @default 15
-             */
-            reach_km: number;
-            /**
-             * Format: float
-             * @default 0.05000000074505806
-             */
-            step: number;
-            /** @default true */
-            taper: boolean;
         };
         Codeplug: {
             channels?: components["schemas"]["Channel"][];
@@ -3363,46 +3140,6 @@ export interface components {
             issues: components["schemas"]["ConversionIssue"][];
             source_model?: string | null;
             target_model: string;
-        };
-        CorrelatorNode: {
-            settings?: components["schemas"]["CorrelatorParams"];
-        };
-        CorrelatorParams: {
-            /**
-             * Format: double
-             * @default null
-             */
-            bandwidth_hz: number | null;
-            /**
-             * Format: int32
-             * @default 1024
-             */
-            bins: number;
-            /**
-             * Format: int32
-             * @default 256
-             */
-            channels: number;
-            /**
-             * Format: float
-             * @default 1
-             */
-            integrate_s: number;
-            /**
-             * Format: double
-             * @default 0
-             */
-            offset_hz: number;
-            /** @default false */
-            overlap: boolean;
-        };
-        CorrelatorReading: {
-            at: string;
-            baselines: components["schemas"]["Baseline"][];
-            /** Format: int64 */
-            frames?: number;
-            /** Format: float */
-            integrated_s: number;
         };
         CpsCodeplugDetail: components["schemas"]["CpsCodeplugInfo"] & {
             codeplug: components["schemas"]["Codeplug"];
@@ -3811,8 +3548,6 @@ export interface components {
             devices: components["schemas"]["DeviceInfo"][];
             synthetic: boolean;
         };
-        /** @enum {string} */
-        DfAlgorithm: "bartlett" | "capon" | "music" | "root_music" | "esprit";
         DfEstimate: {
             converged: boolean;
             /** Format: double */
@@ -3857,142 +3592,6 @@ export interface components {
             center_hz?: number | null;
             device_sets?: number[];
             position?: components["schemas"]["PositionLink"] | null;
-        };
-        DfNode: {
-            settings?: components["schemas"]["DfParams"];
-        };
-        DfParams: {
-            /** @default music */
-            algorithm: components["schemas"]["DfAlgorithm"];
-            /**
-             * Format: double
-             * @default 1
-             */
-            azimuth_step_deg: number;
-            /**
-             * Format: double
-             * @default 20000
-             */
-            bandwidth_hz: number;
-            /**
-             * Format: float
-             * @default 0.5
-             */
-            carry_over: number;
-            /** @default false */
-            elevation: boolean;
-            /** @default false */
-            forward_backward: boolean;
-            /**
-             * Format: float
-             * @default 0.0010000000474974513
-             */
-            loading: number;
-            /**
-             * Format: int32
-             * @default 2
-             */
-            max_peaks: number;
-            /**
-             * Format: double
-             * @default 0
-             */
-            offset_hz: number;
-            /**
-             * Format: int32
-             * @default 500
-             */
-            report_ms: number;
-            /**
-             * Format: int32
-             * @default 0
-             */
-            smoothing: number;
-            /** @default dominance */
-            source_rule: components["schemas"]["SourceRule"];
-            /**
-             * Format: int32
-             * @default null
-             */
-            sources: number | null;
-            /**
-             * Format: float
-             * @default 6
-             */
-            squelch_db: number;
-            /** @default null */
-            station_id: string | null;
-            /** @default both */
-            ula_side: components["schemas"]["UlaSide"];
-            /**
-             * Format: float
-             * @default 20
-             */
-            yaw_gate_dps: number;
-        };
-        DfPeak: {
-            /** Format: float */
-            confidence: number;
-            /** Format: float */
-            elevation_deg?: number | null;
-            /** Format: float */
-            fit?: number;
-            /** Format: float */
-            mirror_deg?: number | null;
-            /** Format: float */
-            mirror_true_deg?: number | null;
-            /** Format: float */
-            power_db: number;
-            /** Format: float */
-            relative_deg: number;
-            /** Format: float */
-            sigma_deg: number;
-            /** Format: float */
-            true_deg?: number | null;
-        };
-        DfReading: {
-            algorithm?: components["schemas"]["DfAlgorithm"];
-            aliasing: boolean;
-            /** Format: float */
-            aperture_wavelengths?: number;
-            at: string;
-            /** Format: double */
-            azimuth_deg?: number | null;
-            /** Format: float */
-            eig_ratio_db?: number;
-            eigenvalues_db?: number[];
-            /** Format: float */
-            fit?: number;
-            /** Format: double */
-            freq_hz?: number;
-            /** Format: int32 */
-            gated_blocks?: number;
-            /** Format: float */
-            heading_sigma_deg?: number | null;
-            /** Format: float */
-            lambda12_db?: number;
-            likelihood?: number[];
-            likelihood_true?: boolean;
-            mirror?: boolean;
-            mode_aliasing?: boolean;
-            peaks: components["schemas"]["DfPeak"][];
-            pseudospectrum: number[];
-            rotating?: boolean;
-            singular?: boolean;
-            /** Format: float */
-            snapshots?: number;
-            /** Format: float */
-            snr_db?: number;
-            /** Format: int32 */
-            sources: number;
-            sources_auto: boolean;
-            /** Format: float */
-            spacing_ratio?: number;
-            /** Format: float */
-            span_db?: number;
-            squelched: boolean;
-            station?: components["schemas"]["LatLon"] | null;
-            table_out_of_range?: boolean;
         };
         DfStation: {
             /** Format: float */
@@ -4067,8 +3666,6 @@ export interface components {
             platform: string;
             version: string;
         };
-        /** @enum {string} */
-        DopplerWindow: "hann" | "blackman_harris" | "rectangular";
         DraggedNode: {
             node: string;
             position: components["schemas"]["Position"];
@@ -4434,6 +4031,33 @@ export interface components {
             squelch?: number | null;
             tx_tone?: components["schemas"]["Tone"] | null;
         };
+        /**
+         * @description A frame sync word Signal ID searches a keyed FSK signal's symbols for, so a match is proven
+         *     by the framing and not only by the waveform.
+         */
+        FrameSync: {
+            /**
+             * Format: int32
+             * @description Sync word length.
+             */
+            bits: number;
+            /** Format: double */
+            deviation_hz: number;
+            /**
+             * Format: int32
+             * @description Sync words a search window must hold before the signal counts as found.
+             */
+            min_hits: number;
+            patterns: number[];
+            pulse: components["schemas"]["SyncPulse"];
+            /** Format: double */
+            symbol_rate_hz: number;
+            /**
+             * Format: int32
+             * @description Bit errors a sync word may carry and still count.
+             */
+            tolerance: number;
+        };
         FrequencyRange: {
             /** Format: int64 */
             lower_hz: number;
@@ -4487,8 +4111,6 @@ export interface components {
         GpsNode: {
             source?: components["schemas"]["PositionSource"] | null;
         };
-        /** @enum {string} */
-        GpuUse: "auto" | "off";
         GroundPlaneParams: {
             /** Format: double */
             radial_slope_deg?: number;
@@ -4499,8 +4121,6 @@ export interface components {
             contacts?: string[];
             name: string;
         };
-        /** @enum {string} */
-        Hand: "right" | "left" | "linear";
         /** @enum {string} */
         HeadingSource: "compass" | "course" | "fused" | "gnss" | "sensor";
         /** @description The face's subtitle when a reading has more to say than the lane count. */
@@ -4644,23 +4264,6 @@ export interface components {
             /** Format: double */
             width_hz?: number;
         };
-        Illuminator: {
-            /** @enum {string} */
-            kind: "fm";
-        } | {
-            /** @enum {string} */
-            kind: "dab";
-        } | {
-            /** Format: double */
-            bandwidth_hz: number;
-            /** @enum {string} */
-            kind: "dvbt_partial";
-        } | {
-            /** Format: double */
-            bandwidth_hz: number;
-            /** @enum {string} */
-            kind: "custom";
-        };
         InvertedVParams: {
             /** Format: double */
             apex_angle_deg?: number;
@@ -4740,6 +4343,7 @@ export interface components {
          * @enum {string}
          */
         LanePick: "one" | "list" | "mask";
+        /** @description The amplitude and phase a beam puts on one lane. */
         LaneWeight: {
             /** Format: float */
             amplitude_db: number;
@@ -5456,34 +5060,6 @@ export interface components {
             /** @enum {string} */
             kind: "sky_scan";
         } | {
-            data: components["schemas"]["DfNode"];
-            /** @enum {string} */
-            kind: "df";
-        } | {
-            data: components["schemas"]["BeamformerNode"];
-            /** @enum {string} */
-            kind: "beamformer";
-        } | {
-            data: components["schemas"]["PassiveRadarNode"];
-            /** @enum {string} */
-            kind: "passive_radar";
-        } | {
-            data: components["schemas"]["StitchNode"];
-            /** @enum {string} */
-            kind: "stitch";
-        } | {
-            data: components["schemas"]["SpatialSpectrumNode"];
-            /** @enum {string} */
-            kind: "spatial_spectrum";
-        } | {
-            data: components["schemas"]["CorrelatorNode"];
-            /** @enum {string} */
-            kind: "correlator";
-        } | {
-            data: components["schemas"]["PolarimeterNode"];
-            /** @enum {string} */
-            kind: "polarimeter";
-        } | {
             data: components["schemas"]["ProcessorNode"];
             /** @enum {string} */
             kind: "processor";
@@ -5514,7 +5090,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "encoder" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "df" | "beamformer" | "passive_radar" | "stitch" | "spatial_spectrum" | "correlator" | "polarimeter" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -5528,7 +5104,6 @@ export interface components {
             name: string;
             picks?: components["schemas"]["Picks"] | null;
             ports: components["schemas"]["PortSpec"][];
-            processor?: components["schemas"]["ProcessorFacets"] | null;
             role: components["schemas"]["Role"];
             /** @description The form a face renders for this node's settings, in order. */
             settings?: components["schemas"]["SettingField"][];
@@ -5539,8 +5114,6 @@ export interface components {
             /** Format: float */
             threshold?: number;
         };
-        /** @enum {string} */
-        NoiseModel: "measured" | "white";
         /** @enum {string} */
         NoiseSource: "none" | "isolated" | "unisolated" | "replayed";
         NotchSettings: {
@@ -5659,114 +5232,6 @@ export interface components {
             title?: string | null;
             value: unknown;
         };
-        PassiveRadarNode: {
-            settings?: components["schemas"]["PassiveRadarParams"];
-        };
-        PassiveRadarParams: {
-            /** @default true */
-            aoa: boolean;
-            /**
-             * Format: float
-             * @default 8000
-             */
-            assumed_altitude_m: number;
-            /**
-             * @default {
-             *       "guard_doppler": 1,
-             *       "guard_range": 2,
-             *       "kind": {
-             *         "kind": "ca"
-             *       },
-             *       "min_doppler_hz": 5,
-             *       "min_range_km": 1,
-             *       "min_snr_db": 8,
-             *       "pfa": 0.00001,
-             *       "train_doppler": 4,
-             *       "train_range": 8,
-             *       "window": "range"
-             *     }
-             */
-            cfar: components["schemas"]["CfarParams"];
-            /**
-             * @default {
-             *       "batch_ms": 50,
-             *       "doppler_taps": 0,
-             *       "extension_ms": 25,
-             *       "lead": 2,
-             *       "loading": 0.00009999999747378752,
-             *       "method": "eca_batch",
-             *       "reach_km": 15,
-             *       "step": 0.05000000074505806,
-             *       "taper": true
-             *     }
-             */
-            clutter: components["schemas"]["ClutterParams"];
-            /**
-             * Format: int32
-             * @default 500
-             */
-            cpi_ms: number;
-            /** @default auto */
-            gpu: components["schemas"]["GpuUse"];
-            /**
-             * @default {
-             *       "kind": "fm"
-             *     }
-             */
-            illuminator: components["schemas"]["Illuminator"];
-            /**
-             * Format: float
-             * @default 80
-             */
-            max_range_km: number;
-            /**
-             * Format: float
-             * @default 400
-             */
-            max_speed_mps: number;
-            /**
-             * Format: double
-             * @default 0
-             */
-            offset_hz: number;
-            /**
-             * Format: float
-             * @default 0
-             */
-            overlap: number;
-            /**
-             * @default {
-             *       "kind": "cma",
-             *       "step": 0.0010000000474974513,
-             *       "taps": 16
-             *     }
-             */
-            reference: components["schemas"]["ReferenceCleaning"];
-            /**
-             * Format: int32
-             * @default 0
-             */
-            reference_element: number;
-            /**
-             * @default {
-             *       "kind": "all_others"
-             *     }
-             */
-            surveillance: components["schemas"]["SurveillanceSet"];
-            /**
-             * @default {
-             *       "coast_looks": 10,
-             *       "confirm_hits": 3,
-             *       "confirm_window": 5,
-             *       "gate": 11.800000190734863,
-             *       "jerk": 5,
-             *       "max_accel_mps2": 30
-             *     }
-             */
-            tracker: components["schemas"]["TrackerParams"];
-            /** @default hann */
-            window: components["schemas"]["DopplerWindow"];
-        };
         PassPoint: {
             /** Format: int64 */
             at: number;
@@ -5797,7 +5262,7 @@ export interface components {
             feeds?: components["schemas"]["FeedEntry"][];
             nodes: components["schemas"]["NodeTypeInfo"][];
             port_types: components["schemas"]["PortTypeInfo"][];
-            /** @description Array processors the loaded plugins bring. */
+            /** @description Array processors, built in and from plugins. */
             processors?: components["schemas"]["ProcessorType"][];
         };
         PatchChannelRequest: {
@@ -5982,99 +5447,10 @@ export interface components {
             /** Format: int64 */
             total_samples: number;
         };
-        /**
-         * @description What a plugin processor reported. Built once per type with every readout in place, so a
-         *     report only writes numbers.
-         */
-        PluginReading: {
-            /** @description Why the processor stopped, once it has. */
-            error?: string | null;
-            health?: components["schemas"]["ChannelHealth"];
-            readouts?: components["schemas"]["PluginReadout"][];
-            type_id: string;
-        };
-        /** @description One declared readout and its latest value. */
-        PluginReadout: {
-            /** Format: int32 */
-            digits: number;
-            key: string;
-            label: string;
-            unit: components["schemas"]["Unit"];
-            /** Format: double */
-            value?: number | null;
-        };
         Pointer: {
             at?: components["schemas"]["Position"] | null;
             dragging?: components["schemas"]["DraggedNode"][];
             selected?: string[];
-        };
-        PolarimeterNode: {
-            settings?: components["schemas"]["PolarimeterParams"];
-        };
-        PolarimeterParams: {
-            /**
-             * Format: int32
-             * @default 500
-             */
-            average_ms: number;
-            /**
-             * Format: double
-             * @default 20000
-             */
-            bandwidth_hz: number;
-            /**
-             * Format: int32
-             * @default 20
-             */
-            crossfade_ms: number;
-            /** @default false */
-            flip_hand: boolean;
-            /**
-             * Format: int32
-             * @default 0
-             */
-            h_lane: number;
-            /** @default true */
-            matched: boolean;
-            /**
-             * Format: double
-             * @default 0
-             */
-            offset_hz: number;
-            /**
-             * Format: int32
-             * @default 250
-             */
-            report_ms: number;
-            /**
-             * Format: int32
-             * @default 1
-             */
-            v_lane: number;
-        };
-        PolarimeterReading: {
-            /** Format: float */
-            angle_deg: number;
-            at: string;
-            /** Format: float */
-            degree: number;
-            /** Format: float */
-            ellipticity_deg: number;
-            hand?: components["schemas"]["Hand"];
-            /** Format: float */
-            i_db: number;
-            /** Format: double */
-            out_center_hz?: number;
-            /** Format: double */
-            out_rate?: number;
-            /** Format: float */
-            q: number;
-            /** Format: float */
-            snr_db?: number | null;
-            /** Format: float */
-            u: number;
-            /** Format: float */
-            v: number;
         };
         PortActivity: {
             /** Format: int64 */
@@ -6290,43 +5666,46 @@ export interface components {
         };
         /** @enum {string} */
         ProcessorGate: "sync" | "phase" | "gain" | "calibrating" | "retuning" | "tier" | "tuning_mode";
-        /** @description A patch node running a plugin processor. */
+        /** @description A patch node running an array processor. */
         ProcessorNode: {
             processor_type?: string;
             settings?: unknown;
         };
+        /** @description A port a processor declares, resolved against the event catalog each time it is read. */
+        ProcessorPort: {
+            note?: string | null;
+            /** @enum {string} */
+            port: "events";
+        } | {
+            note?: string | null;
+            /** @enum {string} */
+            port: "bearing";
+        } | {
+            note?: string | null;
+            /** @enum {string} */
+            port: "steer";
+        } | {
+            name: string;
+            note?: string | null;
+            /** @enum {string} */
+            port: "lane";
+        } | {
+            name: string;
+            note?: string | null;
+            /** @enum {string} */
+            port: "position";
+        } | {
+            name: string;
+            note?: string | null;
+            /** @enum {string} */
+            port: "tracks";
+        };
+        /** @description What a processor reported: its type id and its own reading. */
         ProcessorReading: {
-            reading: components["schemas"]["DfReading"];
-            /** @enum {string} */
-            type: "df";
-        } | {
-            reading: components["schemas"]["BeamformerReading"];
-            /** @enum {string} */
-            type: "beamformer";
-        } | {
-            reading: components["schemas"]["RadarUpdate"];
-            /** @enum {string} */
-            type: "passive_radar";
-        } | {
-            reading: components["schemas"]["StitchReading"];
-            /** @enum {string} */
-            type: "stitch";
-        } | {
-            reading: components["schemas"]["SpatialReading"];
-            /** @enum {string} */
-            type: "spatial_spectrum";
-        } | {
-            reading: components["schemas"]["CorrelatorReading"];
-            /** @enum {string} */
-            type: "correlator";
-        } | {
-            reading: components["schemas"]["PolarimeterReading"];
-            /** @enum {string} */
-            type: "polarimeter";
-        } | {
-            reading: components["schemas"]["PluginReading"];
-            /** @enum {string} */
-            type: "plugin";
+            reading: {
+                [key: string]: unknown;
+            };
+            type: string;
         };
         ProcessorStatus: {
             /** Format: int64 */
@@ -6355,10 +5734,12 @@ export interface components {
         };
         /** @description An array processor a plugin declares, as the patch catalog lists it. */
         ProcessorType: {
+            band?: components["schemas"]["BandKeys"] | null;
             /** @description What a fresh node starts on. */
             defaults?: unknown;
             /** @description Kinds of the events it emits, each one the plugin declares. */
             emits?: components["schemas"]["EventKind"][];
+            face?: components["schemas"]["Face"];
             facets?: components["schemas"]["ProcessorFacets"];
             /** Format: int32 */
             max_lanes?: number;
@@ -6366,7 +5747,11 @@ export interface components {
             min_lanes?: number;
             name: string;
             needs?: components["schemas"]["ArrayNeeds"];
+            /** @description Ports beside the array input, in the order its face shows them. */
+            ports?: components["schemas"]["ProcessorPort"][];
             readouts?: components["schemas"]["ReadoutSpec"][];
+            /** @description Every port of a node of this type, resolved when the catalog is built. */
+            resolved_ports?: components["schemas"]["PortSpec"][];
             /** @description The form a face renders for its settings. */
             settings?: components["schemas"]["SettingField"][];
             summary?: string;
@@ -6480,117 +5865,6 @@ export interface components {
         RackSlot: components["schemas"]["RackCell"] & {
             node: string;
         };
-        RadarAoa: {
-            /** Format: float */
-            azimuth_deg: number;
-            /** Format: float */
-            bearing_deg?: number | null;
-            /** Format: float */
-            mirror_deg?: number | null;
-            /** Format: float */
-            quality: number;
-            /** Format: float */
-            sigma_deg: number;
-        };
-        RadarAxes: {
-            /** Format: int32 */
-            batches: number;
-            /** Format: double */
-            carrier_hz: number;
-            /** Format: float */
-            cpi_ms: number;
-            /** Format: int32 */
-            doppler_rows: number;
-            /** Format: float */
-            doppler_step_hz: number;
-            /** Format: int32 */
-            gates: number;
-            /** Format: float */
-            hop_ms: number;
-            /** Format: int32 */
-            lanes: number;
-            /** Format: float */
-            range_step_m: number;
-            /** Format: double */
-            sample_rate_hz: number;
-        };
-        RadarDetection: {
-            aoa?: components["schemas"]["RadarAoa"] | null;
-            /** Format: int32 */
-            cells: number;
-            /** Format: float */
-            doppler_hz: number;
-            /** Format: float */
-            range_km: number;
-            /** Format: float */
-            range_rate_mps: number;
-            /** Format: float */
-            snr_db: number;
-            /** Format: int32 */
-            track_id?: number | null;
-        };
-        RadarFix: {
-            alt_from_truth?: boolean;
-            /** Format: float */
-            alt_m: number;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-            /** Format: float */
-            major_m: number;
-            /** Format: float */
-            minor_m: number;
-            /** Format: float */
-            orientation_deg: number;
-        };
-        RadarGeometry: {
-            /** Format: float */
-            baseline_km: number;
-            /** Format: float */
-            heading_deg?: number | null;
-            receiver: components["schemas"]["RadarSite"];
-            transmitter: components["schemas"]["RadarSite"];
-        };
-        RadarHealth: {
-            aoa: components["schemas"]["AoaState"];
-            /** Format: int32 */
-            cfar_looks?: number;
-            /** Format: float */
-            compute_ms: number;
-            /** Format: int64 */
-            discarded_cpis: number;
-            /** Format: int64 */
-            dropped_cpis: number;
-            /** Format: int64 */
-            dropped_reports: number;
-            /** Format: int64 */
-            dropped_samples: number;
-            /** Format: int64 */
-            dropped_tracks: number;
-            /** Format: float */
-            front_load: number;
-            gpu: boolean;
-            /** Format: int64 */
-            gpu_failures: number;
-            /** Format: int64 */
-            lagged_updates: number;
-            /** Format: float */
-            load: number;
-            /** Format: float */
-            noise_floor_db: number;
-            /** Format: float */
-            range_correlation?: number;
-            reference: components["schemas"]["ReferenceHealth"];
-            suppression_db: number[];
-            table_out_of_range?: boolean;
-            /** Format: int32 */
-            threads: number;
-            /** Format: int64 */
-            truncated_detections: number;
-            /** Format: int64 */
-            unsuppressed_groups: number;
-        };
         RadarMission: {
             array?: string | null;
             /** Format: double */
@@ -6599,88 +5873,6 @@ export interface components {
             position?: components["schemas"]["PositionLink"] | null;
             surface: boolean;
             transmitter?: components["schemas"]["PositionLink"] | null;
-        };
-        RadarProblem: {
-            /** @enum {string} */
-            kind: "no_array";
-        } | {
-            /** @enum {string} */
-            kind: "no_transmitter";
-        } | {
-            /** @enum {string} */
-            kind: "no_receiver";
-        } | {
-            /** @enum {string} */
-            kind: "no_heading";
-        } | {
-            /** @enum {string} */
-            kind: "phase_unknown";
-        } | {
-            /** @enum {string} */
-            kind: "table_out_of_range";
-        } | {
-            /** @enum {string} */
-            kind: "overloaded";
-        } | {
-            /** @enum {string} */
-            kind: "reference_lost";
-        } | {
-            detail: string;
-            /** @enum {string} */
-            kind: "refused";
-        };
-        RadarSite: {
-            /** Format: double */
-            altitude_m: number;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-        };
-        RadarTrack: {
-            /** Format: float */
-            accel_mps2: number;
-            aoa?: components["schemas"]["RadarAoa"] | null;
-            /** Format: float */
-            doppler_hz: number;
-            fix?: components["schemas"]["RadarFix"] | null;
-            /** Format: int32 */
-            id: number;
-            /** Format: int32 */
-            looks: number;
-            /** Format: int32 */
-            misses: number;
-            /** Format: float */
-            range_km: number;
-            /** Format: float */
-            range_rate_mps: number;
-            /** Format: float */
-            range_sigma_m: number;
-            /** Format: float */
-            rate_sigma_mps: number;
-            /** Format: float */
-            snr_db: number;
-            state: components["schemas"]["TrackState"];
-            trail: components["schemas"]["RadarTrailPoint"][];
-            truth?: components["schemas"]["TrackMatch"] | null;
-        };
-        RadarTrailPoint: {
-            /** Format: float */
-            doppler_hz: number;
-            /** Format: float */
-            range_km: number;
-        };
-        RadarUpdate: {
-            at: string;
-            axes: components["schemas"]["RadarAxes"];
-            detections: components["schemas"]["RadarDetection"][];
-            geometry?: components["schemas"]["RadarGeometry"] | null;
-            health: components["schemas"]["RadarHealth"];
-            problems?: components["schemas"]["RadarProblem"][];
-            /** Format: int64 */
-            seq: number;
-            tracks: components["schemas"]["RadarTrack"][];
-            truth: components["schemas"]["TrackTruth"][];
         };
         RadioFeatures: {
             dcs_tones: boolean;
@@ -6865,30 +6057,6 @@ export interface components {
             /** Format: binary */
             meta?: string;
         };
-        ReferenceCleaning: {
-            /** @enum {string} */
-            kind: "off";
-        } | {
-            /** @enum {string} */
-            kind: "cma";
-            /** Format: float */
-            step: number;
-            /** Format: int32 */
-            taps: number;
-        } | {
-            /** @enum {string} */
-            kind: "dab_remod";
-        };
-        ReferenceHealth: {
-            /** Format: int64 */
-            fallback_frames: number;
-            locked: boolean;
-            mode: components["schemas"]["ReferenceMode"];
-            /** Format: float */
-            quality_db: number;
-        };
-        /** @enum {string} */
-        ReferenceMode: "raw" | "cma" | "dab_remod";
         RenamePhoneRequest: {
             name: string;
         };
@@ -7419,9 +6587,9 @@ export interface components {
             data: {
                 node: string;
                 reading: components["schemas"]["ProcessorReading"];
-                /** @description Readouts and health derived from `reading`, for any face to show. */
+                /** @description Readouts and health the processor derives from `reading`, for any face to show. */
                 status?: components["schemas"]["ChannelStatus"];
-                /** @description What `reading` puts on the face, derived from it. */
+                /** @description What the processor puts on the face from `reading`. */
                 view?: components["schemas"]["ProcessorView"];
             };
             /** @enum {string} */
@@ -7594,6 +6762,7 @@ export interface components {
             bandwidth_hz: components["schemas"]["HzRange"];
             burst_hint_ms?: components["schemas"]["HzRange"] | null;
             burst_ms?: components["schemas"]["HzRange"] | null;
+            chirp?: components["schemas"]["ChirpSweep"] | null;
             deviation_hz?: components["schemas"]["HzRange"] | null;
             /** @description Where the service is allocated; empty for anywhere. */
             frequencies?: components["schemas"]["HzRange"][];
@@ -7603,6 +6772,7 @@ export interface components {
             prior?: number;
             symbol_rate_hz?: components["schemas"]["HzRange"] | null;
             symbol_us?: components["schemas"]["HzRange"] | null;
+            sync?: components["schemas"]["FrameSync"] | null;
             why: string;
         };
         /**
@@ -7725,77 +6895,6 @@ export interface components {
             descending?: boolean;
             field: string;
         };
-        /** @enum {string} */
-        SourceRule: "dominance" | "mdl";
-        /** @enum {string} */
-        SpatialMethod: "bartlett" | "capon" | "music";
-        SpatialPeak: {
-            /** Format: float */
-            bearing_deg: number;
-            /** Format: float */
-            db: number;
-            /** Format: double */
-            freq_hz: number;
-            /** Format: float */
-            true_deg?: number | null;
-        };
-        SpatialReading: {
-            at: string;
-            /** Format: double */
-            azimuth_deg?: number | null;
-            /** Format: int64 */
-            dropped_frames?: number;
-            /** Format: int64 */
-            frames?: number;
-            peaks: components["schemas"]["SpatialPeak"][];
-        };
-        SpatialSpectrumNode: {
-            settings?: components["schemas"]["SpatialSpectrumParams"];
-        };
-        SpatialSpectrumParams: {
-            /**
-             * Format: int32
-             * @default 300
-             */
-            average_ms: number;
-            /**
-             * Format: double
-             * @default 2
-             */
-            azimuth_step_deg: number;
-            /**
-             * Format: double
-             * @default null
-             */
-            bandwidth_hz: number | null;
-            /**
-             * Format: int32
-             * @default 1024
-             */
-            bins: number;
-            /**
-             * Format: int32
-             * @default 256
-             */
-            columns: number;
-            /** @default bartlett */
-            method: components["schemas"]["SpatialMethod"];
-            /**
-             * Format: double
-             * @default 0
-             */
-            offset_hz: number;
-            /**
-             * Format: int32
-             * @default 100
-             */
-            report_ms: number;
-            /**
-             * Format: float
-             * @default 30
-             */
-            span_db: number;
-        };
         /**
          * @description The output device's name as the operating system lists it, or None for the system default.
          *     Kept by name, since a browser salts device ids per origin and the app's port changes between
@@ -7903,59 +7002,6 @@ export interface components {
             revision: number;
             trunk_systems?: components["schemas"]["TrunkSystemStatus"][];
         };
-        SteerSource: {
-            /** @enum {string} */
-            kind: "wired";
-        } | {
-            /** Format: double */
-            azimuth_deg: number;
-            /** Format: double */
-            elevation_deg?: number;
-            /** @enum {string} */
-            kind: "fixed";
-        };
-        /** @enum {string} */
-        StitchBlend: "snr" | "equal";
-        StitchLane: {
-            /** Format: double */
-            center_hz: number;
-            /** Format: float */
-            coherence?: number | null;
-            /** Format: int32 */
-            lane: number;
-            /** Format: float */
-            noise_eq_db: number;
-            /** Format: float */
-            phase_deg?: number;
-            /** Format: int32 */
-            spur_bins?: number;
-        };
-        StitchNode: {
-            settings?: components["schemas"]["StitchParams"];
-        };
-        StitchParams: {
-            /** @default snr */
-            blend: components["schemas"]["StitchBlend"];
-            /** @default true */
-            flatten: boolean;
-            /** @default true */
-            match_phase: boolean;
-            /** @default true */
-            noise_equalise: boolean;
-            /** @default true */
-            spur_reject: boolean;
-        };
-        StitchReading: {
-            at: string;
-            /** Format: double */
-            center_hz: number;
-            /** Format: int64 */
-            dropped_blocks?: number;
-            lanes: components["schemas"]["StitchLane"][];
-            no_overlap?: boolean;
-            /** Format: double */
-            span_hz: number;
-        };
         /** @enum {string} */
         StreamKind: "spectrum" | "audio" | "video" | "iq" | "symbols" | "range_doppler" | "spatial_spectrum" | "visibility" | "fusion_grid";
         StreamParams: {
@@ -8003,15 +7049,6 @@ export interface components {
             heading_deg?: number | null;
             layers?: components["schemas"]["Layer"][];
             marks?: components["schemas"]["Mark"][];
-        };
-        SurveillanceSet: {
-            /** @enum {string} */
-            kind: "all_others";
-        } | {
-            /** @enum {string} */
-            kind: "mask";
-            /** Format: int32 */
-            mask: number;
         };
         /** @enum {string} */
         SurveyAction: "start" | "stop" | "clear";
@@ -8094,6 +7131,20 @@ export interface components {
         };
         /** @description The icon an entity of a kind wears on the map. */
         Symbol: string;
+        /** @description The frequency pulse a keyed FSK signal is shaped with. */
+        SyncPulse: {
+            /** Format: double */
+            alpha: number;
+            /** @enum {string} */
+            shape: "c4fm";
+        } | {
+            /** Format: double */
+            bt: number;
+            matched_span: number;
+            pulse_span: number;
+            /** @enum {string} */
+            shape: "gaussian";
+        };
         /** @enum {string} */
         SyncState: "idle" | "searching" | "locked" | "drifting" | "lost";
         TableRow: {
@@ -8196,38 +7247,6 @@ export interface components {
         ToolsResponse: {
             tools: components["schemas"]["ToolDescriptor"][];
         };
-        TrackerParams: {
-            /**
-             * Format: int32
-             * @default 10
-             */
-            coast_looks: number;
-            /**
-             * Format: int32
-             * @default 3
-             */
-            confirm_hits: number;
-            /**
-             * Format: int32
-             * @default 5
-             */
-            confirm_window: number;
-            /**
-             * Format: float
-             * @default 11.800000190734863
-             */
-            gate: number;
-            /**
-             * Format: float
-             * @default 5
-             */
-            jerk: number;
-            /**
-             * Format: float
-             * @default 30
-             */
-            max_accel_mps2: number;
-        };
         /** @description A moving target as a passive radar checks it: where it is and how it moves. */
         TrackFix: {
             /** Format: double */
@@ -8244,33 +7263,6 @@ export interface components {
             lon?: number | null;
             /** Format: double */
             speed_mps?: number | null;
-        };
-        TrackMatch: {
-            callsign?: string | null;
-            id: string;
-        };
-        /** @enum {string} */
-        TrackState: "confirmed" | "coasting";
-        TrackTruth: {
-            /** Format: float */
-            age_s: number;
-            /** Format: float */
-            altitude_m: number;
-            /** Format: float */
-            bearing_deg: number;
-            callsign?: string | null;
-            /** Format: float */
-            doppler_hz: number;
-            id: string;
-            in_view: boolean;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-            /** Format: float */
-            range_km: number;
-            /** Format: int32 */
-            track_id?: number | null;
         };
         TransmitAction: {
             /** @enum {string} */
@@ -8587,8 +7579,6 @@ export interface components {
         };
         /** @enum {string} */
         Tuning: "auto" | "manual";
-        /** @enum {string} */
-        UlaSide: "both" | "front" | "back";
         /** @enum {string} */
         UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped" | "waiting";
         /** @enum {string} */

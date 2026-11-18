@@ -195,27 +195,6 @@ impl sdrmm_wire::DecoderSettings for StanagParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
-    use crate::apt::AptParams;
-    use crate::lrpt::LrptMode;
-    use crate::lrpt::LrptParams;
-    use crate::noise_figure::NoiseFigureParams;
-    use crate::per::PerBaud;
-    use crate::per::PerParams;
-    use crate::radiosonde::RadiosondeParams;
-    use crate::sid::SidParams;
-    use crate::wefax::WefaxParams;
-
-    #[test]
-    fn measurement_settings_take_their_defaults() {
-        let nf: NoiseFigureParams = serde_json::from_str("{}").unwrap();
-        assert_eq!(nf.enr_db, 15.0);
-        let per: PerParams = serde_json::from_str("{}").unwrap();
-        assert_eq!(per, PerParams::default());
-        assert_eq!(per.baud.rate(), 9_600.0);
-        let sid: SidParams = serde_json::from_str("{}").unwrap();
-        assert_eq!(sid, SidParams::default());
-        assert_eq!(serde_json::to_value(PerBaud::Baud1200).unwrap(), "baud1200");
-    }
 
     #[test]
     fn empty_settings_take_the_defaults() {
@@ -300,27 +279,5 @@ mod model_tests {
         }
         .present(&EventKind::named("stanag"));
         assert_eq!(gone.labels(), ["Modem"]);
-    }
-
-    #[test]
-    fn empty_picture_settings_take_the_defaults() {
-        assert_eq!(
-            serde_json::from_str::<WefaxParams>("{}").unwrap(),
-            WefaxParams::default()
-        );
-        assert_eq!(
-            serde_json::from_str::<AptParams>("{}").unwrap(),
-            AptParams::default()
-        );
-        assert_eq!(
-            serde_json::from_str::<LrptParams>("{}").unwrap().mode,
-            LrptMode::Oqpsk72
-        );
-        assert_eq!(
-            serde_json::from_str::<RadiosondeParams>("{}")
-                .unwrap()
-                .sonde,
-            None
-        );
     }
 }

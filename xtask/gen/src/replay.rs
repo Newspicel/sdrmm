@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use clap::Args;
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_dsp::Ddc;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
@@ -43,12 +43,12 @@ pub fn run(args: &Replay) -> Result<()> {
 
     let type_id = params.type_id().to_owned();
     ensure!(
-        sdrmm_channels::descriptors()
+        sdrmm_decoder::descriptors()
             .iter()
             .any(|d| d.type_id == type_id),
         "no channel called {type_id}"
     );
-    let input_rate = sdrmm_channels::input_rate(&params);
+    let input_rate = sdrmm_decoder::input_rate(&params);
     let settings = ChannelSettings {
         frequency_hz: source.center + args.offset,
         squelch: sdrmm_wire::Squelch::Off,
@@ -58,8 +58,8 @@ pub fn run(args: &Replay) -> Result<()> {
     };
     let mut ddc =
         Ddc::new(device_rate, input_rate, args.offset).map_err(|err| anyhow::anyhow!("{err}"))?;
-    let mut filter = sdrmm_channels::channel_filter(&settings.params)?;
-    let mut channel = sdrmm_channels::create(ChannelCtx { input_rate }, &settings)?;
+    let mut filter = sdrmm_decoder::channel_filter(&settings.params)?;
+    let mut channel = sdrmm_decoder::create(ChannelCtx { input_rate }, &settings)?;
 
     let mut block = vec![Complex::default(); BLOCK];
     let mut tuned = Vec::new();

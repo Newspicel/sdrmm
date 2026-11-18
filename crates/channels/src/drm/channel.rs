@@ -1,12 +1,11 @@
 use std::sync::LazyLock;
 
-use crate::broadcast_media::BroadcastService;
-use crate::broadcast_media::BroadcastServiceKind;
-use crate::broadcast_media::BroadcastSystem;
-use crate::broadcast_media::{BroadcastStatus, publish_status};
 use crate::drm::DrmMode;
 use crate::drm::DrmParams;
 use num_complex::Complex;
+use sdrmm_decoder::broadcast::{
+    BroadcastService, BroadcastServiceKind, BroadcastStatus, publish_status,
+};
 use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract};
 
@@ -19,10 +18,11 @@ use super::{
     params,
     receiver::Receiver,
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, NativeChannel,
-    broadcast_media::BroadcastMedia, check_input_rate, dab::pacer::Pacer,
+use sdrmm_decoder::pacer::Pacer;
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_media::Media;
 
 const DECIMATION: usize = 4;
 const DECIMATOR_TAPS: usize = 63;
@@ -58,7 +58,7 @@ pub struct DrmChannel {
     plus_time: u64,
     acquiring: usize,
     locked: Option<Locked>,
-    media: BroadcastMedia,
+    media: Media,
     pacer: Pacer,
     silent: usize,
     frames: usize,
@@ -188,14 +188,6 @@ impl DrmChannel {
                     locked.receiver.changed = false;
                     self.media.reset();
                     self.pacer.reset();
-                    self.media.service_id = locked
-                        .receiver
-                        .selection
-                        .as_ref()
-                        .and_then(|selection| {
-                            locked.receiver.services[usize::from(selection.short_id)]
-                        })
-                        .map(|service| service.id);
                 }
                 self.frames = self.frames.wrapping_add(1);
                 report |= self.frames.is_multiple_of(locked.demod.mode.frames());
@@ -275,14 +267,13 @@ impl DrmChannel {
     fn report(&mut self, out: &mut ChannelOutputs) {
         let status = match &self.locked {
             Some(locked) => self.locked_status(locked),
-            None => BroadcastStatus {
-                system: if self.params.mode == DrmMode::DrmPlus {
-                    BroadcastSystem::DrmPlus
+            None => {
+                BroadcastStatus::default().with_system(if self.params.mode == DrmMode::DrmPlus {
+                    DrmMode::DrmPlus
                 } else {
-                    BroadcastSystem::Drm30
-                },
-                ..BroadcastStatus::default()
-            },
+                    DrmMode::Drm30
+                })
+            }
         };
         publish_status(out, &status, "service");
     }
@@ -319,11 +310,6 @@ impl DrmChannel {
         });
         BroadcastStatus {
             dynamic_label: receiver.text.message.clone(),
-            system: if mode.plus() {
-                BroadcastSystem::DrmPlus
-            } else {
-                BroadcastSystem::Drm30
-            },
             locked: locked.demod.locked() && receiver.fac_locked(),
             snr_db: receiver.snr_db,
             frequency_error_hz: locked.demod.frequency_offset_hz() as f32,
@@ -350,6 +336,11 @@ impl DrmChannel {
             services,
             ..BroadcastStatus::default()
         }
+        .with_system(if mode.plus() {
+            DrmMode::DrmPlus
+        } else {
+            DrmMode::Drm30
+        })
     }
 }
 
@@ -399,7 +390,7 @@ impl NativeChannel for DrmChannel {
             plus_time: 0,
             acquiring: 0,
             locked: None,
-            media: BroadcastMedia::new()?,
+            media: Media::new()?,
             pacer: Pacer::new(INPUT_RATE_HZ),
             silent: 0,
             frames: 0,
@@ -407,7 +398,7 @@ impl NativeChannel for DrmChannel {
     }
 }
 
-impl ChannelRx for DrmChannel {
+impl Channel for DrmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = params(&settings)?;
         let restart =

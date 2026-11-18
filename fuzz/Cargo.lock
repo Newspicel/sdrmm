@@ -1260,27 +1260,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sdrmm-aviation"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "sdrmm-dsp",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sdrmm-channels"
 version = "0.0.0"
 dependencies = [
  "blip25-vocoder",
- "codec2",
- "ffmpeg-the-third",
- "flate2",
  "jiff",
  "num-complex",
  "realfft",
  "rtrb",
+ "sdrmm-aviation",
+ "sdrmm-codec",
+ "sdrmm-crypto",
+ "sdrmm-decoder",
  "sdrmm-dsp",
+ "sdrmm-media",
  "sdrmm-modem",
  "sdrmm-wire",
  "serde",
  "serde_json",
- "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "sdrmm-codec"
+version = "0.0.0"
+dependencies = [
+ "blip25-vocoder",
+ "codec2",
+ "num-complex",
+ "rtrb",
+ "sdrmm-dsp",
  "symphonia-bundle-mp3",
  "symphonia-core",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -1292,6 +1314,27 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "sdrmm-crypto"
+version = "0.0.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
+name = "sdrmm-decoder"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+ "sdrmm-codec",
+ "sdrmm-dsp",
+ "sdrmm-modem",
+ "sdrmm-wire",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1375,11 +1418,13 @@ dependencies = [
  "num-complex",
  "sdrmm-channels",
  "sdrmm-cps",
+ "sdrmm-decoder",
  "sdrmm-device-kiwisdr",
  "sdrmm-device-rtltcp",
  "sdrmm-device-sdrconnect",
  "sdrmm-device-spyserver",
  "sdrmm-iqlink",
+ "sdrmm-media",
  "sdrmm-recorder",
  "sdrmm-wire",
  "serde_json",
@@ -1390,6 +1435,17 @@ name = "sdrmm-iqlink"
 version = "0.0.0"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "sdrmm-media"
+version = "0.0.0"
+dependencies = [
+ "ffmpeg-the-third",
+ "rtrb",
+ "sdrmm-codec",
+ "sdrmm-decoder",
+ "sdrmm-modem",
 ]
 
 [[package]]

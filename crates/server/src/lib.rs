@@ -529,7 +529,7 @@ impl Drop for ServerHandle {
 pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<ServerHandle> {
     refuse_phone_token(&config.options)?;
     #[cfg(feature = "dvsi")]
-    if !sdrmm_channels::chip::install_vocoder_chips(Arc::new(sdrmm_dvsi::Chips::new())) {
+    if !sdrmm_codec::voice::chip::install_vocoder_chips(Arc::new(sdrmm_dvsi::Chips::new())) {
         tracing::debug!("vocoder chips already installed");
     }
     engine.start_hotplug_prober(HOTPLUG_INTERVAL)?;
@@ -678,3 +678,12 @@ fn main_listener(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+/// Every test in this binary runs against the built-in decoders and processors, installed once
+/// before main.
+#[ctor::ctor(unsafe)]
+fn install_for_tests() {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
+}

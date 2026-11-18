@@ -6,7 +6,7 @@ use super::{
     *,
 };
 use crate::hfdl::systable::{GroundStation, GsFrequency, build_gs_record, build_systable_hfnpdus};
-use crate::testutil::without_fields_xng_drops;
+use sdrmm_test_support::xng::without_fields_xng_drops;
 
 fn parse(parser: &mut PduParser, payload: &[u8], bps: u32) -> Vec<HfdlEvent> {
     let mut out = Vec::new();

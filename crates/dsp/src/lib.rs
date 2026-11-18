@@ -18,27 +18,27 @@ pub use audio::limiter::{Limiter, Peak};
 pub use audio::noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};
 pub use audio::squelch::Squelch;
 pub use coding::bits::{
-    Descrambler, DifferentialDecoder, HdlcDeframer, NrziDecoder, Scrambler, SyncDetector, bits_be,
-    hamming_distance, manchester_decode, pack_lsb, pack_msb, pack_msb_into, reverse_byte, word_msb,
+    Descrambler, DifferentialDecoder, HDLC_FLAG, HdlcDeframer, HdlcFramer, NrziDecoder, Scrambler,
+    SyncDetector, bits_be, field_msb, hamming_distance, manchester_decode, pack_lsb, pack_msb,
+    pack_msb_into, pack_msb_slice, reverse_byte, sign_extend, word_msb,
 };
 pub use coding::fec::{
-    RdsOffset,
+    BurstCode, CrcParity, ShortBch, TrellisCode,
     block::{CyclicCode, ParityCode},
     bptc::{Bptc128, Bptc196},
     conv::{CONFIDENT, ERASURE, Soft, Viterbi5, soft},
     conv_soft::SoftViterbi,
     conv7::{ConvCode, Depuncturer, StreamViterbiK7, ViterbiK7, depuncture, puncture},
-    crc_msb_bits, crc4_msb, crc8_msb, crc16_ccitt, crc16_msb, crc16_msb_bits, crc16_x25,
-    crc24_reflected, crc32_ieee, crc32_mpeg, ermes_bch_decode, ermes_bch_encode, golay23_correct,
+    crc_msb_bits, crc4_msb, crc8_msb, crc16_ccitt, crc16_genibus, crc16_genibus_ok, crc16_msb,
+    crc16_msb_bits, crc16_x25, crc24_reflected, crc32_ieee, crc32_mpeg, golay23_correct,
     golay23_encode, golay23_ok, hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect,
-    lfsr_digest16, mode_s_append_overlaid_parity, mode_s_append_parity, mode_s_bit_overlays,
-    mode_s_fix_single_bit, mode_s_overlay, mode_s_syndrome, pocsag_bch_decode, pocsag_bch_encode,
-    prbs::{DAB_DISPERSAL, DVB_DISPERSAL, Prbs, PrbsSpec},
-    rds_check_block, rds_correct_block, rds_encode_block, rds_syndrome, rs64_decode, rs64_encode,
-    rs129_parity,
-    rs256::{DVB_PRIMITIVE, ReedSolomon},
+    lfsr_digest16,
+    prbs::{Prbs, PrbsSpec},
+    push_crc16_genibus, rs129_parity,
+    rs256::{GF256_PRIMITIVE, ReedSolomon},
     syndrome::SyndromeDecoder,
 };
+pub use coding::interleave::{ConvolutionalInterleaver, FrameDelay, Permutation};
 pub use demod::fm::FmDemod;
 pub use demod::ofdm::{CyclicPrefix, CyclicPrefixSearch};
 pub use demod::pll::{Costas, LoopFilter, Pll};
@@ -46,19 +46,20 @@ pub use demod::sync::{BitSync, SymbolSync, farrow};
 pub use demod::tone::{Envelope, Goertzel, KeyingSlicer, KeyingTiming, ToneCorrelator};
 pub use filter::decim::{Decimator, RealDecimator};
 pub use filter::fir::{
-    design_bandpass, design_gaussian, design_halfband, design_lowpass,
-    design_lowpass_blackman_harris, design_lowpass_kaiser, design_rds_biphase, design_rds_shaping,
+    design_bandpass, design_cosine_biphase, design_cosine_shaping, design_gaussian,
+    design_halfband, design_lowpass, design_lowpass_blackman_harris, design_lowpass_kaiser,
     design_rrc, design_rrc_unit_energy,
 };
 pub use filter::firc::FirC;
+pub use filter::history::SampleHistory;
 pub use filter::iir::{
-    Biquad, ComplexOnePole, DcBlocker, Deemphasis, Highpass, IqDcBlocker, Svf, SvfShape,
-    one_pole_coeff,
+    Biquad, ComplexOnePole, DcBlocker, Deemphasis, Highpass, IqDcBlocker, Preemphasis, Svf,
+    SvfShape, deemphasis_gain, one_pole_coeff,
 };
 pub use filter::interp::{CubicInterpolator, Interpolator, RealInterpolator};
-pub use filter::moving::MovingSum;
 pub use filter::real_resamp::RealResampler;
 pub use filter::resamp::FracResampler;
+pub use filter::{average::MovingAverage, frac_delay::FracDelay, moving::MovingSum};
 pub use math::db::Decibels;
 pub use math::fastmath::{fast_arg, fast_atan2, madd, phase_diff_into};
 pub use math::window::{blackman_harris, coherent_gain, hann};

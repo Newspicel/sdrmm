@@ -1,4 +1,5 @@
-use sdrmm_dsp::{ConvCode, DAB_DISPERSAL, Prbs, Soft, ViterbiK7, pack_msb_into};
+use super::DISPERSAL;
+use sdrmm_dsp::{ConvCode, FrameDelay, Prbs, Soft, ViterbiK7, pack_msb_into};
 
 use super::{fic::GENERATORS, protection::Protection};
 
@@ -18,8 +19,7 @@ pub enum Fragment {
 }
 
 pub struct TimeDeinterleaver {
-    lines: Vec<Vec<Soft>>,
-    at: usize,
+    delay: FrameDelay<Soft>,
     filled: usize,
 }
 
@@ -27,8 +27,7 @@ impl TimeDeinterleaver {
     #[must_use]
     pub fn new(fragment: usize) -> Self {
         Self {
-            lines: vec![vec![0; fragment]; DEPTH],
-            at: 0,
+            delay: FrameDelay::new(fragment, &MAP.map(|lead| DEPTH - lead)),
             filled: 0,
         }
     }
@@ -39,7 +38,7 @@ impl TimeDeinterleaver {
     }
 
     pub fn push(&mut self, fragment: &[Soft], out: &mut Vec<Soft>) -> Fragment {
-        let expected = self.lines[0].len();
+        let expected = self.delay.len();
         if fragment.len() != expected {
             return Fragment::WrongSize {
                 expected,
@@ -47,13 +46,8 @@ impl TimeDeinterleaver {
             };
         }
         out.clear();
-        out.reserve(fragment.len());
-        for (index, &value) in fragment.iter().enumerate() {
-            let line = (self.at + MAP[index % DEPTH]) % DEPTH;
-            out.push(self.lines[line][index]);
-            self.lines[self.at][index] = value;
-        }
-        self.at = (self.at + 1) % DEPTH;
+        out.resize(expected, 0);
+        self.delay.push(fragment, out);
         self.filled = (self.filled + 1).min(DEPTH * 2);
         if self.ready() {
             Fragment::Ready
@@ -64,31 +58,19 @@ impl TimeDeinterleaver {
 }
 
 #[cfg(any(test, feature = "synth"))]
-pub struct TimeInterleaver {
-    lines: Vec<Vec<bool>>,
-    at: usize,
-}
+pub struct TimeInterleaver(FrameDelay<bool>);
 
 #[cfg(any(test, feature = "synth"))]
 impl TimeInterleaver {
     #[must_use]
     pub fn new(fragment: usize) -> Self {
-        Self {
-            lines: vec![vec![false; fragment]; DEPTH],
-            at: 0,
-        }
+        Self(FrameDelay::new(fragment, &MAP))
     }
 
     pub fn push(&mut self, fragment: &[bool], out: &mut Vec<bool>) {
         out.clear();
-        out.reserve(fragment.len());
-        self.lines[self.at].copy_from_slice(fragment);
-        for index in 0..fragment.len() {
-            let delay = MAP[index % DEPTH];
-            let line = (self.at + DEPTH - delay) % DEPTH;
-            out.push(self.lines[line][index]);
-        }
-        self.at = (self.at + 1) % DEPTH;
+        out.resize(fragment.len(), false);
+        self.0.push(fragment, out);
     }
 }
 
@@ -134,7 +116,7 @@ impl SubChannelDecoder {
         self.bits.clear();
         self.viterbi.decode_tailed(&self.mother, &mut self.bits);
         self.bits.truncate(self.protection.frame_bits());
-        Prbs::new(DAB_DISPERSAL).apply_bits(&mut self.bits);
+        Prbs::new(DISPERSAL).apply_bits(&mut self.bits);
         pack_msb_into(&self.bits, out);
         Fragment::Ready
     }
@@ -177,7 +159,7 @@ impl SubChannelEncoder {
             }
         }
         self.bits.resize(self.protection.frame_bits(), false);
-        Prbs::new(DAB_DISPERSAL).apply_bits(&mut self.bits);
+        Prbs::new(DISPERSAL).apply_bits(&mut self.bits);
         self.bits.extend([false; 6]);
         self.coded.clear();
         self.code.encode(&self.bits, &mut self.coded);

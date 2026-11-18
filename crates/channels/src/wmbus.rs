@@ -1,7 +1,10 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod coding;
 pub(crate) mod link;
@@ -18,9 +21,8 @@ use self::{
     phy::{Burst, Family, Lane},
     transport::Keys,
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, datalink,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = WMBUS_SAMPLE_RATE_HZ;
@@ -38,7 +40,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<WmbusParams, ChannelError> {
-    let params: WmbusParams = crate::settings_of(settings)?;
+    let params: WmbusParams = sdrmm_decoder::settings_of(settings)?;
     params.validate().map_err(ChannelError::InvalidSettings)?;
     Ok(params)
 }
@@ -48,8 +50,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, WMBUS_BANDWIDTH_HZ / 2.0)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(WMBUS_BANDWIDTH_HZ / 2.0)
 }
 
 struct Decoder {
@@ -84,7 +86,7 @@ impl Decoder {
             status: reading.status,
             security: reading.security,
             records: reading.records,
-            frame: datalink::hex(frame),
+            frame: sdrmm_crypto::hex_string(frame),
             corrected: burst.repaired,
             snr_db: burst.snr_db,
         })
@@ -115,7 +117,7 @@ impl NativeChannel for WmbusChannel {
     }
 }
 
-impl ChannelRx for WmbusChannel {
+impl Channel for WmbusChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.decoder.keys = Keys::new(&params(&settings)?.keys);
         Ok(())
@@ -206,6 +208,6 @@ fn wmbus_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod fixture;
 #[cfg(test)]
-pub(crate) use tests::fixture;
+mod tests;

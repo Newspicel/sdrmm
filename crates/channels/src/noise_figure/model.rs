@@ -130,6 +130,31 @@ mod model_tests {
     use super::*;
 
     #[test]
+    fn empty_settings_take_the_defaults() {
+        let nf: NoiseFigureParams = serde_json::from_str("{}").unwrap();
+        assert_eq!(nf.enr_db, 15.0);
+    }
+
+    #[test]
+    fn the_summary_leads_with_the_measurement() {
+        let mut nf = NoiseFigureReport {
+            window_ms: 1_000,
+            level_dbfs: -60.04,
+            settled_s: 3.0,
+            source_on: None,
+            hot_dbfs: None,
+            cold_dbfs: None,
+            y_db: None,
+            nf_db: None,
+            temperature_k: None,
+        };
+        assert_eq!(nf.summary(), "-60.0 dBFS · toggle the noise source");
+        nf.y_db = Some(10.5);
+        nf.nf_db = Some(4.75);
+        assert_eq!(nf.summary(), "NF 4.75 dB · Y 10.50 dB");
+    }
+
+    #[test]
     fn a_noise_figure_report_shows_the_measured_figures() {
         let view = NoiseFigureReport {
             window_ms: 1000,
@@ -167,7 +192,7 @@ mod model_tests {
             nf_db: Some(5.12),
             temperature_k: Some(650.0),
         };
-        crate::testutil::assert_views_hold(
+        sdrmm_decoder_test_support::assert_views_hold(
             &noise_figure_kind(),
             &[sdrmm_wire::DecoderEvent::of(&report)],
         );

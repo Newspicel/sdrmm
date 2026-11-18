@@ -1,7 +1,5 @@
-use super::{
-    geometry::{SYNC_A, SYNC_WORDS, WORD_RATE_HZ},
-    track::Track,
-};
+use super::geometry::{SYNC_A, SYNC_WORDS, WORD_RATE_HZ};
+use sdrmm_dsp::SampleHistory;
 
 const ACQUIRE_MATCH: f32 = 0.5;
 const ACQUIRE_SYNCS: u8 = 3;
@@ -57,7 +55,7 @@ impl SyncDetector {
         ACQUIRE_TOLERANCE_WORDS * self.words
     }
 
-    pub(crate) fn score(&self, track: &Track, start: u64) -> f32 {
+    pub(crate) fn score(&self, track: &SampleHistory, start: u64) -> f32 {
         let mut dot = 0.0f32;
         let mut sum = 0.0f32;
         let mut square = 0.0f32;
@@ -74,7 +72,7 @@ impl SyncDetector {
         dot / spread.sqrt()
     }
 
-    pub(crate) fn best(&self, track: &Track, from: u64, to: u64) -> Peak {
+    pub(crate) fn best(&self, track: &SampleHistory, from: u64, to: u64) -> Peak {
         let mut best_at = from;
         let mut best = f32::MIN;
         for start in from..to.max(from + 1) {
@@ -185,9 +183,9 @@ mod tests {
 
     const RATE: f64 = 12_000.0;
 
-    fn track_with_sync_at(offset: usize) -> Track {
+    fn track_with_sync_at(offset: usize) -> SampleHistory {
         let words = RATE / WORD_RATE_HZ;
-        let mut track = Track::new();
+        let mut track = SampleHistory::new(crate::apt::TRACK_CAPACITY);
         for k in 0..2_000 {
             let word = ((f64::from(k) - offset as f64) / words).floor();
             let high = word >= 0.0 && (word as usize) < SYNC_WORDS && SYNC_A[word as usize];

@@ -1,5 +1,6 @@
 mod allocation;
 pub mod fbmc;
+pub mod fdmdv;
 pub mod gfdm;
 mod mmse;
 pub mod otfs;

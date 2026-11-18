@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_channels::array_processor::MAX_LANES;
+use sdrmm_array::MAX_LANES;
 use sdrmm_device::{GapScope, LaneMark, UNKNOWN_ERROR, Uncertainty};
 
 use super::tap::LaneFeed;

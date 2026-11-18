@@ -1,3 +1,5 @@
+use sdrmm_dsp::coding::fec::chase;
+
 pub const ACCESS_DL: &[u8; 24] = &[
     0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1,
 ];
@@ -52,30 +54,26 @@ pub fn ndivide(poly: u32, bits: &[u8]) -> u32 {
 }
 
 pub fn bch_repair_soft(poly: u32, block: &[u8], reliability: &[f32]) -> Option<Vec<u8>> {
-    let mut order: Vec<usize> = (0..block.len()).collect();
-    order.sort_by(|&a, &b| reliability[a].total_cmp(&reliability[b]));
-    let weakest = &order[..CHASE_BITS.min(order.len())];
-    let mut best: Option<(f32, Vec<u8>)> = None;
-    for mask in 0u32..(1 << weakest.len()) {
-        let mut candidate = block.to_vec();
-        for (k, &position) in weakest.iter().enumerate() {
-            candidate[position] ^= ((mask >> k) & 1) as u8;
+    let length = block.len();
+    let reliability = reliability.get(..length)?;
+    let word = block.iter().enumerate().fold(0u64, |word, (bit, &value)| {
+        word | u64::from(value & 1) << bit
+    });
+    let repair = |candidate: u64| {
+        let mut bits = [0u8; 64];
+        for (bit, slot) in bits[..length].iter_mut().enumerate() {
+            *slot = (candidate >> bit & 1) as u8;
         }
-        if bch_repair(poly, &mut candidate).is_none() {
-            continue;
-        }
-        let distance: f32 = candidate
-            .iter()
-            .zip(block)
-            .zip(reliability)
-            .filter(|((a, b), _)| a != b)
-            .map(|(_, r)| r)
-            .sum();
-        if best.as_ref().is_none_or(|(d, _)| distance < *d) {
-            best = Some((distance, candidate));
-        }
-    }
-    best.map(|(_, codeword)| codeword)
+        bch_repair(poly, &mut bits[..length])?;
+        Some(
+            bits[..length]
+                .iter()
+                .enumerate()
+                .fold(0u64, |word, (bit, &value)| word | u64::from(value) << bit),
+        )
+    };
+    let codeword = chase(word, reliability, CHASE_BITS, repair)?;
+    Some((0..length).map(|bit| (codeword >> bit & 1) as u8).collect())
 }
 
 pub fn bch_repair(poly: u32, block: &mut [u8]) -> Option<u32> {

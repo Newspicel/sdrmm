@@ -10,7 +10,7 @@ use super::lcw::{DaFrame, Lcw, decode_da, decode_da_soft, decode_lcw};
 use super::ms::{MsBody, PagerReassembler};
 use super::sbd::SbdReassembler;
 use super::{iip, ms, u3, voice};
-use crate::datalink::hex;
+use sdrmm_crypto::hex_string as hex;
 
 const DA_FRAME_TYPE: u8 = 2;
 const DA_MAX_LCW_ERRORS: u32 = 6;

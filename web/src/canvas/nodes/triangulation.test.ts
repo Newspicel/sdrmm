@@ -10,7 +10,7 @@ import type {
   PatchGraph,
   PatchNode,
 } from "../../lib/types";
-import { catalogBody } from "../../test/catalog";
+import { catalogBody, processorBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
 import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
@@ -39,10 +39,10 @@ function wire(from: string, to: string, port = "events") {
 
 const WIRED: PatchGraph = {
   nodes: [
-    placed("finder", catalogBody("df")),
+    placed("finder", processorBody("df")),
     placed("walk", catalogBody("hunt")),
     placed("filter", catalogBody("event_filter")),
-    placed("east", catalogBody("df")),
+    placed("east", processorBody("df")),
     TRI,
   ],
   edges: [

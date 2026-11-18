@@ -7,7 +7,7 @@ use crate::lora::MeshcoreRoute;
 use super::encode::group_datagram;
 use super::keys::hashtag_secret;
 use super::{Keys, PUBLIC_SECRET, advert, decode, group_text};
-use crate::crypto;
+use sdrmm_crypto as crypto;
 
 const SEED: [u8; 32] = [7; 32];
 
@@ -62,7 +62,7 @@ fn advert_round_trip_verifies_signature_and_location() {
     };
     assert_eq!(
         public_key,
-        crate::datalink::hex(&crypto::ed25519_keypair(&SEED))
+        sdrmm_crypto::hex_string(&crypto::ed25519_keypair(&SEED))
     );
     assert_eq!(timestamp, 1_700_000_000);
     assert_eq!(node_type, MeshcoreNodeType::Chat);
@@ -196,7 +196,7 @@ fn long_secret_channel_round_trip() {
     let secret: Vec<u8> = (1..=32).collect();
     let keys = Keys::new(&[LoraKey::MeshcoreChannel {
         name: "Ops".to_owned(),
-        secret: crate::datalink::hex(&secret),
+        secret: sdrmm_crypto::hex_string(&secret),
     }])
     .unwrap();
     let bytes = group_text(&secret, 1, "dave", "x".repeat(100).as_str());

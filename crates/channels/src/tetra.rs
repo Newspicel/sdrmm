@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, KindSpec, Modulation, SettingField, SignalSignature, SignalTrial};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod bits;
 pub(crate) mod burst;
@@ -37,12 +40,16 @@ fn tetra_trial() -> SignalTrial {
 }
 
 pub(crate) fn tetra_decoder() -> Native<TetraParams> {
-    Native::new::<TetraChannel>(|_| occupied_band())
+    let decoder = Native::new::<TetraChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .signatures(tetra_signatures)
         .trial(tetra_trial)
         .form(tetra_form)
-        .kinds(tetra_kinds)
+        .kinds(tetra_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn tetra_form() -> Vec<SettingField> {
@@ -54,13 +61,14 @@ fn tetra_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests;
 mod upper;
 
 use std::{f64::consts::FRAC_PI_4, sync::LazyLock};
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_modem::constellation::{Constellation, tables};
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, DvFrame, EventKind,
@@ -70,9 +78,8 @@ use self::{
     cell::Receiver,
     demod::{Demod, Dibit, INPUT_RATE_HZ, SYMBOL_RATE},
 };
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 pub(crate) const BANDWIDTH_HZ: f64 = 25_000.0;
@@ -112,11 +119,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-OCCUPIED_HZ / 2.0, OCCUPIED_HZ / 2.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(FILTER_TAPS, BANDWIDTH_HZ / 2.0 / INPUT_RATE_HZ),
-        1,
-    ))
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::lowpass(FILTER_TAPS, BANDWIDTH_HZ / 2.0)
 }
 
 impl NativeChannel for TetraChannel {
@@ -137,7 +141,7 @@ impl NativeChannel for TetraChannel {
     }
 }
 
-impl ChannelRx for TetraChannel {
+impl Channel for TetraChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         params(&settings)?;
         Ok(())

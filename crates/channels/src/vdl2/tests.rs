@@ -4,8 +4,8 @@ use xng_mode_vdl2::Vdl2ChannelDecoder;
 use super::avlc::{AddressType, encode_address};
 use super::modulate::{burst_iq, burst_iq_shaped};
 use super::*;
-use crate::testutil::{run_events, settings};
-use crate::xng_adapter;
+use sdrmm_decoder_test_support::xng;
+use sdrmm_decoder_test_support::{run_events, settings};
 
 struct Noise(u64);
 
@@ -24,8 +24,8 @@ impl Noise {
     }
 }
 
-pub(crate) fn fixture() -> crate::fixtures::Fixture {
-    crate::fixtures::Fixture::new(
+pub(crate) fn fixture() -> crate::builtin::fixtures::Fixture {
+    crate::builtin::fixtures::Fixture::new(
         ChannelParams::new("vdl2", &Vdl2Params::default()).expect("vdl2 settings"),
         padded(burst_iq(&[aoa_frame(), rr_frame()], RATE, 0.0, 0.5), 800),
     )
@@ -42,7 +42,7 @@ fn aoa_frame() -> Vec<u8> {
     f.extend(encode_address(AddressType::Aircraft, 0x800F5C, false, true));
     f.push(0x03);
     f.push(0xFF);
-    f.extend(crate::acars::block::build(
+    f.extend(sdrmm_aviation::acars::block::build(
         '2',
         "VT-ANB",
         None,
@@ -96,7 +96,7 @@ fn xid_frame() -> Vec<u8> {
 }
 
 fn cpdlc_frame() -> Vec<u8> {
-    let apdu = super::cpdlc::build_downlink_wilco_for_test();
+    let apdu = sdrmm_aviation::cpdlc::atn::build_downlink_wilco_for_test();
     let mut cotp = vec![0x04, 0xF0, 0x00, 0x01, 0x80];
     cotp.extend(apdu);
     let mut clnp = vec![0x81, 15, 1, 0x3F, 0x1C, 0x00, 0x00, 0x00, 0x00];
@@ -225,7 +225,7 @@ fn decodes_an_avlc_supervisory_frame() {
     let [event] = &events[..] else {
         panic!("one message expected: {events:?}");
     };
-    let message = crate::datalink::read(event, "vdl2").expect("a VDL2 message");
+    let message = sdrmm_decoder::link::read(event, "vdl2").expect("a VDL2 message");
     assert!(message.crc_ok);
     assert_eq!(message.message_type, "avlc-rr");
     assert_eq!(message.details["type"], "vdl2");
@@ -236,11 +236,11 @@ fn decode_xng(iq: &[Complex<f32>]) -> Vec<DataLinkMessage> {
     let mut out = Vec::new();
     for chunk in iq.chunks(1024) {
         for frame in decoder.process(chunk) {
-            out.push(xng_adapter::structured(&xng_mode_vdl2::to_message(
+            out.push(xng::structured(&xng_mode_vdl2::to_message(
                 &frame,
                 0,
                 decoder.level_dbfs(),
-                xng_adapter::provenance(),
+                xng::provenance(),
             )));
         }
     }
@@ -260,7 +260,7 @@ fn decode_channel(iq: &[Complex<f32>], decoder: Vdl2Decoder) -> Vec<DataLinkMess
         messages.extend(
             out.events
                 .drain(..)
-                .filter_map(|event| crate::datalink::read(&event, "vdl2")),
+                .filter_map(|event| sdrmm_decoder::link::read(&event, "vdl2")),
         );
     }
     messages
@@ -373,7 +373,8 @@ fn sweep_capture(seed: u64, noise: f32, bursts: usize) -> Vec<Complex<f32>> {
     iq.extend(vec![Complex::default(); 40_000]);
     Noise(seed).add(&mut iq, noise);
     let mut filtered = Vec::new();
-    channel_filter().process(&iq, &mut filtered);
+    sdrmm_decoder_test_support::built_filter(channel_filter(), super::RATE)
+        .process(&iq, &mut filtered);
     filtered
 }
 
@@ -409,7 +410,8 @@ fn stays_silent_on_noise() {
         let mut iq = vec![Complex::default(); 3_000_000];
         Noise(seed).add(&mut iq, noise);
         let mut filtered = Vec::new();
-        channel_filter().process(&iq, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(channel_filter(), super::RATE)
+            .process(&iq, &mut filtered);
         assert!(decode_ours(RATE, &filtered).is_empty(), "noise {noise}");
     }
 }

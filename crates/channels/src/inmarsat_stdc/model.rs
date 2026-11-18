@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
+use sdrmm_decoder::link::Region;
 use sdrmm_wire::LatLon;
 use sdrmm_wire::geo::wrap_180;
 use sdrmm_wire::present::Shape;
@@ -39,9 +40,8 @@ pub enum SeaArea {
     },
 }
 
-impl SeaArea {
-    #[must_use]
-    pub fn label(&self) -> String {
+impl Region for SeaArea {
+    fn label(&self) -> String {
         match self {
             Self::Rectangle { south_west, .. } => format!("Area {}", corner(*south_west)),
             Self::Circle { center, radius_nm } => {
@@ -55,8 +55,7 @@ impl SeaArea {
         }
     }
 
-    #[must_use]
-    pub fn center(&self) -> Option<LatLon> {
+    fn center(&self) -> Option<LatLon> {
         match self {
             Self::Rectangle {
                 south_west,
@@ -74,8 +73,7 @@ impl SeaArea {
         }
     }
 
-    #[must_use]
-    pub fn shapes(&self) -> Vec<Shape> {
+    fn shapes(&self) -> Vec<Shape> {
         match self {
             Self::Rectangle {
                 south_west,
@@ -187,9 +185,17 @@ mod model_tests {
     use sdrmm_wire::present::EventPayload;
     use sdrmm_wire::present::text;
 
+    fn sample() -> super::super::StdcMessage {
+        serde_json::from_value(serde_json::json!({
+            "message_type": "EGC", "station": " .D-AIBC ", "crc_ok": true,
+            "lat": 52.5, "lon": 13.4, "details": {},
+        }))
+        .expect("STD-C sample")
+    }
+
     #[test]
     fn an_addressed_sea_area_is_the_entity_place_and_shape() {
-        let mut link = crate::datalink::sample(serde_json::json!({}));
+        let mut link = sample();
         link.station = None;
         link.lat = None;
         link.lon = None;
@@ -203,7 +209,7 @@ mod model_tests {
 
     #[test]
     fn a_station_and_its_fix_win_over_the_area() {
-        let mut link = crate::datalink::sample(serde_json::json!({}));
+        let mut link = sample();
         link.area = Some(SeaArea::Navarea { number: 12 });
         let view = link.present(&EventKind::named("inmarsat_stdc"));
         assert_eq!(view.entity.as_deref(), Some(".D-AIBC"));

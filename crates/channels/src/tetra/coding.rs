@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use sdrmm_dsp::crc16_msb_bits;
+use sdrmm_dsp::{Prbs, PrbsSpec, Viterbi5, crc16_msb_bits};
 
 pub(crate) const CRC_POLY: u16 = 0x1021;
 pub(crate) const CRC_RESIDUE: u16 = 0x1D0F;
@@ -12,7 +12,6 @@ pub(crate) const SB1_SCRAMBLING: u32 = 3;
 
 pub(crate) const GENERATORS: [u8; MOTHER_RATE] = [0b1_0011, 0b1_1101, 0b1_0111, 0b1_1011];
 
-const STATES: usize = 16;
 const PUNCTURE_2_3: [usize; 4] = [0, 1, 2, 5];
 const PUNCTURE_PERIOD: usize = 8;
 const PUNCTURE_KEPT: usize = 3;
@@ -62,15 +61,18 @@ pub(crate) fn scrambling_code(mcc: u16, mnc: u16, colour: u8) -> u32 {
     seed << 2 | SB1_SCRAMBLING
 }
 
+/// Taps 32, 26, 23, 22, 16, 12, 11, 10, 8, 7, 5, 4, 2 and 1, each tap `t` at bit `t - 1`.
+const SCRAMBLER_TAPS: u32 = 0x8260_8EDB;
+
+/// The scrambling register loaded with `init`, its first stage in the top bit.
 pub(crate) fn scrambling_sequence(init: u32, out: &mut [bool]) {
-    let mut lfsr = init;
+    let mut lfsr = Prbs::new(PrbsSpec {
+        stages: 32,
+        taps: SCRAMBLER_TAPS,
+        seed: init.reverse_bits(),
+    });
     for bit in out {
-        let feedback = [32, 26, 23, 22, 16, 12, 11, 10, 8, 7, 5, 4, 2, 1]
-            .iter()
-            .fold(0, |acc, &tap| acc ^ lfsr >> (32 - tap))
-            & 1;
-        lfsr = lfsr >> 1 | feedback << 31;
-        *bit = feedback == 1;
+        *bit = lfsr.next_bit();
     }
 }
 
@@ -83,19 +85,16 @@ pub(crate) fn punctured_position(j: usize) -> usize {
     PUNCTURE_PERIOD * group + PUNCTURE_2_3[j - PUNCTURE_KEPT * group + 1] - 1
 }
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) fn conv_output(register: u8) -> [bool; MOTHER_RATE] {
     GENERATORS.map(|g| (register & g).count_ones() % 2 == 1)
 }
 
-static OUTPUTS: LazyLock<[[Soft; MOTHER_RATE]; 32]> = LazyLock::new(|| {
-    std::array::from_fn(|register| conv_output(register as u8).map(|bit| if bit { 1 } else { -1 }))
-});
-
 pub(crate) struct BlockDecoder {
     deinterleaved: [Soft; MAX_TYPE5_BITS],
     mother: [Soft; MAX_TYPE2_BITS * MOTHER_RATE],
-    decisions: [u16; MAX_TYPE2_BITS],
-    type2: [bool; MAX_TYPE2_BITS],
+    viterbi: Viterbi5,
+    type2: Vec<bool>,
 }
 
 impl BlockDecoder {
@@ -103,8 +102,8 @@ impl BlockDecoder {
         Self {
             deinterleaved: [0; MAX_TYPE5_BITS],
             mother: [0; MAX_TYPE2_BITS * MOTHER_RATE],
-            decisions: [0; MAX_TYPE2_BITS],
-            type2: [false; MAX_TYPE2_BITS],
+            viterbi: Viterbi5::with_polys(&GENERATORS),
+            type2: Vec::with_capacity(MAX_TYPE2_BITS),
         }
     }
 
@@ -130,54 +129,11 @@ impl BlockDecoder {
                 *slot = soft;
             }
         }
-        viterbi(
-            mother,
-            &mut self.decisions[..type2],
-            &mut self.type2[..type2],
-        );
+        self.type2.clear();
+        self.viterbi.decode_terminated(mother, &mut self.type2);
         let checked = &self.type2[..block.type1 + CRC_BITS];
         (crc16_msb_bits(CRC_POLY, 0xFFFF, checked) == CRC_RESIDUE)
             .then(|| &self.type2[..block.type1])
-    }
-}
-
-fn viterbi(mother: &[Soft], decisions: &mut [u16], out: &mut [bool]) {
-    let outputs = &*OUTPUTS;
-    let mut metrics = [i32::MIN / 4; STATES];
-    metrics[0] = 0;
-    let mut next = [0i32; STATES];
-    for (step, received) in mother.as_chunks::<MOTHER_RATE>().0.iter().enumerate() {
-        let received = received.map(i32::from);
-        let mut chosen = 0u16;
-        for (state, metric) in next.iter_mut().enumerate() {
-            let input = state & 1;
-            let mut best = (i32::MIN, false);
-            for high in [false, true] {
-                let previous = state >> 1 | usize::from(high) << 3;
-                let register = previous << 1 | input;
-                let branch: i32 = outputs[register]
-                    .iter()
-                    .zip(received)
-                    .map(|(&sign, r)| i32::from(sign) * r)
-                    .sum();
-                let candidate = metrics[previous].saturating_add(branch);
-                if candidate > best.0 {
-                    best = (candidate, high);
-                }
-            }
-            *metric = best.0;
-            chosen |= u16::from(best.1) << state;
-        }
-        if let Some(slot) = decisions.get_mut(step) {
-            *slot = chosen;
-        }
-        metrics = next;
-    }
-    let mut state = 0usize;
-    for step in (0..out.len()).rev() {
-        out[step] = state & 1 == 1;
-        let high = decisions[step] >> state & 1 == 1;
-        state = state >> 1 | usize::from(high) << 3;
     }
 }
 
@@ -252,6 +208,26 @@ pub(crate) fn rm_decode(word: u32) -> Option<(u16, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_scrambler_matches_its_right_shifting_register() {
+        for init in [SB1_SCRAMBLING, scrambling_code(262, 1010, 17), 0xDEAD_BEEF] {
+            let mut lfsr = init;
+            let expected: Vec<bool> = (0..600)
+                .map(|_| {
+                    let feedback = [32, 26, 23, 22, 16, 12, 11, 10, 8, 7, 5, 4, 2, 1]
+                        .iter()
+                        .fold(0, |acc, &tap| acc ^ lfsr >> (32 - tap))
+                        & 1;
+                    lfsr = lfsr >> 1 | feedback << 31;
+                    feedback == 1
+                })
+                .collect();
+            let mut bits = vec![false; 600];
+            scrambling_sequence(init, &mut bits);
+            assert_eq!(bits, expected, "init {init:#x}");
+        }
+    }
 
     fn encode(type2: &[bool]) -> Vec<bool> {
         let mut register = 0u8;

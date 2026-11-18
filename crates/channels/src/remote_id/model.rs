@@ -1,9 +1,7 @@
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, KindView, Symbol};
 use serde::{Deserialize, Serialize};
 
-use crate::ble::BLUETOOTH_BAND_RATE_HZ;
-use crate::ble::BLUETOOTH_CHANNEL_WIDTH_HZ;
-use crate::ble::BLUETOOTH_RATE_HZ;
+use sdrmm_modem::ble::{BAND_RATE_HZ, CHANNEL_SPACING_HZ, RATE_HZ};
 use sdrmm_wire::EventKind;
 
 use sdrmm_wire::labelled;
@@ -23,7 +21,7 @@ labelled! {
 
 mod fields;
 
-pub const WIDE_RATE_HZ: f64 = BLUETOOTH_BAND_RATE_HZ;
+pub const WIDE_RATE_HZ: f64 = BAND_RATE_HZ;
 
 pub const WIFI_CHANNEL_WIDTH_HZ: f64 = 20_000_000.0;
 
@@ -40,7 +38,7 @@ impl RemoteIdLink {
     #[must_use]
     pub fn input_rate_hz(self) -> f64 {
         match self {
-            Self::Bluetooth => BLUETOOTH_RATE_HZ,
+            Self::Bluetooth => RATE_HZ,
             Self::BluetoothBand | Self::Wifi => WIDE_RATE_HZ,
         }
     }
@@ -48,8 +46,8 @@ impl RemoteIdLink {
     #[must_use]
     pub fn bandwidth_hz(self) -> f64 {
         match self {
-            Self::Bluetooth => BLUETOOTH_CHANNEL_WIDTH_HZ,
-            Self::BluetoothBand => WIDE_RATE_HZ - BLUETOOTH_CHANNEL_WIDTH_HZ,
+            Self::Bluetooth => CHANNEL_SPACING_HZ,
+            Self::BluetoothBand => WIDE_RATE_HZ - CHANNEL_SPACING_HZ,
             Self::Wifi => WIFI_CHANNEL_WIDTH_HZ,
         }
     }
@@ -565,7 +563,7 @@ mod model_tests {
             },
         ];
         let frame = drone(messages, Some("1581F5FJD239C00DW22E"));
-        crate::testutil::assert_views_hold(
+        sdrmm_decoder_test_support::assert_views_hold(
             &remote_id_kind(),
             &[sdrmm_wire::DecoderEvent::of(&frame)],
         );

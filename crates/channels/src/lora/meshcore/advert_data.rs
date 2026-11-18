@@ -1,8 +1,8 @@
 use crate::lora::MeshcoreContent;
 use crate::lora::MeshcoreNodeType;
 
-use crate::crypto;
-use crate::datalink::hex;
+use sdrmm_crypto as crypto;
+use sdrmm_crypto::hex_string as hex;
 
 pub(super) const PUBLIC_KEY_LEN: usize = 32;
 pub(super) const SIGNATURE_LEN: usize = 64;

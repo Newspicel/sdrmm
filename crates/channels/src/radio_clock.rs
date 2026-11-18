@@ -1,17 +1,18 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, EventContract, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = 2_000.0;
@@ -59,18 +60,15 @@ pub struct RadioClockChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<RadioClockParams, ChannelError> {
-    crate::settings_of::<RadioClockParams>(settings)
+    sdrmm_decoder::settings_of::<RadioClockParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-100.0, 100.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, 100.0 / RATE),
-        1,
-    ))
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::lowpass(CHANNEL_TAPS, 100.0)
 }
 
 impl NativeChannel for RadioClockChannel {
@@ -99,7 +97,7 @@ impl NativeChannel for RadioClockChannel {
     }
 }
 
-impl ChannelRx for RadioClockChannel {
+impl Channel for RadioClockChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         if p.standard != self.standard || p.invert != self.invert {
@@ -718,12 +716,16 @@ fn radio_clock_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn radio_clock_decoder() -> Native<RadioClockParams> {
-    Native::new::<RadioClockChannel>(|_| occupied_band())
+    let decoder = Native::new::<RadioClockChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(77_500.0)
         .signatures(radio_clock_signatures)
         .form(radio_clock_form)
-        .kinds(radio_clock_kinds)
+        .kinds(radio_clock_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn radio_clock_form() -> Vec<SettingField> {
@@ -742,6 +744,8 @@ fn radio_clock_kinds() -> Vec<KindSpec> {
     vec![radio_clock_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
@@ -1112,7 +1116,8 @@ mod tests {
 
     fn off_air(bytes: &[u8]) -> Vec<Complex<f32>> {
         let mut filtered = Vec::new();
-        channel_filter().process(&crate::testutil::cf32_le(bytes), &mut filtered);
+        sdrmm_decoder_test_support::built_filter(channel_filter(), RATE)
+            .process(&sdrmm_decoder_test_support::cf32_le(bytes), &mut filtered);
         filtered
     }
 

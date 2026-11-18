@@ -14,7 +14,7 @@ use crate::lora::MeshtasticEncryption;
 use crate::lora::MeshtasticPacket;
 
 use self::content::Data;
-use crate::crypto::{self, Aes};
+use sdrmm_crypto::{self as crypto, Aes};
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use synth::{position, text};

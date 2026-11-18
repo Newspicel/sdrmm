@@ -1,14 +1,21 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod phasing;
 mod picture;
 pub(crate) fn wefax_decoder() -> Native<WefaxParams> {
-    Native::new::<WefaxChannel>(|_| occupied_band())
+    let decoder = Native::new::<WefaxChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .form(wefax_form)
-        .kinds(wefax_kinds)
+        .kinds(wefax_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn wefax_form() -> Vec<SettingField> {
@@ -26,26 +33,28 @@ fn wefax_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests;
 mod tones;
-mod track;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use phasing::{Lock, Phasing, Scan};
 use picture::Picture;
-use sdrmm_dsp::{FirC, FmDemod, design_lowpass};
+use sdrmm_dsp::FmDemod;
+use sdrmm_dsp::SampleHistory;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use tones::{Signal, ToneDetector, ToneKind};
-use track::Track;
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, DecodedImage,
-    NativeChannel, check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, DecodedImage, NativeChannel,
+    check_input_rate,
 };
 
 pub(crate) const INPUT_RATE_HZ: f64 = 12_000.0;
+const TRACK_CAPACITY: usize = 1 << 17;
 const FILTER_TAPS: usize = 127;
 
 pub(crate) const BLACK_HZ: f64 = 1_500.0;
@@ -77,18 +86,13 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (1_100.0, 2_700.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
+pub(crate) fn channel_filter() -> FilterSpec {
     let (low, high) = occupied_band();
-    let half = (high - low) / 2.0 / INPUT_RATE_HZ;
-    let center = f64::midpoint(high, low) / INPUT_RATE_HZ;
-    ChannelFilter::Sideband(FirC::from_lowpass(
-        &design_lowpass(FILTER_TAPS, half),
-        center,
-    ))
+    FilterSpec::band(FILTER_TAPS, low, high)
 }
 
 fn params(settings: &ChannelSettings) -> Result<WefaxParams, ChannelError> {
-    crate::settings_of::<WefaxParams>(settings)
+    sdrmm_decoder::settings_of::<WefaxParams>(settings)
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -108,7 +112,7 @@ fn samples(ms: f64, rate: f64) -> f64 {
 pub struct WefaxChannel {
     demod: FmDemod,
     freq: Vec<f32>,
-    track: Track,
+    track: SampleHistory,
     tones: ToneDetector,
     phasing: Phasing,
     picture: Picture,
@@ -282,7 +286,7 @@ impl WefaxChannel {
         }));
         out.video.push(picture.clone());
         out.images.push(DecodedImage {
-            source: SOURCE,
+            source: SOURCE.into(),
             mode: self.picture.label(),
             complete,
             lines,
@@ -306,7 +310,7 @@ impl NativeChannel for WefaxChannel {
         Ok(Self {
             demod: FmDemod::new(ctx.input_rate, 1.0),
             freq: Vec::with_capacity(WRITE_CHUNK),
-            track: Track::new(),
+            track: SampleHistory::new(TRACK_CAPACITY),
             tones: ToneDetector::new(ctx.input_rate),
             phasing: Phasing::new(),
             picture: Picture::empty(),
@@ -320,7 +324,7 @@ impl NativeChannel for WefaxChannel {
     }
 }
 
-impl ChannelRx for WefaxChannel {
+impl Channel for WefaxChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let next = params(&settings)?;
         if next.lpm != self.params.lpm {

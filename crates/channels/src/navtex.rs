@@ -1,21 +1,23 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use sdrmm_wire::{KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{BitSync, Decimator, FmDemod, RealDecimator, design_lowpass};
+use sdrmm_dsp::{BitSync, FmDemod, RealDecimator};
 #[cfg(any(test, feature = "synth"))]
 use sdrmm_modem::cpm::{CpmParams, Mapping};
 use sdrmm_modem::ita2::{self, ShiftDecoder};
 use sdrmm_modem::pulse::{self, Norm};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const BAUD: f64 = 100.0;
@@ -117,7 +119,7 @@ pub struct NavtexChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<NavtexParams, ChannelError> {
-    crate::settings_of::<NavtexParams>(settings)
+    sdrmm_decoder::settings_of::<NavtexParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -125,12 +127,9 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
+pub(crate) fn channel_filter() -> FilterSpec {
     let (_, half) = occupied_band();
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    ))
+    FilterSpec::lowpass(CHANNEL_TAPS, half)
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -172,7 +171,7 @@ impl NativeChannel for NavtexChannel {
     }
 }
 
-impl ChannelRx for NavtexChannel {
+impl Channel for NavtexChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let wanted = polarity(params(&settings)?);
         if wanted != self.polarity {
@@ -465,12 +464,16 @@ fn navtex_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn navtex_decoder() -> Native<NavtexParams> {
-    Native::new::<NavtexChannel>(|_| occupied_band())
+    let decoder = Native::new::<NavtexChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(518_000.0)
         .signatures(navtex_signatures)
         .form(navtex_form)
-        .kinds(navtex_kinds)
+        .kinds(navtex_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn navtex_form() -> Vec<SettingField> {
@@ -482,15 +485,14 @@ fn navtex_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
-    use crate::nfm::NfmParams;
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{
-        synth::{self, navtex::transmission},
-        testutil::{complex_noise, settings},
-    };
+    use crate::synth::{self, navtex::transmission};
+    use sdrmm_decoder_test_support::{complex_noise, settings};
 
     const RATE: f64 = 8_000.0;
     const BLOCKS: [usize; 7] = [997, 1, 4_096, 65, 2_048, 7, 1_024];
@@ -652,9 +654,10 @@ mod tests {
     #[test]
     fn decodes_through_additive_noise() {
         let mut iq = transmission(BROADCAST, RATE);
-        synth::add_noise(&mut iq, 0xabad_1dea, 0.5);
+        sdrmm_modem::synth::add_noise(&mut iq, 0xabad_1dea, 0.5);
         let mut filtered = Vec::new();
-        channel_filter().process(&iq, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(channel_filter(), DESCRIPTOR.input_rate_hz)
+            .process(&iq, &mut filtered);
         let messages = decode(&filtered);
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert_eq!(messages[0].text, "GALE WARNING\nGERMAN BIGHT");
@@ -662,7 +665,7 @@ mod tests {
 
     #[test]
     fn tracks_a_sample_clock_error_through_the_broadcast() {
-        let iq = synth::resample(&transmission(BROADCAST, RATE), RATE, RATE * 1.003);
+        let iq = sdrmm_modem::synth::resample(&transmission(BROADCAST, RATE), RATE, RATE * 1.003);
         let messages = decode(&iq);
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert_eq!(messages[0].text, "GALE WARNING\nGERMAN BIGHT");
@@ -691,7 +694,8 @@ mod tests {
             let noise = complex_noise(seed, 0.05, 240_000);
             assert_eq!(decode(&noise), Vec::new(), "seed {seed:#x} raw");
             let mut filtered = Vec::new();
-            channel_filter().process(&noise, &mut filtered);
+            sdrmm_decoder_test_support::built_filter(channel_filter(), DESCRIPTOR.input_rate_hz)
+                .process(&noise, &mut filtered);
             assert_eq!(decode(&filtered), Vec::new(), "seed {seed:#x} filtered");
         }
     }
@@ -706,7 +710,7 @@ mod tests {
     fn a_broadcast_cut_short_is_reported_incomplete() {
         let full = transmission(BROADCAST, RATE);
         let mut iq = full[..full.len() * 3 / 4].to_vec();
-        iq.extend(synth::silence((6.0 * RATE) as usize));
+        iq.extend(sdrmm_modem::synth::silence((6.0 * RATE) as usize));
         let messages = decode(&iq);
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert!(!messages[0].complete);
@@ -776,13 +780,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(NavtexParams::default());
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = NavtexChannel::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("nfm")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

@@ -1,5 +1,6 @@
 pub mod channel;
 pub mod dsss;
+pub mod mac;
 pub mod ofdm;
 mod receiver;
 mod scrambler;

@@ -1,4 +1,5 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
@@ -8,11 +9,10 @@ use std::{f64::consts::TAU, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::vor::{MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS};
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, datalink,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_wire::{MAX_NAVAID_REPORT_MS, MIN_NAVAID_REPORT_MS};
 
 const RATE: f64 = 48_000.0;
 const HALF_BANDWIDTH: f64 = 10_000.0;
@@ -52,15 +52,20 @@ fn params(settings: &ChannelSettings) -> Result<IlsParams, ChannelError> {
 }
 
 fn check_params(params: IlsParams) -> Result<(), ChannelError> {
-    datalink::check_navaid_report_ms(params.report_ms)
+    sdrmm_decoder::check_range(
+        "navaid report interval",
+        "ms",
+        params.report_ms,
+        MIN_NAVAID_REPORT_MS..=MAX_NAVAID_REPORT_MS,
+    )
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
 
 impl NativeChannel for IlsChannel {
@@ -75,7 +80,7 @@ impl NativeChannel for IlsChannel {
     }
 }
 
-impl ChannelRx for IlsChannel {
+impl Channel for IlsChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         check_params(params)?;
@@ -218,11 +223,13 @@ fn ils_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use std::time::Instant;
 
     use super::*;
-    use crate::testutil::{
+    use sdrmm_decoder_test_support::{
         THROUGHPUT_ATTEMPTS, fastest_seconds, realtime_budget, run_events, settings,
     };
     use sdrmm_wire::ChannelParams;

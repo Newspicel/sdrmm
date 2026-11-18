@@ -10,7 +10,7 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
-use sdrmm_channels::array_processor::{ArrayBlock, CalView, MAX_LANES, Pose, ResetCause};
+use sdrmm_array::{ArrayBlock, CalView, MAX_LANES, Pose, ResetCause};
 use sdrmm_device::{Latency, now_ns, schedule::claim};
 use sdrmm_dsp::IqDcBlocker;
 use sdrmm_wire::{ArrayOrientation, CalPhase, ProcessorGate, SyncState};

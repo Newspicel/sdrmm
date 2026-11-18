@@ -46,8 +46,11 @@
         },
         {
           "id": "df",
-          "kind": "df",
-          "data": {},
+          "kind": "processor",
+          "data": {
+            "processor_type": "df",
+            "settings": {}
+          },
           "position": {
             "x": 1040.0,
             "y": -360.0
@@ -55,8 +58,9 @@
         },
         {
           "id": "beam",
-          "kind": "beamformer",
+          "kind": "processor",
           "data": {
+            "processor_type": "beamformer",
             "settings": {
               "mode": "das"
             }

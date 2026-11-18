@@ -10,9 +10,9 @@ use super::{
     scrambling::Scrambling,
     *,
 };
-use crate::{
-    synth::tetrapol as tx,
-    testutil::{at_snr, cf32_le, complex_noise, frequency_shift, sample_clock_offset, settings},
+use crate::synth::tetrapol as tx;
+use sdrmm_decoder_test_support::{
+    at_snr, cf32_le, complex_noise, frequency_shift, sample_clock_offset, settings,
 };
 
 const RATE: f64 = INPUT_RATE_HZ;
@@ -43,7 +43,8 @@ fn channel(params: TetrapolParams) -> TetrapolChannel {
 fn run(params: TetrapolParams, iq: &[Complex<f32>]) -> (Vec<TetrapolMessage>, u32) {
     let mut channel = channel(params);
     let mut out = ChannelOutputs::default();
-    let mut filter = channel_filter();
+    let mut filter =
+        sdrmm_decoder_test_support::built_filter(channel_filter(), super::DESCRIPTOR.input_rate_hz);
     let mut filtered = Vec::new();
     for chunk in iq.chunks(2048) {
         filtered.clear();

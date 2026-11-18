@@ -9,11 +9,12 @@ use std::{
 
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
-use sdrmm_channels::array_processor::{
+use sdrmm_array::Params;
+use sdrmm_array::{
     ArrayBlock, ArrayProcessor, CalView, CorrectionView, MAX_LANES, Pose, ProcessorAction,
     ProcessorFaults, ResetCause, Steer,
 };
-use sdrmm_wire::{Coherence, ProcessorParams};
+use sdrmm_wire::Coherence;
 
 use super::{
     CorrectionSet, LiveFrame,
@@ -129,7 +130,7 @@ impl RetuneFrame {
 }
 
 pub(crate) enum BatchControl {
-    Apply(Box<ProcessorParams>),
+    Apply(Box<Params>),
     Retune(RetuneFrame),
     Reset(ResetCause),
     Steer(Steer),
@@ -335,7 +336,7 @@ impl BatchRunner {
         }
     }
 
-    pub(crate) fn apply(&mut self, params: Box<ProcessorParams>) -> Option<Box<ProcessorParams>> {
+    pub(crate) fn apply(&mut self, params: Box<Params>) -> Option<Box<Params>> {
         match self.send(BatchControl::Apply(params)) {
             Some(BatchControl::Apply(params)) => Some(params),
             _ => None,

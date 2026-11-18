@@ -6,7 +6,9 @@ use super::fields::{
     set_motion, set_position, steinhart_hart, unrolled_gps_week,
 };
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const BAUD: f64 = 9_616.0;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) const LEN_BYTE: u8 = 0x64;
 pub(crate) const TYPE_TRIMBLE: u8 = 0x9F;
 pub(crate) const TYPE_GTOP: u8 = 0xAF;

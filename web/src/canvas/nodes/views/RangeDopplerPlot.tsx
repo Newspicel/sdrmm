@@ -5,7 +5,7 @@ import { linearTicks, type PlotRect, plotRect } from "../../../components/plotFr
 import { type Colormap, gridCellAt } from "../../../gl/surface";
 import { recordEvent } from "../../../lib/diagnostics";
 import type { RangeDopplerFrame } from "../../../lib/frame";
-import { LIGHT_SPEED_M_S, RADAR_LIMITS } from "../../../lib/limits";
+import { LIGHT_SPEED_M_S, RANGE_DOPPLER_DB } from "../../../lib/limits";
 import type { ViewMark } from "../../../lib/types";
 import { useBoxSize } from "../../../lib/useBoxSize";
 import { useSurface } from "../../../lib/useSurface";
@@ -66,8 +66,8 @@ export function RangeDopplerPlot({
       <span className="absolute top-0.5 left-1/2 -translate-x-1/2">
         <ColourScale
           colormap={colormap}
-          min={axes?.dbMin ?? RADAR_LIMITS.surface_db.min}
-          max={axes?.dbMax ?? RADAR_LIMITS.surface_db.max}
+          min={axes?.dbMin ?? RANGE_DOPPLER_DB.min}
+          max={axes?.dbMax ?? RANGE_DOPPLER_DB.max}
           unit="dB"
         />
       </span>

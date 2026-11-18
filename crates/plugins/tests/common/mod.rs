@@ -16,6 +16,7 @@ pub const ARRAY_EXPORTS: &str = r#"(func (export "sdrmm_array_open") (param i32 
   (func (export "sdrmm_array_retune") (param i32 i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_array_reset") (param i32 i32))
   (func (export "sdrmm_array_input") (param i32 i32 i32) (result i32) i32.const 16384)
+  (func (export "sdrmm_array_context") (param i32) (result i32) i32.const 12288)
   (func (export "sdrmm_array_process") (param i32 i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_array_close") (param i32))"#;
 
@@ -60,7 +61,7 @@ pub fn wat_text(abi: u32, manifest: &str, process: &str, extra: &str) -> String 
   (func (export "sdrmm_open") (param f64 i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_apply") (param i32 i32 i32) (result i32) i32.const 0)
   (func (export "sdrmm_input") (param i32 i32) (result i32) i32.const 16384)
-  (func (export "sdrmm_process") (param i32 i32) (result i32)
+  (func (export "sdrmm_process") (param i32 i32 i32) (result i32)
     {process})
   (func (export "sdrmm_close") (param i32))
   {extra})"#,
@@ -69,4 +70,9 @@ pub fn wat_text(abi: u32, manifest: &str, process: &str, extra: &str) -> String 
         manifest_packed = (1024_i64 << 32) | manifest.len() as i64,
         reply_packed = (4096_i64 << 32) | REPLY.len() as i64,
     )
+}
+
+/// `bytes` as the body of a WAT data string.
+pub fn wat_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("\\{byte:02x}")).collect()
 }

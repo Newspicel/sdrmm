@@ -20,7 +20,7 @@ pub const ISM_BANDWIDTH_HZ: f64 = 240_000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IsmParams {
-    #[serde(default = "crate::default_true")]
+    #[serde(default = "sdrmm_decoder::default_true")]
     pub unknown: bool,
 }
 

@@ -2,7 +2,9 @@
 //! HDLC frames. AX.25 and the Benshi BSS chat protocol both ride on it.
 
 mod afsk;
+pub mod ax25;
 mod g3ruh;
+mod keyer;
 mod lane;
 mod receiver;
 mod recent;
@@ -10,6 +12,7 @@ mod synth;
 #[cfg(test)]
 mod tests;
 
+pub use keyer::{Keyer, Line};
 pub use receiver::{PacketMode, PacketReceiver};
 pub use recent::RecentFrames;
 pub use synth::afsk_burst;

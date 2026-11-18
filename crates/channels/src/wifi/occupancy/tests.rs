@@ -1,16 +1,13 @@
-use crate::NativeChannel;
-use crate::airtime::AirtimeSpan;
-use crate::airtime::WifiOccupancyParams;
-use crate::airtime::WifiOccupancyReport;
+use crate::wifi::{WifiOccupancyParams, WifiOccupancyReport};
+use sdrmm_decoder::NativeChannel;
+use sdrmm_wire::AirtimeSpan;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::WifiOccupancyChannel;
-use crate::{
-    ChannelCtx,
-    airtime::scene::Scene,
-    synth::{self, ism::wifi_frame},
-    testutil::settings,
-};
+use sdrmm_decoder::ChannelCtx;
+use sdrmm_decoder_test_support::scene::Scene;
+use sdrmm_decoder_test_support::settings;
+use sdrmm_modem::wifi::transmit::filler_frame as wifi_frame;
 
 const CHANNEL_6_HZ: f64 = 2_437e6;
 
@@ -75,7 +72,7 @@ fn silence_from_a_squelch_is_not_measured() {
 #[test]
 fn a_forty_megahertz_window_splits_load_by_channel() {
     let rate = AirtimeSpan::Mhz40.sample_rate_hz();
-    let frame = synth::resample(&wifi_frame(300), 20e6, rate);
+    let frame = sdrmm_modem::synth::resample(&wifi_frame(300), 20e6, rate);
     let on_s = frame.len() as f64 / rate;
     let mut scene = Scene::new(rate, 0.01);
     scene.every(on_s / 0.5, 1.01, -10e6, 0.1, &frame);

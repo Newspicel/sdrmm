@@ -1,4 +1,3 @@
-use crate::NativeChannel;
 use crate::lora::LoraBandwidth;
 use crate::lora::LoraCodingRate;
 use crate::lora::LoraFrame;
@@ -14,14 +13,13 @@ use crate::lora::MeshcoreNodeType;
 use crate::lora::MeshtasticContent;
 use crate::lora::MeshtasticEncryption;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{LoraChannel, input_rate, lorawan, meshcore, meshtastic};
-use crate::{
-    ChannelCtx, ChannelError, ChannelOutputs, ChannelRx, channel_filter,
-    synth::lora::LoraWaveform,
-    testutil::{cf32_le, settings},
-};
+use crate::synth::lora::LoraWaveform;
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, channel_filter};
+use sdrmm_decoder_test_support::{cf32_le, settings};
 
 fn frames(params: &LoraParams, iq: &[Complex<f32>]) -> Vec<LoraFrame> {
     frames_at(params, 0.0, iq)
@@ -59,8 +57,8 @@ fn on_air(waveform: &LoraWaveform, payload: &[u8]) -> Vec<Complex<f32>> {
     let mut iq = vec![Complex::new(0.0, 0.0); (0.02 * rate) as usize];
     iq.extend(waveform.frame_at(payload, rate, 0.37e-6));
     iq.resize(iq.len() + (0.2 * rate) as usize, Complex::new(0.0, 0.0));
-    crate::synth::shift(&mut iq, 1_200.0, rate);
-    crate::synth::add_noise(&mut iq, 11, 0.5);
+    sdrmm_modem::synth::shift(&mut iq, 1_200.0, rate);
+    sdrmm_modem::synth::add_noise(&mut iq, 11, 0.5);
     iq
 }
 
@@ -88,7 +86,7 @@ fn the_gr_lora_sdr_transmitter_output_decodes_bit_exact() {
     ));
     iq.resize(iq.len() + 20_000, Complex::new(0.0, 0.0));
     let found = frames(&LoraParams::default(), &iq);
-    let expected = crate::datalink::hex(b"sdrflex lora fixture");
+    let expected = sdrmm_crypto::hex_string(b"sdrflex lora fixture");
     assert_eq!(found.len(), 2, "{found:?}");
     for frame in &found {
         assert_eq!(frame.payload, expected);
@@ -228,7 +226,7 @@ fn a_lorawan_uplink_decrypts_with_its_session_keys() {
     let nwk_s_key = [0x44; 16];
     let app_s_key = [0xec; 16];
     let packet = lorawan::uplink(0x2601_1bda, 7, 10, b"21.5C", &nwk_s_key, &app_s_key, false);
-    let hex = |key: &[u8; 16]| crate::datalink::hex(key);
+    let hex = |key: &[u8; 16]| sdrmm_crypto::hex_string(key);
     let params = LoraParams {
         spreading_factor: LoraSpreadingFactor::Sf9,
         keys: vec![LoraKey::LorawanSession {
@@ -270,7 +268,7 @@ fn a_raw_protocol_leaves_the_payload_undecoded() {
     let found = frames(&params, &on_air(&waveform, &packet));
     assert_eq!(found.len(), 1);
     assert!(found[0].decoded.is_none());
-    assert_eq!(found[0].payload, crate::datalink::hex(&packet));
+    assert_eq!(found[0].payload, sdrmm_crypto::hex_string(&packet));
 }
 
 #[test]

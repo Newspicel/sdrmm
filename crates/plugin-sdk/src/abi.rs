@@ -1,42 +1,53 @@
-//! The guest side of the plugin ABI: [`crate::export!`] instantiates the part every plugin has,
-//! [`crate::export_decoder!`] the decoder's.
+//! The guest side of the plugin ABI, instantiated by [`crate::export!`]: it moves bytes between
+//! the host and guest memory and hands each call to [`Parts`].
 //!
 //! Every buffer the host reads stays owned by a `Vec` here until the next call, so the host only
 //! ever reads memory the guest still holds.
 
-use std::{any::Any, cell::RefCell, collections::HashMap};
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::HashMap,
+    sync::OnceLock,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use num_complex::Complex;
-use sdrmm_wire::plugin::{Op, OutputHeader, PresentRequest, Reply, pack};
-use serde::Serialize;
+use sdrmm_decoder::{Channel, ChannelOutputs};
+use sdrmm_wire::{
+    PositionFix,
+    plugin::{OutputHeader, Reply, pack, process::WANT_SYMBOLS},
+};
 
-use crate::{Decoder, Outputs, Plugin, settings};
+use crate::{
+    Parts, Plugin,
+    guest::{json, parse},
+    output::{OutputWire, address, len_u32},
+};
 
 pub mod encoder;
 pub mod processor;
 
-struct Slot<D> {
-    decoder: D,
+struct ChannelSlot {
+    channel: Box<dyn Channel>,
     input: Vec<Complex<f32>>,
-    out: Outputs,
-    events: Vec<u8>,
-    status: Vec<u8>,
+    out: ChannelOutputs,
+    wire: OutputWire,
     header: [u8; OutputHeader::BYTES],
 }
+
+static PARTS: OnceLock<Parts> = OnceLock::new();
 
 thread_local! {
     static BUFFERS: RefCell<HashMap<u32, Vec<u8>>> = RefCell::new(HashMap::new());
     static REPLY: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static ERROR: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-    static CHANNELS: RefCell<Vec<Option<Box<dyn Any>>>> = const { RefCell::new(Vec::new()) };
+    static SLOTS: RefCell<Vec<Option<Box<dyn Any>>>> = const { RefCell::new(Vec::new()) };
 }
 
-fn address<T>(slice: &[T]) -> u32 {
-    slice.as_ptr() as usize as u32
-}
-
-fn len_u32(len: usize) -> u32 {
-    u32::try_from(len).unwrap_or(u32::MAX)
+/// What plugin `P` brings, built on first use.
+pub fn parts<P: Plugin>() -> &'static Parts {
+    PARTS.get_or_init(Parts::of::<P>)
 }
 
 pub fn alloc(len: u32) -> u32 {
@@ -49,7 +60,7 @@ pub fn alloc(len: u32) -> u32 {
     ptr
 }
 
-fn take(ptr: u32, len: u32) -> Vec<u8> {
+pub(crate) fn take(ptr: u32, len: u32) -> Vec<u8> {
     let mut buffer = BUFFERS
         .with_borrow_mut(|buffers| buffers.remove(&ptr))
         .unwrap_or_default();
@@ -63,159 +74,144 @@ fn reply(bytes: Vec<u8>) -> i64 {
     packed
 }
 
-fn json(value: &impl Serialize) -> Vec<u8> {
-    serde_json::to_vec(value).unwrap_or_else(|error| {
-        serde_json::to_vec(&Reply::<()>::Err(error.to_string())).unwrap_or_default()
-    })
-}
-
-fn fail(error: &str) -> i32 {
+pub(crate) fn fail(error: &str) -> i32 {
     ERROR.set(error.as_bytes().to_vec());
     -1
+}
+
+pub(crate) fn answer(result: Result<(), String>) -> i32 {
+    match result {
+        Ok(()) => 0,
+        Err(error) => fail(&error),
+    }
 }
 
 pub fn error() -> i64 {
     ERROR.with_borrow(|error| pack(address(error), len_u32(error.len())))
 }
 
-pub fn manifest<P: Plugin>() -> i64 {
-    reply(json(&P::manifest()))
+pub fn manifest(parts: &Parts) -> i64 {
+    reply(json(&parts.manifest()))
 }
 
-pub fn present<P: Plugin>(ptr: u32, len: u32) -> i64 {
-    let bytes = take(ptr, len);
-    reply(json(&Reply::from(
-        serde_json::from_slice::<PresentRequest>(&bytes)
-            .map_err(|error| error.to_string())
-            .and_then(|request| P::present(&request.kind, &request.data)),
-    )))
+pub fn present(parts: &Parts, ptr: u32, len: u32) -> i64 {
+    reply(json(&Reply::from(parts.present(&take(ptr, len)))))
 }
 
-pub fn call<D: Decoder>(op: i32, ptr: u32, len: u32) -> i64 {
-    let bytes = take(ptr, len);
-    let answer = match Op::from_code(op) {
-        Some(Op::Layout) => json(&Reply::from(
-            settings::<D::Settings>(&bytes).map(|s| D::layout(&s)),
-        )),
-        Some(Op::Normalize) => json(&Reply::from(
-            settings::<D::Settings>(&bytes)
-                .and_then(|s| serde_json::to_value(s).map_err(|error| error.to_string())),
-        )),
-        None => json(&Reply::<()>::Err(format!("unknown op {op}"))),
-    };
-    reply(answer)
+pub fn call(parts: &Parts, op: i32, ptr: u32, len: u32) -> i64 {
+    reply(parts.call(op, &take(ptr, len)))
 }
 
-pub fn open<D: Decoder + 'static>(rate: f64, ptr: u32, len: u32) -> i32 {
-    let opened = settings::<D::Settings>(&take(ptr, len)).and_then(|s| D::open(rate, s));
-    match opened {
-        Ok(decoder) => store(Slot {
-            decoder,
+pub(crate) fn store<T: 'static>(slot: T) -> i32 {
+    SLOTS.with_borrow_mut(|slots| {
+        let boxed: Box<dyn Any> = Box::new(slot);
+        let index = if let Some(free) = slots.iter().position(Option::is_none) {
+            slots[free] = Some(boxed);
+            free
+        } else {
+            slots.push(Some(boxed));
+            slots.len() - 1
+        };
+        i32::try_from(index).unwrap_or(-1)
+    })
+}
+
+pub(crate) fn with_stored<T: 'static, R>(handle: i32, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+    let index = usize::try_from(handle).ok()?;
+    SLOTS.with_borrow_mut(|slots| {
+        let slot = slots.get_mut(index)?.as_mut()?.downcast_mut::<T>()?;
+        Some(f(slot))
+    })
+}
+
+fn with_channel<R>(handle: i32, f: impl FnOnce(&mut ChannelSlot) -> R) -> Option<R> {
+    with_stored::<ChannelSlot, R>(handle, f)
+}
+
+pub fn open(parts: &Parts, rate: f64, ptr: u32, len: u32) -> i32 {
+    match parts.open(rate, &take(ptr, len)) {
+        Ok(channel) => store(ChannelSlot {
+            channel,
             input: Vec::new(),
-            out: Outputs::default(),
-            events: Vec::new(),
-            status: Vec::new(),
+            out: ChannelOutputs::default(),
+            wire: OutputWire::default(),
             header: [0; OutputHeader::BYTES],
         }),
         Err(error) => fail(&error),
     }
 }
 
-fn store<T: 'static>(slot: T) -> i32 {
-    CHANNELS.with_borrow_mut(|channels| {
-        let boxed: Box<dyn Any> = Box::new(slot);
-        let index = match channels.iter().position(Option::is_none) {
-            Some(free) => {
-                channels[free] = Some(boxed);
-                free
-            }
-            None => {
-                channels.push(Some(boxed));
-                channels.len() - 1
-            }
-        };
-        i32::try_from(index).unwrap_or(-1)
-    })
-}
-
-fn with_stored<T: 'static, R>(handle: i32, f: impl FnOnce(&mut T) -> R) -> Option<R> {
-    let index = usize::try_from(handle).ok()?;
-    CHANNELS.with_borrow_mut(|channels| {
-        let slot = channels.get_mut(index)?.as_mut()?.downcast_mut::<T>()?;
-        Some(f(slot))
-    })
-}
-
-fn with_slot<D: 'static, R>(handle: i32, f: impl FnOnce(&mut Slot<D>) -> R) -> Option<R> {
-    with_stored::<Slot<D>, R>(handle, f)
-}
-
-pub fn apply<D: Decoder + 'static>(handle: i32, ptr: u32, len: u32) -> i32 {
-    let applied = settings::<D::Settings>(&take(ptr, len)).and_then(|s| {
-        with_slot::<D, _>(handle, |slot| slot.decoder.apply(s))
-            .unwrap_or(Err(format!("no channel {handle}")))
+pub fn apply(handle: i32, ptr: u32, len: u32) -> i32 {
+    let applied = parse(&take(ptr, len)).and_then(|settings| {
+        with_channel(handle, |slot| {
+            slot.channel
+                .apply(settings)
+                .map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|| Err(format!("no channel {handle}")))
     });
-    match applied {
-        Ok(()) => 0,
-        Err(error) => fail(&error),
-    }
+    answer(applied)
 }
 
-pub fn input<D: Decoder + 'static>(handle: i32, samples: u32) -> u32 {
-    with_slot::<D, _>(handle, |slot| {
+pub fn input(handle: i32, samples: u32) -> u32 {
+    with_channel(handle, |slot| {
         slot.input.resize(samples as usize, Complex::new(0.0, 0.0));
         address(&slot.input)
     })
     .unwrap_or(0)
 }
 
-pub fn process<D: Decoder + 'static>(handle: i32, samples: u32) -> u32 {
-    with_slot::<D, _>(handle, |slot| {
-        slot.out.clear();
+pub fn process(handle: i32, samples: u32, flags: u32) -> u32 {
+    with_channel(handle, |slot| {
+        slot.out.reset();
+        slot.out.symbols.set_wanted(flags & WANT_SYMBOLS != 0);
         let n = (samples as usize).min(slot.input.len());
-        slot.decoder.process(&slot.input[..n], &mut slot.out);
-        encode(slot)
+        slot.channel.process(&slot.input[..n], &mut slot.out);
+        let header = slot
+            .wire
+            .encode(&slot.out, slot.channel.rejected(), slot.channel.skipped());
+        slot.header = header.to_bytes();
+        address(&slot.header)
     })
     .unwrap_or(0)
 }
 
-fn encode<D>(slot: &mut Slot<D>) -> u32 {
-    slot.events.clear();
-    if !slot.out.events.is_empty()
-        && serde_json::to_writer(&mut slot.events, &slot.out.events).is_err()
-    {
-        slot.events.clear();
-        slot.out.skipped = slot.out.skipped.saturating_add(1);
-    }
-    slot.status.clear();
-    if let Some(status) = &slot.out.status
-        && serde_json::to_writer(&mut slot.status, status).is_err()
-    {
-        slot.status.clear();
-    }
-    slot.header = OutputHeader {
-        audio_ptr: address(&slot.out.audio),
-        audio_len: len_u32(slot.out.audio.len()),
-        audio_rate: slot.out.audio_rate,
-        events_ptr: address(&slot.events),
-        events_len: len_u32(slot.events.len()),
-        status_ptr: address(&slot.status),
-        status_len: len_u32(slot.status.len()),
-        rejected: slot.out.rejected,
-        skipped: slot.out.skipped,
-    }
-    .to_bytes();
-    address(&slot.header)
+pub fn retuned(handle: i32) {
+    with_channel(handle, |slot| slot.channel.retuned());
 }
 
-pub fn retuned<D: Decoder + 'static>(handle: i32) {
-    with_slot::<D, _>(handle, |slot| slot.decoder.retuned());
+pub fn position(handle: i32, ptr: u32, len: u32) {
+    let Ok(fix) = parse::<Option<PositionFix>>(&take(ptr, len)) else {
+        return;
+    };
+    with_channel(handle, |slot| slot.channel.position_changed(fix.as_ref()));
+}
+
+pub fn clock(handle: i32, unix_ns: i64) {
+    let since = Duration::from_nanos(unix_ns.unsigned_abs());
+    let time = if unix_ns >= 0 {
+        UNIX_EPOCH.checked_add(since)
+    } else {
+        UNIX_EPOCH.checked_sub(since)
+    };
+    if let Some(time) = time {
+        with_channel(handle, |slot| slot.channel.captured_at(time));
+    }
+}
+
+pub fn lo_artifact(handle: i32, offset_hz: f64) {
+    let at = (!offset_hz.is_nan()).then_some(offset_hz);
+    with_channel(handle, |slot| slot.channel.lo_artifact_at(at));
+}
+
+pub fn gated(handle: i32) -> i32 {
+    with_channel(handle, |slot| i32::from(slot.channel.needs_gated_input())).unwrap_or(1)
 }
 
 pub fn close(handle: i32) {
     if let Ok(index) = usize::try_from(handle) {
-        CHANNELS.with_borrow_mut(|channels| {
-            if let Some(slot) = channels.get_mut(index) {
+        SLOTS.with_borrow_mut(|slots| {
+            if let Some(slot) = slots.get_mut(index) {
                 *slot = None;
             }
         });

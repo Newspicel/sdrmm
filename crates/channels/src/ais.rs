@@ -1,17 +1,19 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, bits_be, design_lowpass};
+use sdrmm_dsp::bits_be;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 mod burst;
@@ -52,7 +54,7 @@ pub struct AisChannelRx {
 }
 
 fn params(settings: &ChannelSettings) -> Result<AisParams, ChannelError> {
-    crate::settings_of::<AisParams>(settings)
+    sdrmm_decoder::settings_of::<AisParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
@@ -60,12 +62,9 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
+pub(crate) fn channel_filter() -> FilterSpec {
     let (_, half) = occupied_band();
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, half / DESCRIPTOR.input_rate_hz),
-        1,
-    ))
+    FilterSpec::lowpass(CHANNEL_TAPS, half)
 }
 
 impl NativeChannel for AisChannelRx {
@@ -84,7 +83,7 @@ impl NativeChannel for AisChannelRx {
     }
 }
 
-impl ChannelRx for AisChannelRx {
+impl Channel for AisChannelRx {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         self.letter = p.ais_channel.letter();
@@ -264,13 +263,17 @@ fn ais_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn ais_decoder() -> Native<AisParams> {
-    Native::new::<AisChannelRx>(|_| occupied_band())
+    let decoder = Native::new::<AisChannelRx>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(161_975_000.0)
         .signatures(ais_signatures)
         .trial(ais_trial)
         .form(ais_form)
-        .kinds(ais_kinds)
+        .kinds(ais_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn ais_form() -> Vec<SettingField> {
@@ -285,22 +288,19 @@ fn ais_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
-    use crate::am::AmParams;
+    use sdrmm_dsp::{Decimator, design_lowpass};
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{
-        synth::{
-            add_noise,
-            ais::{
-                PositionReport, burst, class_b_payload, corrupted_burst, position_payload,
-                static_data_payloads, static_payload,
-            },
-            shift, silence,
-        },
-        testutil::settings,
+    use crate::synth::ais::{
+        PositionReport, burst, class_b_payload, corrupted_burst, position_payload,
+        static_data_payloads, static_payload,
     };
+    use sdrmm_decoder_test_support::settings;
+    use sdrmm_modem::synth::{add_noise, shift, silence};
 
     const RATE: f64 = 48_000.0;
 
@@ -385,7 +385,7 @@ mod tests {
     }
 
     fn select(iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
-        let mut filter = crate::channel_filter(
+        let mut filter = sdrmm_decoder::channel_filter(
             &ChannelParams::new("ais", &AisParams::default()).expect("ais settings"),
         )
         .unwrap();
@@ -672,13 +672,11 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(AisChannel::A);
-        let err = chan.apply(settings(
-            ChannelParams::new("am", &AmParams::default()).expect("am settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("am")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = AisChannelRx::new(
             ChannelCtx { input_rate: RATE },
-            settings(ChannelParams::new("am", &AmParams::default()).expect("am settings")),
+            settings(ChannelParams::bare("am")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

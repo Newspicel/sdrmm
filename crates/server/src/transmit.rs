@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use sdrmm_channels::encoder::EncoderParams;
+use sdrmm_decoder::encoder::EncoderParams;
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload, TransmitRequest, TransmitSource};
 use sdrmm_wire::{
     AUDIO_PORT, BASEBAND_PORT, IQ_PORT, NodeBody, NodeProblem, ProblemSource, TRANSMIT_PORT,

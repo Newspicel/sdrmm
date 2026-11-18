@@ -89,7 +89,7 @@ impl Images {
             channel: capture.channel,
             at: capture.at.clone(),
             freq_hz: capture.freq_hz,
-            source: capture.source.to_owned(),
+            source: capture.source.to_string(),
             mode: capture.mode.clone(),
             width: capture.picture.width,
             height: capture.picture.height,
@@ -247,7 +247,7 @@ fn store(capture: &ImageCapture, state: &crate::AppState) {
     let resolved = state.resolved.current();
     let Some(route) = route(&resolved.patch, capture) else {
         tracing::error!(
-            source = capture.source,
+            source = %capture.source,
             "a picture came from a channel no node owns"
         );
         return;
@@ -261,7 +261,7 @@ fn store(capture: &ImageCapture, state: &crate::AppState) {
     if let Err(error) = &png {
         tracing::error!(
             error,
-            source = capture.source,
+            source = %capture.source,
             "a captured picture was lost"
         );
     }
@@ -397,7 +397,7 @@ mod tests {
             channel: 2,
             at: "2026-08-16T10:00:00Z".to_owned(),
             freq_hz: 14_230_000.0,
-            source: "sstv",
+            source: "sstv".into(),
             mode: "Martin M1".to_owned(),
             complete: true,
             lines: height,

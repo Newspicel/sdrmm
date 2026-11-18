@@ -229,7 +229,8 @@ mod tests {
     use sdrmm_dsp::FmDemod;
 
     use super::*;
-    use crate::{synth, testutil::complex_noise};
+    use crate::synth;
+    use sdrmm_decoder_test_support::complex_noise;
 
     const RATE: f64 = 12_000.0;
 
@@ -251,7 +252,7 @@ mod tests {
     fn each_start_tone_names_its_index_of_cooperation() {
         for ioc in WefaxIoc::ALL {
             let mut iq = synth::wefax::start_signal(ioc, 3_000.0, RATE);
-            iq.extend(synth::silence(12_000));
+            iq.extend(sdrmm_modem::synth::silence(12_000));
             let (signals, _) = listen(&iq);
             assert!(
                 matches!(
@@ -270,7 +271,11 @@ mod tests {
     fn noise_is_neither_a_tone_nor_a_carrier() {
         let noise = complex_noise(0x5eed_1234, 0.4, 120_000);
         let mut filtered = Vec::new();
-        super::super::channel_filter().process(&noise, &mut filtered);
+        sdrmm_decoder_test_support::built_filter(
+            super::super::channel_filter(),
+            super::super::INPUT_RATE_HZ,
+        )
+        .process(&noise, &mut filtered);
         let (signals, outage) = listen(&filtered);
         assert!(signals.is_empty(), "noise heard as {signals:?}");
         assert_eq!(outage, Some(0));

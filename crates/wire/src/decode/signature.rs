@@ -20,8 +20,22 @@ const WEIGHT_DEVIATION: f32 = 1.5;
 const WEIGHT_BURST: f32 = 1.5;
 const WEIGHT_SYMBOL_LENGTH: f32 = 2.0;
 
+const SYNCED_BANDWIDTH_FRACTION: f64 = 0.35;
+const SYNCED_SYMBOL_RATE_FRACTION: f64 = 0.05;
+const SYNCED_DEVIATION_FRACTION: f64 = 0.3;
+
 const ALLOCATION_SKIRT_FRACTION: f64 = 0.05;
 const ALLOCATION_MIN_SKIRT_HZ: f64 = 1_000.0;
+
+/// Land mobile radio in VHF, UHF and the 800 MHz band.
+pub const LAND_MOBILE: &[HzRange] = &[
+    HzRange::mhz(136.0, 174.0),
+    HzRange::mhz(400.0, 470.0),
+    HzRange::mhz(769.0, 870.0),
+];
+
+/// The 2 m and 70 cm amateur bands.
+pub const AMATEUR_VU: &[HzRange] = &[HzRange::mhz(144.0, 148.0), HzRange::mhz(430.0, 450.0)];
 
 /// Every modulation a heard signal can be classified as.
 pub const ANY_MODULATION: &[Modulation] = &[
@@ -132,6 +146,55 @@ fn unit_prior() -> f32 {
     1.0
 }
 
+/// The frequency pulse a keyed FSK signal is shaped with.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case", tag = "shape")]
+pub enum SyncPulse {
+    /// Root raised cosine 4FSK on the dibit levels +1, +3, -1, -3, with roll-off `alpha`.
+    C4fm { alpha: f64 },
+    /// Gaussian 2FSK: `pulse_span` symbols of transmit pulse, `matched_span` of receive filter.
+    Gaussian {
+        bt: f64,
+        pulse_span: usize,
+        matched_span: usize,
+    },
+}
+
+impl SyncPulse {
+    #[must_use]
+    pub const fn modulation(self) -> Modulation {
+        match self {
+            Self::C4fm { .. } => Modulation::Fsk4,
+            Self::Gaussian { .. } => Modulation::Fsk2,
+        }
+    }
+}
+
+/// A frame sync word Signal ID searches a keyed FSK signal's symbols for, so a match is proven
+/// by the framing and not only by the waveform.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct FrameSync {
+    pub symbol_rate_hz: f64,
+    pub deviation_hz: f64,
+    pub pulse: SyncPulse,
+    /// Sync word length.
+    pub bits: u32,
+    /// Bit errors a sync word may carry and still count.
+    pub tolerance: u32,
+    pub patterns: Vec<u64>,
+    /// Sync words a search window must hold before the signal counts as found.
+    pub min_hits: u32,
+}
+
+/// A chirp spread spectrum family Signal ID dechirps a sweeping signal against: the sweep
+/// widths and the spreading factors, chips per symbol as a power of two, it may use.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ChirpSweep {
+    pub bandwidths_hz: Vec<f64>,
+    pub min_spreading_factor: u8,
+    pub max_spreading_factor: u8,
+}
+
 /// One way a decoder's signal shows on the air.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SignalSignature {
@@ -157,6 +220,10 @@ pub struct SignalSignature {
     #[serde(default = "unit_prior")]
     pub prior: f32,
     pub why: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<FrameSync>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chirp: Option<ChirpSweep>,
 }
 
 impl SignalSignature {
@@ -174,7 +241,39 @@ impl SignalSignature {
             frequencies: Vec::new(),
             prior: unit_prior(),
             why: why.to_owned(),
+            sync: None,
+            chirp: None,
         }
+    }
+
+    /// A keyed FSK signal known by its frame sync: its width, rates and shape come from the
+    /// waveform the sync is keyed on.
+    #[must_use]
+    pub fn synced(name: &str, bandwidth_hz: f64, sync: FrameSync) -> Self {
+        Self::new(
+            name,
+            &[sync.pulse.modulation()],
+            HzRange::about(bandwidth_hz, SYNCED_BANDWIDTH_FRACTION),
+            "matches the mode's channel width, symbol rate and deviation",
+        )
+        .symbol_rate(HzRange::about(
+            sync.symbol_rate_hz,
+            SYNCED_SYMBOL_RATE_FRACTION,
+        ))
+        .deviation(HzRange::about(sync.deviation_hz, SYNCED_DEVIATION_FRACTION))
+        .frame_sync(sync)
+    }
+
+    #[must_use]
+    pub fn frame_sync(mut self, sync: FrameSync) -> Self {
+        self.sync = Some(sync);
+        self
+    }
+
+    #[must_use]
+    pub fn chirp(mut self, sweep: ChirpSweep) -> Self {
+        self.chirp = Some(sweep);
+        self
     }
 
     #[must_use]
@@ -239,6 +338,24 @@ impl SignalSignature {
     /// offering.
     #[must_use]
     pub fn matched(&self, measure: &SignalMeasure) -> Option<ProtocolMatch> {
+        let (score, inside) = self.score(measure)?;
+        Some(ProtocolMatch {
+            name: self.name.clone(),
+            type_id: None,
+            score,
+            confirmed: false,
+            why: if inside {
+                format!("{}, inside its allocation", self.why)
+            } else {
+                self.why.clone()
+            },
+        })
+    }
+
+    /// The score [`Self::matched`] gives, and whether the dial sits inside the allocation,
+    /// without building the match.
+    #[must_use]
+    pub fn score(&self, measure: &SignalMeasure) -> Option<(f32, bool)> {
         let (total, weight) = self.waveform_score(measure)?;
         let allocation = measure
             .frequency_hz
@@ -252,17 +369,7 @@ impl SignalSignature {
             (None, true) => 1.0,
         };
         let score = total / weight * placed * self.prior;
-        (score >= MIN_SCORE).then(|| ProtocolMatch {
-            name: self.name.clone(),
-            type_id: None,
-            score,
-            confirmed: false,
-            why: if allocation == Some(1.0) {
-                format!("{}, inside its allocation", self.why)
-            } else {
-                self.why.clone()
-            },
-        })
+        (score >= MIN_SCORE).then_some((score, allocation == Some(1.0)))
     }
 
     fn waveform_score(&self, measure: &SignalMeasure) -> Option<(f32, f32)> {
@@ -373,6 +480,32 @@ mod tests {
     fn a_required_burst_that_was_not_heard_is_no_match() {
         let bursty = pager().bursts(HzRange::new(25.0, 35.0));
         assert!(bursty.matched(&SignalMeasure::default()).is_none());
+    }
+
+    #[test]
+    fn a_synced_signature_takes_its_shape_from_the_sync() {
+        let signature = SignalSignature::synced(
+            "Voice",
+            12_500.0,
+            FrameSync {
+                symbol_rate_hz: 4_800.0,
+                deviation_hz: 1_944.0,
+                pulse: SyncPulse::C4fm { alpha: 0.2 },
+                bits: 48,
+                tolerance: 3,
+                patterns: vec![0x7557_5F5F_F7FD],
+                min_hits: 1,
+            },
+        );
+        assert_eq!(signature.modulations, [Modulation::Fsk4]);
+        assert!(
+            signature
+                .symbol_rate_hz
+                .is_some_and(|rate| rate.contains(4_800.0))
+        );
+        let json = serde_json::to_value(&signature).expect("signature serializes");
+        let back: SignalSignature = serde_json::from_value(json).expect("signature parses");
+        assert_eq!(back, signature);
     }
 
     #[test]

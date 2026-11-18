@@ -3,8 +3,9 @@
 use std::path::Path;
 
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_dsp::Ddc;
+use sdrmm_test_support::reference_data;
 use sdrmm_wire::{ChannelSettings, DecoderEvent};
 
 const BLOCK: usize = 16_384;
@@ -30,12 +31,12 @@ fn load(dir: &Path) -> Vec<Complex<f32>> {
 fn ours(iq: &[Complex<f32>]) -> Vec<DecoderEvent> {
     let settings = ChannelSettings {
         frequency_hz: CHANNEL_HZ,
-        ..sdrmm_channels::default_settings("hfdl").unwrap()
+        ..sdrmm_decoder::default_settings("hfdl").unwrap()
     };
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut ddc = Ddc::new(RATE, rate, CHANNEL_HZ - CENTER_HZ).unwrap();
-    let mut filter = sdrmm_channels::channel_filter(&settings.params).unwrap();
-    let mut rx = sdrmm_channels::create(ChannelCtx { input_rate: rate }, &settings).unwrap();
+    let mut filter = sdrmm_decoder::channel_filter(&settings.params).unwrap();
+    let mut rx = sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).unwrap();
     let (mut narrow, mut filtered) = (Vec::new(), Vec::new());
     let mut outputs = ChannelOutputs::default();
     let mut events = Vec::new();
@@ -70,7 +71,7 @@ fn hfdl_beats_xng_off_air() {
         .iter()
         .filter(|e| {
             e.kind == "hfdl"
-                && e.payload::<sdrmm_channels::DataLinkMessage>()
+                && e.payload::<sdrmm_decoder::link::DataLinkMessage>()
                     .is_some_and(|m| m.crc_ok)
         })
         .count();

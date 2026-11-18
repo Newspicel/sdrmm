@@ -180,10 +180,8 @@ impl Engine {
             state.next_channel_id += 1;
             (state.lane_rate(stream), state.lane_center(stream), id)
         };
-        let created = ChannelMedia::new(
-            sdrmm_channels::audio_channels(&settings.params),
-            device_rate,
-        )?;
+        let created =
+            ChannelMedia::new(sdrmm_decoder::audio_channels(&settings.params), device_rate)?;
         let sinks = created.sinks.clone();
         let mut media = Some(created);
 

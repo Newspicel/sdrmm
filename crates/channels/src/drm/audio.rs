@@ -1,9 +1,9 @@
 use std::ops::Range;
 
-use super::{
-    aac::AudioConfig,
-    bits::{BitReader, byte_bits, crc},
-};
+use sdrmm_codec::aac::AudioConfig;
+#[cfg(any(test, feature = "synth"))]
+use sdrmm_dsp::coding::bits::BitWriter;
+use sdrmm_dsp::coding::bits::{BitReader, byte_bits, crc_msb_inverted as crc};
 
 pub const TEXT_BYTES: usize = 4;
 const MAX_FRAMES: usize = 11;
@@ -24,7 +24,7 @@ pub const fn frame_audio_frames(rate_hz: u32) -> usize {
     if rate_hz == 0 {
         0
     } else {
-        crate::AUDIO_RATE as usize * 960 / rate_hz as usize
+        sdrmm_decoder::AUDIO_RATE as usize * 960 / rate_hz as usize
     }
 }
 
@@ -322,7 +322,7 @@ pub fn split_text<'a>(
 pub fn build_aac_superframe(frames: &[Vec<u8>], length: usize) -> Option<Vec<u8>> {
     let count = frames.len();
     let header = header_bytes(count);
-    let mut writer = super::bits::BitWriter::with_capacity(length);
+    let mut writer = BitWriter::with_capacity(length);
     let mut border = 0usize;
     for frame in &frames[..count - 1] {
         border += frame.len() - 1;

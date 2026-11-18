@@ -1,24 +1,28 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{ClickProfile, Control, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod encoder;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub(crate) use encoder::ssb_encoder;
 pub use encoder::{SsbEncoderSettings, SsbModulator};
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{Agc, FirC, design_lowpass};
+use sdrmm_dsp::Agc;
 use sdrmm_modem::analog::{
     Sideband as EngineSideband, SsbDemod, SsbDetector, SsbMethod, SsbParams as SsbWaveform,
 };
 use sdrmm_wire::{CallGate, ChannelDescriptor, ChannelSettings, DecoderFamily, Sideband};
 
-use crate::{
-    AUDIO_RATE, ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate, clamp_full_scale, voice_leveller,
+use sdrmm_decoder::{
+    AUDIO_RATE, Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+    voice_leveller,
 };
+use sdrmm_dsp::audio::clip::clamp_full_scale;
 
 pub(crate) const PASSBAND_LOW_HZ: f64 = 100.0;
 const FILTER_TAPS: usize = 257;
@@ -45,7 +49,7 @@ pub struct SsbChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<SsbParams, ChannelError> {
-    crate::settings_of::<SsbParams>(settings)
+    sdrmm_decoder::settings_of::<SsbParams>(settings)
 }
 
 pub(crate) fn waveform(p: &SsbParams) -> Result<SsbWaveform, ChannelError> {
@@ -73,16 +77,6 @@ pub(crate) fn waveform(p: &SsbParams) -> Result<SsbWaveform, ChannelError> {
     })
 }
 
-pub(crate) fn sideband_filter(p: &SsbParams) -> Result<FirC, ChannelError> {
-    let band = waveform(p)?.band();
-    let half_width = (band.high - band.low) / 2.0;
-    let prototype = design_lowpass(band.taps, half_width);
-    Ok(FirC::from_lowpass(
-        &prototype,
-        f64::midpoint(band.high, band.low),
-    ))
-}
-
 fn demodulator(p: &SsbParams) -> Result<SsbDemod, ChannelError> {
     Ok(SsbDemod::new(&waveform(p)?, SsbDetector::Filter, false))
 }
@@ -101,7 +95,7 @@ impl NativeChannel for SsbChannel {
     }
 }
 
-impl ChannelRx for SsbChannel {
+impl Channel for SsbChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         self.demod = demodulator(&p)?;
@@ -118,8 +112,14 @@ impl ChannelRx for SsbChannel {
     }
 }
 
-fn channel_filter(p: &SsbParams) -> Result<ChannelFilter, ChannelError> {
-    Ok(ChannelFilter::Sideband(sideband_filter(p)?))
+fn channel_filter(p: &SsbParams) -> Result<FilterSpec, ChannelError> {
+    let band = waveform(p)?.band();
+    let rate = DESCRIPTOR.input_rate_hz;
+    Ok(FilterSpec::band(
+        band.taps,
+        band.low * rate,
+        band.high * rate,
+    ))
 }
 
 fn ssb_signatures() -> Vec<SignalSignature> {
@@ -142,7 +142,7 @@ fn ssb_tune(signal: &sdrmm_wire::IdentSignal, p: &mut SsbParams) -> f64 {
 }
 
 pub(crate) fn ssb_decoder() -> Native<SsbParams> {
-    Native::new::<SsbChannel>(|p: &SsbParams| match p.sideband {
+    let decoder = Native::new::<SsbChannel>(|p: &SsbParams| match p.sideband {
         Sideband::Usb => (PASSBAND_LOW_HZ, p.bandwidth_hz),
         Sideband::Lsb => (-p.bandwidth_hz, -PASSBAND_LOW_HZ),
     })
@@ -150,7 +150,11 @@ pub(crate) fn ssb_decoder() -> Native<SsbParams> {
     .signatures(ssb_signatures)
     .tune(ssb_tune)
     .form(ssb_form)
-    .kinds(ssb_kinds)
+    .kinds(ssb_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn ssb_form() -> Vec<SettingField> {
@@ -166,18 +170,18 @@ fn ssb_kinds() -> Vec<KindSpec> {
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
 
     use super::*;
-    use crate::{
-        encoder::{Carries, EncoderError, Modulator, NativeModulator, TxPayload},
-        nfm::NfmParams,
+    use sdrmm_decoder::encoder::burst;
+    use sdrmm_decoder::encoder::{Carries, EncoderError, Modulator, NativeModulator, TxPayload};
+    use sdrmm_decoder_test_support::{
+        complex_tone, component, dominant_tone, rms, run_ragged, settings, tone_power,
     };
-    use crate::{
-        synth::{burst, tone_audio},
-        testutil::{complex_tone, component, dominant_tone, rms, run_ragged, settings, tone_power},
-    };
+    use sdrmm_modem::synth::tone_audio;
 
     const RATE: f64 = 48_000.0;
 
@@ -311,9 +315,7 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(Sideband::Usb);
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
     }
 

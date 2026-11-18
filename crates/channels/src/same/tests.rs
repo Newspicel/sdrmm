@@ -5,7 +5,8 @@ use crate::same::SameParams;
 use sdrmm_wire::ChannelParams;
 
 use super::*;
-use crate::{synth, testutil::settings};
+use crate::synth;
+use sdrmm_decoder_test_support::settings;
 
 const TORNADO: &str = "ZCZC-WXR-TOR-048201-048157+0030-1232200-KEC55/NW-";
 
@@ -84,7 +85,7 @@ fn the_end_of_message_burst_decodes_on_its_own() {
 #[test]
 fn an_alert_survives_noise() {
     let mut iq = synth::same::alert(TORNADO, RATE);
-    synth::add_noise(&mut iq, 7, 0.08);
+    sdrmm_modem::synth::add_noise(&mut iq, 7, 0.08);
     let (decoded, _) = messages(&iq);
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].raw, TORNADO);
@@ -93,7 +94,7 @@ fn an_alert_survives_noise() {
 #[test]
 fn a_lone_burst_never_settles_and_is_counted_as_rejected() {
     let mut iq = synth::same::transmission(TORNADO, 1, RATE);
-    iq.extend(synth::silence(21 * RATE as usize));
+    iq.extend(sdrmm_modem::synth::silence(21 * RATE as usize));
     let (decoded, rejected) = messages(&iq);
     assert!(decoded.is_empty());
     assert_eq!(rejected, 1);
@@ -114,7 +115,7 @@ fn two_alerts_in_a_row_both_reach_the_log() {
 
 #[test]
 fn silence_decodes_to_nothing() {
-    let (decoded, rejected) = messages(&synth::silence(RATE as usize));
+    let (decoded, rejected) = messages(&sdrmm_modem::synth::silence(RATE as usize));
     assert!(decoded.is_empty());
     assert_eq!(rejected, 0);
 }
@@ -144,8 +145,6 @@ fn the_occupied_band_is_the_bandwidth_around_the_carrier() {
 
 #[test]
 fn other_params_are_refused() {
-    let settings = settings(
-        ChannelParams::new("nfm", &crate::nfm::NfmParams::default()).expect("nfm settings"),
-    );
+    let settings = settings(ChannelParams::bare("nfm"));
     assert!(SameChannel::new(ChannelCtx { input_rate: RATE }, settings).is_err());
 }

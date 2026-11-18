@@ -4,9 +4,11 @@ import type {
   Capabilities,
   DeviceSet,
   PatchNode,
-  RadarDetection,
-  RadarUpdate,
 } from "../lib/types";
+
+/** A radar picture as the passive radar reports it; the web only passes it through. */
+type RadarDetection = Record<string, unknown>;
+type RadarUpdate = Record<string, unknown>;
 
 export function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   return {

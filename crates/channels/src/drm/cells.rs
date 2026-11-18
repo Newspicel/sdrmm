@@ -20,7 +20,6 @@ pub struct Layout {
     pub low: i32,
     pub high: i32,
     cells: Vec<Cell>,
-    pub sdc_cells: usize,
     pub msc_cells: usize,
 }
 
@@ -61,7 +60,6 @@ impl Layout {
         let (low, high) = mode.carriers(occupancy)?;
         let width = (high - low + 1) as usize;
         let mut cells = Vec::with_capacity(mode.frames() * mode.symbols() * width);
-        let mut sdc_cells = 0;
         let mut msc_cells = 0;
         for frame in 0..mode.frames() {
             for symbol in 0..mode.symbols() {
@@ -72,7 +70,6 @@ impl Layout {
                     } else if let Some(pilot) = pilot(mode, occupancy, frame, symbol, k) {
                         pilot
                     } else if frame == 0 && symbol < mode.sdc_symbols() {
-                        sdc_cells += 1;
                         Cell::Sdc
                     } else if fac.contains(&k) {
                         Cell::Fac
@@ -90,9 +87,17 @@ impl Layout {
             low,
             high,
             cells,
-            sdc_cells,
             msc_cells,
         })
+    }
+
+    #[cfg(any(test, feature = "synth"))]
+    #[must_use]
+    pub fn sdc_cells(&self) -> usize {
+        self.cells
+            .iter()
+            .filter(|cell| matches!(cell, Cell::Sdc))
+            .count()
     }
 
     #[must_use]
@@ -140,7 +145,7 @@ mod tests {
         ];
         for (mode, occupancy, sdc, msc, multiplex) in expected {
             let layout = Layout::new(mode, occupancy).expect("a defined occupancy");
-            assert_eq!(layout.sdc_cells, sdc, "{mode:?} {occupancy} SDC");
+            assert_eq!(layout.sdc_cells(), sdc, "{mode:?} {occupancy} SDC");
             assert_eq!(layout.msc_cells, msc, "{mode:?} {occupancy} MSC");
             assert_eq!(layout.multiplex_cells(), multiplex, "{mode:?} {occupancy}");
         }

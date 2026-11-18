@@ -5,7 +5,7 @@ use sdrmm_dsp::{FirC, FmDemod, design_lowpass};
 pub(crate) const TONE_LOW_HZ: f64 = 1_000.0;
 pub(crate) const TONE_HIGH_HZ: f64 = 2_600.0;
 pub(crate) const FM_HALF_BAND_HZ: f64 = 7_500.0;
-const TAPS: usize = 255;
+pub(crate) const TAPS: usize = 255;
 
 pub(crate) fn occupied_band(modulation: SstvModulation) -> (f64, f64) {
     match modulation {
@@ -16,7 +16,7 @@ pub(crate) fn occupied_band(modulation: SstvModulation) -> (f64, f64) {
     }
 }
 
-pub(crate) fn band_filter(low_hz: f64, high_hz: f64, rate: f64) -> FirC {
+fn band_filter(low_hz: f64, high_hz: f64, rate: f64) -> FirC {
     let half = (high_hz - low_hz) / 2.0 / rate;
     let center = f64::midpoint(high_hz, low_hz) / rate;
     FirC::from_lowpass(&design_lowpass(TAPS, half), center)

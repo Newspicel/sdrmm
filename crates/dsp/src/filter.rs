@@ -1,6 +1,9 @@
+pub mod average;
 pub mod decim;
 pub mod fir;
 pub mod firc;
+pub mod frac_delay;
+pub mod history;
 pub mod iir;
 pub mod interp;
 pub mod moving;

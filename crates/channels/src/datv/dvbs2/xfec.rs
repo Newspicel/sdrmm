@@ -4,7 +4,7 @@ use num_complex::Complex;
 use super::frame::modulate;
 use super::{
     bb::{BaseBandData, BaseBandFrame},
-    bch::{Bch, BchScratch},
+    bch::Bch,
     frame::{Constellation, Modulation, column_order, demodulate},
     ldpc::{Frame, Ldpc, Rate},
     pl, s2x,
@@ -27,7 +27,6 @@ pub struct Xfec {
     order: &'static [usize],
     ldpc: Ldpc,
     bch: Bch,
-    scratch: BchScratch,
     pub baseband: BaseBandFrame,
     constellation: Constellation,
     llrs: Vec<f32>,
@@ -108,7 +107,6 @@ impl Xfec {
             carrier,
             order,
             ldpc,
-            scratch: bch.scratch(),
             bch,
             baseband: BaseBandFrame::new(message),
             constellation,
@@ -175,9 +173,7 @@ impl Xfec {
         });
         self.bits.clear();
         let iterations = self.ldpc.decode(&self.ordered, &mut self.bits)?;
-        let corrected = self
-            .bch
-            .decode_with_scratch(&mut self.bits, &mut self.scratch)?;
+        let corrected = self.bch.decode(&mut self.bits)?;
         self.bits.truncate(self.bch.message());
         let data = self.baseband.read(&self.bits)?;
         Some(Decoded {
@@ -246,7 +242,7 @@ impl Xfec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::datv::{dvbs::PACKET, ts::null_packet};
+    use sdrmm_modem::{dvb::PACKET, mpegts::null_packet};
 
     fn packets(count: usize) -> Vec<[u8; PACKET]> {
         (0..count)

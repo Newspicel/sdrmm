@@ -4,6 +4,7 @@ pub mod fastmath;
 pub mod fft;
 pub mod geodesy;
 pub mod linalg;
+pub mod neural;
 pub mod rng;
 pub mod special;
 pub mod stats;

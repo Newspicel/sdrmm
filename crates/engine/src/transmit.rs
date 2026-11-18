@@ -7,7 +7,7 @@ use std::{
     thread::JoinHandle,
 };
 
-use sdrmm_channels::encoder::{EncoderParams, TxPayload, encoder};
+use sdrmm_decoder::encoder::{EncoderParams, TxPayload, encoder};
 use sdrmm_wire::{
     DeviceSetStatus, Direction, EncoderInput, ServerEvent, StateScope, TransmitPhase,
     TransmitSettings, TransmitStatus,

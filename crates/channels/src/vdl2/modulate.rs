@@ -6,7 +6,7 @@ use super::avlc;
 use super::demod::{GRAY_FWD, SYMBOL_RATE, UW_DELTAS};
 use super::header;
 use super::interleave;
-use super::scramble::Scrambler;
+use super::scramble::scrambler;
 
 const RAMP_SYMBOLS: usize = 5;
 const ROLLOFF: f64 = 0.6;
@@ -18,7 +18,10 @@ fn burst_phases(frames: &[Vec<u8>]) -> Vec<f64> {
     let tl = u32::try_from(avlc_bits.len()).unwrap();
     let mut bits: Vec<u8> = header::encode(tl).to_vec();
     bits.extend(interleave::interleave(&avlc_bits, &rs).unwrap());
-    Scrambler::new().apply(&mut bits);
+    let mut keystream = scrambler();
+    for bit in &mut bits {
+        *bit ^= u8::from(keystream.next_bit());
+    }
     while !bits.len().is_multiple_of(3) {
         bits.push(0);
     }

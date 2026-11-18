@@ -7,14 +7,14 @@ use std::{
     time::SystemTime,
 };
 
-use sdrmm_channels::Decoder;
+use sdrmm_decoder::Decoder;
 use sdrmm_plugins::{ModuleCache, PluginModule, WasmDecoder};
 
 mod common;
 
 fn manifest(name: &str) -> String {
     format!(
-        r#"{{"abi":2,"decoder":{{"descriptor":{{"type_id":"cached","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}}}"#
+        r#"{{"abi":4,"decoder":{{"descriptor":{{"type_id":"cached","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}}}"#
     )
 }
 

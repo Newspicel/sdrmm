@@ -141,7 +141,7 @@ fn finished(mut message: FlexMessage, complete: bool) -> DecoderEvent {
 
 #[cfg(test)]
 mod tests {
-    use crate::flex::PagerPayload;
+    use sdrmm_wire::PagerPayload;
 
     use super::*;
 

@@ -11,8 +11,8 @@ pub use kaiser::{
 };
 pub(crate) use polyphase::reversed_branch;
 pub use pulse::{
-    design_gaussian, design_rds_biphase, design_rds_shaping, design_rrc, design_rrc_unit_energy,
-    rrc_pulse,
+    design_cosine_biphase, design_cosine_shaping, design_gaussian, design_rrc,
+    design_rrc_unit_energy, rrc_pulse,
 };
 pub(crate) use window_sinc::blackman_taps;
 pub use window_sinc::{design_bandpass, design_lowpass, design_lowpass_blackman_harris};

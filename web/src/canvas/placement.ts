@@ -1,7 +1,7 @@
 import { type Node, type Rect, useReactFlow, useStoreApi } from "@xyflow/react";
 import { useCallback } from "react";
-import type { NodeKind, PatchGraph, Position } from "../lib/types";
-import { nodeSize } from "./graph";
+import type { PatchGraph, Position } from "../lib/types";
+import { type Faced, nodeSize } from "./graph";
 
 const ASSUMED_HEIGHT = 320;
 
@@ -9,11 +9,12 @@ const ASSUMED_HEIGHT = 320;
 /// faces that only carry a readout. The widest of them, NFM with its audio chain, measures 589.
 const ASSUMED_CHANNEL_HEIGHT = 600;
 
-export function dropSize(kind: NodeKind): { w: number; h: number } {
-  const size = nodeSize(kind);
+export function dropSize(of: Faced): { w: number; h: number } {
+  const size = nodeSize(of);
   if (size.h !== undefined) {
     return { w: size.w, h: size.h };
   }
+  const kind = typeof of === "string" ? of : of.kind;
   return { w: size.w, h: kind === "channel" ? ASSUMED_CHANNEL_HEIGHT : ASSUMED_HEIGHT };
 }
 
@@ -26,12 +27,12 @@ export interface PlacementRect {
 
 const SCREEN_GAP = 24;
 
-export function useNodePlacement(): (graph: PatchGraph, kind: NodeKind) => Position {
+export function useNodePlacement(): (graph: PatchGraph, of: Faced) => Position {
   const flow = useReactFlow();
   const store = useStoreApi();
 
   return useCallback(
-    (graph, kind) => {
+    (graph, of) => {
       const { width, height } = store.getState();
       const { x, y, zoom } = flow.getViewport();
       const gap = SCREEN_GAP / zoom;
@@ -43,7 +44,7 @@ export function useNodePlacement(): (graph: PatchGraph, kind: NodeKind) => Posit
       };
       const rendered = new Map(flow.getNodes().map((node) => [node.id, node]));
       const occupied = graph.nodes.map((node) => nodeRect(node, rendered.get(node.id)));
-      const size = dropSize(kind);
+      const size = dropSize(of);
 
       if (width <= 0 || height <= 0 || zoom <= 0) {
         return dropPosition({ x: 0, y: 0, w: 1200, h: 800 }, size, occupied, SCREEN_GAP);
@@ -142,7 +143,7 @@ function union(viewport: PlacementRect, face: Rect): Rect {
 
 function nodeRect(node: PatchGraph["nodes"][number], rendered: Node | undefined): PlacementRect {
   const measured = measuredSize(rendered);
-  const natural = dropSize(node.kind);
+  const natural = dropSize(node);
   const stored = node.size;
   return {
     x: rendered?.position.x ?? node.position.x,

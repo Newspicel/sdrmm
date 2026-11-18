@@ -6,7 +6,7 @@ impl Engine {
     pub fn steer_channel(&self, ds: u32, ch: u32, doppler: Doppler) -> Result<(), EngineError> {
         if !doppler.shift_hz.is_finite() || !doppler.rate_hz_s.is_finite() {
             return Err(EngineError::Channel(
-                sdrmm_channels::ChannelError::InvalidSettings(
+                sdrmm_decoder::ChannelError::InvalidSettings(
                     "a Doppler correction has to be finite".to_owned(),
                 ),
             ));
@@ -29,7 +29,7 @@ impl Engine {
     pub fn tune_channel(&self, ds: u32, ch: u32, frequency_hz: f64) -> Result<bool, EngineError> {
         if !frequency_hz.is_finite() || frequency_hz <= 0.0 {
             return Err(EngineError::Channel(
-                sdrmm_channels::ChannelError::InvalidSettings(
+                sdrmm_decoder::ChannelError::InvalidSettings(
                     "a channel frequency has to be positive".to_owned(),
                 ),
             ));

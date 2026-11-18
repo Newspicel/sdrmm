@@ -1,8 +1,6 @@
 use super::{ac_cache::AcCache, systable::SystableAssembler};
-use crate::{
-    acars::block::{AcarsBlock, parse as parse_acars},
-    datalink::hex,
-};
+use sdrmm_aviation::acars::block::{AcarsBlock, parse as parse_acars};
+use sdrmm_crypto::hex_string as hex;
 use sdrmm_dsp::crc16_x25;
 use serde_json::{Value, json};
 

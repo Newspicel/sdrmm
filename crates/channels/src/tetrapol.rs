@@ -1,7 +1,10 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod assembly;
 pub(crate) mod coding;
@@ -19,17 +22,17 @@ use sdrmm_modem::{
 };
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-    dv::{INPUT_RATE_HZ, tap_symbols},
-};
 use coding::Decoder;
 use frame::Framer;
 use link::Link;
 use scrambling::Scrambling;
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 pub(crate) const BAUD: f64 = 8_000.0;
+const INPUT_RATE_HZ: f64 = 48_000.0;
+const CHANNEL_TAPS: usize = 129;
 pub(crate) const DEVIATION_HZ: f64 = 2_000.0;
 pub(crate) const BT: f64 = 0.25;
 pub(crate) const PULSE_SPAN: usize = 4;
@@ -78,8 +81,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-TETRAPOL_BANDWIDTH_HZ / 2.0, TETRAPOL_BANDWIDTH_HZ / 2.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    crate::dv::channel_filter(TETRAPOL_BANDWIDTH_HZ)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::lowpass(CHANNEL_TAPS, TETRAPOL_BANDWIDTH_HZ / 2.0)
 }
 
 pub struct TetrapolChannel {
@@ -144,7 +147,7 @@ impl NativeChannel for TetrapolChannel {
     }
 }
 
-impl ChannelRx for TetrapolChannel {
+impl Channel for TetrapolChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         check_params(params)?;
@@ -171,14 +174,8 @@ impl ChannelRx for TetrapolChannel {
             self.symbol(symbol, out);
         }
         self.soft = soft;
-        tap_symbols(
-            out,
-            &self.demod,
-            &self.soft,
-            &self.slicer,
-            BAUD,
-            INPUT_RATE_HZ,
-        );
+        out.symbols
+            .cpm(&self.demod, &self.soft, &self.slicer, BAUD, INPUT_RATE_HZ);
     }
 
     fn rejected(&self) -> u32 {
@@ -211,12 +208,16 @@ fn tetrapol_trial() -> sdrmm_wire::SignalTrial {
 }
 
 pub(crate) fn tetrapol_decoder() -> Native<TetrapolParams> {
-    Native::new::<TetrapolChannel>(|_| occupied_band())
+    let decoder = Native::new::<TetrapolChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .signatures(tetrapol_signatures)
         .trial(tetrapol_trial)
         .form(tetrapol_form)
-        .kinds(tetrapol_kinds)
+        .kinds(tetrapol_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn tetrapol_form() -> Vec<SettingField> {
@@ -235,5 +236,7 @@ fn tetrapol_kinds() -> Vec<KindSpec> {
     vec![crate::tetrapol::tetrapol_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

@@ -459,532 +459,6 @@
       "revision": 0
     }
   },
-  "0211f05e52a45101": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "finder",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "tri",
-            "port": "events"
-          }
-        },
-        {
-          "from": {
-            "node": "walk",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "tri",
-            "port": "events"
-          }
-        },
-        {
-          "from": {
-            "node": "east",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "filter",
-            "port": "events"
-          }
-        },
-        {
-          "from": {
-            "node": "filter",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "tri",
-            "port": "events"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "finder",
-          "kind": "df",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri"
-                }
-              ]
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "walk",
-          "kind": "hunt",
-          "label": "Signal hunt",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "iq",
-              "note": "The lane it watches",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "out",
-              "multi": "one",
-              "name": "control",
-              "payload": {
-                "type": "control",
-                "verbs": [
-                  "sweep"
-                ]
-              },
-              "port_type": "control"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Where you stand and which way you point",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "Sweep and mark bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        },
-        {
-          "id": "filter",
-          "kind": "event_filter",
-          "label": "Event filter",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "east"
-                }
-              ],
-              "multi": "many",
-              "name": "events",
-              "payload": {
-                "kinds": [
-                  "acars",
-                  "adsb",
-                  "ais",
-                  "aprs",
-                  "apt",
-                  "bearing_fix",
-                  "ble",
-                  "broadcast",
-                  "broadcast_data",
-                  "bss",
-                  "call",
-                  "cw_skimmer",
-                  "dect",
-                  "df",
-                  "df_fix",
-                  "dsc",
-                  "dv",
-                  "eot",
-                  "ermes",
-                  "flex",
-                  "ft4",
-                  "ft8",
-                  "gnss",
-                  "gsm",
-                  "hfdl",
-                  "ident",
-                  "ils",
-                  "inmarsat_aero",
-                  "inmarsat_stdc",
-                  "iridium",
-                  "ism",
-                  "ism_survey",
-                  "lora",
-                  "lrpt",
-                  "morse",
-                  "nav",
-                  "navtex",
-                  "noise_figure",
-                  "per",
-                  "pocsag",
-                  "psk",
-                  "radar",
-                  "radar_sites",
-                  "radio_clock",
-                  "radiosonde",
-                  "rds",
-                  "remote_id",
-                  "rtty",
-                  "same",
-                  "sarsat",
-                  "satellite",
-                  "scrambler",
-                  "selcall",
-                  "sid",
-                  "sstv",
-                  "stanag",
-                  "tetrapol",
-                  "tone",
-                  "transmission",
-                  "vdl2",
-                  "vor",
-                  "wefax",
-                  "wifi_occupancy",
-                  "wmbus",
-                  "wspr"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        },
-        {
-          "id": "east",
-          "kind": "df",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri",
-                  "via": [
-                    "filter"
-                  ]
-                }
-              ]
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "tri",
-          "kind": "triangulation",
-          "label": "Triangulation",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "finder"
-                },
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "walk"
-                },
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "east",
-                  "via": [
-                    "filter"
-                  ]
-                }
-              ],
-              "multi": "many",
-              "name": "events",
-              "note": "Bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "takes": "bearings"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Vehicle to guide",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "payload": {
-                "kinds": [
-                  "df_fix",
-                  "nav"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "03625c059a544308": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "df",
-          "kind": "df",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "03a7525c9e8d1ad9": {
     "patch": {
       "edges": [],
@@ -1867,6 +1341,103 @@
       "revision": 0
     }
   },
+  "190458e8ec8e85c1": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "df",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "1b1a206ba900f4a5": {
     "patch": {
       "edges": [
@@ -2419,6 +1990,130 @@
       "revision": 0
     }
   },
+  "2157ece75dd0ac9a": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "proc",
+            "port": "array"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "proc"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "proc",
+          "kind": "processor",
+          "label": "Beamformer",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "steer",
+              "note": "A direction finder to steer at",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "beam",
+              "note": "The combined lane",
+              "payload": {
+                "origins": [
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "276ee52f1e2d90b8": {
     "patch": {
       "edges": [],
@@ -2600,287 +2295,6 @@
           ],
           "runs": {
             "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "2d649d99a9117542": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "df",
-            "port": "array"
-          }
-        },
-        {
-          "from": {
-            "node": "radio",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane"
-          }
-        },
-        {
-          "from": {
-            "node": "radio",
-            "port": "iq2"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane2"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "radio",
-                  "stream": 0
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq2",
-                  "source": "radio",
-                  "stream": 1
-                }
-              ],
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane3",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "df"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "df",
-          "kind": "df",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "radio",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "arr",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane2",
-                  "sink": "arr",
-                  "stream": 1
-                }
-              ],
-              "stream": 1
-            },
-            {
-              "direction": "in",
-              "multi": "many",
-              "name": "control",
-              "note": "Opens the radio only while a schedule or satellite says so",
-              "payload": {
-                "type": "control",
-                "verbs": [
-                  "run"
-                ]
-              },
-              "port_type": "control",
-              "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
-            }
-          ],
-          "runs": {
-            "reason": "no_radio",
-            "runs": "unbound"
           }
         }
       ],
@@ -3447,130 +2861,6 @@
                 "type": "array"
               },
               "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "36872cb55ae67e25": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "proc",
-            "port": "array"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "proc"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "beamformer",
-          "label": "Beamformer",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "steer",
-              "note": "A direction finder to steer at",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "beam",
-              "note": "The combined lane",
-              "payload": {
-                "origins": [
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
             }
           ],
           "runs": {
@@ -4281,120 +3571,6 @@
       "revision": 0
     }
   },
-  "5072f892d5dca020": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "proc",
-            "port": "array"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "proc"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "stitch",
-          "label": "Stitch",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "wide",
-              "note": "Every lane joined",
-              "payload": {
-                "origins": [
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "52c2731a6cb542dd": {
     "patch": {
       "edges": [],
@@ -4565,6 +3741,145 @@
                 "type": "array"
               },
               "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "5a137b8f981588dc": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "proc",
+            "port": "array"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "proc"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "proc",
+          "kind": "processor",
+          "label": "Passive radar",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "tx",
+              "note": "GPS node fixed at the transmitter",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "truth",
+              "note": "Tracks with altitude used as truth",
+              "payload": {
+                "kinds": [
+                  "adsb"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "tracks"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Track events",
+              "payload": {
+                "kinds": [
+                  "radar",
+                  "radar_sites"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
             }
           ],
           "runs": {
@@ -5257,107 +4572,6 @@
       "revision": 0
     }
   },
-  "6863dfc9a9c48adb": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "proc",
-            "port": "array"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "proc"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "correlator",
-          "label": "Correlator",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "6ae017e437dda564": {
     "patch": {
       "edges": [
@@ -5827,107 +5041,6 @@
       "revision": 0
     }
   },
-  "7006d3b5d10006dd": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "proc",
-            "port": "array"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "proc"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "spatial_spectrum",
-          "label": "Spatial spectrum",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "75e98d0a661798a8": {
     "patch": {
       "edges": [],
@@ -6014,242 +5127,6 @@
           ],
           "runs": {
             "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "77a7a2e0c7a5a7dd": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "proc",
-            "port": "array"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "proc"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "passive_radar",
-          "label": "Passive radar",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "tx",
-              "note": "GPS node fixed at the transmitter",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "in",
-              "multi": "many",
-              "name": "truth",
-              "note": "Tracks with altitude used as truth",
-              "payload": {
-                "kinds": [
-                  "adsb"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "takes": "tracks"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "Track events",
-              "payload": {
-                "kinds": [
-                  "radar",
-                  "radar_sites"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "791614342957b6f2": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "df",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
           }
         }
       ],
@@ -7174,6 +6051,107 @@
       "revision": 0
     }
   },
+  "8e736c65aa35a7e8": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "proc",
+            "port": "array"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "proc"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "proc",
+          "kind": "processor",
+          "label": "Spatial spectrum",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "8f4bb7e0986fc712": {
     "patch": {
       "edges": [],
@@ -7525,6 +6503,103 @@
                 "type": "array"
               },
               "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "969368e0bc426617": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "proc",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
             }
           ],
           "runs": {
@@ -8096,6 +7171,130 @@
       "revision": 0
     }
   },
+  "a2c2a69b34651169": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "proc",
+            "port": "array"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "proc"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "proc",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "a809188b4251a807": {
     "patch": {
       "edges": [],
@@ -8178,6 +7377,107 @@
           ],
           "runs": {
             "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "aa6f162bd93c918a": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "proc",
+            "port": "array"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "proc"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "proc",
+          "kind": "processor",
+          "label": "Correlator",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
           }
         }
       ],
@@ -8318,130 +7618,6 @@
           ],
           "runs": {
             "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "b0e456754a5ab2a0": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "arr",
-            "port": "array"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "proc",
-            "port": "array"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array",
-              "reaches": [
-                {
-                  "port": "array",
-                  "sink": "proc"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "proc",
-          "kind": "df",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "array"
-                  },
-                  "port": "array",
-                  "source": "arr"
-                }
-              ],
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
           }
         }
       ],
@@ -9078,6 +8254,287 @@
       "revision": 0
     }
   },
+  "bc543770e1c623b7": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "df",
+            "port": "array"
+          }
+        },
+        {
+          "from": {
+            "node": "radio",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "radio",
+            "port": "iq2"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane2"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "radio",
+                  "stream": 0
+                }
+              ],
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq2",
+                  "source": "radio",
+                  "stream": 1
+                }
+              ],
+              "multi": "one",
+              "name": "lane2",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 1,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane3",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 2,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "df"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "df",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane",
+                  "sink": "arr",
+                  "stream": 0
+                }
+              ],
+              "stream": 0
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq2",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane2",
+                  "sink": "arr",
+                  "stream": 1
+                }
+              ],
+              "stream": 1
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit"
+            }
+          ],
+          "runs": {
+            "reason": "no_radio",
+            "runs": "unbound"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "bcd7e224e83dec53": {
     "patch": {
       "edges": [],
@@ -9212,7 +8669,436 @@
       "revision": 0
     }
   },
-  "c378a851fc291cd7": {
+  "c3d95957eb8828d5": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "finder",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tri",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "walk",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tri",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "east",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "filter",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "filter",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tri",
+            "port": "events"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "finder",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri"
+                }
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "walk",
+          "kind": "hunt",
+          "label": "Signal hunt",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "iq",
+              "note": "The lane it watches",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "control",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "sweep"
+                ]
+              },
+              "port_type": "control"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Where you stand and which way you point",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Sweep and mark bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "filter",
+          "kind": "event_filter",
+          "label": "Event filter",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "east"
+                }
+              ],
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "flex",
+                  "ft4",
+                  "ft8",
+                  "gnss",
+                  "gsm",
+                  "hfdl",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "lora",
+                  "lrpt",
+                  "morse",
+                  "nav",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "radar",
+                  "radar_sites",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "satellite",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "east",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri",
+                  "via": [
+                    "filter"
+                  ]
+                }
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "tri",
+          "kind": "triangulation",
+          "label": "Triangulation",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "finder"
+                },
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "walk"
+                },
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "east",
+                  "via": [
+                    "filter"
+                  ]
+                }
+              ],
+              "multi": "many",
+              "name": "events",
+              "note": "Bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "bearings"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Vehicle to guide",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "df_fix",
+                  "nav"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "c505cc1694e567e4": {
     "patch": {
       "edges": [
         {
@@ -9283,7 +9169,7 @@
         },
         {
           "id": "proc",
-          "kind": "polarimeter",
+          "kind": "processor",
           "label": "Polarimeter",
           "ports": [
             {
@@ -9316,6 +9202,130 @@
                 "type": "iq"
               },
               "port_type": "iq"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "c841ca86bd394591": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "arr",
+            "port": "array"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "df",
+            "port": "array"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array",
+              "reaches": [
+                {
+                  "port": "array",
+                  "sink": "df"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "df",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "array"
+                  },
+                  "port": "array",
+                  "source": "arr"
+                }
+              ],
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
             }
           ],
           "runs": {
@@ -11777,7 +11787,7 @@
       "revision": 0
     }
   },
-  "ffad9c6e0d47e4e4": {
+  "f621fd2adcbfd46b": {
     "patch": {
       "edges": [
         {
@@ -11787,7 +11797,7 @@
           },
           "retunes_source": false,
           "to": {
-            "node": "df",
+            "node": "proc",
             "port": "array"
           }
         }
@@ -11837,7 +11847,7 @@
               "reaches": [
                 {
                   "port": "array",
-                  "sink": "df"
+                  "sink": "proc"
                 }
               ]
             }
@@ -11847,9 +11857,9 @@
           }
         },
         {
-          "id": "df",
-          "kind": "df",
-          "label": "Direction finder",
+          "id": "proc",
+          "kind": "processor",
+          "label": "Stitch",
           "ports": [
             {
               "direction": "in",
@@ -11872,25 +11882,15 @@
             {
               "direction": "out",
               "multi": "many",
-              "name": "events",
-              "note": "True bearings",
+              "name": "wide",
+              "note": "Every lane joined",
               "payload": {
-                "kinds": [
-                  "df"
+                "origins": [
+                  "derived"
                 ],
-                "type": "events"
+                "type": "iq"
               },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
+              "port_type": "iq"
             }
           ],
           "runs": {

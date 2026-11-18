@@ -8,14 +8,14 @@ use std::{
 };
 
 use jiff::Timestamp;
-use sdrmm_channels::array_processor::{
-    ArrayPlace, EnrichCtx, MakeEnricher, Raised, Refusal, ReportEnricher, descriptor_for,
-    processor_descriptor,
+use sdrmm_array::{
+    ArrayPlace, EnrichCtx, MakeEnricher, Params, Raised, Reading, Refusal, ReportEnricher,
+    descriptor, parse_params,
 };
 use sdrmm_wire::{
     ARRAY_PORT, ArrayFailure, ArrayStatus, Capability, DecodedRecord, EventOrigin, NO_CHANNEL,
     PatchGraph, PatchNode, Payload, PortDirection, PositionFix, ProcessorAction, ProcessorParams,
-    ProcessorReading, ResolvedPatch, ServerEvent, present::TrackFix,
+    ProcessorReading, ResolvedPatch, present::TrackFix,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 
@@ -56,18 +56,18 @@ impl Wiring {
 struct Held {
     enricher: Box<dyn ReportEnricher>,
     wiring: Wiring,
-    params: ProcessorParams,
+    params: Params,
     refused: Option<Refusal>,
 }
 
 struct Context {
-    params: ProcessorParams,
+    params: Params,
     array: Option<ArrayPlace>,
     positions: Vec<(String, PositionFix)>,
 }
 
 impl Context {
-    fn of(state: &AppState, wiring: &Wiring, params: ProcessorParams) -> Self {
+    fn of(state: &AppState, wiring: &Wiring, params: Params) -> Self {
         Self {
             params,
             array: wiring
@@ -98,13 +98,21 @@ impl Context {
 }
 
 fn enricher_of(params: &ProcessorParams) -> Option<MakeEnricher> {
-    descriptor_for(params)?.enricher
+    descriptor(params.type_id())?.enricher()
+}
+
+/// `params` as their type's own settings; settings it refuses fall back to its defaults, so the
+/// node still shows why it does not run.
+fn typed(params: &ProcessorParams) -> Option<Params> {
+    parse_params(params)
+        .or_else(|_| parse_params(&ProcessorParams::bare(params.type_id())))
+        .ok()
 }
 
 #[derive(Default)]
 pub(crate) struct ReportHub {
     nodes: Mutex<HashMap<String, Held>>,
-    latest: Mutex<HashMap<String, ProcessorReading>>,
+    latest: Mutex<HashMap<String, Reading>>,
 }
 
 impl ReportHub {
@@ -112,39 +120,34 @@ impl ReportHub {
         self.nodes.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn shown(&self) -> MutexGuard<'_, HashMap<String, ProcessorReading>> {
+    fn shown(&self) -> MutexGuard<'_, HashMap<String, Reading>> {
         self.latest.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Keeps `reading` as the one its node shows now.
-    pub(crate) fn keep(&self, node: &str, reading: &ProcessorReading) {
+    pub(crate) fn keep(&self, node: &str, reading: &Reading) {
         self.shown().insert(node.to_owned(), reading.clone());
     }
 
     pub(crate) fn latest(&self, node: &str) -> Option<ProcessorReading> {
-        self.shown().get(node).cloned()
+        let shown = self.shown().get(node).map(Reading::to_wire)?;
+        shown
+            .map_err(|error| tracing::warn!(node, %error, "a reading did not serialize"))
+            .ok()
     }
 
-    fn show(&self, state: &AppState, node: &str, reading: ProcessorReading) {
-        self.keep(node, &reading);
-        state
-            .engine
-            .emit_event(ServerEvent::processor_update(node.to_owned(), reading));
+    fn show(&self, state: &AppState, node: &str, reading: Reading) {
+        emit_update(state, node, &reading);
+        self.shown().insert(node.to_owned(), reading);
     }
 
-    fn held(&self, node: &str) -> Option<(Wiring, ProcessorParams)> {
+    fn held(&self, node: &str) -> Option<(Wiring, Params)> {
         self.lock()
             .get(node)
             .map(|held| (held.wiring.clone(), held.params.clone()))
     }
 
-    fn bind(
-        &self,
-        node: &str,
-        wiring: Wiring,
-        params: ProcessorParams,
-        make: MakeEnricher,
-    ) -> bool {
+    fn bind(&self, node: &str, wiring: Wiring, params: Params, make: MakeEnricher) -> bool {
         let mut nodes = self.lock();
         let Some(held) = nodes.get_mut(node) else {
             nodes.insert(
@@ -178,18 +181,19 @@ impl ReportHub {
     }
 
     /// Binds a node whose report beat the patch apply to it.
-    fn adopt(&self, state: &AppState, node: &str) -> Option<(Wiring, ProcessorParams)> {
+    fn adopt(&self, state: &AppState, node: &str) -> Option<(Wiring, Params)> {
         let resolved = state.resolved.current();
         let patch_node = resolved.graph.node(node)?;
-        let params = patch_node.body.processor_params()?;
-        let make = enricher_of(&params)?;
+        let wire = patch_node.body.processor_params()?;
+        let make = enricher_of(&wire)?;
+        let params = typed(&wire)?;
         let wiring = Wiring::of(&resolved.patch, patch_node);
         self.bind(node, wiring.clone(), params.clone(), make);
         Some((wiring, params))
     }
 
     /// Completes `reading` when its node has an enricher, publishing the events it raises.
-    pub(crate) fn on_report(&self, state: &AppState, node: &str, reading: &mut ProcessorReading) {
+    pub(crate) fn on_report(&self, state: &AppState, node: &str, reading: &mut Reading) {
         if !enriched(reading) {
             return;
         }
@@ -262,8 +266,16 @@ impl ReportHub {
     }
 }
 
-fn enriched(reading: &ProcessorReading) -> bool {
-    processor_descriptor(reading.type_id()).is_some_and(|descriptor| descriptor.enricher.is_some())
+fn enriched(reading: &Reading) -> bool {
+    descriptor(reading.type_id()).is_some_and(|descriptor| descriptor.enricher().is_some())
+}
+
+/// Shows `reading` on every face of `node`.
+pub(crate) fn emit_update(state: &AppState, node: &str, reading: &Reading) {
+    match reading.update(node.to_owned()) {
+        Ok(update) => state.engine.emit_event(update),
+        Err(error) => tracing::warn!(node, %error, "a reading did not serialize"),
+    }
 }
 
 fn anchor(state: &AppState, array: Option<&str>) -> u32 {
@@ -336,10 +348,10 @@ pub(crate) fn reconcile(state: &AppState, resolved: &Resolved) -> Vec<(String, S
     release(state, &resolved.graph);
     let statuses = state.engine.array_statuses();
     for node in &resolved.graph.nodes {
-        let Some(params) = node.body.processor_params() else {
+        let Some(wire) = node.body.processor_params() else {
             continue;
         };
-        let Some(make) = enricher_of(&params) else {
+        let (Some(make), Some(params)) = (enricher_of(&wire), typed(&wire)) else {
             continue;
         };
         let wiring = Wiring::of(&resolved.patch, node);

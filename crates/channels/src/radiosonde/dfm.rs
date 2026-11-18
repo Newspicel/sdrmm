@@ -28,6 +28,7 @@ const SMOOTHING: f64 = 0.5;
 const CHANNELS: usize = 16;
 const PARITY_CHECK: [u8; 8] = [0x7, 0xB, 0xD, 0xE, 0x8, 0x4, 0x2, 0x1];
 
+#[cfg(any(test, feature = "synth"))]
 pub(crate) fn hamming_encode(nibble: u8) -> [bool; 8] {
     let d: [bool; 4] = std::array::from_fn(|k| (nibble >> (3 - k)) & 1 == 1);
     [

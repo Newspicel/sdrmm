@@ -1,12 +1,10 @@
-use sdrmm_dsp::crc16_msb;
-
 use super::*;
 
 const UTF_8: u8 = 0xf0;
 
 fn group(high: u8, low: u8, data: &[u8]) -> Vec<u8> {
     let mut bytes = [&[high, low][..], data].concat();
-    bytes.extend_from_slice(&(!crc16_msb(0x1021, 0xffff, &bytes)).to_be_bytes());
+    sdrmm_dsp::push_crc16_genibus(&mut bytes);
     bytes
 }
 

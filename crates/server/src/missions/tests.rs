@@ -8,10 +8,10 @@ use axum::{
 use http_body_util::BodyExt;
 use sdrmm_wire::{
     ApiError, ArrayNode, Attitude, BearingSource, ChannelNode, DeviceBackend, DeviceNode,
-    DeviceRef, DfNode, GpsNode, HeadingSource, HuntMission, HuntNode, MissionActionResponse,
-    NodeBody, PassiveRadarNode, PatchEdge, PatchNode, PortRef, Position, PositionFix, PositionLink,
-    PositionSource, RackLayout, ServerEvent, SignalMapNode, SweepState, TriangulationNode,
-    WorkspaceSnapshot, patch::stream_port,
+    DeviceRef, GpsNode, HeadingSource, HuntMission, HuntNode, MissionActionResponse, NodeBody,
+    PatchEdge, PatchNode, PortRef, Position, PositionFix, PositionLink, PositionSource, RackLayout,
+    ServerEvent, SignalMapNode, SweepState, TriangulationNode, WorkspaceSnapshot,
+    patch::stream_port,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 use tower::ServiceExt;
@@ -22,6 +22,7 @@ use crate::{
     phones::{scope::PHONE_ROUTES, tests::pair_one},
     tests::state_over,
 };
+use sdrmm_array::passive_radar::PassiveRadarParams;
 
 const WAIT: Duration = Duration::from_secs(10);
 const HUNT: &str = "hunt";
@@ -888,10 +889,19 @@ fn array_graph() -> PatchGraph {
         nodes: vec![
             radio("kraken", "kraken5"),
             node("arr", NodeBody::Array(ArrayNode::default())),
-            node("df", NodeBody::Df(DfNode::default())),
-            node("lonely", NodeBody::Df(DfNode::default())),
+            node(
+                "df",
+                crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+            ),
+            node(
+                "lonely",
+                crate::tests::processor_node(&sdrmm_array::df::DfParams::default()),
+            ),
             node("tri", NodeBody::Triangulation(TriangulationNode::default())),
-            node("radar", NodeBody::PassiveRadar(PassiveRadarNode::default())),
+            node(
+                "radar",
+                crate::tests::processor_node(&PassiveRadarParams::default()),
+            ),
             gps("roof", fixed()),
             gps("mast", fixed()),
         ],

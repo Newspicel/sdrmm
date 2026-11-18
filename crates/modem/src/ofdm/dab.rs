@@ -1,0 +1,711 @@
+//! The Eureka-147 (DAB) OFDM physical layer: null-symbol frame sync, phase reference,
+//! frequency interleaving and differential QPSK.
+
+mod mode;
+mod modulator;
+
+use std::f32::consts::PI;
+
+pub use mode::{Mode, TransmissionMode};
+pub use modulator::FrameModulator;
+use num_complex::Complex;
+use sdrmm_dsp::{CONFIDENT, Nco, Soft, math::fft::Transform};
+
+#[cfg(test)]
+const CARRIERS: usize = 1_536;
+#[cfg(test)]
+const USEFUL: usize = 2_048;
+#[cfg(test)]
+const GUARD: usize = 504;
+#[cfg(test)]
+const SYMBOL: usize = USEFUL + GUARD;
+#[cfg(test)]
+const NULL: usize = 2_656;
+#[cfg(test)]
+const SYMBOL_BITS: usize = 2 * CARRIERS;
+
+const NULL_WINDOW: usize = 64;
+
+const NULL_POWER_RATIO: f32 = 0.5;
+
+const CARRIER_AVERAGE_RATE: f32 = 0.00002;
+
+const LEVEL_RATE: f32 = 0.15;
+
+const PHASE_STEPS: [(i16, i16, u8, u8); 48] = [
+    (-768, -737, 0, 1),
+    (-736, -705, 1, 2),
+    (-704, -673, 2, 0),
+    (-672, -641, 3, 1),
+    (-640, -609, 0, 3),
+    (-608, -577, 1, 2),
+    (-576, -545, 2, 2),
+    (-544, -513, 3, 3),
+    (-512, -481, 0, 2),
+    (-480, -449, 1, 1),
+    (-448, -417, 2, 2),
+    (-416, -385, 3, 3),
+    (-384, -353, 0, 1),
+    (-352, -321, 1, 2),
+    (-320, -289, 2, 3),
+    (-288, -257, 3, 3),
+    (-256, -225, 0, 2),
+    (-224, -193, 1, 2),
+    (-192, -161, 2, 2),
+    (-160, -129, 3, 1),
+    (-128, -97, 0, 1),
+    (-96, -65, 1, 3),
+    (-64, -33, 2, 1),
+    (-32, -1, 3, 2),
+    (1, 32, 0, 3),
+    (33, 64, 3, 1),
+    (65, 96, 2, 1),
+    (97, 128, 1, 1),
+    (129, 160, 0, 2),
+    (161, 192, 3, 2),
+    (193, 224, 2, 1),
+    (225, 256, 1, 0),
+    (257, 288, 0, 2),
+    (289, 320, 3, 2),
+    (321, 352, 2, 3),
+    (353, 384, 1, 3),
+    (385, 416, 0, 0),
+    (417, 448, 3, 2),
+    (449, 480, 2, 1),
+    (481, 512, 1, 3),
+    (513, 544, 0, 3),
+    (545, 576, 3, 3),
+    (577, 608, 2, 3),
+    (609, 640, 1, 0),
+    (641, 672, 0, 3),
+    (673, 704, 3, 0),
+    (705, 736, 2, 1),
+    (737, 768, 1, 1),
+];
+
+const H: [[u8; 32]; 4] = [
+    [
+        0, 2, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, 2, 2, 1, 1, 0, 2, 0, 0, 0, 0, 1, 1, 2, 0, 0, 0, 2, 2,
+        1, 1,
+    ],
+    [
+        0, 3, 2, 3, 0, 1, 3, 0, 2, 1, 2, 3, 2, 3, 3, 0, 0, 3, 2, 3, 0, 1, 3, 0, 2, 1, 2, 3, 2, 3,
+        3, 0,
+    ],
+    [
+        0, 0, 0, 2, 0, 2, 1, 3, 2, 2, 0, 2, 2, 0, 1, 3, 0, 0, 0, 2, 0, 2, 1, 3, 2, 2, 0, 2, 2, 0,
+        1, 3,
+    ],
+    [
+        0, 1, 2, 1, 0, 3, 3, 2, 2, 3, 2, 1, 2, 1, 3, 2, 0, 1, 2, 1, 0, 3, 3, 2, 2, 3, 2, 1, 2, 1,
+        3, 2,
+    ],
+];
+
+#[cfg(test)]
+#[must_use]
+pub fn reference_phase(carrier: i16) -> Option<f32> {
+    reference_phase_for_mode(TransmissionMode::I, carrier)
+}
+
+#[must_use]
+pub fn reference_phase_for_mode(mode: TransmissionMode, carrier: i16) -> Option<f32> {
+    const II: [(u8, u8); 12] = [
+        (0, 2),
+        (1, 3),
+        (2, 2),
+        (3, 2),
+        (0, 1),
+        (1, 2),
+        (2, 0),
+        (1, 2),
+        (0, 2),
+        (3, 1),
+        (2, 0),
+        (1, 3),
+    ];
+    const III: [(u8, u8); 6] = [(0, 2), (1, 3), (2, 0), (3, 2), (2, 2), (1, 2)];
+    const IV: [(u8, u8); 24] = [
+        (0, 0),
+        (1, 1),
+        (2, 1),
+        (3, 2),
+        (0, 2),
+        (1, 2),
+        (2, 0),
+        (3, 3),
+        (0, 3),
+        (1, 1),
+        (2, 3),
+        (3, 2),
+        (0, 0),
+        (3, 1),
+        (2, 0),
+        (1, 2),
+        (0, 0),
+        (3, 1),
+        (2, 2),
+        (1, 2),
+        (0, 2),
+        (3, 1),
+        (2, 3),
+        (1, 0),
+    ];
+    let half = Mode::new(mode).carriers() as i16 / 2;
+    if carrier == 0 || !(-half..=half).contains(&carrier) {
+        return None;
+    }
+    let index = usize::try_from(if carrier < 0 {
+        carrier + half
+    } else {
+        carrier + half - 1
+    })
+    .ok()?;
+    let (table, offset) = match mode {
+        TransmissionMode::I => {
+            let &(_, _, table, offset) = PHASE_STEPS.get(index / 32)?;
+            (table, offset)
+        }
+        TransmissionMode::Ii => II[index / 32],
+        TransmissionMode::Iii => III[index / 32],
+        TransmissionMode::Iv => IV[index / 32],
+    };
+    Some(PI / 2.0 * f32::from(H[usize::from(table)][index % 32] + offset))
+}
+
+#[cfg(test)]
+#[must_use]
+pub fn reference_symbol() -> Vec<Complex<f32>> {
+    reference_symbol_for_mode(TransmissionMode::I)
+}
+
+#[must_use]
+pub fn reference_symbol_for_mode(transmission_mode: TransmissionMode) -> Vec<Complex<f32>> {
+    let mode = Mode::new(transmission_mode);
+    let mut bins = vec![Complex::new(0.0, 0.0); mode.useful];
+    let half = mode.carriers() as i16 / 2;
+    for carrier in -half..=half {
+        if let Some(phase) = reference_phase_for_mode(transmission_mode, carrier) {
+            bins[mode.carrier_bin(carrier)] = Complex::from_polar(1.0, phase);
+        }
+    }
+    bins
+}
+
+#[cfg(test)]
+#[must_use]
+pub fn carrier_bin(carrier: i16) -> usize {
+    Mode::new(TransmissionMode::I).carrier_bin(carrier)
+}
+
+#[cfg(test)]
+#[must_use]
+pub fn interleaving() -> Vec<usize> {
+    interleaving_for_mode(TransmissionMode::I)
+}
+
+#[must_use]
+pub fn interleaving_for_mode(transmission_mode: TransmissionMode) -> Vec<usize> {
+    let mode = Mode::new(transmission_mode);
+    let mut value = 0usize;
+    let mut table = Vec::with_capacity(mode.carriers());
+    for _ in 1..mode.useful {
+        value = (13 * value + mode.useful / 4 - 1) % mode.useful;
+        if value == mode.useful / 2 || !(mode.useful / 8..=7 * mode.useful / 8).contains(&value) {
+            continue;
+        }
+        table.push(mode.carrier_bin((value as i32 - mode.useful as i32 / 2) as i16));
+    }
+    table
+}
+
+fn clamp(value: f32) -> Soft {
+    let limit = f32::from(CONFIDENT);
+    (value * limit).clamp(-limit, limit) as Soft
+}
+
+pub struct SymbolDemod {
+    mode: Mode,
+    fft: Transform,
+    bins: Vec<usize>,
+    scratch: Vec<Complex<f32>>,
+    previous: Vec<Complex<f32>>,
+    current: Vec<Complex<f32>>,
+    differentials: Vec<Complex<f32>>,
+    rotation: Nco,
+    have_reference: bool,
+    levels: Vec<f32>,
+    have_levels: bool,
+    signal: f64,
+    noise: f64,
+}
+
+impl SymbolDemod {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::for_mode(TransmissionMode::I)
+    }
+
+    #[must_use]
+    pub fn for_mode(transmission_mode: TransmissionMode) -> Self {
+        let mode = Mode::new(transmission_mode);
+        Self {
+            mode,
+            fft: Transform::forward(mode.useful),
+            bins: interleaving_for_mode(transmission_mode),
+            scratch: vec![Complex::new(0.0, 0.0); mode.useful],
+            previous: vec![Complex::new(0.0, 0.0); mode.useful],
+            current: vec![Complex::new(0.0, 0.0); mode.useful],
+            differentials: vec![Complex::new(0.0, 0.0); mode.carriers()],
+            rotation: Nco::new(0.0, 1.0),
+            have_reference: false,
+            levels: vec![0.0; mode.carriers()],
+            have_levels: false,
+            signal: 0.0,
+            noise: 0.0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.have_reference = false;
+        self.have_levels = false;
+        self.signal = 0.0;
+        self.noise = 0.0;
+    }
+
+    #[must_use]
+    pub fn snr_db(&self) -> f32 {
+        if self.noise <= 0.0 || self.signal <= 0.0 {
+            return 0.0;
+        }
+        (10.0 * (self.signal / self.noise).log10()).clamp(0.0, 40.0) as f32
+    }
+
+    fn transform(&mut self, useful: &[Complex<f32>], fraction: f32) {
+        std::mem::swap(&mut self.previous, &mut self.current);
+        self.scratch.copy_from_slice(useful);
+        self.fft.process(&mut self.scratch);
+        let half = self.mode.carriers() / 2;
+        let useful = self.mode.useful;
+        let turns = f64::from(fraction) / useful as f64;
+        self.rotation.set_turns(turns);
+        self.rotation.set_phase(-turns * half as f64);
+        self.rotation.mix_into(
+            &self.scratch[useful - half..],
+            &mut self.current[useful - half..],
+        );
+        self.rotation
+            .mix_into(&self.scratch[..=half], &mut self.current[..=half]);
+    }
+
+    pub fn demodulate(
+        &mut self,
+        useful: &[Complex<f32>],
+        fraction: f32,
+        out: &mut Vec<Soft>,
+    ) -> bool {
+        if useful.len() != self.mode.useful {
+            return false;
+        }
+        self.transform(useful, fraction);
+        if !self.have_reference {
+            self.have_reference = true;
+            return false;
+        }
+        let power = self.differentiate();
+        let mean = (power / (2 * self.bins.len()) as f32).max(1e-20);
+        let scale = std::f32::consts::SQRT_2 / mean;
+        let carriers = self.mode.carriers();
+        let start = out.len();
+        out.resize(start + self.mode.symbol_bits(), 0);
+        let (real, imaginary) = out[start..].split_at_mut(carriers);
+        let noise = soft_decisions(
+            &self.differentials,
+            &mut self.levels,
+            self.have_levels,
+            scale,
+            real,
+            imaginary,
+        );
+        self.signal += 2.0 * carriers as f64;
+        self.noise += f64::from(noise);
+        self.have_levels = true;
+        true
+    }
+
+    /// Gathers each carrier's differential `current * conj(previous)` in interleaved order and
+    /// returns the power of both symbols over the data carriers.
+    fn differentiate(&mut self) -> f32 {
+        let mut power = 0.0f32;
+        for (differential, &bin) in self.differentials.iter_mut().zip(&self.bins) {
+            let current = self.current[bin];
+            let previous = self.previous[bin];
+            *differential = current * previous.conj();
+            power += current.norm_sqr() + previous.norm_sqr();
+        }
+        power
+    }
+}
+
+const LANES: usize = 8;
+
+/// Turns the differentials into soft bits scaled by the mean carrier power, tracks each
+/// carrier's level and returns the squared distance of the level-equalized points from the
+/// nearest QPSK corner. Works in blocks of `LANES` carriers with independent partial sums so
+/// the loop vectorizes.
+fn soft_decisions(
+    differentials: &[Complex<f32>],
+    levels: &mut [f32],
+    tracking: bool,
+    scale: f32,
+    real: &mut [Soft],
+    imaginary: &mut [Soft],
+) -> f32 {
+    let mut noise = [0.0f32; LANES];
+    let blocks = differentials
+        .as_chunks::<LANES>()
+        .0
+        .iter()
+        .zip(levels.as_chunks_mut::<LANES>().0)
+        .zip(real.as_chunks_mut::<LANES>().0)
+        .zip(imaginary.as_chunks_mut::<LANES>().0);
+    for (((differential, level), re), im) in blocks {
+        for lane in 0..LANES {
+            noise[lane] += decide(
+                differential[lane],
+                &mut level[lane],
+                tracking,
+                scale,
+                &mut re[lane],
+                &mut im[lane],
+            );
+        }
+    }
+    let whole = differentials.len() / LANES * LANES;
+    for index in whole..differentials.len() {
+        noise[0] += decide(
+            differentials[index],
+            &mut levels[index],
+            tracking,
+            scale,
+            &mut real[index],
+            &mut imaginary[index],
+        );
+    }
+    noise.iter().sum()
+}
+
+#[inline(always)]
+fn decide(
+    differential: Complex<f32>,
+    level: &mut f32,
+    tracking: bool,
+    scale: f32,
+    re: &mut Soft,
+    im: &mut Soft,
+) -> f32 {
+    let magnitude = differential.norm_sqr().sqrt();
+    *level = if tracking {
+        *level + LEVEL_RATE * (magnitude - *level)
+    } else {
+        magnitude
+    };
+    let equalized = differential * (std::f32::consts::SQRT_2 / level.max(1e-20));
+    let error = Complex::new(
+        equalized.re - equalized.re.signum(),
+        equalized.im - equalized.im.signum(),
+    );
+    *re = clamp(-differential.re * scale);
+    *im = clamp(-differential.im * scale);
+    error.norm_sqr()
+}
+
+impl Default for SymbolDemod {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+#[must_use]
+pub fn map_symbol(bits: &[bool]) -> Vec<Complex<f32>> {
+    map_symbol_for_mode(TransmissionMode::I, bits)
+}
+
+#[must_use]
+pub fn map_symbol_for_mode(
+    transmission_mode: TransmissionMode,
+    bits: &[bool],
+) -> Vec<Complex<f32>> {
+    let carriers = Mode::new(transmission_mode).carriers();
+    let amplitude = std::f32::consts::FRAC_1_SQRT_2;
+    (0..carriers)
+        .map(|index| {
+            Complex::new(
+                if bits[index] { -amplitude } else { amplitude },
+                if bits[carriers + index] {
+                    -amplitude
+                } else {
+                    amplitude
+                },
+            )
+        })
+        .collect()
+}
+
+pub struct FrameSync {
+    shortest: usize,
+    longest: usize,
+    window: [f32; NULL_WINDOW],
+    at: usize,
+    filled: usize,
+    sum: f64,
+    average: f32,
+    quiet: usize,
+    started: bool,
+}
+
+impl FrameSync {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self::for_mode(TransmissionMode::I)
+    }
+
+    #[must_use]
+    pub const fn for_mode(mode: TransmissionMode) -> Self {
+        let null = Mode::new(mode).null;
+        Self::between(null / 2, 2 * null)
+    }
+
+    #[must_use]
+    pub const fn any_mode() -> Self {
+        Self::between(
+            Mode::new(TransmissionMode::Iii).null / 2,
+            2 * Mode::new(TransmissionMode::I).null,
+        )
+    }
+
+    const fn between(shortest: usize, longest: usize) -> Self {
+        Self {
+            shortest,
+            longest,
+            window: [0.0; NULL_WINDOW],
+            at: 0,
+            filled: 0,
+            sum: 0.0,
+            average: 0.0,
+            quiet: 0,
+            started: false,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.window = [0.0; NULL_WINDOW];
+        self.at = 0;
+        self.filled = 0;
+        self.sum = 0.0;
+        self.average = 0.0;
+        self.quiet = 0;
+        self.started = false;
+    }
+
+    pub fn push(&mut self, sample: Complex<f32>) -> Option<usize> {
+        self.scan(std::slice::from_ref(&sample))
+            .map(|(_, window)| window)
+    }
+
+    /// Feeds samples until one ends a null and returns its index with the detector window.
+    /// The running state lives in locals for the scan so it stays in registers.
+    pub fn scan(&mut self, samples: &[Complex<f32>]) -> Option<(usize, usize)> {
+        let mut sum = self.sum;
+        let mut average = self.average;
+        let mut quiet = self.quiet;
+        let mut started = self.started;
+        let mut at = self.at;
+        let mut found = None;
+        for (index, sample) in samples.iter().enumerate() {
+            let power = sample.norm_sqr();
+            sum += f64::from(power) - f64::from(self.window[at]);
+            self.window[at] = power;
+            at = (at + 1) % NULL_WINDOW;
+            if self.filled < NULL_WINDOW {
+                self.filled += 1;
+                continue;
+            }
+            let smoothed = (sum.max(0.0) / NULL_WINDOW as f64) as f32;
+            if average == 0.0 {
+                average = smoothed.max(1e-12);
+            }
+            if smoothed < average * NULL_POWER_RATIO {
+                quiet += 1;
+                started = true;
+                continue;
+            }
+            average = sdrmm_dsp::madd(
+                average,
+                1.0 - CARRIER_AVERAGE_RATE,
+                CARRIER_AVERAGE_RATE * smoothed,
+            );
+            let ended = started && (self.shortest..self.longest).contains(&quiet);
+            quiet = 0;
+            started = true;
+            if ended {
+                found = Some((index, NULL_WINDOW));
+                break;
+            }
+        }
+        self.sum = sum;
+        self.average = average;
+        self.quiet = quiet;
+        self.started = started;
+        self.at = at;
+        found
+    }
+}
+
+impl Default for FrameSync {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_interleaving_table_covers_every_carrier_exactly_once() {
+        let table = interleaving();
+        assert_eq!(table.len(), CARRIERS);
+        let mut seen = table.clone();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), CARRIERS);
+        assert!(seen.iter().all(|&bin| bin <= 768 || bin >= 1_280));
+        assert!(!seen.contains(&0));
+        assert_eq!(table[0], carrier_bin(511 - 1_024));
+    }
+
+    #[test]
+    fn every_mode_matches_the_published_interleaver_examples() {
+        use TransmissionMode::{I, Ii, Iii, Iv};
+        for (mode, expected) in [
+            (I, [-513, -14, 329, 692, -733]),
+            (Ii, [-129, -14, -55, -76, 163]),
+            (Iii, [-65, -14, 52, -29, -58]),
+            (Iv, [-257, -14, 73, 180, 198]),
+        ] {
+            let parameters = Mode::new(mode);
+            let table = interleaving_for_mode(mode);
+            assert_eq!(table.len(), parameters.carriers());
+            assert_eq!(
+                &table[..5],
+                &expected.map(|carrier| parameters.carrier_bin(carrier))
+            );
+            let mut unique = table;
+            unique.sort_unstable();
+            unique.dedup();
+            assert_eq!(unique.len(), parameters.carriers());
+            assert!(!unique.contains(&0));
+        }
+    }
+
+    #[test]
+    fn the_reference_symbol_has_unit_carriers_on_the_documented_grid() {
+        let bins = reference_symbol();
+        assert_eq!(bins[0], Complex::new(0.0, 0.0));
+        for carrier in [-768i16, -1, 1, 768] {
+            assert!(
+                (bins[carrier_bin(carrier)].norm() - 1.0).abs() < 1e-6,
+                "carrier {carrier}"
+            );
+        }
+        assert!((reference_phase(-768).expect("first carrier") - 0.5 * PI).abs() < 1e-6);
+        assert!(reference_phase(0).is_none());
+        assert!(reference_phase(769).is_none());
+    }
+
+    fn modulate(symbols: &[Vec<bool>]) -> Vec<Complex<f32>> {
+        let table = interleaving();
+        let mut inverse = Transform::inverse(USEFUL);
+        let mut previous: Vec<Complex<f32>> = {
+            let reference = reference_symbol();
+            table.iter().map(|&bin| reference[bin]).collect()
+        };
+        let mut iq = vec![Complex::new(0.0, 0.0); NULL];
+        let mut emit = |points: &[Complex<f32>], table: &[usize], out: &mut Vec<Complex<f32>>| {
+            let mut bins = vec![Complex::new(0.0, 0.0); USEFUL];
+            for (index, &bin) in table.iter().enumerate() {
+                bins[bin] = points[index];
+            }
+            inverse.process_unitary(&mut bins);
+            out.extend_from_slice(&bins[USEFUL - GUARD..]);
+            out.extend_from_slice(&bins);
+        };
+        emit(&previous, &table, &mut iq);
+        for bits in symbols {
+            let mapped = map_symbol(bits);
+            let points: Vec<Complex<f32>> = mapped
+                .iter()
+                .zip(&previous)
+                .map(|(&point, &reference)| point * reference)
+                .collect();
+            emit(&points, &table, &mut iq);
+            previous = points;
+        }
+        iq
+    }
+
+    fn payload(index: usize) -> Vec<bool> {
+        let mut state = 0x2545_F491u32 ^ index as u32;
+        (0..SYMBOL_BITS)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                state & 1 == 1
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_differentially_modulated_symbol_comes_back_bit_for_bit() {
+        let sent: Vec<Vec<bool>> = (0..4).map(payload).collect();
+        let iq = modulate(&sent);
+        let mut demod = SymbolDemod::new();
+        let mut bits = Vec::new();
+        for index in 0..=sent.len() {
+            let start = NULL + index * SYMBOL + GUARD;
+            demod.demodulate(&iq[start..start + USEFUL], 0.0, &mut bits);
+        }
+        assert_eq!(bits.len(), sent.len() * SYMBOL_BITS);
+        for (index, expected) in sent.iter().enumerate() {
+            let decoded: Vec<bool> = bits[index * SYMBOL_BITS..(index + 1) * SYMBOL_BITS]
+                .iter()
+                .map(|&value| value > 0)
+                .collect();
+            assert_eq!(&decoded, expected, "symbol {index}");
+        }
+    }
+
+    #[test]
+    fn the_null_symbol_marks_the_start_of_a_frame() {
+        let iq = modulate(&(0..4).map(payload).collect::<Vec<_>>());
+        let mut sync = FrameSync::new();
+        let mut starts = Vec::new();
+        let mut lead = vec![Complex::new(0.4, -0.3); 4_000];
+        lead.extend_from_slice(&iq);
+        for (index, &sample) in lead.iter().enumerate() {
+            if let Some(carrier_run) = sync.push(sample) {
+                starts.push(index + 1 - carrier_run);
+            }
+        }
+        assert_eq!(starts.len(), 1);
+        let expected = 4_000 + NULL;
+        assert!(
+            (expected - NULL_WINDOW..=expected).contains(&starts[0]),
+            "found the frame at {} rather than within a window before {expected}",
+            starts[0]
+        );
+    }
+}

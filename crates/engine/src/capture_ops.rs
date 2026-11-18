@@ -198,7 +198,7 @@ impl Engine {
             let writer = audio_recording::create_writer(
                 &dir,
                 &sdrmm_recorder::audio_stem(started_at, &source.mode, source.freq_hz),
-                sdrmm_channels::AUDIO_RATE,
+                sdrmm_decoder::AUDIO_RATE,
                 source.channels,
             )?;
             let path = writer.path().to_path_buf();
@@ -284,7 +284,7 @@ impl Engine {
         }
         Ok(AudioSource {
             stream: channel.stream,
-            channels: sdrmm_channels::audio_channels(&channel.settings.params),
+            channels: sdrmm_decoder::audio_channels(&channel.settings.params),
             device_rate: sample_rate_of(&state.settings),
             mode: channel.settings.params.type_id().to_owned(),
             freq_hz: channel.settings.frequency_hz,
@@ -306,7 +306,7 @@ impl Engine {
             && state.channels.iter().any(|c| {
                 c.id == take.channel
                     && c.stream == recording.stream
-                    && sdrmm_channels::audio_channels(&c.settings.params) == recording.channels
+                    && sdrmm_decoder::audio_channels(&c.settings.params) == recording.channels
             });
         if !fits {
             return Err(Box::new(recording));

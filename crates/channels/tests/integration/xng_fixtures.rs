@@ -5,8 +5,9 @@ use std::path::Path;
 use num_complex::Complex;
 use sdrmm_channels::AisChannel;
 use sdrmm_channels::AisParams;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs, reference_data};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_dsp::Ddc;
+use sdrmm_test_support::reference_data;
 use sdrmm_wire::{ChannelParams, ChannelSettings, DecoderEvent};
 
 const BLOCK: usize = 16_384;
@@ -53,15 +54,15 @@ fn load(dir: &Path, capture: &Capture) -> Vec<Complex<f32>> {
 }
 
 fn decode(iq: &[Complex<f32>], capture: &Capture, settings: &ChannelSettings) -> Vec<DecoderEvent> {
-    let rate = sdrmm_channels::input_rate(&settings.params);
+    let rate = sdrmm_decoder::input_rate(&settings.params);
     let mut ddc = Ddc::new(
         capture.rate,
         rate,
         settings.frequency_hz - capture.center_hz,
     )
     .unwrap();
-    let mut filter = sdrmm_channels::channel_filter(&settings.params).unwrap();
-    let mut rx = sdrmm_channels::create(ChannelCtx { input_rate: rate }, settings).unwrap();
+    let mut filter = sdrmm_decoder::channel_filter(&settings.params).unwrap();
+    let mut rx = sdrmm_decoder::create(ChannelCtx { input_rate: rate }, settings).unwrap();
     let mut narrow = Vec::new();
     let mut filtered = Vec::new();
     let mut outputs = ChannelOutputs::default();
@@ -80,7 +81,7 @@ fn decode(iq: &[Complex<f32>], capture: &Capture, settings: &ChannelSettings) ->
 fn tuned(type_id: &str, frequency_hz: f64) -> ChannelSettings {
     ChannelSettings {
         frequency_hz,
-        ..sdrmm_channels::default_settings(type_id).unwrap()
+        ..sdrmm_decoder::default_settings(type_id).unwrap()
     }
 }
 

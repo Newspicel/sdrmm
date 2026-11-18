@@ -1,4 +1,4 @@
-use sdrmm_channels::array_processor::MissionShape;
+use sdrmm_array::MissionShape;
 use sdrmm_wire::{
     ARRAY_PORT, DfMission, MissionBody, MissionControl, MissionProblem, PositionLink, RadarMission,
 };

@@ -1,4 +1,5 @@
-use super::{PULSE_FRACTION, track::Track};
+use super::PULSE_FRACTION;
+use sdrmm_dsp::SampleHistory;
 
 const MIN_LINES: u32 = 5;
 const PULSE_LEVEL: f64 = 0.6;
@@ -92,7 +93,7 @@ impl Phasing {
         self.fit.count == 0 && self.cursor >= index
     }
 
-    pub(super) fn scan(&mut self, track: &Track, period: f64) -> Scan {
+    pub(super) fn scan(&mut self, track: &SampleHistory, period: f64) -> Scan {
         let half = (period / 2.0).round() as u64;
         let span = period.round() as u64;
         self.cursor = self.cursor.max(half);
@@ -133,13 +134,14 @@ impl Phasing {
     }
 }
 
-fn find_pulse(track: &Track, cursor: u64, span: u64, half: u64, period: f64) -> Pulse {
+fn find_pulse(track: &SampleHistory, cursor: u64, span: u64, half: u64, period: f64) -> Pulse {
     let width = (period * PULSE_FRACTION).round().max(1.0) as u64;
     let lead = width / 2;
     let mut box_sum = track.sum(cursor - lead, cursor - lead + width);
     let mut best = (cursor, box_sum);
     for center in cursor + 1..cursor + span {
-        box_sum += track.at(center - lead + width - 1) - track.at(center - lead - 1);
+        box_sum += f64::from(track.get(center - lead + width - 1))
+            - f64::from(track.get(center - lead - 1));
         if box_sum > best.1 {
             best = (center, box_sum);
         }

@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod burst;
 pub(crate) mod coding;
@@ -20,12 +23,10 @@ use burst::INPUT_RATE_HZ;
 use monitor::Monitor;
 use num_complex::Complex;
 use receiver::Receiver;
-use sdrmm_dsp::{Decimator, design_lowpass};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const FILTER_TAPS: usize = 47;
@@ -47,11 +48,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-GSM_CHANNEL_SPACING_HZ / 2.0, GSM_CHANNEL_SPACING_HZ / 2.0)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(FILTER_TAPS, FILTER_CUTOFF_HZ / INPUT_RATE_HZ),
-        1,
-    ))
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::lowpass(FILTER_TAPS, FILTER_CUTOFF_HZ)
 }
 
 fn params(settings: &ChannelSettings) -> Result<GsmParams, ChannelError> {
@@ -81,7 +79,7 @@ impl NativeChannel for GsmChannel {
     }
 }
 
-impl ChannelRx for GsmChannel {
+impl Channel for GsmChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         self.monitor.set_params(params(&settings)?);
         if settings.frequency_hz != self.frequency_hz {
@@ -126,5 +124,7 @@ fn gsm_kinds() -> Vec<KindSpec> {
     vec![crate::gsm::gsm_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

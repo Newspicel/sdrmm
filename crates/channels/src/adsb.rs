@@ -1,15 +1,18 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{ANY_MODULATION, HzRange, SignalSignature};
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod beast;
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 mod screen;
 
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{bits_be, mode_s_bit_overlays, mode_s_fix_single_bit, mode_s_overlay};
+use sdrmm_dsp::{CrcParity, bits_be};
 use sdrmm_modem::{
     constellation::tables::gray_inverse,
     ppm::{PpmDemod, SlotDetector, magnitudes},
@@ -19,11 +22,10 @@ use sdrmm_wire::{
     ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind, PositionFix,
 };
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    check_input_rate,
-};
 use screen::{Phases, PreambleScreen};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 
 pub(crate) const INPUT_RATE_HZ: f64 = 2_400_000.0;
 const BANDWIDTH_HZ: f64 = 2_000_000.0;
@@ -32,6 +34,8 @@ const CHIP_S: f64 = 0.5e-6;
 const PREAMBLE_CHIPS: usize = 16;
 const PREAMBLE_PULSES: [usize; 4] = [0, 2, 7, 9];
 const PREAMBLE_FAR_GAPS: [usize; 6] = [4, 5, 11, 12, 13, 14];
+/// Mode S parity: a CRC-24 that may carry an address.
+pub(crate) const PARITY: CrcParity = CrcParity::new(0x00FF_F409, 24);
 const SHORT_BYTES: usize = 7;
 const LONG_BYTES: usize = 14;
 const LONG_BITS: usize = LONG_BYTES * 8;
@@ -142,7 +146,7 @@ struct Sliced {
 }
 
 fn params(settings: &ChannelSettings) -> Result<AdsbParams, ChannelError> {
-    crate::settings_of::<AdsbParams>(settings)
+    sdrmm_decoder::settings_of::<AdsbParams>(settings)
 }
 
 fn check_params(p: &AdsbParams) -> Result<(), ChannelError> {
@@ -181,8 +185,8 @@ pub(crate) fn occupied_band() -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    ChannelFilter::Passthrough
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::Passthrough
 }
 
 fn preamble_ok(receiver: &PpmDemod, window: &[f32]) -> bool {
@@ -665,16 +669,14 @@ impl AdsbChannel {
     fn attribute(&self, frame: &mut [u8], df: u8, at: u64) -> Option<(u32, bool)> {
         match df {
             17 | 18 => {
-                if mode_s_overlay(frame)? != 0
-                    && (!self.crc_fix || mode_s_fix_single_bit(frame).is_none())
-                {
+                if overlay(frame)? != 0 && (!self.crc_fix || fix_single_bit(frame).is_none()) {
                     return None;
                 }
                 Some((clear_address(frame), true))
             }
-            11 => (mode_s_overlay(frame)? <= ALL_CALL_PI_MAX).then(|| (clear_address(frame), true)),
+            11 => (overlay(frame)? <= ALL_CALL_PI_MAX).then(|| (clear_address(frame), true)),
             0 | 4 | 5 | 16 | 20 | 21 => {
-                let icao = mode_s_overlay(frame)?;
+                let icao = overlay(frame)?;
                 self.vouched(icao, at).then_some((icao, false))
             }
             _ => None,
@@ -689,7 +691,7 @@ impl AdsbChannel {
             _ => return None,
         };
         let weakest = weakest_bits(&sliced.reliability[..len * 8]);
-        let base = mode_s_overlay(&sliced.frame[..len])?;
+        let base = overlay(&sliced.frame[..len])?;
         let most_flips = if matches!(df, 17 | 18) {
             CHASE_BITS as u32
         } else {
@@ -796,13 +798,13 @@ impl NativeChannel for AdsbChannel {
             stream_pos: 0,
             cpr: Vec::with_capacity(TRACK_CACHE_LEN),
             evicted: 0,
-            short_flips: mode_s_bit_overlays(SHORT_BYTES),
-            long_flips: mode_s_bit_overlays(LONG_BYTES),
+            short_flips: PARITY.bit_overlays(SHORT_BYTES),
+            long_flips: PARITY.bit_overlays(LONG_BYTES),
         })
     }
 }
 
-impl ChannelRx for AdsbChannel {
+impl Channel for AdsbChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let p = params(&settings)?;
         check_params(&p)?;
@@ -855,13 +857,17 @@ fn adsb_signatures() -> Vec<SignalSignature> {
 }
 
 pub(crate) fn adsb_decoder() -> Native<AdsbParams> {
-    Native::new::<AdsbChannel>(|_| occupied_band())
+    let decoder = Native::new::<AdsbChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
         .home(1_090_000_000.0)
         .signatures(adsb_signatures)
         .form(adsb_form)
         .kinds(adsb_kinds)
-        .feeds(beast::feeds)
+        .feeds(beast::feeds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS).recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn adsb_form() -> Vec<SettingField> {
@@ -875,26 +881,38 @@ fn adsb_kinds() -> Vec<KindSpec> {
     vec![crate::adsb::adsb_kind()]
 }
 
+fn overlay(frame: &[u8]) -> Option<u32> {
+    is_transmission(frame.len())
+        .then(|| PARITY.overlay(frame))
+        .flatten()
+}
+
+fn fix_single_bit(frame: &mut [u8]) -> Option<usize> {
+    is_transmission(frame.len())
+        .then(|| PARITY.fix_single_bit(frame))
+        .flatten()
+}
+
+const fn is_transmission(len: usize) -> bool {
+    len == SHORT_BYTES || len == LONG_BYTES
+}
+
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests {
     use sdrmm_wire::ChannelParams;
     use std::f64::consts::{PI, TAU};
 
-    use crate::nfm::NfmParams;
-
     use super::*;
-    use crate::{
-        synth::{
-            add_noise,
-            adsb::{
-                air_air_reply, all_call_reply, altitude_reply, comm_b_altitude_reply,
-                comm_b_identity_reply, identity_reply, mb_identification, me_airborne_position,
-                me_airborne_position_gnss, me_identification, me_surface_position, me_velocity,
-                position_me_raw, squitter, transmission, transmission_at_phase,
-            },
-        },
-        testutil::settings,
+    use crate::synth::adsb::{
+        air_air_reply, all_call_reply, altitude_reply, comm_b_altitude_reply,
+        comm_b_identity_reply, identity_reply, mb_identification, me_airborne_position,
+        me_airborne_position_gnss, me_identification, me_surface_position, me_velocity,
+        position_me_raw, squitter, transmission, transmission_at_phase,
     };
+    use sdrmm_decoder_test_support::settings;
+    use sdrmm_modem::synth::add_noise;
 
     const LAT: f64 = 52.257_2;
     const LON: f64 = 13.409_1;
@@ -949,7 +967,7 @@ mod tests {
             .chunks(2)
             .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
             .collect();
-        sdrmm_dsp::mode_s_append_parity(&mut frame);
+        PARITY.append(&mut frame, 0);
         frame
     }
 
@@ -1765,15 +1783,13 @@ mod tests {
     #[test]
     fn mismatched_params_variant_is_rejected() {
         let mut chan = channel(&AdsbParams::default());
-        let err = chan.apply(settings(
-            ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings"),
-        ));
+        let err = chan.apply(settings(ChannelParams::bare("nfm")));
         assert!(matches!(err, Err(ChannelError::InvalidSettings(_))));
         let built = AdsbChannel::new(
             ChannelCtx {
                 input_rate: INPUT_RATE_HZ,
             },
-            settings(ChannelParams::new("nfm", &NfmParams::default()).expect("nfm settings")),
+            settings(ChannelParams::bare("nfm")),
         );
         assert!(matches!(built, Err(ChannelError::InvalidSettings(_))));
     }

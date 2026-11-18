@@ -4,15 +4,17 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use num_complex::Complex;
-use sdrmm_channels::{AdsbParams, NativeChannel};
+use sdrmm_channels::AdsbParams;
 use sdrmm_channels::{
-    ChannelCtx, ChannelOutputs, ChannelRx, Dvbs2Rate,
+    Dvbs2Rate,
     synth::{
-        add_noise,
         adsb::{me_identification, squitter, transmission},
         datv::{Ldpc, LdpcFrame},
     },
 };
+use sdrmm_decoder::NativeChannel;
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_modem::synth::add_noise;
 use sdrmm_modem_test_support::ber::rng::Rng;
 use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 

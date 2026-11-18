@@ -19,11 +19,11 @@ describe("newNodeBody", () => {
   });
 
   it("hands out a fresh copy each time", () => {
-    const listed = CATALOG.nodes.find((entry) => entry.kind === "df")?.default_body;
-    const first = newNodeBody(CATALOG, "df");
+    const listed = CATALOG.nodes.find((entry) => entry.kind === "triangulation")?.default_body;
+    const first = newNodeBody(CATALOG, "triangulation");
     expect(first).toEqual(listed);
     expect(first).not.toBe(listed);
-    expect(newNodeBody(CATALOG, "df")).not.toBe(first);
+    expect(newNodeBody(CATALOG, "triangulation")).not.toBe(first);
   });
 
   it("returns null for an unknown kind", () => {
@@ -59,21 +59,23 @@ describe("newNodeBody", () => {
   it("knows which kinds carry no settings", () => {
     expect(carriesSettings(CATALOG, "scope")).toBe(false);
     expect(carriesSettings(CATALOG, "triangulation")).toBe(true);
-    expect(carriesSettings({ nodes: [], port_types: [], event_kinds: [] }, "df")).toBe(false);
+    expect(carriesSettings({ nodes: [], port_types: [], event_kinds: [] }, "triangulation")).toBe(
+      false,
+    );
   });
 });
 
 describe("nodeSettings", () => {
   it("reads stored settings and falls back to the catalog default", () => {
-    const stored = newNodeBody(CATALOG, "df") as PatchNodeOf<"df">;
+    const stored = newNodeBody(CATALOG, "processor", { typeId: "df" }) as PatchNodeOf<"processor">;
     const node = {
       ...stored,
-      id: "df:1",
+      id: "processor:1",
       position: { x: 0, y: 0 },
-      data: { settings: { ...stored.data.settings, report_ms: 900 } },
-    } as PatchNodeOf<"df">;
+      data: { ...stored.data, settings: { ...(stored.data.settings as object), report_ms: 900 } },
+    } as PatchNodeOf<"processor">;
     expect(nodeSettings(CATALOG, node)?.report_ms).toBe(900);
-    const bare = { ...node, data: {} } as PatchNodeOf<"df">;
+    const bare = { ...node, data: { processor_type: "df" } } as PatchNodeOf<"processor">;
     expect(nodeSettings(CATALOG, bare)).toEqual(stored.data.settings);
   });
 });

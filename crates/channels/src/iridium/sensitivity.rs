@@ -36,7 +36,7 @@ pub(super) fn traffic(count: usize, seed: u64) -> Vec<(Sent, Vec<u8>)> {
             }
             1 => {
                 let payload: [u8; 20] = std::array::from_fn(|_| (next() & 0xff) as u8);
-                let hex = crate::datalink::hex(&payload);
+                let hex = sdrmm_crypto::hex_string(&payload);
                 (Sent::Data { hex }, da_burst_bits(false, 0, 20, &payload))
             }
             _ => {
@@ -59,7 +59,10 @@ pub(super) fn matches(sent: &Sent, found: &Found) -> bool {
 }
 
 fn filtered(iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
-    let mut filter = channel_filter(crate::iridium::IridiumParams::default());
+    let mut filter = sdrmm_decoder_test_support::built_filter(
+        channel_filter(crate::iridium::IridiumParams::default()),
+        crate::iridium::DESCRIPTOR.input_rate_hz,
+    );
     let mut out = Vec::new();
     let mut all = Vec::with_capacity(iq.len());
     for chunk in iq.chunks(8_192) {

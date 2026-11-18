@@ -6,9 +6,9 @@ use sdrmm_dsp::radar::bistatic::{self, Geodetic};
 use sdrmm_engine::ArrayEvent;
 use sdrmm_wire::{
     ArrayNode, ArrayOrientation, DecoderEvent, DeviceBackend, DeviceNode, DeviceRef, GpsNode,
-    NodeBody, PassiveRadarNode, PassiveRadarParams, PatchEdge, PatchGraph, PatchNode, PortRef,
-    Position, PositionSource, RadarAoa, RadarAxes, RadarDetection, RadarProblem, RadarTrack,
-    RadarTrackEvent, RadarUpdate, TrackChange, TrackState, WorkspaceSnapshot, patch::stream_port,
+    NodeBody, PatchEdge, PatchGraph, PatchNode, PortRef, Position, PositionSource, RadarAoa,
+    RadarAxes, RadarDetection, RadarProblem, RadarTrack, RadarTrackEvent, RadarUpdate, TrackChange,
+    TrackState, WorkspaceSnapshot, patch::stream_port,
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -19,6 +19,8 @@ use crate::{
     router_with_state,
     tests::{request, state_over},
 };
+use sdrmm_array::passive_radar::PassiveRadarParams;
+use sdrmm_wire::ServerEvent;
 
 const WAIT: Duration = Duration::from_secs(10);
 const QUIET: Duration = Duration::from_millis(300);
@@ -242,12 +244,7 @@ fn graph(wiring: &Wiring) -> PatchGraph {
             ),
             fixed_gps("rx", RX),
             fixed_gps("tx", TX),
-            node(
-                RADAR,
-                NodeBody::PassiveRadar(PassiveRadarNode {
-                    settings: wiring.params,
-                }),
-            ),
+            node(RADAR, crate::tests::processor_node(&wiring.params)),
             node("log", NodeBody::DecoderLog(Default::default())),
         ],
         edges: (0..5)
@@ -347,18 +344,18 @@ impl Bench {
     }
 
     fn report(&self, update: RadarUpdate) -> RadarUpdate {
-        let mut reading = ProcessorReading::PassiveRadar(update);
+        let mut reading = crate::tests::radar_reading(update);
         self.state
             .reports
             .on_report(&self.state, RADAR, &mut reading);
-        let ProcessorReading::PassiveRadar(done) = reading else {
+        let Some(done) = reading.get::<RadarUpdate>() else {
             panic!("still a radar reading");
         };
-        done
+        done.clone()
     }
 
     fn pump(&self, update: RadarUpdate) {
-        let reading = Arc::new(ProcessorReading::PassiveRadar(update));
+        let reading = Arc::new(crate::tests::radar_reading(update));
         let flow = array::handle(
             &self.state,
             Ok(ArrayEvent::Report {
@@ -392,7 +389,7 @@ async fn radar_update(
         loop {
             match events.recv().await {
                 Ok(ServerEvent::ProcessorUpdate { node, reading, .. }) if node == RADAR => {
-                    if let ProcessorReading::PassiveRadar(update) = *reading
+                    if let Ok(update) = reading.parse::<RadarUpdate>()
                         && wanted(&update)
                     {
                         return update;
@@ -751,7 +748,7 @@ async fn an_unwired_radar_reports_no_array() {
     let (status, body) = bench.call("GET", "/api/processors/radar").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let served: ProcessorReading = serde_json::from_str(&body).expect("a reading");
-    let ProcessorReading::PassiveRadar(served) = served else {
+    let Ok(served) = served.parse::<RadarUpdate>() else {
         panic!("a radar reading: {body}");
     };
     assert_eq!(served.problems, [RadarProblem::NoArray]);
@@ -786,8 +783,12 @@ async fn a_plan_refusal_is_a_problem() {
     let sent = radar_update(&mut events, |update| !update.problems.is_empty()).await;
     assert_eq!(sent.problems, [RadarProblem::Refused(refused.clone())]);
     assert_eq!(
-        bench.state.reports.latest(RADAR),
-        Some(ProcessorReading::PassiveRadar(sent))
+        bench
+            .state
+            .reports
+            .latest(RADAR)
+            .and_then(|latest| latest.parse::<RadarUpdate>().ok()),
+        Some(sent)
     );
 
     let (status, body) = bench.act(RADAR, CLEAR).await;
@@ -804,12 +805,17 @@ async fn clear_tracks_resets_the_tracker() {
     bench
         .state
         .reports
-        .keep(RADAR, &ProcessorReading::PassiveRadar(tracked));
+        .keep(RADAR, &crate::tests::radar_reading(tracked));
 
     let (status, body) = bench.act(RADAR, CLEAR).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body.contains("processed"), "{body}");
-    let Some(ProcessorReading::PassiveRadar(latest)) = bench.state.reports.latest(RADAR) else {
+    let Some(latest) = bench
+        .state
+        .reports
+        .latest(RADAR)
+        .and_then(|latest| latest.parse::<RadarUpdate>().ok())
+    else {
         panic!("a radar picture");
     };
     assert!(latest.tracks.is_empty());

@@ -250,74 +250,11 @@ Sweeps a rotator and maps signal level
 | `iq` | in | IQ | radio, synthetic, derived | one. The lane it measures |
 | `control` | out | Control | point | one. The rotator to sweep |
 
-### Direction finder
-
-Bearings from an array
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-| `events` | out | Events | Bearing | many. True bearings |
-| `bearing` | out | Bearing | A live bearing that steers an array | many. Live bearing to steer a beam |
-
-### Beamformer
-
-Steer, null or combine an array
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-| `steer` | in | Bearing | A live bearing that steers an array | one. A direction finder to steer at |
-| `beam` | out | IQ | derived | many. The combined lane |
-
-### Passive radar
-
-Aircraft echoes of FM, DAB or DVB-T
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-| `tx` | in | Position | A live fix and the heading it comes with | one. GPS node fixed at the transmitter |
-| `truth` | in | Events | ADS-B | many. Tracks with altitude used as truth |
-| `events` | out | Events | Radar, Radar sites | many. Track events |
-
-### Stitch
-
-Spread lanes joined into one wide band
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-| `wide` | out | IQ | derived | many. Every lane joined |
-
-### Spatial spectrum
-
-Bearing over frequency
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-
-### Correlator
-
-Baseline visibilities
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-
-### Polarimeter
-
-Polarisation of two crossed antennas
-
-| Port | Way | Type | Carries | Wires |
-|---|---|---|---|---|
-| `array` | in | Array | One lane per antenna element | one |
-| `beam` | out | IQ | derived | many. Matched to the wave |
-
 ### Processor
 
-An array processor from a plugin
+Runs an array processor
+
+Ports follow the processor the node runs.
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
@@ -494,3 +431,72 @@ Puts an encoder or a lane on the air
 | `iq` | in | IQ | radio, synthetic, derived | one. A lane to send as it is |
 | `baseband` | in | Baseband | One channel, filtered and decimated | one |
 | `transmit` | out | Transmit | What a radio puts on the air | one |
+
+## Processors
+
+What a Processor node runs, and the ports each type gives it.
+
+### Direction finder
+
+Bearings from an array
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+| `events` | out | Events | Bearing | many. True bearings |
+| `bearing` | out | Bearing | A live bearing that steers an array | many. Live bearing to steer a beam |
+
+### Beamformer
+
+Steer, null or combine an array
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+| `steer` | in | Bearing | A live bearing that steers an array | one. A direction finder to steer at |
+| `beam` | out | IQ | derived | many. The combined lane |
+
+### Spatial spectrum
+
+Bearing over frequency
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+
+### Stitch
+
+Spread lanes joined into one wide band
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+| `wide` | out | IQ | derived | many. Every lane joined |
+
+### Correlator
+
+Baseline visibilities
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+
+### Polarimeter
+
+Polarisation of two crossed antennas
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+| `beam` | out | IQ | derived | many. Matched to the wave |
+
+### Passive radar
+
+Aircraft echoes of FM, DAB or DVB-T
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `array` | in | Array | One lane per antenna element | one |
+| `tx` | in | Position | A live fix and the heading it comes with | one. GPS node fixed at the transmitter |
+| `truth` | in | Events | ADS-B | many. Tracks with altitude used as truth |
+| `events` | out | Events | Radar, Radar sites | many. Track events |

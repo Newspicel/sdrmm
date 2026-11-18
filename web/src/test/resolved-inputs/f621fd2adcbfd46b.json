@@ -1,0 +1,72 @@
+{
+  "name": "f621fd2adcbfd46b",
+  "test": "other declared views > asks for the array tuning the processor declares",
+  "graph": {
+    "nodes": [
+      {
+        "id": "arr",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "array",
+        "data": {
+          "geometry": {
+            "kind": "uca",
+            "radius_m": 0.35,
+            "first_deg": 0,
+            "winding": "clockwise"
+          },
+          "orientation": {
+            "kind": "fixed",
+            "azimuth_deg": 0
+          },
+          "declared": "time_sync",
+          "tuning": "together",
+          "cal": {
+            "source": {
+              "kind": "noise"
+            },
+            "check_s": 60,
+            "equaliser": false,
+            "warm_start": true
+          }
+        }
+      },
+      {
+        "id": "proc",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "processor",
+        "data": {
+          "processor_type": "stitch",
+          "settings": {
+            "blend": "snr",
+            "flatten": true,
+            "match_phase": true,
+            "noise_equalise": true,
+            "spur_reject": true
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "arr",
+          "port": "array"
+        },
+        "to": {
+          "node": "proc",
+          "port": "array"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

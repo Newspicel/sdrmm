@@ -1,17 +1,19 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{Ddc, Decimator, NoiseFloor, SpectrumAnalyzer, design_lowpass};
-use sdrmm_wire::{ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily};
+use sdrmm_modem::morse::{FIT_MAX, MorseChunk, MorseReader};
+use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, MorseChannel,
-    NativeChannel, check_input_rate,
-    morse::{FIT_MAX, MorseParams, MorseText, morse_kind},
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
 const RATE: f64 = 48_000.0;
@@ -60,25 +62,14 @@ struct Track {
     held: Vec<CwSkimmerSpot>,
     ddc: Ddc,
     filter: Decimator,
-    morse: MorseChannel,
+    morse: MorseReader,
     mixed: Vec<Complex<f32>>,
     narrow: Vec<Complex<f32>>,
-    output: ChannelOutputs,
+    read: Vec<MorseChunk>,
 }
 
 impl Track {
     fn prototype(wpm: Option<f32>) -> Result<Self, ChannelError> {
-        let morse_settings = ChannelSettings {
-            frequency_hz: 0.0,
-            squelch: sdrmm_wire::Squelch::Off,
-            params: ChannelParams::of(&MorseParams {
-                bandwidth_hz: 400.0,
-                wpm,
-            })
-            .map_err(ChannelError::InvalidSettings)?,
-            blanker: Default::default(),
-            if_filter: Default::default(),
-        };
         Ok(Self {
             frequency_hz: 0.0,
             snr_db: 0.0,
@@ -90,15 +81,10 @@ impl Track {
             ddc: Ddc::new(RATE, MORSE_RATE, 0.0)
                 .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
             filter: Decimator::new(&design_lowpass(TRACK_TAPS, 250.0 / MORSE_RATE), 1),
-            morse: MorseChannel::new(
-                ChannelCtx {
-                    input_rate: MORSE_RATE,
-                },
-                morse_settings,
-            )?,
+            morse: MorseReader::new(MORSE_RATE, wpm),
             mixed: Vec::new(),
             narrow: Vec::new(),
-            output: ChannelOutputs::default(),
+            read: Vec::new(),
         })
     }
 
@@ -118,7 +104,7 @@ impl Track {
             morse: self.morse.clone(),
             mixed: Vec::new(),
             narrow: Vec::new(),
-            output: ChannelOutputs::default(),
+            read: Vec::new(),
         }
     }
 
@@ -136,16 +122,14 @@ impl Track {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<CwSkimmerSpot>) {
         self.ddc.process(iq, &mut self.mixed);
         self.filter.process(&self.mixed, &mut self.narrow);
-        self.output.reset();
-        self.morse.process(&self.narrow, &mut self.output);
-        for event in self.output.events.drain(..) {
-            let Some(message) = event.read::<MorseText>() else {
-                continue;
-            };
+        for sample in &self.narrow {
+            self.morse.push(sample.norm(), &mut self.read);
+        }
+        for MorseChunk { text, wpm } in self.read.drain(..) {
             let spot = CwSkimmerSpot {
                 offset_hz: self.frequency_hz,
-                text: message.text,
-                wpm: message.wpm,
+                text,
+                wpm,
                 snr_db: self.snr_db,
             };
             self.chunks = self.chunks.saturating_add(1);
@@ -187,7 +171,7 @@ pub struct CwSkimmerChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<CwSkimmerParams, ChannelError> {
-    crate::settings_of::<CwSkimmerParams>(settings)
+    sdrmm_decoder::settings_of::<CwSkimmerParams>(settings)
 }
 
 fn check_params(params: &CwSkimmerParams) -> Result<(), ChannelError> {
@@ -241,12 +225,9 @@ pub(crate) fn occupied_band(params: &CwSkimmerParams) -> (f64, f64) {
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: &CwSkimmerParams) -> Result<ChannelFilter, ChannelError> {
+pub(crate) fn channel_filter(params: &CwSkimmerParams) -> Result<FilterSpec, ChannelError> {
     check_params(params)?;
-    Ok(ChannelFilter::Symmetric(Decimator::new(
-        &design_lowpass(CHANNEL_TAPS, params.bandwidth_hz / 2.0 / RATE),
-        1,
-    )))
+    Ok(FilterSpec::lowpass(CHANNEL_TAPS, params.bandwidth_hz / 2.0))
 }
 
 impl CwSkimmerChannel {
@@ -420,7 +401,7 @@ impl NativeChannel for CwSkimmerChannel {
     }
 }
 
-impl ChannelRx for CwSkimmerChannel {
+impl Channel for CwSkimmerChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = &params(&settings)?;
         check_params(params)?;
@@ -448,10 +429,14 @@ impl ChannelRx for CwSkimmerChannel {
 }
 
 pub(crate) fn cw_skimmer_decoder() -> Native<CwSkimmerParams> {
-    Native::new::<CwSkimmerChannel>(occupied_band)
+    let decoder = Native::new::<CwSkimmerChannel>(occupied_band)
         .filter(channel_filter)
         .form(cw_skimmer_form)
-        .kinds(cw_skimmer_kinds)
+        .kinds(cw_skimmer_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.recipes(synth::RECIPES),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn cw_skimmer_form() -> Vec<SettingField> {
@@ -480,13 +465,18 @@ pub(crate) fn cw_skimmer_form() -> Vec<SettingField> {
 }
 
 fn cw_skimmer_kinds() -> Vec<KindSpec> {
-    vec![morse_kind(), cw_skimmer_kind()]
+    vec![cw_skimmer_kind()]
 }
 
 #[cfg(test)]
+pub(crate) mod fixture;
+#[cfg(test)]
 mod tests {
+    use sdrmm_wire::ChannelParams;
+
     use super::*;
-    use crate::{synth, testutil::settings};
+
+    use sdrmm_decoder_test_support::settings;
 
     fn channel(params: &CwSkimmerParams) -> Result<CwSkimmerChannel, ChannelError> {
         CwSkimmerChannel::new(
@@ -529,14 +519,14 @@ mod tests {
         for sample in &mut iq {
             *sample *= gain;
         }
-        synth::add_noise(&mut iq, seed, 1.0);
+        sdrmm_modem::synth::add_noise(&mut iq, seed, 1.0);
         iq
     }
 
     #[test]
     fn a_hard_keyed_station_is_the_only_station_its_key_clicks_produce() {
         let iq = loud(
-            synth::morse::hard_keyed(
+            sdrmm_modem::synth::morse::hard_keyed(
                 "VVV VVV CQ DE DL1AAA K VVV VVV CQ DE DL1AAA K",
                 20.0,
                 3_500.0,
@@ -571,7 +561,7 @@ mod tests {
     #[test]
     fn key_clicks_never_become_a_second_station_even_wide_open() {
         let iq = loud(
-            synth::morse::hard_keyed(
+            sdrmm_modem::synth::morse::hard_keyed(
                 "VVV VVV CQ DE DL1AAA K VVV VVV CQ DE DL1AAA K",
                 20.0,
                 3_500.0,
@@ -608,7 +598,12 @@ mod tests {
     fn a_narrow_radio_leaves_no_images_beyond_its_band() {
         let narrow = 12_000.0;
         let iq = loud(
-            synth::morse::transmission("CQ DE DL1AAA K CQ DE DL1AAA K", 22.0, -1_300.0, narrow),
+            sdrmm_modem::synth::morse::transmission(
+                "CQ DE DL1AAA K CQ DE DL1AAA K",
+                22.0,
+                -1_300.0,
+                narrow,
+            ),
             30.0,
             11,
         );
@@ -635,11 +630,10 @@ mod tests {
     #[test]
     fn two_stations_sending_the_same_words_are_both_reported() {
         let text = "CQ DE TEST K CQ DE TEST K";
-        let mut iq = synth::morse::transmission(text, 20.0, -2_000.0, RATE);
-        for (destination, source) in iq
-            .iter_mut()
-            .zip(synth::morse::transmission(text, 20.0, 2_000.0, RATE))
-        {
+        let mut iq = sdrmm_modem::synth::morse::transmission(text, 20.0, -2_000.0, RATE);
+        for (destination, source) in iq.iter_mut().zip(sdrmm_modem::synth::morse::transmission(
+            text, 20.0, 2_000.0, RATE,
+        )) {
             *destination += source;
         }
         let iq = loud(iq, 30.0, 5);
@@ -662,11 +656,11 @@ mod tests {
     #[test]
     fn a_real_station_takes_the_slot_a_noise_track_is_sitting_on() {
         let mut iq = loud(
-            synth::morse::transmission("CQ DE G4BBB K", 22.0, 2_000.0, RATE),
+            sdrmm_modem::synth::morse::transmission("CQ DE G4BBB K", 22.0, 2_000.0, RATE),
             25.0,
             5,
         );
-        iq.extend(synth::silence(RATE as usize));
+        iq.extend(sdrmm_modem::synth::silence(RATE as usize));
         let mut channel = channel(&CwSkimmerParams {
             bandwidth_hz: 16_000.0,
             threshold_db: 3.0,
@@ -696,13 +690,13 @@ mod tests {
     #[test]
     fn a_station_that_starts_after_the_band_was_quiet_still_gets_a_decoder() {
         let mut iq = vec![Complex::new(0.0, 0.0); RATE as usize * 10];
-        iq.extend(synth::morse::transmission(
+        iq.extend(sdrmm_modem::synth::morse::transmission(
             "CQ DE G4BBB K CQ DE G4BBB K",
             22.0,
             2_000.0,
             RATE,
         ));
-        iq.extend(synth::silence(RATE as usize * 2));
+        iq.extend(sdrmm_modem::synth::silence(RATE as usize * 2));
         let iq = loud(iq, 25.0, 11);
         let mut channel = channel(&CwSkimmerParams::default()).unwrap();
         let heard: String = spots(&mut channel, &iq)
@@ -715,8 +709,10 @@ mod tests {
 
     #[test]
     fn decodes_two_cw_signals_in_the_same_passband() {
-        let first = synth::morse::transmission("VVV VVV CQ DE DL1AAA K", 18.0, -3_500.0, RATE);
-        let second = synth::morse::transmission("VVV VVV CQ DE G4BBB K", 27.0, 4_200.0, RATE);
+        let first =
+            sdrmm_modem::synth::morse::transmission("VVV VVV CQ DE DL1AAA K", 18.0, -3_500.0, RATE);
+        let second =
+            sdrmm_modem::synth::morse::transmission("VVV VVV CQ DE G4BBB K", 27.0, 4_200.0, RATE);
         let length = first.len().max(second.len()) + RATE as usize * 4;
         let mut iq = vec![Complex::new(0.0, 0.0); length];
         for (destination, source) in iq.iter_mut().zip(first) {
@@ -725,7 +721,7 @@ mod tests {
         for (destination, source) in iq.iter_mut().zip(second) {
             *destination += source * 0.35;
         }
-        synth::add_noise(&mut iq, 17, 0.002);
+        sdrmm_modem::synth::add_noise(&mut iq, 17, 0.002);
         let mut channel = CwSkimmerChannel::new(
             ChannelCtx { input_rate: RATE },
             settings(

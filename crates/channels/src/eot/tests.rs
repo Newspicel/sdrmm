@@ -6,7 +6,8 @@ use crate::eot::HotRequest;
 use sdrmm_wire::ChannelParams;
 
 use super::*;
-use crate::{synth, testutil::settings};
+use crate::synth;
+use sdrmm_decoder_test_support::settings;
 
 pub(crate) fn status() -> EotStatus {
     EotStatus {
@@ -111,8 +112,8 @@ fn decodes_a_head_unit_emergency() {
 #[test]
 fn decodes_through_noise_at_an_offset() {
     let mut iq = synth::eot::rear_transmission(&rear(), RATE);
-    synth::shift(&mut iq, 400.0, RATE);
-    synth::add_noise(&mut iq, 0xE07, 0.6);
+    sdrmm_modem::synth::shift(&mut iq, 400.0, RATE);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xE07, 0.6);
     let got = messages(&iq);
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0].report, EotReport::Rear(status()));
@@ -153,8 +154,8 @@ fn corrected_bits_are_reported() {
 
 #[test]
 fn noise_alone_emits_and_rejects_nothing() {
-    let mut iq = synth::silence(RATE as usize * 20);
-    synth::add_noise(&mut iq, 0xBAD, 1.0);
+    let mut iq = sdrmm_modem::synth::silence(RATE as usize * 20);
+    sdrmm_modem::synth::add_noise(&mut iq, 0xBAD, 1.0);
     assert_eq!(run(&iq), (Vec::new(), 0));
 }
 
@@ -245,7 +246,7 @@ fn decodes_three_rear_units_from_an_off_air_recording() {
         .iter()
         .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
     let audio = audio.iter().map(|sample| sample / peak).collect::<Vec<_>>();
-    let got = messages(&synth::fm_modulate(&audio, DEVIATION_HZ, RATE));
+    let got = messages(&sdrmm_modem::synth::fm_modulate(&audio, DEVIATION_HZ, RATE));
     let reports = got
         .iter()
         .map(|message| {

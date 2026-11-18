@@ -1,5 +1,6 @@
-use crate::registry::Native;
-use sdrmm_wire::{Control, KindSpec, SettingField};
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
+use sdrmm_wire::{Capability, Control, Hue, KindSpec, SettingField, Symbol};
 use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 mod model;
 pub use model::*;
@@ -56,9 +57,22 @@ pub(crate) fn inmarsat_aero_form() -> Vec<SettingField> {
 }
 
 fn inmarsat_aero_kinds() -> Vec<KindSpec> {
-    vec![crate::datalink::inmarsat_aero_kind()]
+    vec![
+        KindSpec::tagged::<DataLinkMessage>(
+            EventKind::named("inmarsat_aero"),
+            "Inmarsat Aero",
+            "Aircraft",
+            Hue::Teal,
+        )
+        .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+        .symbol(Symbol::PLANE)
+        .sighting()
+        .build(),
+    ]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod modulate;
 #[cfg(test)]
@@ -71,14 +85,12 @@ use self::{
     decoder::{AeroChannelDecoder, AeroEvent, INPUT_RATE},
     receiver::{BurstReceiver, CircuitEvent, CircuitReceiver, burst_tag},
 };
-use crate::datalink::DataLinkMessage;
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    acars::block as acars_block,
-    check_input_rate,
-    datalink::{self, Quality},
-};
 use num_complex::Complex;
+use sdrmm_aviation::acars::block as acars_block;
+use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
+};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -140,16 +152,19 @@ pub struct InmarsatAeroChannel {
 }
 
 fn params(settings: &ChannelSettings) -> Result<InmarsatAeroParams, ChannelError> {
-    crate::settings_of::<InmarsatAeroParams>(settings)
+    sdrmm_decoder::settings_of::<InmarsatAeroParams>(settings)
 }
 
 pub(crate) fn occupied_band() -> (f64, f64) {
     (-HALF_BANDWIDTH, HALF_BANDWIDTH)
 }
 
-pub(crate) fn channel_filter() -> ChannelFilter {
-    datalink::channel_filter(INPUT_RATE, HALF_BANDWIDTH)
+pub(crate) fn channel_filter() -> FilterSpec {
+    FilterSpec::channel(HALF_BANDWIDTH)
 }
+
+/// Where an Aero message keeps its envelope: the aircraft an ACARS block names.
+pub(crate) const LINK: Fields = Fields::station(&["tail", "icao"]);
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -213,7 +228,12 @@ fn to_message(event: &AeroEvent) -> DataLinkMessage {
     };
     let raw = Some(event.user.data.as_slice());
     if let Some(block) = &event.acars {
-        return datalink::message(&AcarsBody::Acars(&block.core), quality(block.crc_ok), raw);
+        return link::message(
+            &AcarsBody::Acars(&block.core),
+            &LINK,
+            quality(block.crc_ok),
+            raw,
+        );
     }
     let body = match &event.su_event {
         Some(su_event) => su_body(su_event, event),
@@ -223,7 +243,7 @@ fn to_message(event: &AeroEvent) -> DataLinkMessage {
         }
         None => AeroBody::Undecoded,
     };
-    datalink::message(&body, quality(true), raw)
+    link::message(&body, &LINK, quality(true), raw)
 }
 
 fn burst_message(event: &BurstEvent) -> DataLinkMessage {
@@ -236,10 +256,13 @@ fn burst_message(event: &BurstEvent) -> DataLinkMessage {
     if let Some(user) = &event.user {
         let raw = Some(user.data.as_slice());
         return match su::parse_acars(&user.data) {
-            Some(block) => {
-                datalink::message(&AcarsBody::Acars(&block.core), quality(block.crc_ok), raw)
-            }
-            None => datalink::message(&AeroBody::Undecoded, quality(true), raw),
+            Some(block) => link::message(
+                &AcarsBody::Acars(&block.core),
+                &LINK,
+                quality(block.crc_ok),
+                raw,
+            ),
+            None => link::message(&AeroBody::Undecoded, &LINK, quality(true), raw),
         };
     }
     let mut details = event.su_event.clone().unwrap_or_else(|| json!({}));
@@ -248,7 +271,12 @@ fn burst_message(event: &BurstEvent) -> DataLinkMessage {
         map.insert("channel".to_owned(), json!(burst_tag(event.channel)));
         map.insert("line_bit_rate".to_owned(), json!(event.bit_rate));
     }
-    datalink::message(&AeroBody::Aero { kind, details }, quality(true), None)
+    link::message(
+        &AeroBody::Aero { kind, details },
+        &LINK,
+        quality(true),
+        None,
+    )
 }
 
 fn circuit_message(event: CircuitEvent) -> DataLinkMessage {
@@ -262,8 +290,9 @@ fn circuit_message(event: CircuitEvent) -> DataLinkMessage {
             details: json!({ "channel": "c-channel" }),
         },
     };
-    datalink::message(
+    link::message(
         &body,
+        &LINK,
         Quality {
             crc_ok: true,
             ..Quality::default()
@@ -286,7 +315,7 @@ impl NativeChannel for InmarsatAeroChannel {
     }
 }
 
-impl ChannelRx for InmarsatAeroChannel {
+impl Channel for InmarsatAeroChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let channel = params(&settings)?.channel;
         if channel != self.channel {

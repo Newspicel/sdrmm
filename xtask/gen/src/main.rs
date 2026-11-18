@@ -61,6 +61,8 @@ enum Cmd {
 }
 
 fn main() -> Result<()> {
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     match Cli::parse().cmd {
         Cmd::Codegen => codegen(&root()),
         Cmd::Fixtures { out } => fixtures(&out.unwrap_or_else(|| root().join("fixtures"))),
@@ -88,7 +90,8 @@ const OPENAPI: &str = "openapi.json";
 /// them and a test holds the committed copies to them, so drift fails the test run rather than
 /// a gate that would have to build the server just to look.
 fn generated(root: &Path) -> Result<Vec<(&'static str, String)>> {
-    sdrmm_channels::registry::init();
+    sdrmm_channels::builtin::install();
+    sdrmm_array::builtin::install();
     let catalog = sdrmm_wire::PatchCatalog::build();
     let spec = sdrmm_server::openapi()
         .to_pretty_json()
@@ -141,7 +144,7 @@ fn codegen(root: &Path) -> Result<()> {
 }
 
 fn channel_defaults() -> std::collections::BTreeMap<String, sdrmm_wire::ChannelParams> {
-    sdrmm_channels::descriptors()
+    sdrmm_decoder::descriptors()
         .into_iter()
         .filter_map(|descriptor| {
             descriptor
@@ -168,7 +171,8 @@ fn fixtures(dir: &Path) -> Result<()> {
         "1 s of the virtual test band: the record/replay fixture",
     )?;
 
-    for recipe in sdrmm_channels::synth::decoder_fixtures::RECIPES {
+    sdrmm_channels::builtin::install();
+    for recipe in sdrmm_decoder::recipes() {
         write_fixture(
             dir,
             recipe.stem,

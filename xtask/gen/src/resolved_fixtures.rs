@@ -47,7 +47,7 @@ pub(crate) fn contents(root: &Path) -> Result<String> {
 fn resolve(input: &Input) -> Result<Value> {
     let graph: PatchGraph = serde_json::from_value(input.graph.clone()).context("graph")?;
     let live: StateSnapshot = serde_json::from_value(input.live.clone()).context("live")?;
-    let descriptors = sdrmm_channels::descriptors();
+    let descriptors = sdrmm_decoder::descriptors();
     let ctx = ResolveCtx {
         descriptors: Some(&descriptors),
         live: Some(&live),

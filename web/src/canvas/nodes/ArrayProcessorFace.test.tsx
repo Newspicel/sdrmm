@@ -4,7 +4,6 @@ import { useProcessorStore } from "../../lib/processors";
 import type {
   ArrayStatus,
   Field,
-  NodeKind,
   PatchCatalog,
   PatchGraph,
   PatchNode,
@@ -12,7 +11,7 @@ import type {
   ProcessorType,
   ProcessorView,
 } from "../../lib/types";
-import { CATALOG, catalogBody } from "../../test/catalog";
+import { CATALOG, catalogBody, processorBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
 import { arrayStatus, laneStatus, placed } from "../../test/fixtures";
 import { ArrayProcessorFace as ProcessorFace } from "./ArrayProcessorFace";
@@ -23,8 +22,8 @@ const FIVE: ArrayStatus = arrayStatus("arr", {
   lanes: [0, 1, 2, 3, 4].map((lane) => laneStatus(lane)),
 });
 
-function wired(kind: NodeKind, extra: PatchNode[] = []): { node: PatchNode; graph: PatchGraph } {
-  const node = placed("proc", catalogBody(kind));
+function wired(type: string, extra: PatchNode[] = []): { node: PatchNode; graph: PatchGraph } {
+  const node = placed("proc", processorBody(type));
   return {
     node,
     graph: {

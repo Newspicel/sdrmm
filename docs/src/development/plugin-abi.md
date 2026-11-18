@@ -30,22 +30,26 @@ Every plugin:
 
 | Export | Signature | Does |
 |---|---|---|
-| `sdrmm_abi` | `() -> u32` | ABI version, currently `2` |
+| `sdrmm_abi` | `() -> u32` | ABI version, currently `4` |
 | `sdrmm_alloc` | `(len: u32) -> ptr` | A buffer for the host to write `len` bytes into |
 | `sdrmm_manifest` | `() -> i64` | Packed manifest JSON |
 | `sdrmm_present` | `(ptr, len) -> i64` | Only with `kinds`. `{"kind": "burst", "data": {...}}` in, a packed reply out whose `ok` is a `Presentation`: `{"summary": "Burst", "fields": [...]}` |
 | `sdrmm_error` | `() -> i64` | Packed message for the last `-1` |
+| `sdrmm_call` | `(op: i32, ptr, len) -> i64` | With a decoder or encoder. A control call, JSON in, packed JSON reply out |
 
 A decoder:
 
 | Export | Signature | Does |
 |---|---|---|
-| `sdrmm_call` | `(op: i32, ptr, len) -> i64` | A control call, JSON in, packed JSON reply out |
-| `sdrmm_open` | `(rate: f64, ptr, len) -> i32` | Opens a channel at `rate` Hz with settings JSON; a handle, or `-1` |
-| `sdrmm_apply` | `(handle, ptr, len) -> i32` | New settings JSON; `0`, or `-1` |
+| `sdrmm_open` | `(rate: f64, ptr, len) -> i32` | Opens a channel at `rate` Hz with channel settings JSON; a handle, or `-1` |
+| `sdrmm_apply` | `(handle, ptr, len) -> i32` | New channel settings JSON; `0`, or `-1` |
 | `sdrmm_input` | `(handle, samples: u32) -> ptr` | Where the host writes the next block |
-| `sdrmm_process` | `(handle, samples: u32) -> ptr` | Runs the block; where the output header is |
+| `sdrmm_process` | `(handle, samples: u32, flags: u32) -> ptr` | Runs the block; where the output header is. Flag `1`: fill the symbols |
 | `sdrmm_retuned` | `(handle)` | Optional. The channel moved; drop what you accumulated |
+| `sdrmm_position` | `(handle, ptr, len)` | Optional. The receiver's position JSON, or `null` |
+| `sdrmm_clock` | `(handle, unix_ns: i64)` | Optional. When the next block's first sample was captured |
+| `sdrmm_lo_artifact` | `(handle, offset_hz: f64)` | Optional. Where the receiver's LO artifact sits, NaN once outside |
+| `sdrmm_gated` | `(handle) -> i32` | Optional. `0` when the channel wants nothing while squelched |
 | `sdrmm_close` | `(handle)` | The channel is gone |
 
 `ptr`, `len` and `handle` are `u32`, `u32` and `i32`. A packed `i64` is `ptr << 32 | len`. Every
@@ -60,14 +64,20 @@ A buffer from `sdrmm_alloc` is yours again once the call it was written for retu
 |---|---|---|
 | `1` layout | Settings | `{"input_rate_hz": 48000.0, "band": [-6000.0, 6000.0], "audio_channels": 1}` |
 | `2` normalize | Settings, `{}` for the defaults | The settings with every default filled in |
+| `3` filter | Settings | `{"type": "lowpass", "taps": 65, "cutoff_hz": 6000.0}`, a `band` with `low_hz` and `high_hz`, or `{"type": "passthrough"}` |
+| `4` tune | `{"settings": {...}, "signal": {...}}` | `{"settings": {...}, "offset_hz": 0.0}` |
+| `5` feed | `{"format": "...", "event": {...}}` | The frame's bytes as an array |
+| `6` width | Encoder settings | Width in Hz |
+| `7` compose | A filled message form | `{"frame": [bytes]}` or `{"audio": [samples]}` |
 
-Settings are the JSON object your form produces. Treat absent fields as defaults.
+Settings are the JSON object your form produces. Treat absent fields as defaults. A lowpass may
+add `decimation` and `stopband_db`; the host designs its taps.
 
 ## Manifest
 
 ```json
 {
-  "abi": 2,
+  "abi": 4,
   "kinds": [
     { "kind": "burst", "name": "Burst", "noun": "Bursts", "caps": ["log"],
       "hue": "amber", "lifetime": { "type": "instant" } }
@@ -76,27 +86,33 @@ Settings are the JSON object your form produces. Treat absent fields as defaults
     "descriptor": {
       "type_id": "burst", "name": "Burst", "summary": "Strong bursts",
       "family": "utility", "bandwidth_hz": 12000.0, "input_rate_hz": 48000.0,
-      "emits": ["burst"]
+      "emits": ["burst"],
+      "settings": [
+        { "key": "threshold_db", "label": "Threshold",
+          "control": { "type": "number", "min": -60.0, "max": 0.0, "step": 1.0, "unit": "dB" } }
+      ]
     },
-    "form": [
-      { "key": "threshold_db", "label": "Threshold",
-        "control": { "type": "number", "min": -60.0, "max": 0.0, "step": 1.0, "unit": "dB" } }
+    "feeds": [
+      { "format": "burst-text", "name": "Burst text", "default_address": "127.0.0.1:30300",
+        "kinds": ["burst"] }
     ]
   }
 }
 ```
 
-A plugin brings at least one of `decoder`, `encoder` and `processor`. `descriptor`, `form`
-entries, `kinds` entries and `encoder` are the `ChannelDescriptor`, `SettingField`,
-`EventKindEntry` and `EncoderDescriptor` schemas in
+A plugin brings at least one of `decoder`, `encoder` and `processor`. `descriptor`, its
+`settings` entries, `kinds` entries, `feeds` entries and `encoder` are the `ChannelDescriptor`,
+`SettingField`, `EventKindEntry`, `FeedEntry` and `EncoderDescriptor` schemas in
 [`openapi.json`](https://github.com/Newspicel/sdrmm/blob/main/openapi.json); `processor` is a
-`ProcessorType`. Optional in `decoder`: `home_hz`, the frequency a new channel starts on.
+`ProcessorType`. A feed may add `heartbeat` bytes. The descriptor's `defaults` set where a new
+channel starts; without them the host asks `normalize`. A descriptor with `trunking` is refused.
 
 ## One block
 
 1. `sdrmm_input(handle, n)` returns a pointer; the host writes `n` samples there, each an `f32` I
    then an `f32` Q.
-2. `sdrmm_process(handle, n)` returns a pointer to nine `u32` words:
+2. `sdrmm_process(handle, n, flags)` returns a pointer to 22 `u32` words, laid out in
+   `OutputHeader` in `crates/wire/src/plugin/output.rs`. Floats travel as their bits:
 
 | Word | Holds |
 |---|---|
@@ -106,6 +122,16 @@ entries, `kinds` entries and `encoder` are the `ChannelDescriptor`, `SettingFiel
 | 5, 6 | Status: pointer and byte length of a JSON object, `0` when unchanged |
 | 7 | Frames heard but failing their checks, counted over the channel's life |
 | 8 | Blocks dropped, counted over the channel's life |
+| 9, 10 | Pictures: pointer and byte length of the records below, `0` for none |
+| 11, 12 | Symbols: pointer and count of `f32`, I/Q pairs on the complex plane |
+| 13, 14 | Reference points: pointer and count of `f32` |
+| 15 | Plane: `0` no symbols, `1` complex, `2` levels |
+| 16, 17 | Symbol rate, an `f64`, low word first |
+| 18 to 21 | EVM, MER in dB, margin and frequency error in Hz, each an `f32` |
+
+A picture record is five `u32` words (width, height, luma, RGB and image byte lengths), then the
+luma and RGB bytes. A video frame stops there; an image adds JSON
+`{"source": "...", "mode": "...", "complete": true, "lines": 240}`.
 
 ```json
 [{"kind": "burst", "data": {"db": -12.5}}]
@@ -149,11 +175,16 @@ An encoder declares `encoder` in the manifest and adds the exports in
 
 | Export | Signature |
 |---|---|
-| `sdrmm_encoder_open` | `(rate: f64, ptr, len) -> handle` |
+| `sdrmm_encoder_open` | `(ptr, len) -> handle`, settings JSON in |
 | `sdrmm_encoder_submit` | `(handle, kind: u32, ptr, len) -> i32`, kind `0` audio as `f32`, `1` frame bytes |
 | `sdrmm_encoder_generate` | `(handle, max_samples: u32) -> i64`, packed pointer and sample count of I/Q |
 | `sdrmm_encoder_close` | `(handle)` |
 
+Its width and its message forms go through `sdrmm_call` as `width` and `compose`.
+
 An array processor declares `processor` in the manifest and adds the exports in
 `crates/wire/src/plugin/processor.rs`. `sdrmm_array_input` takes every lane's block one after the
-other; `sdrmm_array_process` returns a ten-word header laid out in `ArrayHeader` there.
+other and `sdrmm_array_context` the block's `BlockContext`: time, gap, calibration, pose, steer
+and lane centres. `sdrmm_array_process` returns the `ArrayHeader` laid out there: report, health,
+events, steer, an encoded surface frame and up to two lanes of I/Q. A type with actions also
+exports `sdrmm_array_action(handle, action) -> i32`.

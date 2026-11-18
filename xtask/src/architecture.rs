@@ -7,6 +7,11 @@ pub(crate) const FORBIDDEN_ON_PHONES: &[&str] = &[
     "sdrmm-server",
     "sdrmm-engine",
     "sdrmm-channels",
+    "sdrmm-decoder",
+    "sdrmm-codec",
+    "sdrmm-aviation",
+    "sdrmm-array",
+    "sdrmm-media",
     "sdrmm-dsp",
     "sdrmm-modem",
     "sdrmm-device",
@@ -87,7 +92,11 @@ fn validate_phone_tree(target: &str, tree: &str) -> Result<()> {
 }
 
 fn validate_production_tree(tree: &str) -> Result<()> {
-    for name in ["sdrmm-test-support", "sdrmm-modem-test-support"] {
+    for name in [
+        "sdrmm-test-support",
+        "sdrmm-modem-test-support",
+        "sdrmm-decoder-test-support",
+    ] {
         ensure!(
             !tree
                 .lines()
@@ -139,9 +148,33 @@ fn validate(metadata: &Value) -> Result<()> {
             "sdrmm-modem-test-support",
             &["sdrmm-dsp", "sdrmm-modem", "sdrmm-test-support"][..],
         ),
+        ("sdrmm-crypto", &[][..]),
+        ("sdrmm-codec", &["sdrmm-dsp"][..]),
+        ("sdrmm-aviation", &["sdrmm-dsp"][..]),
+        (
+            "sdrmm-media",
+            &["sdrmm-modem", "sdrmm-codec", "sdrmm-decoder"][..],
+        ),
+        (
+            "sdrmm-decoder",
+            &["sdrmm-dsp", "sdrmm-modem", "sdrmm-codec", "sdrmm-wire"][..],
+        ),
         (
             "sdrmm-channels",
-            &["sdrmm-dsp", "sdrmm-modem", "sdrmm-wire"][..],
+            &[
+                "sdrmm-dsp",
+                "sdrmm-modem",
+                "sdrmm-codec",
+                "sdrmm-crypto",
+                "sdrmm-aviation",
+                "sdrmm-decoder",
+                "sdrmm-media",
+                "sdrmm-wire",
+            ][..],
+        ),
+        (
+            "sdrmm-array",
+            &["sdrmm-dsp", "sdrmm-modem", "sdrmm-decoder", "sdrmm-wire"][..],
         ),
         ("sdrmm-mobile-core", &["sdrmm-wire"][..]),
     ] {
@@ -180,7 +213,13 @@ mod tests {
             {"name": "sdrmm-modem", "dependencies": []},
             {"name": "sdrmm-channels", "dependencies": []},
             {"name": "sdrmm-modem-test-support", "dependencies": []},
-            {"name": "sdrmm-mobile-core", "dependencies": []}
+            {"name": "sdrmm-mobile-core", "dependencies": []},
+            {"name": "sdrmm-crypto", "dependencies": []},
+            {"name": "sdrmm-codec", "dependencies": []},
+            {"name": "sdrmm-decoder", "dependencies": []},
+            {"name": "sdrmm-aviation", "dependencies": []},
+            {"name": "sdrmm-media", "dependencies": []},
+            {"name": "sdrmm-array", "dependencies": []}
         ]})
     }
 
@@ -232,13 +271,56 @@ mod tests {
 
     #[test]
     fn application_cannot_include_either_test_support_crate() {
-        for name in ["sdrmm-test-support", "sdrmm-modem-test-support"] {
+        for name in [
+            "sdrmm-test-support",
+            "sdrmm-modem-test-support",
+            "sdrmm-decoder-test-support",
+        ] {
             assert!(validate_production_tree(&format!("sdrmm v0.0.0|\n{name} v0.0.0|")).is_err());
             let mut data = metadata(&json!({"name": "num-complex", "kind": null}));
             data["packages"][1]["dependencies"] = json!([{"name": name, "kind": null}]);
             assert!(validate(&data).is_err());
         }
         assert!(validate_production_tree("sdrmm v0.0.0|\nsdrmm-modem v0.0.0|").is_ok());
+    }
+
+    #[test]
+    fn codec_and_crypto_stay_beside_the_decoders() {
+        let mut data = metadata(&json!({"name": "num-complex", "kind": null}));
+        data["packages"][6]["dependencies"] = json!([{"name": "sdrmm-dsp", "kind": null}]);
+        assert!(validate(&data).is_ok());
+        data["packages"][6]["dependencies"] = json!([{"name": "sdrmm-decoder", "kind": null}]);
+        assert!(validate(&data).is_err());
+        data["packages"][6]["dependencies"] = json!([]);
+        data["packages"][5]["dependencies"] = json!([{"name": "sdrmm-dsp", "kind": null}]);
+        assert!(validate(&data).is_err());
+    }
+
+    #[test]
+    fn aviation_and_media_stay_beneath_the_decoders() {
+        let mut data = metadata(&json!({"name": "num-complex", "kind": null}));
+        data["packages"][8]["dependencies"] = json!([{"name": "sdrmm-dsp", "kind": null}]);
+        data["packages"][9]["dependencies"] = json!([{"name": "sdrmm-decoder", "kind": null}]);
+        assert!(validate(&data).is_ok());
+        data["packages"][8]["dependencies"] = json!([{"name": "sdrmm-wire", "kind": null}]);
+        assert!(validate(&data).is_err());
+        data["packages"][8]["dependencies"] = json!([]);
+        data["packages"][9]["dependencies"] = json!([{"name": "sdrmm-channels", "kind": null}]);
+        assert!(validate(&data).is_err());
+    }
+
+    #[test]
+    fn array_processors_stay_off_the_engine_and_the_decoders() {
+        let mut data = metadata(&json!({"name": "num-complex", "kind": null}));
+        data["packages"][10]["dependencies"] = json!([
+            {"name": "sdrmm-decoder", "kind": null},
+            {"name": "sdrmm-wire", "kind": null}
+        ]);
+        assert!(validate(&data).is_ok());
+        for name in ["sdrmm-engine", "sdrmm-channels"] {
+            data["packages"][10]["dependencies"] = json!([{"name": name, "kind": null}]);
+            assert!(validate(&data).is_err(), "{name}");
+        }
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod dab;
 mod demod;
 mod error;
 mod estimate;
@@ -11,6 +12,7 @@ mod smoother;
 mod subcarrier;
 mod sync;
 mod tracker;
+pub mod wiener;
 
 pub use demod::{DELAY_GUARD_TAPS, OfdmDemod};
 pub use error::OfdmError;

@@ -1,6 +1,9 @@
-use crate::registry::Native;
+use sdrmm_decoder::registry::Native;
+use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{Control, KindSpec, SettingField};
 mod model;
+#[cfg(any(test, feature = "synth"))]
+pub mod synth;
 pub use model::*;
 pub(crate) mod ble;
 pub(crate) mod odid;
@@ -9,16 +12,13 @@ pub(crate) mod wifi;
 
 use std::sync::LazyLock;
 
-use crate::ble::BleLink;
 use num_complex::Complex;
 use sdrmm_modem::wifi::{Receiver as Wifi, channel::channel_at};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily, EventKind};
 
 use self::tracker::Tracker;
-use crate::{
-    ChannelCtx, ChannelError, ChannelFilter, ChannelOutputs, ChannelRx, NativeChannel,
-    ble as bluetooth, check_rate,
-};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
+use sdrmm_modem::ble as bluetooth;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "remote_id".to_owned(),
@@ -33,30 +33,26 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 });
 
 fn params(settings: &ChannelSettings) -> Result<RemoteIdParams, ChannelError> {
-    crate::settings_of::<RemoteIdParams>(settings)
+    sdrmm_decoder::settings_of::<RemoteIdParams>(settings)
 }
 
 pub(crate) fn input_rate(params: RemoteIdParams) -> f64 {
     params.link.input_rate_hz()
 }
 
+const CHANNEL_TAPS: usize = 129;
+
 pub(crate) fn occupied_band(params: RemoteIdParams) -> (f64, f64) {
     let half = params.link.bandwidth_hz() / 2.0;
     (-half, half)
 }
 
-pub(crate) fn channel_filter(params: RemoteIdParams) -> ChannelFilter {
-    match bluetooth_link(params.link) {
-        Some(link) => bluetooth::channel_filter(link),
-        None => ChannelFilter::Passthrough,
-    }
-}
-
-fn bluetooth_link(link: RemoteIdLink) -> Option<BleLink> {
-    match link {
-        RemoteIdLink::Bluetooth => Some(BleLink::Channel),
-        RemoteIdLink::BluetoothBand => Some(BleLink::Band),
-        RemoteIdLink::Wifi => None,
+pub(crate) fn channel_filter(params: RemoteIdParams) -> FilterSpec {
+    match params.link {
+        RemoteIdLink::Bluetooth => {
+            FilterSpec::lowpass(CHANNEL_TAPS, bluetooth::CHANNEL_HALF_PASSBAND_HZ)
+        }
+        RemoteIdLink::BluetoothBand | RemoteIdLink::Wifi => FilterSpec::Passthrough,
     }
 }
 
@@ -71,9 +67,14 @@ fn invalid(error: impl std::fmt::Display) -> ChannelError {
 
 impl Front {
     fn new(link: RemoteIdLink, frequency_hz: f64) -> Result<Self, ChannelError> {
-        Ok(match bluetooth_link(link) {
-            Some(link) => Self::Bluetooth(bluetooth::Front::new(link, frequency_hz)?),
-            None => Self::Wifi(Box::new(Wifi::new().map_err(invalid)?)),
+        Ok(match link {
+            RemoteIdLink::Bluetooth => {
+                Self::Bluetooth(bluetooth::Front::channel(frequency_hz).map_err(invalid)?)
+            }
+            RemoteIdLink::BluetoothBand => {
+                Self::Bluetooth(bluetooth::Front::band(frequency_hz).map_err(invalid)?)
+            }
+            RemoteIdLink::Wifi => Self::Wifi(Box::new(Wifi::new().map_err(invalid)?)),
         })
     }
 
@@ -115,7 +116,7 @@ impl NativeChannel for RemoteIdChannel {
     }
 }
 
-impl ChannelRx for RemoteIdChannel {
+impl Channel for RemoteIdChannel {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError> {
         let params = params(&settings)?;
         if params.link.input_rate_hz() != self.link.input_rate_hz() {
@@ -164,12 +165,16 @@ impl ChannelRx for RemoteIdChannel {
 }
 
 pub(crate) fn remote_id_decoder() -> Native<RemoteIdParams> {
-    Native::new::<RemoteIdChannel>(|p| occupied_band(*p))
+    let decoder = Native::new::<RemoteIdChannel>(|p| occupied_band(*p))
         .filter(|p| Ok(channel_filter(*p)))
         .input_rate(|p| input_rate(*p))
         .home(2_426_000_000.0)
         .form(remote_id_form)
-        .kinds(remote_id_kinds)
+        .kinds(remote_id_kinds);
+    cfg_select! {
+        any(test, feature = "synth") => decoder.synth(synth::SIGNALS),
+        _ => decoder,
+    }
 }
 
 pub(crate) fn remote_id_form() -> Vec<SettingField> {
@@ -183,5 +188,7 @@ fn remote_id_kinds() -> Vec<KindSpec> {
     vec![crate::remote_id::remote_id_kind()]
 }
 
+#[cfg(test)]
+pub(crate) mod fixture;
 #[cfg(test)]
 mod tests;

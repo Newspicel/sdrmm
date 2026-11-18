@@ -30,7 +30,6 @@ use sdrmm_channels::SelcallSequence;
 use sdrmm_channels::SidReport;
 use sdrmm_channels::StanagReport;
 use sdrmm_channels::TetrapolMessage;
-use sdrmm_channels::ToneSquelchStatus;
 use sdrmm_channels::VorReading;
 use sdrmm_channels::WefaxPicture;
 use sdrmm_channels::WmbusMessage;
@@ -39,6 +38,7 @@ use sdrmm_channels::WsprSpot;
 use sdrmm_wire::BroadcastData;
 use sdrmm_wire::DvFrame;
 use sdrmm_wire::IdentReport;
+use sdrmm_wire::ToneSquelchStatus;
 use std::{path::Path, sync::Arc, time::Duration};
 
 use num_complex::Complex;
@@ -52,8 +52,6 @@ use sdrmm_channels::AptParams;
 use sdrmm_channels::AvhrrChannel;
 use sdrmm_channels::BleBeacon;
 use sdrmm_channels::BleParams;
-use sdrmm_channels::BroadcastStatus;
-use sdrmm_channels::BroadcastSystem;
 use sdrmm_channels::CwSkimmerParams;
 use sdrmm_channels::DatvParams;
 use sdrmm_channels::DatvStandard;
@@ -124,12 +122,10 @@ use sdrmm_channels::WmbusParams;
 use sdrmm_channels::WsjtParams;
 use sdrmm_channels::WsprParams;
 use sdrmm_channels::YsfParams;
-use sdrmm_channels::{
-    AprsEncoderSettings, AprsModulator, MicE, MicEBit,
-    encoder::{Modulator, NativeModulator, TxPayload},
-    synth,
-};
+use sdrmm_channels::{AprsEncoderSettings, AprsModulator, MicE, MicEBit, synth};
 use sdrmm_channels::{DabMode, DabParams, DabTransmissionMode};
+use sdrmm_decoder::broadcast::BroadcastStatus;
+use sdrmm_decoder::encoder::{Modulator, NativeModulator, TxPayload};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_engine::Engine;
@@ -157,7 +153,7 @@ fn aprs_burst(frame: Vec<u8>) -> Vec<Complex<f32>> {
     })
     .unwrap();
     tx.submit(TxPayload::Frame(frame)).unwrap();
-    synth::burst(&mut tx)
+    sdrmm_decoder::encoder::burst(&mut tx)
 }
 
 fn engine_for(dir: &Path) -> Arc<Engine> {
@@ -188,7 +184,7 @@ fn plant_at(
 ) -> String {
     let min_len = rate as usize;
     if iq.len() < min_len {
-        iq.extend(synth::silence(min_len - iq.len()));
+        iq.extend(sdrmm_modem::synth::silence(min_len - iq.len()));
     }
     let path = dir.join(stem);
     let mut writer = SigmfWriter::create(&path, rate, center_hz, "decoder fixture").unwrap();
@@ -288,7 +284,7 @@ async fn pocsag_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         seal: None,
     }];
     let mut iq = synth::pocsag::transmission(&pages, 1_200, 4_500.0, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
 
     let device = plant(dir.path(), "pocsag", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
@@ -332,7 +328,7 @@ async fn flex_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         text: "FLEX ENGINE E2E".to_owned(),
     };
     let mut iq = synth::flex::transmission(&page, 4, 72, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "flex", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -366,7 +362,7 @@ async fn ermes_page_survives_the_ddc_and_reaches_the_decoded_stream() {
         alert: 4,
     };
     let mut iq = synth::ermes::transmission(&page, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "ermes", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -413,7 +409,7 @@ async fn eot_telemetry_survives_the_ddc_and_reaches_the_decoded_stream() {
         status: status.clone(),
     };
     let mut iq = synth::eot::rear_transmission(&rear, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "eot", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -445,7 +441,7 @@ async fn a_406_beacon_survives_the_ddc_and_reaches_the_decoded_stream() {
         lon: 18.9553,
     });
     let mut iq = synth::sarsat::transmission(&message, false, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz + 2_400.0, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz + 2_400.0, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "sarsat", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -477,7 +473,7 @@ async fn a_tetrapol_control_channel_survives_the_ddc_and_reaches_the_decoded_str
     let engine = engine_for(dir.path());
     let offset_hz = 37_500.0;
     let mut iq = synth::tetrapol::control_channel(NARROW_DEVICE_RATE, 2);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "tetrapol", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -512,7 +508,7 @@ async fn a_same_alert_survives_the_ddc_and_reaches_the_decoded_stream() {
     let offset_hz = 25_000.0;
     let header = "ZCZC-WXR-TOR-048201+0030-1232200-KEC55/NW-";
     let mut iq = synth::same::transmission(header, 2, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "same", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -549,12 +545,12 @@ async fn aprs_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
         &["WIDE1-1"],
         "!5230.00N/01324.00E>engine e2e",
     );
-    let mut iq = synth::resample(
+    let mut iq = sdrmm_modem::synth::resample(
         &aprs_burst(frame),
         AprsModulator::rate_hz(),
         NARROW_DEVICE_RATE,
     );
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
 
     let device = plant(dir.path(), "aprs", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
@@ -603,7 +599,7 @@ async fn ais_position_survives_the_ddc_and_reaches_the_decoded_stream() {
         nav_status: 0,
     };
     let mut iq = synth::ais::burst(&synth::ais::position_payload(&report), NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
 
     let device = plant(dir.path(), "ais", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
@@ -661,12 +657,12 @@ async fn a_mic_e_packet_survives_the_ddc_and_reaches_the_decoded_stream() {
         &["WIDE2-2"],
         &report.info(),
     );
-    let mut iq = synth::resample(
+    let mut iq = sdrmm_modem::synth::resample(
         &aprs_burst(frame),
         AprsModulator::rate_hz(),
         NARROW_DEVICE_RATE,
     );
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
 
     let device = plant(dir.path(), "mice", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
@@ -707,10 +703,10 @@ async fn a_ctcss_tone_survives_the_ddc_and_reaches_the_decoded_stream() {
     let len = (NARROW_DEVICE_RATE * 2.0) as usize;
     let audio = synth::nfm::mix(
         &synth::nfm::ctcss_audio(88.5, 0.15, NARROW_DEVICE_RATE, len),
-        &synth::tone_audio(1_000.0, 0.6, NARROW_DEVICE_RATE, len),
+        &sdrmm_modem::synth::tone_audio(1_000.0, 0.6, NARROW_DEVICE_RATE, len),
     );
-    let mut iq = synth::fm_modulate(&audio, 2_500.0, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let mut iq = sdrmm_modem::synth::fm_modulate(&audio, 2_500.0, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
 
     let device = plant(dir.path(), "ctcss", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
@@ -755,7 +751,7 @@ async fn selcall_survives_the_ddc_and_reaches_the_decoded_stream() {
     let offset_hz = 5_000.0;
     let mut iq =
         synth::selcall::transmission(SelcallSystem::Ccir1, "12234", AUDIO_DEVICE_RATE).unwrap();
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "selcall_ccir1", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -791,7 +787,7 @@ async fn a_meshtastic_text_survives_the_ddc_and_reaches_the_decoded_stream() {
     let rate = 1_000_000.0;
     let offset_hz = -180_000.0;
     let mut iq = synth::lora::meshtastic_scene(rate);
-    synth::shift(&mut iq, offset_hz, rate);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, rate);
     let device = plant(dir.path(), "meshtastic_long_fast", iq, rate);
     let record = decode_first(
         &engine,
@@ -1058,7 +1054,7 @@ async fn rtty_text_survives_the_ddc_and_reaches_the_decoded_stream() {
         params.stop_bits.periods(),
         AUDIO_DEVICE_RATE,
     );
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
 
     let device = plant(dir.path(), "rtty", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
@@ -1094,8 +1090,8 @@ async fn psk_text_survives_the_ddc_and_reaches_the_decoded_stream() {
         let offset_hz = 5_000.0;
         let iq = synth::psk::transmission(&format!("{want}\n"), baud.rate())
             .expect("a synthetic signal");
-        let mut iq = synth::resample(&iq, 8_000.0, AUDIO_DEVICE_RATE);
-        synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+        let mut iq = sdrmm_modem::synth::resample(&iq, 8_000.0, AUDIO_DEVICE_RATE);
+        sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
         let device = plant(dir.path(), stem, iq, AUDIO_DEVICE_RATE);
         let record = decode_first(
             &engine,
@@ -1137,8 +1133,8 @@ async fn ft8_message_survives_the_ddc_and_reaches_the_decoded_stream() {
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = -8_000.0;
     let iq = synth::weak_signal::ft8_slot("W1AW", "FN42", 1_500.0).expect("a synthetic signal");
-    let mut iq = synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    let mut iq = sdrmm_modem::synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "ft8", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -1166,8 +1162,8 @@ async fn ft4_message_survives_the_ddc_and_reaches_the_decoded_stream() {
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = 8_000.0;
     let iq = synth::weak_signal::ft4_slot("JA1ABC", "PM95", 1_000.0).expect("a synthetic signal");
-    let mut iq = synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    let mut iq = sdrmm_modem::synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "ft4", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -1196,7 +1192,7 @@ async fn wspr_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
     let engine = accelerated_engine_for(dir.path());
     let iq =
         synth::weak_signal::wspr_slot("K1ABC", "FN42", 37, 1_500.0).expect("a synthetic signal");
-    let iq = synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
+    let iq = sdrmm_modem::synth::resample(&iq, 12_000.0, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "wspr", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -1226,8 +1222,9 @@ async fn morse_text_survives_the_ddc_and_reaches_the_decoded_stream() {
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = -5_000.0;
 
-    let mut iq = synth::morse::transmission("CQ DE DL1ABC K", 20.0, 0.0, AUDIO_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    let mut iq =
+        sdrmm_modem::synth::morse::transmission("CQ DE DL1ABC K", 20.0, 0.0, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
 
     let device = plant(dir.path(), "morse", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
@@ -1260,9 +1257,13 @@ async fn morse_text_survives_the_ddc_and_reaches_the_decoded_stream() {
 async fn cw_skimmer_spot_survives_the_ddc_and_reaches_the_decoded_stream() {
     let dir = TempDir::new().unwrap();
     let engine = accelerated_engine_for(dir.path());
-    let mut iq =
-        synth::morse::transmission("VVV VVV CQ DE ENGINE K", 20.0, 3_500.0, NARROW_DEVICE_RATE);
-    iq.extend(synth::silence(NARROW_DEVICE_RATE as usize * 4));
+    let mut iq = sdrmm_modem::synth::morse::transmission(
+        "VVV VVV CQ DE ENGINE K",
+        20.0,
+        3_500.0,
+        NARROW_DEVICE_RATE,
+    );
+    iq.extend(sdrmm_modem::synth::silence(NARROW_DEVICE_RATE as usize * 4));
     let device = plant(dir.path(), "cw-skimmer", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -1307,7 +1308,7 @@ async fn navtex_broadcast_survives_the_ddc_and_reaches_the_decoded_stream() {
         "ZCZC DA07\r\nGALE WARNING\r\nGERMAN BIGHT\r\nNNNN",
         AUDIO_DEVICE_RATE,
     );
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
 
     let device = plant(dir.path(), "navtex", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
@@ -1356,7 +1357,7 @@ async fn acars_block_survives_the_ddc_and_reaches_the_decoded_stream() {
         more: false,
     };
     let mut iq = synth::acars::transmission(&block, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
 
     let device = plant(dir.path(), "acars", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
@@ -1385,9 +1386,9 @@ async fn acars_block_survives_the_ddc_and_reaches_the_decoded_stream() {
 async fn ysf_callsigns_survive_a_recorded_virtual_device() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
-    let call = synth::dv::ysf::Call::default();
-    let iq = synth::dv::ysf::transmission_with_callsigns(
-        &synth::dv::ysf::Fich::default(),
+    let call = synth::ysf::Call::default();
+    let iq = synth::ysf::transmission_with_callsigns(
+        &synth::ysf::Fich::default(),
         &call,
         AUDIO_DEVICE_RATE,
     );
@@ -1426,12 +1427,12 @@ async fn a_tetra_group_call_survives_the_ddc() {
     let engine = engine_for(dir.path());
     let offset_hz = 50_000.0;
     let downlink = synth::tetra::sample(synth::tetra::Cell::default());
-    let mut iq = synth::resample(
+    let mut iq = sdrmm_modem::synth::resample(
         &downlink.modulate(),
         synth::tetra::SAMPLE_RATE_HZ,
         TETRA_DEVICE_RATE,
     );
-    synth::shift(&mut iq, offset_hz, TETRA_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, TETRA_DEVICE_RATE);
     let device = plant(dir.path(), "tetra", iq, TETRA_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -1465,13 +1466,13 @@ async fn ident_names_an_unknown_transmission_end_to_end() {
     let engine = engine_for(dir.path());
     let offset_hz = 60_000.0;
 
-    let call = synth::dv::dmr::Call::default();
-    let one = synth::dv::dmr::transmission(&call, IDENT_DEVICE_RATE);
+    let call = synth::dmr::Call::default();
+    let one = synth::dmr::transmission(&call, IDENT_DEVICE_RATE);
     let mut iq: Vec<Complex<f32>> = Vec::new();
     for _ in 0..3 {
         iq.extend_from_slice(&one);
     }
-    synth::shift(&mut iq, offset_hz, IDENT_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, IDENT_DEVICE_RATE);
 
     let device = plant(dir.path(), "ident", iq, IDENT_DEVICE_RATE);
     let record = decode_first(
@@ -1533,7 +1534,7 @@ async fn a_dab_ensemble_locks_through_a_virtual_device() {
         const DEVICE_RATE: f64 = 2_400_000.0;
         let dir = TempDir::new().unwrap();
         let engine = engine_for(dir.path());
-        let iq = synth::resample(
+        let iq = sdrmm_modem::synth::resample(
             &synth::dab::ensemble_for_mode(mode, 16).expect("a synthetic signal"),
             2_048_000.0,
             DEVICE_RATE,
@@ -1597,7 +1598,7 @@ async fn a_dvb_s_transport_stream_names_its_program() {
         |status| !status.services.is_empty(),
     )
     .await;
-    assert_eq!(status.system, BroadcastSystem::DvbS);
+    assert_eq!(status.system, "dvb_s");
     assert_eq!(status.label.as_deref(), Some(synth::datv::PROGRAM_NAME));
     assert_eq!(status.code_rate.as_deref(), Some("3/4"));
     assert!(status.frames_ok > 20, "{status:?}");
@@ -1642,7 +1643,7 @@ async fn datv_qpsk_lock_is_reported() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |status| status.system == BroadcastSystem::DvbS2 && status.locked,
+        |status| status.system == "dvb_s2" && status.locked,
     )
     .await;
     assert_eq!(status.symbol_rate, Some(250_000.0));
@@ -1677,7 +1678,7 @@ async fn drm30_lock_is_reported() {
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |status| status.system == BroadcastSystem::Drm30 && status.locked,
+        |status| status.system == "drm30" && status.locked,
     )
     .await;
     assert!(status.frequency_error_hz.abs() < 30.0, "{status:?}");
@@ -1735,7 +1736,7 @@ async fn adsb_decodes_from_a_wideband_radio_through_the_resampler() {
         synth::adsb::me_identification("DLH123"),
     )];
     let mut iq = synth::adsb::transmission(&frames, 500.0, 0.8, RATE);
-    synth::shift(&mut iq, offset_hz, RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
     let device = plant(dir.path(), "wideband", iq, RATE);
     let record = decode_first(
         &engine,
@@ -1777,7 +1778,7 @@ async fn rds_station_survives_the_ddc_and_reaches_the_decoded_stream() {
         alt_freqs_hz: vec![89_800_000.0, 95_500_000.0],
     };
     let mut iq = synth::rds::transmission(&station, 6.0, Some(1_000.0), RATE);
-    synth::shift(&mut iq, offset_hz, RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
 
     let device = plant(dir.path(), "rds", iq, RATE);
     let record = decode_first(
@@ -1841,7 +1842,7 @@ async fn retuning_resets_the_decoder_through_the_engine_path() {
         alt_freqs_hz: Vec::new(),
     };
     let mut iq = synth::rds::transmission(&station, 12.0, Some(1_000.0), RATE);
-    synth::shift(&mut iq, offset_hz, RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, RATE);
     let device = plant(dir.path(), "rds_retune", iq, RATE);
 
     let settings = |offset_hz: f64| ChannelSettings {
@@ -1883,8 +1884,8 @@ async fn retuning_resets_the_decoder_through_the_engine_path() {
 
 #[tokio::test]
 async fn a_dmr_call_reaches_the_symbol_stream_with_its_measurement() {
-    let call = synth::dv::dmr::Call::default();
-    let iq = synth::dv::dmr::transmission(&call, AUDIO_DEVICE_RATE);
+    let call = synth::dmr::Call::default();
+    let iq = synth::dmr::transmission(&call, AUDIO_DEVICE_RATE);
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let device = plant(dir.path(), "dmr_symbols", iq, AUDIO_DEVICE_RATE);
@@ -1942,7 +1943,7 @@ async fn a_dmr_call_reaches_the_symbol_stream_with_its_measurement() {
 
 #[tokio::test]
 async fn an_analog_channel_never_pretends_to_have_symbols() {
-    let iq = synth::dv::dmr::transmission(&synth::dv::dmr::Call::default(), AUDIO_DEVICE_RATE);
+    let iq = synth::dmr::transmission(&synth::dmr::Call::default(), AUDIO_DEVICE_RATE);
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let device = plant(dir.path(), "nfm_no_symbols", iq, AUDIO_DEVICE_RATE);
@@ -2186,16 +2187,11 @@ async fn a_dect_capabilities_broadcast_reaches_the_decoded_stream() {
 
 #[tokio::test]
 async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
-    for system in [
-        BroadcastSystem::DabPlus,
-        BroadcastSystem::Dab,
-        BroadcastSystem::DvbS,
-        BroadcastSystem::DvbS2,
-    ] {
+    for system in ["DAB+", "DAB", "DVB-S", "DVB-S2"] {
         let dir = TempDir::new().unwrap();
         let engine = engine_for(dir.path());
         let (iq, rate, params) = match system {
-            BroadcastSystem::DabPlus => (
+            "DAB+" => (
                 synth::dab::ensemble(30).expect("a synthetic signal"),
                 2048000.0,
                 ChannelParams::new(
@@ -2207,7 +2203,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                 )
                 .expect("dab settings"),
             ),
-            BroadcastSystem::Dab => (
+            "DAB" => (
                 synth::dab::ensemble(30).expect("a synthetic signal"),
                 2048000.0,
                 ChannelParams::new(
@@ -2219,7 +2215,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                 )
                 .expect("dab settings"),
             ),
-            BroadcastSystem::DvbS => (
+            "DVB-S" => (
                 synth::datv::dvbs(4),
                 2000000.0,
                 ChannelParams::new(
@@ -2232,7 +2228,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                 )
                 .expect("datv settings"),
             ),
-            BroadcastSystem::DvbS2 => (
+            "DVB-S2" => (
                 synth::datv::dvbs2(4).expect("a synthetic signal"),
                 2000000.0,
                 ChannelParams::new(
@@ -2291,7 +2287,7 @@ async fn broadcast_audio_reaches_stereo_opus_through_virtual_devices() {
                 channels[index % 2].push(*sample);
             }
         }
-        if system == BroadcastSystem::DabPlus {
+        if system == "DAB+" {
             for (samples, frequency) in channels.iter().zip([700.0, 1300.0]) {
                 let power = |frequency: f64| {
                     let sum = samples.iter().enumerate().fold(
@@ -2360,7 +2356,7 @@ async fn an_aprs_weather_report_reaches_the_decoded_stream() {
         &[],
         "!4903.50N/07201.75W_220/004g005t077r000p000P000h50b09900",
     );
-    let iq = synth::resample(
+    let iq = sdrmm_modem::synth::resample(
         &aprs_burst(frame),
         AprsModulator::rate_hz(),
         NARROW_DEVICE_RATE,
@@ -2395,8 +2391,8 @@ async fn an_rs41_radiosonde_survives_the_ddc_and_reports_its_position() {
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = 25_000.0;
     let native = synth::radiosonde::transmission(SondeType::Rs41, 6, AUDIO_DEVICE_RATE);
-    let mut iq = synth::resample(&native, AUDIO_DEVICE_RATE, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    let mut iq = sdrmm_modem::synth::resample(&native, AUDIO_DEVICE_RATE, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "rs41", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -2440,9 +2436,11 @@ async fn a_noaa_apt_pass_reaches_the_decoded_stream() {
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = 50_000.0;
     let native = synth::apt::transmission(160, AvhrrChannel::Ch2, AvhrrChannel::Ch4, APT_RATE);
-    let mut iq = synth::resample(&native, APT_RATE, NARROW_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
-    iq.extend(synth::silence((NARROW_DEVICE_RATE * 12.0) as usize));
+    let mut iq = sdrmm_modem::synth::resample(&native, APT_RATE, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    iq.extend(sdrmm_modem::synth::silence(
+        (NARROW_DEVICE_RATE * 12.0) as usize,
+    ));
     let device = plant(dir.path(), "apt", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -2471,8 +2469,8 @@ async fn a_wefax_chart_reaches_the_decoded_stream() {
     let offset_hz = 5_000.0;
     let chart = synth::wefax::bars(WefaxIoc::Ioc576, 60);
     let native = synth::wefax::transmission(WefaxIoc::Ioc576, WefaxLpm::Lpm240, &chart, WEFAX_RATE);
-    let mut iq = synth::resample(&native, WEFAX_RATE, AUDIO_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
+    let mut iq = sdrmm_modem::synth::resample(&native, WEFAX_RATE, AUDIO_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, AUDIO_DEVICE_RATE);
     let device = plant(dir.path(), "wefax", iq, AUDIO_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -2508,9 +2506,11 @@ async fn a_meteor_lrpt_pass_reaches_the_decoded_stream() {
     let engine = accelerated_engine_for(dir.path());
     let offset_hz = 100_000.0;
     let native = synth::lrpt::transmission(LrptMode::Oqpsk72, 4, LRPT_RATE);
-    let mut iq = synth::resample(&native, LRPT_RATE, LRPT_DEVICE_RATE);
-    synth::shift(&mut iq, offset_hz, LRPT_DEVICE_RATE);
-    iq.extend(synth::silence((LRPT_DEVICE_RATE * 4.0) as usize));
+    let mut iq = sdrmm_modem::synth::resample(&native, LRPT_RATE, LRPT_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, LRPT_DEVICE_RATE);
+    iq.extend(sdrmm_modem::synth::silence(
+        (LRPT_DEVICE_RATE * 4.0) as usize,
+    ));
     let device = plant(dir.path(), "lrpt", iq, LRPT_DEVICE_RATE);
     let record = decode_first(
         &engine,
@@ -2553,15 +2553,15 @@ async fn a_long_range_remote_id_pack_survives_the_ddc() {
     let center_hz = 2_424_000_000.0;
     let channel_hz = 2_420_000_000.0;
     let pdu = synth::remote_id::aux_adv_pdu([0xC6, 1, 2, 3, 4, 5], 3, &drone_pack());
-    let mut iq = synth::remote_id::bluetooth(
+    let mut iq = sdrmm_modem::ble::transmit::rf_packet(
         &pdu,
         9,
         synth::remote_id::BlePhy::CodedS8,
         HACKRF_DEVICE_RATE,
     );
-    synth::scale(&mut iq, 0.3);
-    synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
-    let mut padded = synth::silence(20_000);
+    sdrmm_modem::synth::scale(&mut iq, 0.3);
+    sdrmm_modem::synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
+    let mut padded = sdrmm_modem::synth::silence(20_000);
     padded.append(&mut iq);
     let device = plant_at(
         dir.path(),
@@ -2601,8 +2601,8 @@ async fn a_remote_id_wifi_beacon_reaches_the_decoded_stream() {
     let pack = synth::remote_id::encode::pack(&drone_pack());
     let beacon = synth::remote_id::build::beacon([0x60, 0x60, 0x1F, 1, 2, 3], "RID", 9, &pack);
     let mut iq = synth::remote_id::dsss(&beacon, synth::remote_id::WifiPhy::Dsss1m, false).unwrap();
-    synth::scale(&mut iq, 0.3);
-    let mut padded = synth::silence(20_000);
+    sdrmm_modem::synth::scale(&mut iq, 0.3);
+    let mut padded = sdrmm_modem::synth::silence(20_000);
     padded.append(&mut iq);
     let device = plant_at(
         dir.path(),
@@ -2646,8 +2646,8 @@ async fn a_ble_beacon_survives_the_ddc() {
     let center_hz = 2_430_000_000.0;
     let channel_hz = 2_426_000_000.0;
     let mut iq = synth::ble::scene(HACKRF_DEVICE_RATE);
-    synth::scale(&mut iq, 0.3);
-    synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
+    sdrmm_modem::synth::scale(&mut iq, 0.3);
+    sdrmm_modem::synth::shift(&mut iq, channel_hz - center_hz, HACKRF_DEVICE_RATE);
     let device = plant_at(dir.path(), "ble", iq, HACKRF_DEVICE_RATE, center_hz);
     let record = decode_first(
         &engine,
@@ -2683,12 +2683,12 @@ async fn the_2_4_ghz_survey_reports_each_second() {
     let dir = TempDir::new().unwrap();
     let engine = engine_for(dir.path());
     let channel_hz = 2_437_000_000.0;
-    let scene = synth::ism::scene();
+    let scene = synth::ism_survey::scene();
     let mut iq = Vec::with_capacity(scene.len() * 11);
     for _ in 0..11 {
         iq.extend_from_slice(&scene);
     }
-    synth::add_noise(&mut iq, 9, 0.01);
+    sdrmm_modem::synth::add_noise(&mut iq, 9, 0.01);
     let device = plant_at(dir.path(), "ism", iq, HACKRF_DEVICE_RATE, channel_hz);
     let record = decode_first(
         &engine,
@@ -2731,8 +2731,8 @@ async fn a_wmbus_meter_beside_the_centre_survives_the_ddc() {
         &synth::wmbus::WATER_METER,
         rate,
     );
-    synth::shift(&mut iq, WMBUS_T_C_HZ - center_hz, rate);
-    synth::add_noise(&mut iq, 5, 0.05);
+    sdrmm_modem::synth::shift(&mut iq, WMBUS_T_C_HZ - center_hz, rate);
+    sdrmm_modem::synth::add_noise(&mut iq, 5, 0.05);
     let device = plant_at(dir.path(), "wmbus", iq, rate, center_hz);
     let record = decode_first(
         &engine,
@@ -2758,9 +2758,9 @@ async fn per_frames_survive_the_ddc_and_are_counted() {
     let engine = engine_for(dir.path());
     let offset_hz = 25_000.0;
     let params = PerParams::default();
-    let mut iq = synth::silence((0.2 * NARROW_DEVICE_RATE) as usize);
+    let mut iq = sdrmm_modem::synth::silence((0.2 * NARROW_DEVICE_RATE) as usize);
     iq.extend(synth::per::frames(&params, 0..50, NARROW_DEVICE_RATE));
-    synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
+    sdrmm_modem::synth::shift(&mut iq, offset_hz, NARROW_DEVICE_RATE);
     let device = plant(dir.path(), "per", iq, NARROW_DEVICE_RATE);
     let record = decode_first(
         &engine,

@@ -2,7 +2,7 @@ use super::{
     jpeg::{Block, MCU_SIDE, MCUS_PER_PACKET, McuDecoder},
     link::{PACKET_HEADER, SEQUENCE_MODULO},
 };
-use crate::VideoPicture;
+use sdrmm_decoder::VideoPicture;
 
 pub const MCUS_PER_ROW: usize = 196;
 pub const WIDTH: usize = MCUS_PER_ROW * MCU_SIDE;
@@ -10,6 +10,7 @@ pub const MAX_LINES: usize = 6_144;
 pub const MAX_ROWS: usize = MAX_LINES / MCU_SIDE;
 pub const FIRST_APID: u16 = 64;
 pub const LAST_APID: u16 = 69;
+#[cfg(any(test, feature = "synth"))]
 pub const TELEMETRY_APID: u16 = 70;
 pub const IDLE_APID: u16 = 0x7FF;
 pub const BLUE_APID: u16 = 64;

@@ -1,16 +1,15 @@
-use crate::NativeChannel;
 use crate::per::PerBaud;
 use crate::per::PerParams;
 use crate::per::PerReport;
 use num_complex::Complex;
+use sdrmm_decoder::NativeChannel;
 use sdrmm_wire::{ChannelParams, ChannelSettings};
 
 use super::{PerChannel, RATE, channel_filter};
-use crate::{
-    ChannelCtx, ChannelOutputs, ChannelRx,
-    synth::{add_noise, per::frames, silence},
-    testutil::settings,
-};
+use crate::synth::per::frames;
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelOutputs};
+use sdrmm_decoder_test_support::settings;
+use sdrmm_modem::synth::{add_noise, silence};
 
 fn tuned(params: PerParams) -> ChannelSettings {
     settings(ChannelParams::of(&params).expect("per settings"))
@@ -21,7 +20,10 @@ fn channel(params: PerParams) -> PerChannel {
 }
 
 fn run(channel: &mut PerChannel, params: PerParams, iq: &[Complex<f32>]) -> Vec<PerReport> {
-    let mut filter = channel_filter(params);
+    let mut filter = sdrmm_decoder_test_support::built_filter(
+        channel_filter(params),
+        super::DESCRIPTOR.input_rate_hz,
+    );
     let mut filtered = Vec::new();
     let mut out = ChannelOutputs::default();
     let mut found = Vec::new();

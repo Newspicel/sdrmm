@@ -58,7 +58,11 @@ function crossings(): WorkspaceSnapshot {
         kraken(0, 0),
         node("arr", { kind: "array", data: {} }, { x: 440, y: 0, w: 460, h: 620 }),
         site(13.0, -400, 0),
-        node("finder", { kind: "df", data: {} }, { x: 960, y: 0, w: 380, h: 640 }),
+        node(
+          "finder",
+          { kind: "processor", data: { processor_type: "df", settings: {} } },
+          { x: 960, y: 0, w: 380, h: 640 },
+        ),
         node("tri", { kind: "triangulation", data: {} }, { x: 1400, y: 0, w: 400, h: 720 }),
         node("map", { kind: "map" }, { x: 960, y: 700, w: 840, h: 520 }),
       ],
@@ -158,7 +162,7 @@ test("makes an array from a Kraken and finds a bearing", async ({ page }) => {
   );
 
   await addNode(page, "Direction finder");
-  const finder = nodeOf(page, "df");
+  const finder = nodeOf(page, "processor");
   await expect(finder).toHaveCount(1);
   await fitPatch(page);
   await dragWire(page, port(array, "array"), port(finder, "array"));

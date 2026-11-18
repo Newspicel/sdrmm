@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
 use num_complex::Complex;
-use sdrmm_channels::{ChannelCtx, ChannelOutputs};
+use sdrmm_decoder::{ChannelCtx, ChannelOutputs};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, Control, ParamOption, SettingField};
 use serde_json::{Map, Value};
 
@@ -56,6 +56,7 @@ fn samples(bytes: &[u8]) -> Vec<Complex<f32>> {
 }
 
 fuzz_target!(|data: &[u8]| {
+    sdrmm_channels::builtin::install();
     let split = data
         .iter()
         .position(|byte| *byte == 0)
@@ -63,7 +64,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(mut settings) = serde_json::from_slice::<ChannelSettings>(&data[..split]) else {
         return;
     };
-    let descriptors = DESCRIPTORS.get_or_init(sdrmm_channels::descriptors);
+    let descriptors = DESCRIPTORS.get_or_init(sdrmm_decoder::descriptors);
     let Some(descriptor) = descriptors
         .iter()
         .find(|descriptor| descriptor.type_id == settings.params.type_id())
@@ -75,11 +76,11 @@ fuzz_target!(|data: &[u8]| {
     let ctx = ChannelCtx {
         input_rate: descriptor.input_rate_hz,
     };
-    let Ok(mut channel) = sdrmm_channels::create(ctx, &settings) else {
+    let Ok(mut channel) = sdrmm_decoder::create(ctx, &settings) else {
         return;
     };
-    let _ = sdrmm_channels::channel_filter(&settings.params);
-    let _ = sdrmm_channels::occupied_band(&settings.params);
+    let _ = sdrmm_decoder::channel_filter(&settings.params);
+    let _ = sdrmm_decoder::occupied_band(&settings.params);
     let mut out = ChannelOutputs::default();
     let iq = samples(tail.get(used..).unwrap_or_default());
     for block in iq.chunks(512) {

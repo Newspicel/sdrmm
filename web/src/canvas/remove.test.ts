@@ -20,7 +20,7 @@ const graph: PatchGraph = {
 
 describe("dropNodes", () => {
   it("only edits the graph and forgets the nodes' state, leaving the engine to the server", () => {
-    const finder = node("df", { kind: "df", data: {} });
+    const finder = node("df", { kind: "processor", data: { processor_type: "df", settings: {} } });
     const snapshot = {
       version: 4,
       graph: {

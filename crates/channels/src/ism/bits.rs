@@ -230,10 +230,6 @@ pub(super) fn bcd(byte: u8) -> Option<u32> {
     (hi <= 9 && lo <= 9).then_some(u32::from(hi) * 10 + u32::from(lo))
 }
 
-pub(super) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 #[cfg(test)]
 pub(super) fn from_rows(rows: &[&str]) -> Box<Bits> {
     let mut bits = Bits::new();

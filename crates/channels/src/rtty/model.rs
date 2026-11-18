@@ -1,4 +1,4 @@
-use crate::default_true;
+use sdrmm_decoder::default_true;
 use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
 use serde::{Deserialize, Serialize};
 
