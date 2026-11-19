@@ -97,7 +97,12 @@ import type {
   WorkspacesResponse,
 } from "./types";
 
-export const client = createClient<paths>({ baseUrl: "/" });
+/** Resolves `fetch` per call, so a shim installed after this module loads (the site demo) still applies. */
+function currentFetch(request: Request): Promise<Response> {
+  return globalThis.fetch(request);
+}
+
+export const client = createClient<paths>({ baseUrl: "/", fetch: currentFetch });
 
 export const AUTHOR_HEADER = "x-sdrmm-author";
 

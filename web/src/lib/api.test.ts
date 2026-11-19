@@ -17,6 +17,19 @@ import {
 } from "./api";
 import { setToken } from "./auth";
 
+describe("client", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the fetch in place at call time", async () => {
+    const shim = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", shim);
+    await client.GET("/api/auth", { baseUrl: "http://sdrmm.test" });
+    expect(shim).toHaveBeenCalledOnce();
+  });
+});
+
 describe("unwrap", () => {
   it("returns the data of an ok response", () => {
     const result = { data: { id: 3 }, response: new Response(null, { status: 200 }) };
