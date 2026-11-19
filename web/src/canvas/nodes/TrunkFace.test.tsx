@@ -19,8 +19,9 @@ function trunk(data: Partial<Extract<PatchNode, { kind: "trunk" }>["data"]> = {}
   return placed("trunk", { kind: "trunk", data: { control_hz: 451_000_000, ...data } });
 }
 
-function render(node: PatchNode, status?: TrunkSystemStatus): string {
+function render(node: PatchNode, status?: TrunkSystemStatus, inspected = false): string {
   return renderFace(TrunkFace, node, {
+    inspected,
     graph: { nodes: [node], edges: [] },
     resolved: null,
     channelTypes: [DMR],
@@ -50,7 +51,9 @@ const STATUS: TrunkSystemStatus = {
 
 describe("TrunkFace", () => {
   it("offers the protocols the decoder declares", () => {
-    expect(render(trunk({ protocol: "tier_three" }))).toContain("Tier III");
+    const node = trunk({ protocol: "tier_three" });
+    expect(render(node, undefined, true)).toContain("Tier III");
+    expect(render(node)).not.toContain("Tier III");
   });
 
   it("shows the talkgroup each traffic channel was granted to", () => {
@@ -68,6 +71,8 @@ describe("TrunkFace", () => {
   it("lists the priority and locked out talkgroups", () => {
     const markup = render(
       trunk({ talkgroups: { priority: [101, 102], lockout: [900], listed_only: false } }),
+      undefined,
+      true,
     );
     expect(markup).toContain("101, 102");
     expect(markup).toContain("900");

@@ -11,7 +11,8 @@ pub(crate) mod frame;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{BitSync, Decimator, FmDemod, Nco, RealDecimator, SyncDetector, design_lowpass};
+use sdrmm_dsp::SyncDetector;
+use sdrmm_modem::ffsk::{FfskDemod, FfskTones};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use frame::{Decoded, HEAD, HEAD_BLOCK_BITS, HEAD_COPIES, REAR, REAR_BITS};
@@ -20,19 +21,9 @@ use sdrmm_decoder::{
 };
 
 const RATE: f64 = 48_000.0;
-pub(crate) const BAUD: f64 = 1_200.0;
-pub(crate) const MARK_HZ: f64 = 1_200.0;
-pub(crate) const SPACE_HZ: f64 = 1_800.0;
+pub(crate) const TONES: FfskTones = FfskTones::CCIR_1200;
 pub(crate) const DEVIATION_HZ: f64 = 3_000.0;
 const CHANNEL_TAPS: usize = 65;
-const AUDIO_DECIMATION: usize = 4;
-const AUDIO_RATE: f64 = RATE / AUDIO_DECIMATION as f64;
-const AUDIO_TAPS: usize = 31;
-const AUDIO_CUTOFF_HZ: f64 = 2_600.0;
-const CLIP: f32 = 1.2;
-const TONE_TAPS: usize = 31;
-const TONE_CUTOFF_HZ: f64 = 1_000.0;
-const SAMPLES_PER_BIT: usize = (AUDIO_RATE / BAUD) as usize;
 const REAR_TOLERANCE: u32 = 2;
 const HEAD_TOLERANCE: u32 = 3;
 const DEDUP_SAMPLES: u64 = 2 * RATE as u64;
@@ -45,84 +36,13 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "End-of-Train".to_owned(),
     summary: "Railroad EOT telemetry and HOT commands".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,
     emits: vec![EventKind::named("eot")],
     ..ChannelDescriptor::default()
 });
-
-struct Demod {
-    fm: FmDemod,
-    audio: RealDecimator,
-    mixer: Nco,
-    tone: Decimator,
-    discriminator: FmDemod,
-    matched: RealDecimator,
-    sync: BitSync,
-    discriminated: Vec<f32>,
-    decimated: Vec<f32>,
-    mixed: Vec<Complex<f32>>,
-    filtered: Vec<Complex<f32>>,
-    frequency: Vec<f32>,
-    smoothed: Vec<f32>,
-}
-
-impl Demod {
-    fn new() -> Self {
-        let centre = f64::midpoint(MARK_HZ, SPACE_HZ);
-        Self {
-            fm: FmDemod::new(RATE, DEVIATION_HZ),
-            audio: RealDecimator::new(
-                &design_lowpass(AUDIO_TAPS, AUDIO_CUTOFF_HZ / RATE),
-                AUDIO_DECIMATION,
-            ),
-            mixer: Nco::new(-centre as f32, AUDIO_RATE as f32),
-            tone: Decimator::new(&design_lowpass(TONE_TAPS, TONE_CUTOFF_HZ / AUDIO_RATE), 1),
-            discriminator: FmDemod::new(AUDIO_RATE, (SPACE_HZ - MARK_HZ) / 2.0),
-            matched: RealDecimator::new(&[1.0 / SAMPLES_PER_BIT as f32; SAMPLES_PER_BIT], 1),
-            sync: BitSync::new(AUDIO_RATE, BAUD),
-            discriminated: Vec::new(),
-            decimated: Vec::new(),
-            mixed: Vec::new(),
-            filtered: Vec::new(),
-            frequency: Vec::new(),
-            smoothed: Vec::new(),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.audio.reset();
-        self.tone.reset();
-        self.matched.reset();
-        self.sync.reset();
-    }
-
-    fn symbols(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
-        self.fm.process(iq, &mut self.discriminated);
-        self.discriminated
-            .iter_mut()
-            .for_each(|sample| *sample = sample.clamp(-CLIP, CLIP));
-        self.audio.process(&self.discriminated, &mut self.decimated);
-        self.mixed.clear();
-        let mixer = &mut self.mixer;
-        self.mixed.extend(
-            self.decimated
-                .iter()
-                .map(|&sample| Complex::new(sample, 0.0) * mixer.next_sample()),
-        );
-        self.tone.process(&self.mixed, &mut self.filtered);
-        self.discriminator
-            .process(&self.filtered, &mut self.frequency);
-        self.matched.process(&self.frequency, &mut self.smoothed);
-        out.clear();
-        for &sample in &self.smoothed {
-            if let Some(symbol) = self.sync.push_soft(sample) {
-                out.push(-symbol);
-            }
-        }
-    }
-}
 
 enum Frame {
     Search,
@@ -186,7 +106,7 @@ impl Syncs {
 }
 
 pub struct EotChannel {
-    demod: Demod,
+    demod: FfskDemod,
     syncs: Syncs,
     frame: Frame,
     symbols: Vec<f32>,
@@ -350,7 +270,7 @@ impl NativeChannel for EotChannel {
         check_params(&params(&settings)?)?;
         frame::prepare();
         Ok(Self {
-            demod: Demod::new(),
+            demod: FfskDemod::new(RATE, DEVIATION_HZ, TONES),
             syncs: Syncs::new(),
             frame: Frame::Search,
             symbols: Vec::new(),

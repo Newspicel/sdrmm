@@ -54,9 +54,7 @@ export function TextChip({
             secret={secret}
             placeholder={placeholder}
             maxLength={maxLength}
-            onCommit={(next) => {
-              onCommit(next);
-            }}
+            onCommit={onCommit}
           />
         </ChipField>
       )}

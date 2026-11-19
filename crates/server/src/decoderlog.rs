@@ -189,7 +189,7 @@ mod tests {
             freq_hz: 1_090_000_000.0,
             event: DecoderEvent::of(&AdsbMessage {
                 icao: icao.to_string(),
-                df: 17,
+                df: Some(17),
                 raw: "8D3C6444".to_string(),
                 ..AdsbMessage::default()
             }),
@@ -293,6 +293,7 @@ mod tests {
             body: NodeBody::Channel(ChannelNode {
                 channel_type: "adsb".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,

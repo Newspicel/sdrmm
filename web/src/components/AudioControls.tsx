@@ -9,7 +9,6 @@ import {
 import type {
   AudioAgcMode,
   AudioProcessing,
-  DenoiseMode,
   DenoiseModel,
   DenoiseModelStatus,
   NotchSettings,
@@ -30,7 +29,6 @@ import { formatBytes, formatHz } from "./format";
 import { Icon } from "./Icon";
 import { NumberField } from "./NumberField";
 import { rowKeys } from "./rowKeys";
-import { Segmented } from "./Segmented";
 import { Select } from "./Select";
 import { SliderField } from "./Slider";
 import { useDebouncedCommit } from "./useDebouncedCommit";
@@ -42,19 +40,36 @@ const AGC_MODES: Options<AudioAgcMode> = [
   { value: "fast", label: "Fast" },
 ];
 
-const DENOISE_MODES: Options<DenoiseMode> = [
-  {
-    value: "spectral",
-    label: "Spectral",
-    title: "Light and fast, for steady hiss",
-  },
-  { value: "neural", label: "DPDFNet", title: "Best speech model, downloaded once" },
+type DenoiseChoice = "off" | "spectral" | DenoiseModel;
+
+const DENOISE_CHOICES: Options<DenoiseChoice> = [
+  { value: "off", label: "Off" },
+  { value: "spectral", label: "Spectral", title: "Light and fast, for steady hiss" },
+  { value: "dpdfnet2_8khz", label: "DPDFNet 2", title: "Speech model, light. Downloaded once" },
+  { value: "dpdfnet8_8khz", label: "DPDFNet 8", title: "Speech model, best, more CPU" },
 ];
 
-const DENOISE_MODELS: Options<DenoiseModel> = [
-  { value: "dpdfnet2_8khz", label: "DPDFNet 2", title: "Light" },
-  { value: "dpdfnet8_8khz", label: "DPDFNet 8", title: "Best, more CPU" },
-];
+function denoiseChoice(denoise: NonNullable<AudioProcessing["denoise"]>): DenoiseChoice {
+  if (!(denoise.enabled ?? false)) {
+    return "off";
+  }
+  return (denoise.mode ?? "spectral") === "neural"
+    ? (denoise.model ?? "dpdfnet2_8khz")
+    : "spectral";
+}
+
+function withDenoiseChoice(
+  denoise: NonNullable<AudioProcessing["denoise"]>,
+  choice: DenoiseChoice,
+): NonNullable<AudioProcessing["denoise"]> {
+  if (choice === "off") {
+    return { ...denoise, enabled: false };
+  }
+  if (choice === "spectral") {
+    return { ...denoise, enabled: true, mode: "spectral" };
+  }
+  return { ...denoise, enabled: true, mode: "neural", model: choice };
+}
 
 type Edit = (patch: Partial<AudioProcessing>) => void;
 
@@ -162,14 +177,13 @@ function DeclickChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
 
 function DenoiseChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
   const denoise = audio.denoise ?? {};
-  const enabled = denoise.enabled ?? false;
-  const mode = denoise.mode ?? "spectral";
-  const model = denoise.model ?? "dpdfnet2_8khz";
+  const choice = denoiseChoice(denoise);
+  const enabled = choice !== "off";
+  const neural = enabled && choice !== "spectral";
   const strength = denoise.strength ?? AUDIO_DEFAULTS.denoiseStrength;
-  const neural = mode === "neural";
-  const models = useQuery(denoiseModelsQuery(enabled && neural));
-  const status = models.data?.models.find((entry) => entry.model === model);
-  const missing = enabled && neural && status !== undefined && status.state !== "ready";
+  const models = useQuery(denoiseModelsQuery(neural));
+  const status = models.data?.models.find((entry) => entry.model === choice);
+  const missing = neural && status !== undefined && status.state !== "ready";
   const slider = useDebouncedCommit((next: number) =>
     edit({ denoise: { ...denoise, strength: next } }),
   );
@@ -183,46 +197,36 @@ function DenoiseChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
       title="Noise reduction"
     >
       {() => (
-        <ChipField label="Noise reduction">
-          <Checkbox
-            label="Noise reduction"
-            checked={enabled}
-            onChange={(next) => edit({ denoise: { ...denoise, enabled: next } })}
-          />
-          <Segmented
-            label="Noise reduction mode"
-            value={mode}
-            options={DENOISE_MODES}
-            onChange={(next) => edit({ denoise: { ...denoise, mode: next } })}
-          />
-          {neural && (
-            <>
-              <Select
-                label="DPDFNet model"
-                value={model}
-                options={DENOISE_MODELS}
-                className="w-32"
-                onChange={(next) => edit({ denoise: { ...denoise, model: next } })}
+        <>
+          <ChipField label="Denoise">
+            <Select
+              label="Noise reduction"
+              value={choice}
+              options={DENOISE_CHOICES}
+              className="w-full"
+              onChange={(next) => edit({ denoise: withDenoiseChoice(denoise, next) })}
+            />
+            {neural && status !== undefined && <ModelState status={status} />}
+          </ChipField>
+          {enabled && (
+            <ChipField label="Strength">
+              <SliderField
+                label="Noise reduction strength"
+                min={0}
+                max={1}
+                step={0.05}
+                value={shown}
+                onChange={slider.change}
+                readout={
+                  <>
+                    {Math.round(shown * 100)}
+                    <span className="text-ink-faint">%</span>
+                  </>
+                }
               />
-              {status !== undefined && <ModelState status={status} />}
-            </>
+            </ChipField>
           )}
-          <SliderField
-            label="Noise reduction strength"
-            disabled={!enabled}
-            min={0}
-            max={1}
-            step={0.05}
-            value={shown}
-            onChange={slider.change}
-            readout={
-              <>
-                {Math.round(shown * 100)}
-                <span className="text-ink-faint">%</span>
-              </>
-            }
-          />
-        </ChipField>
+        </>
       )}
     </SettingChip>
   );

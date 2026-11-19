@@ -1,0 +1,54 @@
+{
+  "name": "80bed7c075e0275c",
+  "test": "the Use setting > is a dropdown on a radio that can send",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "halfduplex"
+          }
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "halfduplex",
+          "label": "Half-duplex 1×1 (virtual)"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "half"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [],
+        "overruns": 0,
+        "radio_use": "receive",
+        "uses": [
+          "receive",
+          "send",
+          "both"
+        ]
+      }
+    ],
+    "revision": 0
+  }
+}

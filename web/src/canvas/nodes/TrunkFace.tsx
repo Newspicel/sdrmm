@@ -3,19 +3,27 @@ import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import { formatHz } from "../../components/format";
+import { ListChip } from "../../components/ListChip";
 import { SerialPortChip } from "../../components/SerialPortChip";
 import { useFeeds } from "../../lib/resolved";
+import { isQuiet } from "../../lib/settingsForm";
 import type {
   ChannelDescriptor,
   PatchNode,
+  PatchNodeOf,
+  SettingField,
+  TrunkBand,
+  TrunkSpec,
   TrunkSystemStatus,
   TrunkTalkgroups,
   VoiceKey,
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { ChannelPlanTable } from "./ChannelPlanTable";
-import { FaceBody, NodeShell } from "./NodeShell";
+import { Inspect, InspectSection } from "../inspector";
+import { ChannelPlanAdd, ChannelPlanTable } from "./ChannelPlanTable";
+import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
+import { useUnwired, type Want } from "./needs";
 import {
   AUTO_PROTOCOL,
   activeScheme,
@@ -27,31 +35,37 @@ import {
   followerCall,
   formatSearchRanges,
   formatTalkgroups,
-  formatVoiceKeys,
   maxChannel,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
   parseTalkgroups,
-  parseVoiceKeys,
   planLabel,
   searchSummary,
   siteLabel,
   slotLabel,
   trunkDecoders,
+  trunkKeysField,
   trunkProtocolLabel,
   trunkProtocols,
   trunkSpec,
+  voiceKeys,
+  withBandBase,
+  withBandSpacing,
 } from "./trunk";
+
+const WANTS_IQ: readonly Want[] = [{ port: "iq" }];
 
 export function TrunkFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const onIq = useFeeds(node.id, "iq").length > 0;
+  const unwired = useUnwired(node.id, WANTS_IQ);
   if (node.kind !== "trunk") {
     return null;
   }
   const status = workspace.trunks.find((system) => system.node === node.id);
   const awaiting = awaitingControlChannel(onIq, node.data.control_hz);
+  const need = !unwired && awaiting ? "Set the control channel" : null;
   const stalled = controlChannelStalled(onIq, node.data.control_hz, status?.carriers);
   const protocol = node.data.protocol ?? AUTO_PROTOCOL;
   const detected = status?.detected ?? null;
@@ -94,73 +108,55 @@ export function TrunkFace({ node }: { node: PatchNode }) {
       title="Trunk system"
       category="tool"
       subtitle={
-        awaiting ? (
-          <span className="text-warn">no control channel</span>
-        ) : onIq ? (
-          [
-            protocol === AUTO_PROTOCOL ? trunkProtocolLabel(scheme) : null,
-            `${followers.length} following`,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        ) : undefined
+        !unwired && need === null
+          ? [
+              protocol === AUTO_PROTOCOL ? trunkProtocolLabel(scheme) : null,
+              `${followers.length} following`,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : undefined
       }
     >
-      <FaceBody>
-        <Chips>
-          <DecoderChip
-            types={workspace.context.channelTypes}
-            decoder={node.data.decoder ?? ""}
-            onChange={(decoder) => edit({ decoder })}
-          />
-          <ChoiceChip
-            label="Protocol"
-            title="Trunking protocol"
-            value={protocol}
-            options={trunkProtocols(spec)}
-            quiet={protocol === AUTO_PROTOCOL}
-            onChange={(next) => edit({ protocol: next })}
-          />
-          <TextChip
-            label="Control"
-            name="Control channel"
-            title={
-              awaiting
-                ? "Name the control channel in MHz. The radio stays untuned until then"
-                : "Control channel in MHz"
-            }
-            value={node.data.control_hz == null ? "" : (node.data.control_hz / 1e6).toString()}
-            shown={node.data.control_hz == null ? "none" : undefined}
-            placeholder="451.0125"
-            onCommit={(text) => edit({ control_hz: parseControlHz(text) })}
-          />
-          <ToggleChip
-            label="Search"
-            title="Find the rest of the site's channels"
-            on={discovery.enabled ?? false}
-            onChange={(next) => edit({ discovery: { ...discovery, enabled: next } })}
-          />
-          {discovery.enabled === true && (
-            <TextChip
-              label="Range"
-              name="Search range"
-              title={`Narrow the search to start-end in MHz / step in kHz. ${summary}`}
-              value={formatSearchRanges(discovery.ranges)}
-              placeholder="whole band"
-              onCommit={(text) =>
-                edit({ discovery: { ...discovery, ranges: parseSearchRanges(text) } })
-              }
+      <Inspect node={node.id}>
+        <InspectSection label="System">
+          <Chips inset="none">
+            <SystemChips
+              types={workspace.context.channelTypes}
+              data={node.data}
+              protocol={protocol}
+              spec={spec}
+              awaiting={awaiting}
+              discovery={discovery}
+              searchTitle={summary}
+              onEdit={edit}
             />
-          )}
-        </Chips>
-        <CallChips
-          talkgroups={talkgroups}
-          keys={node.data.keys ?? []}
-          vocoder={spec?.vocoder === true ? (node.data.vocoder ?? null) : undefined}
-          onChange={(next) => edit({ talkgroups: { ...talkgroups, ...next } })}
-          onKeys={(keys) => edit({ keys })}
-          onVocoder={(vocoder) => edit({ vocoder })}
-        />
+          </Chips>
+        </InspectSection>
+        <InspectSection label="Calls">
+          <CallChips
+            talkgroups={talkgroups}
+            keys={node.data.keys ?? []}
+            keysField={trunkKeysField(workspace.context.channelTypes, node.data.decoder ?? "")}
+            vocoder={spec?.vocoder === true ? (node.data.vocoder ?? null) : undefined}
+            onChange={(next) => edit({ talkgroups: { ...talkgroups, ...next } })}
+            onKeys={(keys) => edit({ keys })}
+            onVocoder={(vocoder) => edit({ vocoder })}
+          />
+        </InspectSection>
+        <InspectSection label="Band">
+          <BandChips band={node.data.band ?? null} onChange={(band) => edit({ band })} />
+        </InspectSection>
+        <InspectSection label="Add channel">
+          <ChannelPlanAdd
+            entries={channelMap}
+            maxChannel={maxChannel(spec)}
+            onChange={(channel_map) => edit({ channel_map })}
+          />
+        </InspectSection>
+      </Inspect>
+      <FaceBody>
+        {need !== null && <FaceEmpty hint={need} />}
         <TrunkActivity status={status} slots={slots} controlHz={node.data.control_hz} />
         {stalled && (
           <FaceFault
@@ -182,7 +178,6 @@ export function TrunkFace({ node }: { node: PatchNode }) {
           />
         )}
         <ChannelPlanTable
-          maxChannel={maxChannel(spec)}
           label={planLabel(scheme)}
           rows={channelPlanRows(learned, channelMap)}
           entries={channelMap}
@@ -195,9 +190,113 @@ export function TrunkFace({ node }: { node: PatchNode }) {
   );
 }
 
+type TrunkData = PatchNodeOf<"trunk">["data"];
+
+function SystemChips({
+  types,
+  data,
+  protocol,
+  spec,
+  awaiting,
+  discovery,
+  searchTitle,
+  onEdit,
+}: {
+  types: readonly ChannelDescriptor[];
+  data: TrunkData;
+  protocol: string;
+  spec: TrunkSpec | null;
+  awaiting: boolean;
+  discovery: NonNullable<TrunkData["discovery"]>;
+  searchTitle: string;
+  onEdit: (next: Partial<TrunkData>) => void;
+}) {
+  return (
+    <>
+      <DecoderChip
+        types={types}
+        decoder={data.decoder ?? ""}
+        onChange={(decoder) => onEdit({ decoder })}
+      />
+      <ChoiceChip
+        label="Protocol"
+        title="Trunking protocol"
+        value={protocol}
+        options={trunkProtocols(spec)}
+        quiet={protocol === AUTO_PROTOCOL}
+        onChange={(next) => onEdit({ protocol: next })}
+      />
+      <TextChip
+        label="Control"
+        name="Control channel"
+        title={
+          awaiting
+            ? "Name the control channel in MHz. The radio stays untuned until then"
+            : "Control channel in MHz"
+        }
+        value={data.control_hz == null ? "" : (data.control_hz / 1e6).toString()}
+        shown={data.control_hz == null ? "none" : undefined}
+        placeholder="451.0125"
+        onCommit={(text) => onEdit({ control_hz: parseControlHz(text) })}
+      />
+      <ToggleChip
+        label="Search"
+        title="Find the rest of the site's channels"
+        on={discovery.enabled ?? false}
+        onChange={(next) => onEdit({ discovery: { ...discovery, enabled: next } })}
+      />
+      {discovery.enabled === true && (
+        <TextChip
+          label="Range"
+          name="Search range"
+          title={`Narrow the search to start-end in MHz / step in kHz. ${searchTitle}`}
+          value={formatSearchRanges(discovery.ranges)}
+          placeholder="whole band"
+          onCommit={(text) =>
+            onEdit({ discovery: { ...discovery, ranges: parseSearchRanges(text) } })
+          }
+        />
+      )}
+    </>
+  );
+}
+
+function BandChips({
+  band,
+  onChange,
+}: {
+  band: TrunkBand | null;
+  onChange: (band: TrunkBand | null) => void;
+}) {
+  return (
+    <Chips inset="none">
+      <TextChip
+        label="Ch 0"
+        name="Channel 0 frequency"
+        title="Channel 0 in MHz. Channel N sits N spacings above it"
+        value={band == null ? "" : (band.base_hz / 1e6).toString()}
+        shown={band == null ? "none" : undefined}
+        placeholder="423.0"
+        onCommit={(text) => onChange(withBandBase(band, text))}
+      />
+      {band != null && (
+        <TextChip
+          label="Spacing"
+          name="Channel spacing"
+          title="Channel spacing in kHz"
+          value={(band.spacing_hz / 1e3).toString()}
+          placeholder="12.5"
+          onCommit={(text) => onChange(withBandSpacing(band, text))}
+        />
+      )}
+    </Chips>
+  );
+}
+
 function CallChips({
   talkgroups,
   keys,
+  keysField,
   vocoder,
   onChange,
   onKeys,
@@ -205,6 +304,7 @@ function CallChips({
 }: {
   talkgroups: TrunkTalkgroups;
   keys: VoiceKey[];
+  keysField: SettingField | null;
   vocoder: string | null | undefined;
   onChange: (next: Partial<TrunkTalkgroups>) => void;
   onKeys: (keys: VoiceKey[]) => void;
@@ -212,7 +312,7 @@ function CallChips({
 }) {
   const priority = talkgroups.priority;
   return (
-    <Chips>
+    <Chips inset="none">
       <TextChip
         label="Priority"
         name="Priority talkgroups"
@@ -239,15 +339,17 @@ function CallChips({
           onChange={(next) => onChange({ listed_only: next })}
         />
       )}
-      <TextChip
-        label="Keys"
-        name="Voice keys"
-        title="Key ID:hex key per key the calls name, for ARC4 and AES"
-        value={formatVoiceKeys(keys)}
-        shown={keys.length === 0 ? "none" : undefined}
-        placeholder="137:58FFA35A8C"
-        onCommit={(text) => onKeys(parseVoiceKeys(text))}
-      />
+      {keysField?.control.type === "list" && (
+        <ListChip
+          label={keysField.label}
+          title={keysField.title ?? keysField.label}
+          item={keysField.control.item}
+          entries={keys}
+          empty={keysField.control.empty}
+          quiet={isQuiet(keysField, keys)}
+          onChange={(entries) => onKeys(voiceKeys(entries))}
+        />
+      )}
       {vocoder !== undefined && (
         <SerialPortChip
           label="Vocoder"

@@ -135,10 +135,12 @@ impl Outputs {
 impl Entry {
     fn start(&mut self) {
         let Some(heartbeat) = self.heartbeat.clone() else {
-            report(
-                &self.status,
-                format!("No decoder offers the {} feed", self.format),
-            );
+            let waiting = format!("No decoder offers the {} feed", self.format);
+            self.status.send_if_modified(|status| {
+                let changed = status.waiting.as_deref() != Some(waiting.as_str());
+                status.waiting = Some(waiting);
+                changed
+            });
             return;
         };
         let listener = match self
@@ -158,6 +160,7 @@ impl Entry {
         self.status.send_modify(|status| {
             status.listening = true;
             status.error = None;
+            status.waiting = None;
         });
         self.listener = Some(listener.clone());
         self.worker = Some(tokio::spawn(serve(
@@ -192,7 +195,7 @@ async fn serve(
             accepted = listener.accept() => match accepted {
                 Ok((stream, _)) => {
                     if clients.len() == MAX_CLIENTS {
-                        report(&status, "feed client limit reached".to_owned());
+                        report(&status, "Feed client limit reached".to_owned());
                         continue;
                     }
                     if let Err(error) = stream.set_nodelay(true) {
@@ -488,7 +491,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_format_no_decoder_offers_is_visible() {
+    async fn a_format_no_decoder_offers_is_a_wait_not_a_fault() {
         let mut outputs = Outputs::default();
         outputs.configure(&[Binding {
             node: "odd".to_owned(),
@@ -499,7 +502,13 @@ mod tests {
             },
         }]);
 
-        assert!(!outputs.entries["odd"].status.borrow().listening);
-        assert!(error(&outputs, "odd").contains("No decoder offers"));
+        let status = outputs.entries["odd"].status.borrow().clone();
+        assert!(!status.listening);
+        assert_eq!(status.error, None);
+        assert!(
+            status
+                .waiting
+                .is_some_and(|waiting| waiting.contains("No decoder offers"))
+        );
     }
 }

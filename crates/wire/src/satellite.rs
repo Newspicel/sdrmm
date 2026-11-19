@@ -13,7 +13,7 @@ use crate::{
 pub const MAX_TLE_LEN: usize = 256;
 pub const MAX_TRANSMITTER_ID_LEN: usize = 64;
 pub const MAX_SATELLITE_HZ: f64 = 300e9;
-pub const MAX_CATALOG_RESULTS: usize = 64;
+pub const MAX_CATALOG_RESULTS: usize = 1024;
 pub const MAX_SATELLITE_QUERY_LEN: usize = 64;
 pub const SATELLITE_CATALOG_SOURCE: &str = "CelesTrak";
 pub const SATELLITE_CATALOG_URL: &str = "https://celestrak.org/NORAD/elements/gp.php";
@@ -142,6 +142,9 @@ pub struct SatelliteStatus {
     pub driving: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What the node waits for, never a fault: a wire, a setting or data still to come.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<String>,
 }
 
 #[derive(

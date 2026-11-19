@@ -126,7 +126,7 @@ fn pack28_token(word: &str) -> Option<u32> {
     }
 }
 
-fn pack28(word: &str) -> Option<u32> {
+pub(crate) fn pack28(word: &str) -> Option<u32> {
     if let Some(token) = pack28_token(word) {
         return Some(token);
     }

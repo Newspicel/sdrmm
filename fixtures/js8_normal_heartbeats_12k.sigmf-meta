@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "JS8Call test recording A_2_5.wav",
+    "core:description": "JS8 Normal off-air audio from the JS8Call test set, represented as real-valued complex IQ; the dial frequency was not recorded"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 14078000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://github.com/js8call/js8call/blob/a7ff1be0/media/tests/A_2_5.wav (GPL-3.0-or-later); source SHA-256 60b650c2090dff5e2144f164ebe692cde5f048c769518e1b1b9e67223f3da138; samples 0..180000 at 12000 Hz",
+      "core:sample_count": 180000,
+      "core:sample_start": 0
+    }
+  ]
+}

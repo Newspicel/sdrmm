@@ -2,7 +2,12 @@ import { Trash2 } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ConfirmButton, confirmClass, confirmLabel } from "./ConfirmButton";
-import { BTN_DANGER, BTN_DANGER_ARMED, BTN_DANGER_SM, ICON_BTN_SM_DANGER_ARMED } from "./controls";
+import {
+  BTN_DANGER_SM,
+  FACE_BTN_DANGER,
+  FACE_BTN_DANGER_ARMED,
+  ICON_BTN_SM_DANGER_ARMED,
+} from "./controls";
 
 describe("ConfirmButton", () => {
   it("asks to confirm the same action it names", () => {
@@ -11,8 +16,8 @@ describe("ConfirmButton", () => {
   });
 
   it("reads as a danger action before and after arming, at every size", () => {
-    expect(confirmClass("md", false)).toBe(BTN_DANGER);
-    expect(confirmClass("md", true)).toBe(BTN_DANGER_ARMED);
+    expect(confirmClass("face", false)).toBe(FACE_BTN_DANGER);
+    expect(confirmClass("face", true)).toBe(FACE_BTN_DANGER_ARMED);
     expect(confirmClass("sm", true)).toBe(BTN_DANGER_SM);
     expect(confirmClass("icon", true)).toBe(ICON_BTN_SM_DANGER_ARMED);
   });

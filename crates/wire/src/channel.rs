@@ -14,6 +14,7 @@ mod form;
 mod if_filter;
 mod params;
 mod status;
+mod verification;
 
 pub use choices::{ParamChoice, ParamOption, SettingChoice};
 pub use filter_spec::FilterSpec;
@@ -24,6 +25,7 @@ pub use if_filter::{
 };
 pub use params::{ChannelParams, DecoderSettings};
 pub use status::{ChannelHealth, ChannelStatus};
+pub use verification::Verification;
 
 crate::open_name::open_name!(
     /// The palette group a decoder sits in.
@@ -47,6 +49,36 @@ impl Default for DecoderFamily {
     }
 }
 
+impl DecoderFamily {
+    /// The group heading the palette, the docs and the site show. A plugin's own family reads
+    /// as its name.
+    #[must_use]
+    pub fn title(&self) -> String {
+        let title = match self.as_str() {
+            "analog_voice" => "Analog voice",
+            "digital_voice" => "Digital voice",
+            "aviation" => "Aviation",
+            "marine" => "Marine",
+            "amateur" => "Amateur and HF",
+            "paging" => "Paging and telemetry",
+            "video" => "Pictures and video",
+            "broadcast" => "Broadcast digital",
+            "weather" => "Weather and satellites",
+            "utility" => "Utility",
+            other => return plain(other),
+        };
+        title.to_owned()
+    }
+}
+
+fn plain(tag: &str) -> String {
+    let spaced = tag.replace('_', " ");
+    let mut chars = spaced.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelDescriptor {
     pub type_id: String,
@@ -55,6 +87,8 @@ pub struct ChannelDescriptor {
     pub summary: String,
     #[serde(default)]
     pub family: DecoderFamily,
+    #[serde(default)]
+    pub verification: Verification,
     pub bandwidth_hz: f64,
     pub input_rate_hz: f64,
     #[serde(default = "default_has_audio")]
@@ -133,6 +167,7 @@ impl Default for ChannelDescriptor {
             name: String::new(),
             summary: String::new(),
             family: DecoderFamily::default(),
+            verification: Verification::default(),
             bandwidth_hz: 0.0,
             input_rate_hz: 0.0,
             has_audio: default_has_audio(),
@@ -373,4 +408,18 @@ pub struct ChannelInfo {
     pub baseband_recording: Option<RecordingStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network_export: Option<NetworkExportStatus>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DecoderFamily;
+
+    #[test]
+    fn a_family_reads_as_its_group_title() {
+        assert_eq!(DecoderFamily::AMATEUR.title(), "Amateur and HF");
+        assert_eq!(DecoderFamily::new("space_weather").title(), "Space weather");
+        for family in DecoderFamily::BUILT_IN {
+            assert!(!family.title().contains('_'), "{family}");
+        }
+    }
 }

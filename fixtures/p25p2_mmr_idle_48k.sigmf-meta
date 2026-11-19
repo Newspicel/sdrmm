@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "RTL-SDR",
+    "core:description": "P25 Phase 2 voice channel, idle, MMR Victoria"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 420650000.0,
+      "core:datetime": "2026-11-19T15:03:37.132749Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "GopherTrunk 5454622771dc internal/radio/p25/phase2/receiver/testdata/mmr-s9-420650k-p2-48k.cs16 (Apache-2.0); source SHA-256 42808dd008dfbb89c283fa57454fac7082d77692fcd6af29b40f1e892229899d; samples 0..52426 at 48000 Hz",
+      "core:sample_count": 52426,
+      "core:sample_start": 0
+    }
+  ]
+}

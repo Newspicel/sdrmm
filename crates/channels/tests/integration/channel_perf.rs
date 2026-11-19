@@ -558,3 +558,31 @@ fn tetra_allocates_nothing_while_it_follows_an_idle_cell() {
     assert_no_alloc("tetra", || drive(rx.as_mut(), rest, &mut outputs));
     assert_eq!(rx.rejected(), 0);
 }
+
+#[test]
+fn the_gps_receiver_allocates_nothing_while_it_tracks_and_searches() {
+    let settings = sdrmm_decoder::default_settings("gnss").expect("settings");
+    let rate = sdrmm_decoder::input_rate(&settings.params);
+    let mut rx =
+        sdrmm_decoder::create(ChannelCtx { input_rate: rate }, &settings).expect("receiver");
+    let mut iq = vec![Complex::new(0.0, 0.0); (rate * 2.0) as usize];
+    sdrmm_modem::synth::add_noise(&mut iq, 0x5EED, 0.5);
+    for (prn, doppler, start) in [
+        (3, -3_000.0, 100.0),
+        (11, 1_500.0, 1_900.5),
+        (22, 4_000.0, 777.2),
+    ] {
+        let satellite = sdrmm_channels::synth::gnss::satellite(prn, doppler, start, 2_000);
+        for (sample, add) in iq.iter_mut().zip(satellite) {
+            *sample += add * 0.05;
+        }
+    }
+    let (warmup, steady) = iq.split_at(iq.len() / 2);
+    let mut outputs = ChannelOutputs::default();
+    for block in warmup.chunks(BLOCK) {
+        rx.process(block, &mut outputs);
+    }
+    assert_eq!(outputs.events.len(), 3, "three satellites acquired");
+    outputs.reset();
+    assert_no_alloc("gnss", || drive(rx.as_mut(), steady, &mut outputs));
+}

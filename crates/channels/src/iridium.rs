@@ -99,6 +99,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Iridium bursts".to_owned(),
     summary: "Iridium satellite bursts".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::ReferenceFixture,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: CHANNEL_RATE,
     has_audio: false,

@@ -1,7 +1,9 @@
 use std::time::Instant;
 
 use sdrmm_decoder::TrunkGrant;
-use sdrmm_wire::{ChannelSettings, DvFrame, DvFrameKind, StateScope};
+use sdrmm_wire::{
+    CallGate, ChannelParams, ChannelSettings, DvFrame, DvFrameKind, Squelch, StateScope,
+};
 
 use super::{
     Carrier, Follower, FollowerChannel, FollowerKey, Grant, MAX_FOLLOWERS_PER_SYSTEM, Problem,
@@ -164,7 +166,7 @@ impl Follower {
         };
         let settings = ChannelSettings {
             frequency_hz: grant.freq_hz as f64,
-            squelch: sdrmm_wire::Squelch::Off,
+            squelch: call_squelch(&params),
             blanker: Default::default(),
             if_filter: Default::default(),
             params,
@@ -371,5 +373,19 @@ impl Follower {
             self.publish();
         }
         fresh
+    }
+}
+
+/// The squelch a followed call opens with: none where the decoder hears calls in its frames, and
+/// an automatic one where it hears them as analog speech.
+fn call_squelch(params: &ChannelParams) -> Squelch {
+    let analog = sdrmm_decoder::descriptor(params.type_id())
+        .is_some_and(|descriptor| descriptor.calls == Some(CallGate::Squelch));
+    if analog {
+        Squelch::Auto {
+            margin_db: sdrmm_wire::channel::DEFAULT_SQUELCH_AUTO_MARGIN_DB,
+        }
+    } else {
+        Squelch::Off
     }
 }

@@ -67,7 +67,7 @@ fn cruise_alt_m() -> f64 {
 fn position_message(icao: &str, at: Geodetic) -> AdsbMessage {
     AdsbMessage {
         icao: icao.to_owned(),
-        df: 17,
+        df: Some(17),
         callsign: Some("DLH4AB ".to_owned()),
         altitude_ft: Some(CRUISE_FT),
         lat: Some(at.lat_deg),
@@ -79,7 +79,7 @@ fn position_message(icao: &str, at: Geodetic) -> AdsbMessage {
 fn velocity_message(icao: &str, speed_kt: f64, track_deg: f64, climb_fpm: i32) -> AdsbMessage {
     AdsbMessage {
         icao: icao.to_owned(),
-        df: 17,
+        df: Some(17),
         ground_speed_kt: Some(speed_kt),
         track_deg: Some(track_deg),
         vertical_rate_fpm: Some(climb_fpm),

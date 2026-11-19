@@ -1,22 +1,37 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { BTN_DANGER_ARMED, BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
+import {
+  formatPeak,
+  METER_FLOOR_DB,
+  type MeterTone,
+  meterTone,
+  meterUnit,
+} from "../../components/dbfs";
+import { ANY_FREQUENCY, inTuningRange, tuningRange } from "../../components/dial";
+import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { Chips, NumberChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
-import { Readout, Readouts } from "../../components/face/Readouts";
+import { MeterBar, MeterRow } from "../../components/face/Meter";
 import { FaceStats, Stat } from "../../components/face/Stats";
-import { formatCount, formatHz } from "../../components/format";
+import { formatCount, formatHz, formatMhz } from "../../components/format";
 import { HzChip } from "../../components/HzField";
+import { TuneTo } from "../../components/TuneTo";
 import { nodeAction } from "../../lib/api";
+import { reachesOf, useFeeds } from "../../lib/resolved";
 import { toastError } from "../../lib/toasts";
 import type { PatchNode, PatchNodeOf, TransmitAction, TransmitSettings } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
-import { patchNode } from "../graph";
+import { nodeOf, patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
+import { runningSetOf } from "../workspaceDevice";
+import { AirLabel } from "./AirLabel";
+import { airOf } from "./airState";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
+import { radioUseOf } from "./radioUse";
 import {
   MAX_TIMEOUT_S,
   MIN_LEVEL_DB,
-  peakText,
   tooWide,
   transmitStatusOf,
   withTransmitSettings,
@@ -32,7 +47,17 @@ export function TransmitFace({ node }: { node: PatchNode }) {
 function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
   const workspace = useWorkspaceContext();
   const status = transmitStatusOf(workspace.deviceSets, node.id);
-  const onAir = status?.phase === "on_air";
+  const air = airOf(status);
+  const fed = useFeeds(node.id, "iq").length + useFeeds(node.id, "baseband").length > 0;
+  const radio = reachesOf(workspace.resolved, node.id, "transmit")[0]?.sink ?? null;
+  const set = radio === null ? null : runningSetOf(workspace, radio);
+  const receiveOnly =
+    radio !== null && radioUseOf(nodeOf(workspace.graph, radio), set) === "receive";
+  const need = transmitNeed(fed, radio !== null, receiveOnly);
+  const range = set === null ? ANY_FREQUENCY : tuningRange(set.capabilities);
+  const frequency =
+    node.data.frequency_hz ?? status?.frequency_hz ?? set?.settings.center_hz ?? null;
+  const tune = (frequency_hz: number) => edit({ frequency_hz });
   const edit = (next: Partial<TransmitSettings>): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -49,72 +74,76 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
       node={node}
       title="Transmitter"
       category="output"
-      subtitle={status === null ? undefined : "armed"}
-      badge={
-        onAir ? (
-          <span role="status" className="font-semibold text-danger" title="Transmitting now">
-            ON AIR
-          </span>
-        ) : undefined
-      }
+      subtitle={air === null ? undefined : <AirLabel air={air} />}
     >
       <FaceBody>
-        <Chips>
-          <HzChip
-            label="Freq"
-            title="Transmit frequency. Empty: an encoder sits on the radio's centre, a lane where it was received"
-            value={node.data.frequency_hz ?? null}
-            placeholder="auto"
-            optional
-            min={1}
-            onCommit={(frequency_hz) => edit({ frequency_hz })}
+        <div className="@container flex flex-col gap-1 p-2">
+          <div className="flex min-w-0 items-center gap-1">
+            <FrequencyDial
+              id={dialId(node.id)}
+              hz={frequency ?? 0}
+              range={range}
+              wheelTunes={workspace.selected === node.id}
+              onTune={tune}
+            />
+            <span className="ml-auto flex shrink-0 items-center gap-1">
+              <TuneTo
+                title="Type the frequency to send on"
+                hz={frequency ?? 0}
+                hint={`Reaches ${formatMhz(range.min)} to ${formatMhz(range.max)}`}
+                resolve={(entered) => inTuningRange(entered, range)}
+                onTune={tune}
+              />
+            </span>
+          </div>
+          {need === null ? (
+            <DriveRow peakDb={status?.peak_db ?? undefined} />
+          ) : (
+            <NeedRow need={need} />
+          )}
+        </div>
+        {status !== null && tooWide(status) && status.occupied_hz != null && (
+          <FaceFault
+            message={`${formatHz(status.occupied_hz)} wide, over its ${formatHz(status.channel_hz ?? 0)} channel`}
           />
-          <NumberChip
-            label="Level"
-            title="Digital drive below full scale"
-            value={node.data.level_db}
-            unit="dB"
-            min={MIN_LEVEL_DB}
-            max={0}
-            step={1}
-            onCommit={(level_db) => edit({ level_db })}
-          />
-          <NumberChip
-            label="Timeout"
-            title="Longest single transmission before it disarms itself"
-            value={node.data.timeout_s}
-            unit="s"
-            min={1}
-            max={MAX_TIMEOUT_S}
-            step={1}
-            onCommit={(timeout_s) => edit({ timeout_s })}
-          />
-        </Chips>
-        {status !== null && (
-          <>
-            <Readouts columns={2}>
-              <Readout label="On">{formatHz(status.frequency_hz)}</Readout>
-              <Readout label="Peak" title="Peak drive of the latest transmission">
-                {peakText(status)}
-              </Readout>
-              {status.occupied_hz != null && (
-                <Readout
-                  label="Width"
-                  tone={tooWide(status) ? "warn" : undefined}
-                  title={
-                    tooWide(status) && status.channel_hz != null
-                      ? `${formatHz(status.occupied_hz)} is wider than its ${formatHz(status.channel_hz)} channel`
-                      : "Band holding 99 % of the latest transmission's power"
-                  }
-                >
-                  {formatHz(status.occupied_hz)}
-                </Readout>
-              )}
-            </Readouts>
-            {status.error != null && <FaceFault message={status.error} />}
-          </>
         )}
+        {status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <HzChip
+              label="Freq"
+              title="Transmit frequency. Empty: an encoder sits on the radio's centre, a lane where it was received"
+              value={node.data.frequency_hz ?? null}
+              placeholder="auto"
+              optional
+              min={1}
+              onCommit={(frequency_hz) => edit({ frequency_hz })}
+            />
+            <NumberChip
+              label="Level"
+              title="Digital drive below full scale"
+              value={node.data.level_db}
+              unit="dB"
+              min={MIN_LEVEL_DB}
+              max={0}
+              step={1}
+              onCommit={(level_db) => edit({ level_db })}
+            />
+            <NumberChip
+              label="Timeout"
+              title="Longest single transmission before it disarms itself"
+              value={node.data.timeout_s}
+              unit="s"
+              min={1}
+              max={MAX_TIMEOUT_S}
+              step={1}
+              onCommit={(timeout_s) => edit({ timeout_s })}
+            />
+          </Chips>
+        </InspectSection>
+      </Inspect>
       <FaceFooter>
         {status !== null && (
           <FaceStats>
@@ -131,9 +160,11 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
         {status === null ? (
           <Button
             type="button"
-            className={BTN_PRIMARY}
-            title="From here on, what the source produces goes on the air"
-            disabled={act.isPending}
+            className={FACE_BTN}
+            title={
+              receiveOnly ? SET_TO_SEND : "From here on, what the source produces goes on the air"
+            }
+            disabled={act.isPending || receiveOnly}
             onClick={() => act.mutate({ do: "arm" })}
           >
             Arm
@@ -141,7 +172,7 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
         ) : (
           <Button
             type="button"
-            className={BTN_DANGER_ARMED}
+            className={FACE_BTN_DANGER}
             disabled={act.isPending}
             onClick={() => act.mutate({ do: "disarm" })}
           >
@@ -151,4 +182,47 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
       </FaceFooter>
     </NodeShell>
   );
+}
+
+const SET_TO_SEND = "Set the radio to send";
+
+/** What the transmitter says it needs before Arm can key it. A missing wire it leaves unsaid. */
+export function transmitNeed(fed: boolean, wired: boolean, receiveOnly: boolean): string | null {
+  return fed && wired && receiveOnly ? SET_TO_SEND : null;
+}
+
+const TONE: Record<MeterTone, string> = {
+  ok: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+};
+
+/** Peak drive of the latest transmission, at the floor while nothing goes out. */
+function DriveRow({ peakDb }: { peakDb: number | undefined }) {
+  const quiet = formatPeak(peakDb) === "quiet";
+  return (
+    <MeterRow
+      label="Drive"
+      title="Peak drive of the latest transmission, below full scale"
+      meter={
+        <MeterBar
+          label="Drive"
+          value={meterUnit(peakDb)}
+          valueText={formatPeak(peakDb)}
+          fill={TONE[meterTone(peakDb, false)]}
+        />
+      }
+      readout={
+        <span className={quiet ? "text-ink-faint" : ""}>
+          {quiet ? `${METER_FLOOR_DB} dB` : `${(peakDb ?? 0).toFixed(1)} dB`}
+        </span>
+      }
+      solo
+    />
+  );
+}
+
+/** What the transmitter still needs, in the row its drive meter takes once it has it. */
+function NeedRow({ need }: { need: string }) {
+  return <div className="flex h-7 items-center justify-center text-xs text-ink-faint">{need}</div>;
 }

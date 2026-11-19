@@ -36,11 +36,13 @@ function face(encoderTypes: readonly EncoderDescriptor[] = [NFM]): string {
 }
 
 describe("EncoderFace", () => {
-  it("asks for audio and shows its own settings", () => {
+  it("shows its bandwidth in the header", () => {
     const html = face();
-    expect(html).toContain("Wire audio in");
-    expect(html).toContain("BW");
-    expect(html).not.toContain("Mode");
+    expect(html).not.toContain("Wire audio in");
+    const text = html.replace(/<[^>]+>/g, "");
+    expect(text).toContain("NFM12.5 kHz");
+    expect(text).not.toContain("BW");
+    expect(html).toContain('aria-label="Signal level"');
   });
 
   it("names a mode no encoder brings", () => {

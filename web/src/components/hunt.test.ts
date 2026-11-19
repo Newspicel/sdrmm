@@ -188,11 +188,11 @@ describe("HuntSweep", () => {
     ]);
   });
 
-  it("says None in red when the fix has no heading", () => {
+  it("reads a plain dash, not a fault, when the fix has no heading", () => {
     const html = face({ bins: [], covered_deg: 0, state: "no_heading" });
     expect(html).toContain('title="Wire a phone GPS"');
-    expect(html).toContain("text-danger");
-    expect(html).toContain(">None<");
+    expect(html).not.toContain("text-danger");
+    expect(html).toContain(">No heading<");
     expect(html).toContain(">Sweep<");
     expect(html).toContain("Send your heading as a bearing");
   });
@@ -209,7 +209,7 @@ describe("HuntSweep", () => {
     expect(html).toContain("091°");
     expect(html).toContain("212°");
     expect(html).toContain("270°");
-    expect(html).not.toContain(">None<");
+    expect(html).not.toContain(">No heading<");
   });
 
   it("holds both buttons while a request is out", () => {
@@ -234,12 +234,14 @@ describe("HuntFace", () => {
   }
 
   it("offers a sweep and its settings only with a position wired", () => {
-    const bare = renderFace(HuntFace, walk, { graph: graph(false) });
+    const bare = renderFace(HuntFace, walk, { graph: graph(false), inspected: true });
     expect(bare).toContain("Start hunt");
     expect(bare).not.toContain(">Sweep<");
     expect(bare).not.toContain("Main lobe of the handheld antenna");
-    const wired = renderFace(HuntFace, walk, { graph: graph(true) });
+    const wired = renderFace(HuntFace, walk, { graph: graph(true), inspected: true });
     expect(wired).toContain("Turn slowly all the way round");
     expect(wired).toContain("Main lobe of the handheld antenna");
+    const plain = renderFace(HuntFace, walk, { graph: graph(true) });
+    expect(plain).not.toContain("Main lobe of the handheld antenna");
   });
 });

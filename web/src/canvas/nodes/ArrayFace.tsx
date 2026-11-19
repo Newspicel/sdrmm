@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
 import { ANY_FREQUENCY, inTuningRange, tuningRange } from "../../components/dial";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { FaceFault } from "../../components/face/Fault";
@@ -9,16 +9,16 @@ import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount, formatMhz } from "../../components/format";
 import { TuneTo } from "../../components/TuneTo";
 import { calibrateArray, startArrayRecording, stopArrayRecording } from "../../lib/api";
-import { failureText, shownCenterHz, useArrayStore } from "../../lib/arrays";
+import { failureText, isNeed, shownCenterHz, useArrayStore } from "../../lib/arrays";
 import { clearAction, failAction } from "../../lib/refusals";
-import type { ArrayNode, ArrayStatus, DeviceSet, PatchNode } from "../../lib/types";
+import type { ArrayFailure, ArrayNode, ArrayStatus, DeviceSet, PatchNode } from "../../lib/types";
 import { useArrayTune } from "../../lib/useArrayTune";
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { hasFeed, wiredLaneCount } from "../lanes";
 import { ALIASING, ALIASING_TITLE, aliasing } from "./ArrayGeometryEditor";
 import { ArrayLanes } from "./ArrayLanes";
-import { ArrayChips, ArraySettings, useArrayEdit } from "./ArraySettings";
+import { ArraySettings, NO_HEADING, NO_HEADING_TITLE, useArrayEdit } from "./ArraySettings";
 import {
   arrayLaneRows,
   arraySpanHz,
@@ -65,6 +65,7 @@ export function ArrayFace({ node }: { node: PatchNode }) {
     return set === undefined ? [] : [set];
   });
   const failure = status?.failure ?? null;
+  const positionWired = hasFeed(resolved, node.id, "position");
   return (
     <NodeShell
       node={node}
@@ -74,24 +75,28 @@ export function ArrayFace({ node }: { node: PatchNode }) {
     >
       <FaceBody>
         <ArrayDial node={node.id} status={status} lead={members[0]} />
-        <ArrayChips
-          data={node.data}
-          status={status}
-          members={members}
-          memberCount={memberNodes.length}
-          positionWired={hasFeed(resolved, node.id, "position")}
-          span={arraySpanHz(resolved, workspace.devices, node.id, status)}
-          edit={edit}
-        />
         {status !== undefined && (
-          <ArrayStatusReadout status={status} orientation={node.data.orientation} now={now} />
+          <ArrayStatusReadout
+            status={status}
+            orientation={node.data.orientation}
+            positionWired={positionWired}
+            now={now}
+          />
         )}
-        {failure !== null && (
-          <FaceFault message={failureText(failure)} detail={failureTitle(failure)} />
-        )}
+        <ArrayFailureLine failure={failure} lanes={rows.length} />
         <ArrayLanes node={node.id} rows={rows} status={status} />
-        <ArraySettings data={node.data} status={status} lanes={lanes} edit={edit} />
       </FaceBody>
+      <ArraySettings
+        node={node.id}
+        data={node.data}
+        status={status}
+        members={members}
+        memberCount={memberNodes.length}
+        lanes={lanes}
+        positionWired={positionWired}
+        span={arraySpanHz(resolved, workspace.devices, node.id, status)}
+        edit={edit}
+      />
       <ArrayFooter
         node={node.id}
         status={status}
@@ -117,7 +122,6 @@ function ArrayFooter({
   const record = useArrayAction(node, RECORD_ACTION, () => startArrayRecording(node));
   const stop = useArrayAction(node, RECORD_ACTION, () => stopArrayRecording(node));
   const recording = status?.recording ?? null;
-  const uncalibrated = status === undefined || status.cal === "none" || status.cal === "failed";
   return (
     <FaceFooter>
       <FaceStats>
@@ -127,7 +131,7 @@ function ArrayFooter({
       {recording === null ? (
         <Button
           type="button"
-          className={BTN}
+          className={FACE_BTN}
           title="Record every lane to one collection"
           disabled={status === undefined || record.isPending}
           onClick={() => record.mutate()}
@@ -137,7 +141,7 @@ function ArrayFooter({
       ) : (
         <Button
           type="button"
-          className={BTN}
+          className={FACE_BTN_DANGER}
           title={recording.stem}
           disabled={stop.isPending}
           onClick={() => stop.mutate()}
@@ -147,7 +151,7 @@ function ArrayFooter({
       )}
       <Button
         type="button"
-        className={uncalibrated ? BTN_PRIMARY : BTN}
+        className={FACE_BTN}
         title="Line up lane phase and gain"
         disabled={calibrate.isPending || lanes === 0}
         onClick={() => calibrate.mutate()}
@@ -235,15 +239,27 @@ function ArrayDial({
   );
 }
 
+function ArrayFailureLine({ failure, lanes }: { failure: ArrayFailure | null; lanes: number }) {
+  if (failure === null || (failure.kind === "unwired" && lanes === 0)) {
+    return null;
+  }
+  return isNeed(failure) ? null : (
+    <FaceFault message={failureText(failure)} detail={failureTitle(failure)} />
+  );
+}
+
 function ArrayStatusReadout({
   status,
   orientation,
+  positionWired,
   now,
 }: {
   status: ArrayStatus;
   orientation: ArrayNode["orientation"];
+  positionWired: boolean;
   now: number;
 }) {
+  const lost = orientation.kind === "heading" && !positionWired;
   return (
     <Readouts columns={2}>
       <Readout label="Sync" title="Lanes lined up in time">
@@ -259,8 +275,8 @@ function ArrayStatusReadout({
       >
         {calLabel(status, now)}
       </Readout>
-      <Readout label="Heading" title="Array forward, true north">
-        {headingLabel(orientation, status)}
+      <Readout label="Heading" title={lost ? NO_HEADING_TITLE : "Array forward, true north"}>
+        {lost ? NO_HEADING : headingLabel(orientation, status)}
       </Readout>
     </Readouts>
   );

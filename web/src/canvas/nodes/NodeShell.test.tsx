@@ -47,8 +47,9 @@ describe("NodeShell on the canvas", () => {
     expect(render("idle")).toContain("shadow-[inset_0_2px_0_var(--color-cat-tool)]");
   });
 
-  it("tints the top bar of a face that is passing audio", () => {
-    expect(render("idle", { live: true })).toContain("bg-ok/25");
-    expect(render("idle")).toContain("bg-cat-tool/15");
+  it("keeps its category colour while live, lighting only the dot", () => {
+    const live = render("idle", { live: true });
+    expect(live).toContain("bg-cat-tool/15");
+    expect(live).toContain('aria-label="Passing audio"');
   });
 });

@@ -4,6 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     control::ControlVerb,
     decode::{Capability, EventKind, KindSet},
+    device::{Direction, RadioUse},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
@@ -366,6 +367,9 @@ pub struct PortSpec {
     pub takes: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The radio uses a Device offers this port in. Empty: every use.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<RadioUse>,
 }
 
 #[expect(
@@ -404,6 +408,7 @@ fn port(name: &str, direction: PortDirection, payload: Payload, multi: Multi) ->
         keeps: Vec::new(),
         group: None,
         note: None,
+        uses: Vec::new(),
     }
 }
 
@@ -491,6 +496,20 @@ impl PortSpec {
     #[must_use]
     pub fn repeated(self, repeat: PortRepeat) -> Self {
         Self { repeat, ..self }
+    }
+
+    /// Offers this port only while the radio does `side`.
+    #[must_use]
+    pub fn on_side(self, side: Direction) -> Self {
+        Self {
+            uses: RadioUse::doing(side),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn offered_in(&self, radio_use: RadioUse) -> bool {
+        self.uses.is_empty() || self.uses.contains(&radio_use)
     }
 
     #[must_use]

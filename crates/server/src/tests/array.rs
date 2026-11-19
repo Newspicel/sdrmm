@@ -355,6 +355,7 @@ fn beam_graph(listened: bool) -> PatchGraph {
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
         ),
     ]);

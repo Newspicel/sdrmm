@@ -1,5 +1,12 @@
-import { Dialog } from "@base-ui/react/dialog";
 import { useQuery } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@ui-sdk/react/dialog";
 import {
   AudioWaveform,
   BookOpen,
@@ -21,6 +28,7 @@ import { Button } from "./BaseControls";
 import { BTN, DIALOG_TITLE, SURFACE } from "./controls";
 import { DISCORD, docsPage, groupBindings, host, isApple, keyCaps } from "./help";
 import { Icon } from "./Icon";
+import { pageBody } from "./pageBody";
 
 const ROW =
   "group flex h-7 w-full items-center gap-2 rounded-control px-2 text-left text-xs text-ink " +
@@ -47,72 +55,66 @@ export function HelpPanel({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/85" />
-        <Dialog.Popup
-          className={`${SURFACE} fixed top-1/2 left-1/2 z-40 flex max-h-[85vh] w-[calc(100%-2rem)] max-w-[56rem] -translate-x-1/2 -translate-y-1/2 flex-col`}
-        >
-          <div className="flex shrink-0 items-baseline justify-between gap-4 px-4 pt-4 pb-3">
-            <Dialog.Title className={DIALOG_TITLE}>Help</Dialog.Title>
-            <Dialog.Description className="legend">
-              {about.data ? `SDRmm ${about.data.version}` : ""}
-            </Dialog.Description>
-          </div>
+    <Dialog container={pageBody()} open={open} onOpenChange={onOpenChange}>
+      <DialogBackdrop className="fixed inset-0 z-40 bg-bg/85 data-ending-style:hidden" />
+      <DialogContent
+        className={`${SURFACE} fixed top-1/2 data-ending-style:hidden left-1/2 z-40 flex max-h-[85vh] w-[calc(100%-2rem)] max-w-[56rem] -translate-x-1/2 -translate-y-1/2 flex-col`}
+      >
+        <div className="flex shrink-0 items-baseline justify-between gap-4 px-4 pt-4 pb-3">
+          <DialogTitle className={DIALOG_TITLE}>Help</DialogTitle>
+          <DialogDescription className="legend">
+            {about.data ? `SDRmm ${about.data.version}` : ""}
+          </DialogDescription>
+        </div>
 
-          <div className="grid min-h-0 flex-1 overflow-auto border-y border-line md:grid-cols-[14rem_1fr]">
-            <nav aria-label="Help links" className="flex flex-col gap-4 p-2 pt-3">
-              <Section title="Learn">
-                <LinkRow glyph={BookOpen} label="Guide" href={docsPage("")} />
-                <LinkRow
-                  glyph={Radio}
-                  label="First receiver"
-                  href={docsPage("getting-started/first-receiver")}
-                />
-                <LinkRow
-                  glyph={Workflow}
-                  label="Nodes and wires"
-                  href={docsPage("getting-started/workspace")}
-                />
-                <LinkRow
-                  glyph={AudioWaveform}
-                  label="Decoders"
-                  href={docsPage("user-guide/decoders")}
-                />
-                <LinkRow
-                  glyph={Braces}
-                  label="API"
-                  href={new URL("/api/docs", window.location.href).href}
-                />
-              </Section>
-              <Section title="Get help">
-                <LinkRow
-                  glyph={LifeBuoy}
-                  label="Troubleshooting"
-                  href={docsPage("troubleshooting")}
-                />
-                <LinkRow glyph={MessagesSquare} label="Ask on Discord" href={DISCORD} />
-                <ActionRow glyph={Bug} label="Report a problem" onClick={handOff(onShowReport)} />
-              </Section>
-              <Section title="Project">
-                <LinkRow glyph={Code} label="Source code" href={repository} />
-                <LinkRow
-                  glyph={Tag}
-                  label="Releases"
-                  href={repository && `${repository}/releases`}
-                />
-                <ActionRow glyph={Scale} label="Licenses" onClick={handOff(onShowAbout)} />
-              </Section>
-            </nav>
-            <Keyboard />
-          </div>
+        <div className="grid min-h-0 flex-1 overflow-auto border-y border-line md:grid-cols-[14rem_1fr]">
+          <nav aria-label="Help links" className="flex flex-col gap-4 p-2 pt-3">
+            <Section title="Learn">
+              <LinkRow glyph={BookOpen} label="Guide" href={docsPage("")} />
+              <LinkRow
+                glyph={Radio}
+                label="First receiver"
+                href={docsPage("getting-started/first-receiver")}
+              />
+              <LinkRow
+                glyph={Workflow}
+                label="Nodes and wires"
+                href={docsPage("getting-started/workspace")}
+              />
+              <LinkRow
+                glyph={AudioWaveform}
+                label="Decoders"
+                href={docsPage("user-guide/decoders")}
+              />
+              <LinkRow
+                glyph={Braces}
+                label="API"
+                href={new URL("/api/docs", window.location.href).href}
+              />
+            </Section>
+            <Section title="Get help">
+              <LinkRow
+                glyph={LifeBuoy}
+                label="Troubleshooting"
+                href={docsPage("troubleshooting")}
+              />
+              <LinkRow glyph={MessagesSquare} label="Ask on Discord" href={DISCORD} />
+              <ActionRow glyph={Bug} label="Report a problem" onClick={handOff(onShowReport)} />
+            </Section>
+            <Section title="Project">
+              <LinkRow glyph={Code} label="Source code" href={repository} />
+              <LinkRow glyph={Tag} label="Releases" href={repository && `${repository}/releases`} />
+              <ActionRow glyph={Scale} label="Licenses" onClick={handOff(onShowAbout)} />
+            </Section>
+          </nav>
+          <Keyboard />
+        </div>
 
-          <div className="flex shrink-0 justify-end px-4 py-3">
-            <Dialog.Close className={BTN}>Close</Dialog.Close>
-          </div>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <div className="flex shrink-0 justify-end px-4 py-3">
+          <DialogClose className={BTN}>Close</DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

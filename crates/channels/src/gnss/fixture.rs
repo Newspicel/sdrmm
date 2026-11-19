@@ -15,14 +15,7 @@ pub(crate) fn gnss_decoder() -> Positive {
 
 fn signal() -> Fixture {
     Fixture::new(
-        ChannelParams::new(
-            "gnss",
-            &GnssParams {
-                prn: GNSS_FIXTURE_PRN,
-                ..GnssParams::default()
-            },
-        )
-        .expect("gnss settings"),
+        ChannelParams::new("gnss", &GnssParams::default()).expect("gnss settings"),
         synth::acquisition(GNSS_FIXTURE_PRN, 1_000.0, 317, 1_000),
     )
 }

@@ -2,6 +2,7 @@ import type {
   ChannelDescriptor,
   DecoderFamily,
   EncoderDescriptor,
+  FamilyEntry,
   NodeCategory,
   NodeKind,
   NodeTypeInfo,
@@ -40,32 +41,18 @@ export const SECTIONS: readonly { id: PaletteSection; title: string }[] = Object
   SECTION_TITLES,
 ).map(([id, title]) => ({ id: id as PaletteSection, title }));
 
-export const FAMILIES: Readonly<Record<string, string>> = {
-  analog_voice: "Analog voice",
-  digital_voice: "Digital voice",
-  aviation: "Aviation",
-  marine: "Marine",
-  amateur: "Amateur and HF",
-  paging: "Paging and telemetry",
-  video: "Pictures and video",
-  broadcast: "Broadcast digital",
-  weather: "Weather and satellites",
-  utility: "Utility",
-};
-
-export function familyTitle(family: DecoderFamily): string {
-  return FAMILIES[family] ?? family.charAt(0).toUpperCase() + family.slice(1).replaceAll("_", " ");
-}
-
 export function familyOf(type: ChannelDescriptor): DecoderFamily {
   return type.family ?? "utility";
 }
 
-/** Built-in families in their set order, then any a plugin brought, by name. */
-export function familiesOf(types: readonly ChannelDescriptor[]): DecoderFamily[] {
-  const known = Object.keys(FAMILIES);
-  const added = new Set(types.map(familyOf).filter((family) => !known.includes(family)));
-  return [...known, ...[...added].toSorted()];
+/** The server's groups in its order, then any it did not list, under their id. */
+export function familiesOf(
+  families: readonly FamilyEntry[],
+  types: readonly ChannelDescriptor[],
+): FamilyEntry[] {
+  const listed = new Set(families.map((family) => family.id));
+  const unlisted = new Set(types.map(familyOf).filter((family) => !listed.has(family)));
+  return [...families, ...[...unlisted].toSorted().map((id) => ({ id, title: id }))];
 }
 
 export function paletteGroups(
@@ -83,7 +70,7 @@ export function paletteGroups(
   return SECTIONS.flatMap((section) => {
     const plain = { ...section, section: section.id, items: sections.get(section.id) ?? [] };
     return section.id === "channel" && offersDecoders
-      ? [plain, ...decoderGroups(channelTypes)]
+      ? [plain, ...decoderGroups(catalog.families ?? [], channelTypes)]
       : [plain];
   }).filter((group) => group.items.length > 0);
 }
@@ -121,13 +108,16 @@ function typeItem(
   };
 }
 
-export function decoderGroups(channelTypes: readonly ChannelDescriptor[]): PaletteGroup[] {
-  return familiesOf(channelTypes)
+export function decoderGroups(
+  families: readonly FamilyEntry[],
+  channelTypes: readonly ChannelDescriptor[],
+): PaletteGroup[] {
+  return familiesOf(families, channelTypes)
     .map((family) => ({
-      id: `family:${family}`,
-      title: familyTitle(family),
+      id: `family:${family.id}`,
+      title: family.title,
       section: "channel" as const,
-      items: channelItems(channelTypes.filter((type) => familyOf(type) === family)),
+      items: channelItems(channelTypes.filter((type) => familyOf(type) === family.id)),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -137,10 +127,11 @@ function channelItems(channelTypes: readonly ChannelDescriptor[]): PaletteItem[]
 }
 
 export function channelPicker(
+  families: readonly FamilyEntry[],
   channelTypes: readonly ChannelDescriptor[],
   suggested: string | undefined,
 ): PaletteGroup[] {
-  const groups = decoderGroups(channelTypes);
+  const groups = decoderGroups(families, channelTypes);
   const type = channelTypes.find((entry) => entry.type_id === suggested);
   if (type === undefined) {
     return groups;
@@ -157,10 +148,14 @@ export function channelPicker(
 }
 
 export function decoderReplacements(
+  families: readonly FamilyEntry[],
   channelTypes: readonly ChannelDescriptor[],
   current: string,
 ): PaletteGroup[] {
-  return decoderGroups(channelTypes.filter((type) => type.type_id !== current));
+  return decoderGroups(
+    families,
+    channelTypes.filter((type) => type.type_id !== current),
+  );
 }
 
 export function firstPaletteItem(groups: readonly PaletteGroup[]): PaletteItem | undefined {

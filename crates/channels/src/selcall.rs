@@ -97,6 +97,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Selcall (CCIR/ZVEI)".to_owned(),
     summary: "Selective calling tone sequences".to_owned(),
     family: DecoderFamily::PAGING,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

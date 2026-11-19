@@ -1,8 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { Checkbox } from "../../components/Checkbox";
 import type { Options } from "../../components/controls";
-import { Chips, ChoiceChip, ReadoutChip, SettingChip } from "../../components/face/Chips";
-import { FoldSection, SettingsFold } from "../../components/face/Fold";
+import { Chips, ChoiceChip, ReadoutChip } from "../../components/face/Chips";
 import { formatMhz } from "../../components/format";
 import { NumberField } from "../../components/NumberField";
 import { Segmented } from "../../components/Segmented";
@@ -23,11 +22,11 @@ import type {
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { ArrayGeometryEditor } from "./ArrayGeometryEditor";
 import {
   calSourceOf,
   checkOptions,
-  degreesText,
   headingLabel,
   switchedOrientation,
   TIER_TEXT,
@@ -81,57 +80,81 @@ const CAL_SOURCES: Options<ArrayCalSource["kind"]> = [
   { value: "off", label: "off", title: "No calibration" },
 ];
 
-export interface ArrayChipsProps {
+export interface ArraySettingsProps {
+  node: string;
   data: ArrayNode;
   status: ArrayStatus | undefined;
   members: readonly DeviceSet[];
   memberCount: number;
+  lanes: number;
   positionWired: boolean;
   span: number | null;
   edit: Edit;
 }
 
-export function ArrayChips(props: ArrayChipsProps) {
+/** Every array setting, drawn in the inspector. */
+export function ArraySettings(props: ArraySettingsProps) {
   const { data, status, edit } = props;
-  const cal = data.cal;
   return (
-    <Chips inset="below">
-      <ChoiceChip
-        label="Tuning"
-        value={data.tuning}
-        options={TUNING_OPTIONS}
-        title="Lane tuning"
-        onChange={(tuning) => edit({ tuning })}
-      />
-      {data.tuning === "spread" && (
-        <ReadoutChip
-          label="Span"
-          value={props.span === null ? "-" : formatMhz(props.span)}
-          title="Band the lanes cover together"
+    <Inspect node={props.node}>
+      <InspectSection>
+        <Chips inset="none">
+          <ChoiceChip
+            label="Tuning"
+            value={data.tuning}
+            options={TUNING_OPTIONS}
+            title="Lane tuning"
+            onChange={(tuning) => edit({ tuning })}
+          />
+          {data.tuning === "spread" && (
+            <ReadoutChip
+              label="Span"
+              value={props.span === null ? "-" : formatMhz(props.span)}
+              title="Band the lanes cover together"
+            />
+          )}
+          <TierChip
+            declared={data.declared}
+            members={props.members}
+            memberCount={props.memberCount}
+            status={status}
+            edit={edit}
+          />
+        </Chips>
+      </InspectSection>
+      <InspectSection label="Orientation">
+        <OrientationSettings
+          orientation={data.orientation}
+          status={status}
+          positionWired={props.positionWired}
+          edit={edit}
         />
-      )}
-      <OrientationChip
-        orientation={data.orientation}
-        status={status}
-        positionWired={props.positionWired}
-        edit={edit}
-      />
-      <ChoiceChip
-        label="Cal source"
-        value={cal.source.kind}
-        options={CAL_SOURCES}
-        title="Calibration source"
-        quiet={cal.source.kind === "off"}
-        onChange={(kind) => edit({ cal: { ...cal, source: calSourceOf(kind, cal.source) } })}
-      />
-      <TierChip
-        declared={data.declared}
-        members={props.members}
-        memberCount={props.memberCount}
-        status={status}
-        edit={edit}
-      />
-    </Chips>
+      </InspectSection>
+      <InspectSection label="Geometry">
+        <ArrayGeometryEditor
+          geometry={data.geometry}
+          lanes={props.lanes}
+          azimuthDeg={status?.azimuth_deg ?? null}
+          centerHz={status?.center_hz ?? null}
+          onChange={(geometry) => edit({ geometry })}
+        />
+      </InspectSection>
+      <InspectSection label="Calibration">
+        <Chips inset="none">
+          <ChoiceChip
+            label="Source"
+            value={data.cal.source.kind}
+            options={CAL_SOURCES}
+            title="Calibration source"
+            quiet={data.cal.source.kind === "off"}
+            onChange={(kind) =>
+              edit({ cal: { ...data.cal, source: calSourceOf(kind, data.cal.source) } })
+            }
+          />
+          <CalibrationRows cal={data.cal} edit={edit} />
+        </Chips>
+      </InspectSection>
+    </Inspect>
   );
 }
 
@@ -139,40 +162,6 @@ const ORIENTATION_OPTIONS: Options<ArrayOrientation["kind"]> = [
   { value: "fixed", label: "Fixed", title: "Array points one way" },
   { value: "heading", label: "Heading", title: "Array follows a GPS heading" },
 ];
-
-function OrientationChip({
-  orientation,
-  status,
-  positionWired,
-  edit,
-}: {
-  orientation: ArrayOrientation;
-  status: ArrayStatus | undefined;
-  positionWired: boolean;
-  edit: Edit;
-}) {
-  const lost = orientation.kind === "heading" && !positionWired;
-  const value =
-    orientation.kind === "fixed" ? degreesText(orientation.azimuth_deg) : lost ? NO_HEADING : "GPS";
-  return (
-    <SettingChip
-      label="Forward"
-      value={value}
-      tone={lost ? "danger" : undefined}
-      title={lost ? NO_HEADING_TITLE : "Where the array points"}
-      width="w-72"
-    >
-      {() => (
-        <OrientationSettings
-          orientation={orientation}
-          status={status}
-          positionWired={positionWired}
-          edit={edit}
-        />
-      )}
-    </SettingChip>
-  );
-}
 
 function OrientationSettings({
   orientation,
@@ -232,7 +221,7 @@ function OrientationSettings({
             {positionWired ? (
               <span className="font-mono text-xs">{headingLabel(orientation, status)}</span>
             ) : (
-              <span className="text-xs text-danger" title={NO_HEADING_TITLE}>
+              <span className="text-xs text-ink-faint" title={NO_HEADING_TITLE}>
                 {NO_HEADING}
               </span>
             )}
@@ -271,35 +260,6 @@ function TierChip({
       tone={declared === "none" ? "danger" : undefined}
       onChange={(next) => edit({ declared: next })}
     />
-  );
-}
-
-export function ArraySettings({
-  data,
-  status,
-  lanes,
-  edit,
-}: {
-  data: ArrayNode;
-  status: ArrayStatus | undefined;
-  lanes: number;
-  edit: Edit;
-}) {
-  return (
-    <div className="flex flex-col">
-      <FoldSection label="Geometry">
-        <ArrayGeometryEditor
-          geometry={data.geometry}
-          lanes={lanes}
-          azimuthDeg={status?.azimuth_deg ?? null}
-          centerHz={status?.center_hz ?? null}
-          onChange={(geometry) => edit({ geometry })}
-        />
-      </FoldSection>
-      <SettingsFold label="Calibration">
-        <CalibrationRows cal={data.cal} edit={edit} />
-      </SettingsFold>
-    </div>
   );
 }
 

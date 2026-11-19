@@ -72,6 +72,11 @@ describe("WorkspaceNotices", () => {
     expect(line.title).toBe("This build no longer has that backend. Pick a radio.");
   });
 
+  it("names a dropped baseband scope", () => {
+    const line = noticeLine(dropped(10, [["eye", "baseband_scope"]]), CATALOG);
+    expect(line.text).toBe("Removed old nodes: Baseband scope");
+  });
+
   it("holds the button of a notice while it goes", () => {
     const lines = [dropped(7, [["df1", "df"]]), clearedGps(8, ["gps1"])].map((notice) =>
       noticeLine(notice, CATALOG),

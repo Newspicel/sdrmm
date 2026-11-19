@@ -77,7 +77,7 @@ fn open_virtual(key: &str) -> Box<dyn SdrDevice> {
 fn started(key: &str) -> CaptureRuntime {
     let device = open_virtual(key);
     let settings = device.settings().clone();
-    CaptureRuntime::start(device, &settings, false, |_| {}).expect("started")
+    CaptureRuntime::start(device, &settings, false, true, |_| {}).expect("started")
 }
 
 fn wait_until(mut done: impl FnMut() -> bool) {

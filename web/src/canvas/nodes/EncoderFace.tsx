@@ -1,22 +1,30 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN } from "../../components/controls";
 import { Chips } from "../../components/face/Chips";
+import { formatHz } from "../../components/format";
 import { SettingsForm } from "../../components/SettingsForm";
+import { SignalRow } from "../../components/SignalRow";
+import { settingsSummary } from "../../components/settingsSummary";
 import { nodeAction } from "../../lib/api";
 import { clearAction, failAction } from "../../lib/refusals";
-import { useFeeds } from "../../lib/resolved";
 import type { Settings } from "../../lib/settingsForm";
-import type { ParamChoice, PatchNode, PatchNodeOf } from "../../lib/types";
+import type { EncoderDescriptor, ParamChoice, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
-import { patchNode } from "../graph";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
-import { encoderSettings, withEncoderSettings } from "./transmit";
+import { nodeOf, patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
+import { AirLabel } from "./AirLabel";
+import { airOf, transmitterOf } from "./airState";
+import { useBasebandLevel } from "./basebandLevel";
+import { FaceState, StateValue } from "./FaceState";
+import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
+import { encoderSettings, transmitStatusOf, withEncoderSettings } from "./transmit";
 
 const NO_CHOICES: readonly ParamChoice[] = [];
 const NO_MESSAGE: Settings = {};
 const SEND_ACTION = "Send";
+const WIDTH_KEY = "bandwidth_hz";
 
 export function EncoderFace({ node }: { node: PatchNode }) {
   if (node.kind !== "encoder") {
@@ -33,8 +41,11 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
   const settings = encoderSettings(node.data.settings, descriptor);
   const [message, setMessage] = useState<Settings>(NO_MESSAGE);
   const form = descriptor?.message ?? [];
-  const heard = useFeeds(node.id, "audio").length > 0;
-  const takesAudio = (descriptor?.input ?? "audio") === "audio";
+  const widthHz = encoderWidthHz(settings, descriptor);
+  const transmitter = transmitterOf(workspace.resolved, workspace.graph.nodes, node.id);
+  const air = airOf(
+    transmitter === null ? null : transmitStatusOf(workspace.deviceSets, transmitter),
+  );
   const edit = (change: (current: PatchNode) => PatchNode): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -50,38 +61,51 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
     <NodeShell
       node={node}
       title={descriptor?.name ?? node.data.encoder_type}
-      subtitle="Encoder"
+      subtitle={air === null ? "Encoder" : <AirLabel air={air} />}
       category="encoder"
+      badge={
+        widthHz === null ? undefined : <span title="Signal bandwidth">{formatHz(widthHz)}</span>
+      }
     >
       <FaceBody>
-        {descriptor === undefined && <FaceEmpty hint="Mode not loaded" />}
-        {descriptor !== undefined && takesAudio && !heard && <FaceEmpty hint="Wire audio in" />}
+        <EncoderState
+          node={node.id}
+          descriptor={descriptor}
+          settings={settings}
+          transmitter={transmitter}
+        />
+      </FaceBody>
+      <Inspect node={node.id}>
         {descriptor !== undefined && (descriptor.settings ?? []).length > 0 && (
-          <Chips>
-            <SettingsForm
-              form={descriptor.settings ?? []}
-              settings={settings}
-              choices={NO_CHOICES}
-              onSettings={(next) => edit((current) => withEncoderSettings(current, next))}
-            />
-          </Chips>
+          <InspectSection>
+            <Chips inset="none">
+              <SettingsForm
+                form={descriptor.settings ?? []}
+                settings={settings}
+                choices={NO_CHOICES}
+                onSettings={(next) => edit((current) => withEncoderSettings(current, next))}
+              />
+            </Chips>
+          </InspectSection>
         )}
         {form.length > 0 && (
-          <Chips>
-            <SettingsForm
-              form={form}
-              settings={message}
-              choices={NO_CHOICES}
-              onSettings={setMessage}
-            />
-          </Chips>
+          <InspectSection label="Message">
+            <Chips inset="none">
+              <SettingsForm
+                form={form}
+                settings={message}
+                choices={NO_CHOICES}
+                onSettings={setMessage}
+              />
+            </Chips>
+          </InspectSection>
         )}
-      </FaceBody>
+      </Inspect>
       {form.length > 0 && (
         <FaceFooter>
           <Button
             type="button"
-            className={BTN_PRIMARY}
+            className={FACE_BTN}
             title="Sends this message once through the armed transmitter"
             disabled={send.isPending}
             onClick={() => send.mutate()}
@@ -91,5 +115,49 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
         </FaceFooter>
       )}
     </NodeShell>
+  );
+}
+
+/** The width the header shows: the encoder's own `bandwidth_hz` setting, else its default. */
+function encoderWidthHz(settings: Settings, descriptor: EncoderDescriptor | undefined) {
+  const own = settings[WIDTH_KEY];
+  const width = typeof own === "number" ? own : descriptor?.bandwidth_hz;
+  return width !== undefined && Number.isFinite(width) && width > 0 ? width : null;
+}
+
+/**
+ * The same two rows a decoder shows: what it needs or where it sends in the place of the dial,
+ * and the level of the signal it sends.
+ */
+function EncoderState({
+  node,
+  descriptor,
+  settings,
+  transmitter,
+}: {
+  node: string;
+  descriptor: EncoderDescriptor | undefined;
+  settings: Settings;
+  transmitter: string | null;
+}) {
+  const workspace = useWorkspaceContext();
+  const level = useBasebandLevel(node);
+  const need = descriptor === undefined ? "Mode not loaded" : null;
+  const target = transmitter === null ? undefined : nodeOf(workspace.graph, transmitter);
+  const changed = settingsSummary(descriptor?.settings ?? [], settings).filter(
+    (row) => row.key !== WIDTH_KEY,
+  );
+  return (
+    <div className="@container flex flex-col gap-1 p-2">
+      <FaceState need={need}>
+        <StateValue label="To">{target?.label ?? "-"}</StateValue>
+        {changed.map((row) => (
+          <StateValue key={row.key} label={row.label}>
+            {row.value}
+          </StateValue>
+        ))}
+      </FaceState>
+      <SignalRow level={level} />
+    </div>
   );
 }

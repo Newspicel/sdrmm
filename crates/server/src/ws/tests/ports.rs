@@ -6,8 +6,10 @@ use sdrmm_wire::{
 use super::*;
 use crate::ws::ports::{Tapped, Upstream, Wanted, wanted};
 
-fn compiled(nodes: Vec<PatchNode>, edges: Vec<PatchEdge>) -> ResolvedPatch {
-    compile(&PatchGraph { nodes, edges }, &ResolveCtx::default()).expect("compiles")
+fn compiled(nodes: Vec<PatchNode>, edges: Vec<PatchEdge>) -> (ResolvedPatch, PatchGraph) {
+    let graph = PatchGraph { nodes, edges };
+    let patch = compile(&graph, &ResolveCtx::default()).expect("compiles");
+    (patch, graph)
 }
 
 fn tap_all(patch: &mut ResolvedPatch, tap: &Tap) {
@@ -29,30 +31,26 @@ const fn addr(channel: u32) -> ChannelAddr {
 
 #[test]
 fn an_unwired_port_is_refused() {
-    let patch = compiled(vec![of("spk", NodeKind::Speaker)], Vec::new());
-    assert_eq!(wanted(&patch, "spk", "audio"), Err("Not wired".to_owned()));
+    let (patch, graph) = compiled(vec![of("spk", NodeKind::Speaker)], Vec::new());
     assert_eq!(
-        wanted(&patch, "ghost", "audio"),
+        wanted(&patch, &graph, "spk", "audio"),
+        Err("Not wired".to_owned())
+    );
+    assert_eq!(
+        wanted(&patch, &graph, "ghost", "audio"),
         Err("No such node".to_owned())
     );
 }
 
 #[test]
-fn the_fx_chain_comes_from_via() {
-    let mut patch = compiled(
-        vec![
-            channel("voice", "nfm"),
-            of("fx", NodeKind::AudioFx),
-            of("spk", NodeKind::Speaker),
-        ],
-        vec![
-            wire(("voice", "audio"), ("fx", "audio")),
-            wire(("fx", "audio"), ("spk", "audio")),
-        ],
-    );
-    assert_eq!(
-        wanted(&patch, "spk", "audio"),
-        Err("Not running".to_owned())
+fn a_decoder_with_audio_on_routes_its_listeners_through_its_chain() {
+    let mut voice = channel("voice", "nfm");
+    if let sdrmm_wire::NodeBody::Channel(decoder) = &mut voice.body {
+        decoder.audio.auto_notch = true;
+    }
+    let (mut patch, graph) = compiled(
+        vec![voice, of("spk", NodeKind::Speaker)],
+        vec![wire(("voice", "audio"), ("spk", "audio"))],
     );
     tap_all(
         &mut patch,
@@ -64,15 +62,15 @@ fn the_fx_chain_comes_from_via() {
     let route = AudioRoute {
         device_set: 1,
         channel: 4,
-        fx: vec!["fx".to_owned()],
+        fx: vec!["voice".to_owned()],
     };
     let from = Upstream {
         source: "voice".to_owned(),
-        via: vec!["fx".to_owned()],
+        via: Vec::new(),
         index: 0,
     };
     assert_eq!(
-        wanted(&patch, "spk", "audio"),
+        wanted(&patch, &graph, "spk", "audio"),
         Ok(vec![
             Wanted {
                 tapped: Tapped::Audio(route.clone()),
@@ -88,7 +86,7 @@ fn the_fx_chain_comes_from_via() {
 
 #[test]
 fn a_trunk_feed_gives_one_stream_per_follower() {
-    let mut patch = compiled(
+    let (mut patch, graph) = compiled(
         vec![of("trunk", NodeKind::Trunk), of("spk", NodeKind::Speaker)],
         vec![wire(("trunk", "audio"), ("spk", "audio"))],
     );
@@ -98,7 +96,7 @@ fn a_trunk_feed_gives_one_stream_per_follower() {
             channels: vec![addr(2), addr(3)],
         },
     );
-    let streams = wanted(&patch, "spk", "audio").expect("streams");
+    let streams = wanted(&patch, &graph, "spk", "audio").expect("streams");
     let sources: Vec<(&str, u32)> = streams
         .iter()
         .filter(|want| matches!(want.tapped, Tapped::Audio(_)))
@@ -114,16 +112,19 @@ fn a_trunk_feed_gives_one_stream_per_follower() {
 
 #[test]
 fn a_device_serves_its_own_second_lane_spectrum() {
-    let mut patch = compiled(
+    let (mut patch, graph) = compiled(
         vec![radio("band"), of("scope", NodeKind::Scope)],
         vec![wire(("radio", "iq2"), ("scope", "iq"))],
     );
-    assert_eq!(wanted(&patch, "radio", "iq"), Err("Not running".to_owned()));
+    assert_eq!(
+        wanted(&patch, &graph, "radio", "iq"),
+        Err("Not running".to_owned())
+    );
     for node in &mut patch.nodes {
         node.runs = Runs::Radio { device_set: 7 };
     }
     assert_eq!(
-        wanted(&patch, "radio", "iq2"),
+        wanted(&patch, &graph, "radio", "iq2"),
         Ok(vec![Wanted {
             tapped: Tapped::Spectrum {
                 device_set: 7,

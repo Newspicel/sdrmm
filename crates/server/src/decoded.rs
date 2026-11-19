@@ -149,7 +149,7 @@ mod tests {
     fn adsb(icao: &str, callsign: &str) -> DecoderEvent {
         DecoderEvent::of(&AdsbMessage {
             icao: icao.to_owned(),
-            df: 17,
+            df: Some(17),
             callsign: Some(callsign.to_owned()),
             ..AdsbMessage::default()
         })
@@ -183,6 +183,7 @@ mod tests {
             NodeBody::Channel(ChannelNode {
                 channel_type: "adsb".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
         ));
         snapshot.graph.nodes.push(node(

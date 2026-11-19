@@ -37,7 +37,7 @@ Generated pairs are ignored by Git. Commit generator and expected-output changes
 | `atv_ccir625_2m4` | 2.4 M | `atv` @ +200 kHz | 625/25 AM, five vertical bars black to white |
 | `sstv_robot36_48k` | 48 k | `sstv` @ +4 kHz | Robot 36, eight colour bars white to black |
 | `dcf77_2026_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-08-15 12:34 CET, valid parity |
-| `gps_l1_ca_prn7_2m048` | 2.048 M | `gnss` / PRN 7 @ 0 Hz | +1 kHz Doppler, 158.3-chip code phase |
+| `gps_l1_ca_prn7_2m048` | 2.048 M | `gnss` @ 0 Hz | PRN 7, +1 kHz Doppler, 158.3-chip code phase |
 | `dect_base_2m304` | 2.304 M | `dect` @ 0 Hz | RFPI `01234D5E6D`, class A, carrier 4, standard authentication and ciphering advertised |
 | `dect_call_2m304` | 2.304 M | `dect` @ 0 Hz | clear call on RFPI `01234D5E6D`: 1 kHz from the base, 600 Hz from the handset |
 
@@ -62,11 +62,23 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `nxdn_addressed_48k` | 48 k | `nxdn` @ 0 Hz | RAN 17, radio 12345 to talkgroup 234 via FACCH/SACCH |
 | `adsb_offair_2m` | 2 M | `adsb` @ 0 Hz | 17 Mode S replies from four aircraft: DF4/5/11/17/20/21, FL370 and squawk 5245 from 4D2256, a TC11 position and a TC19 velocity from 3FF91D |
 | `ft8_20m_busy_12k` | 12 k | `ft8` @ 0 Hz | 19 of the 20 decodes `ft8_lib` publishes for this slot |
+| `msk144_wa4cqg_12k` | 12 k | `msk144` @ 0 Hz | `K1JT WA4CQG EM72`, 1488 Hz, 8.7 s into the 12:05:00 period |
+| `msk144_w4imd_kd9vv_12k` | 12 k | `msk144` @ 0 Hz | `CQ W4IMD EM84` at 4.6 s and `CQ KD9VV EN71` at 12.2 s |
+| `q65_60a_eme_12k` | 12 k | `q65` @ 0 Hz, 60 s A | `W7GJ W1VD FN31`, `W7GJ VE1JF RRR`, `W7GJ N8JX EN73`, `W7GJ N0TB -15` |
+| `fst4_60_630m_12k` | 12 k | `fst4` @ 0 Hz, 60 s | `CQ K9KFR EN71` 1331 Hz, `CQ N5TM EL29` 1101 Hz, `CQ N3HSK FM28` 1135 Hz (CQ assumed) |
+| `fst4w_1800_750` | 750 | FST4W decoder, 1800 s, audio 1450 Hz at 0 Hz | `DL0HOT JO60 30` at 1433 Hz, −44 dB |
+| `jt9_20m_12k` | 12 k | `jt9` @ 0 Hz | all seven JT9 decodes of the WSJT-X sample `130418_1742` |
+| `jt65_jt9_20m_12k` | 12 k | `jt65` / `jt9` @ 0 Hz | the nine JT65 and seven of the eight JT9 decodes of the WSJT-X sample `130610_2343`, plus one JT65 station they miss |
+| `js8_normal_heartbeats_12k` | 12 k | `js8` @ 0 Hz | 5 JS8 Normal frames: heartbeat replies to KN4CRD and `KN4ZXG: @HB HEARTBEAT FM16` |
+| `js8_normal_data_12k` | 12 k | `js8` @ 0 Hz | 7 JS8 Normal frames: six heartbeat replies to AC9BA and a data frame |
+| `js8_normal_busy_12k` | 12 k | `js8` @ 0 Hz | 10 JS8 Normal heartbeat replies to K0EIA |
+| `js8_slow_12k` | 12 k | `js8` @ 0 Hz | one JS8 Slow data frame `TrMcT8++++++` |
 | `acars_offair_48k` | 48 k | `acars` @ 0 Hz | `F-GTAE` / `AF7728` `[H1]` engine report `#DFB00000/V206,...`, then `LN-DYY` `[_d]` acknowledging block 5 |
 | `inmarsat_stdc_egc_24k` | 24 k | `inmarsat_stdc` @ +216 Hz | NCS bulletin board for frame 5987 (LES 144), an LES 104 announcement, the signalling channel |
 | `inmarsat_aero_offair_48k` | 48 k | `inmarsat_aero` @ 0 Hz | 600 bps P channel, `HL8217` `[_d]` |
 | `iridium_prbs15_250k` | 250 k | `iridium` @ 0 Hz | one downlink burst whose payload holds the PRBS15 recurrence bit for bit |
 | `gsm_dcs1800_arfcn725_541k` | 541.667 k | `gsm` @ 0 Hz, 1847.8 MHz | cell 262-02-318-11225, BSIC 6-0: TMSI paging, SDCCH/8 TS1 SC1 assignment, paging response from TMSI `015C5703`, A5/1 ciphering command |
+| `hd_radio/kut_558k` | 558.141 k | `hd_radio` @ 0 Hz | KUT, "The University of Texas at Austin", facility ID 21; one P1 frame: 32 HDC packets of HD1, 31 of HD2 (Public), no CRC errors |
 | `lora_rn2483_sf7_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | two RN2483 frames, SF7 CR 4/8, payload `deadbeef`, CRC ok |
 | `lora_epfl_sf7_strong_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000967`, 32 dB |
 | `lora_epfl_sf7_offgrid_250k` | 250 k | `lora` @ 0 Hz, 125 kHz | SF7 CR 4/5, payload `0000158`, 34 dB |
@@ -78,11 +90,18 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `remote_id_wifi_dsss_beacon_20m` | 20 M | Wi-Fi channel 1 | 1 Mbit/s beacon `Xiaomi 13`, FCS ok |
 | `remote_id_wifi_cck_20m` | 20 M | Wi-Fi channel 1 | 220-byte CCK 11 Mbit/s data frame, FCS ok |
 | `remote_id_wifi_ofdm_beacon_20m` | 20 M | Wi-Fi channel 1 | 6 Mbit/s beacon `MipsTucker`, FCS ok |
+| `mdc1200_unit1777_offair_48k` | 48 k | `mdc1200` @ 0 Hz | end-of-transmission PTT ID, unit `1777`, op `01`, arg `00` |
+| `fleetsync1_fleet107_offair_48k` | 48 k | `fleetsync` @ 0 Hz | FleetSync I ANI from fleet 107, unit 1772, at key-up and key-down |
+| `fleetsync2_fleet107_offair_48k` | 48 k | `fleetsync` @ 0 Hz | the same ANI pair in FleetSync II |
+| `uat_reference_2m083` | 2.083334 M | `uat` @ 0 Hz | 5 aircraft (`A66EF1`, `N70FC`, squawk 0325 from `AD7233`, TIS-B `N8498F`, `AC46A0`) and 7 uplinks with METARs from KPOC, KMHV, KSPI, KGSH, KLHQ, KPAH |
+| `hrpt_meteor_offair_2m66` | 2.6616 M | `hrpt` @ 0 Hz, Meteor-M, 1700 MHz | 60 CADUs identical to SatDump's, four MSU-MR lines from 05:22:29 UTC, infrared picture |
+| `goes_hrit_offair_1m854` | 1.854 M | `goes_hrit` @ +6.4 kHz, GOES-19, 1694.1 MHz | three EMWIN bulletins (`SVRW13CN`, two `SAHOURLY`) identical to SatDump's |
 | `dsc_offair_8k` | 8 k | `dsc` @ 0 Hz | Lyngby Radio `002191000` acknowledging a test call from `231700000` |
 | `radio_clock_dcf77_offair_2k` | 2 k | `radio_clock` / DCF77 @ 0 Hz | 2026-10-03 22:04 CEST |
 | `radio_clock_jjy_offair_2k` | 2 k | `radio_clock` / JJY @ 0 Hz | 2026-10-04 05:16 JST |
 | `radio_clock_wwvb_offair_2k` | 2 k | `radio_clock` / WWVB @ 0 Hz | 2021-03-14 05:35 UTC |
 | `flex_p2000_offair_48k` | 48 k | `flex` @ 0 Hz | P2000 page to capcode 2029574, `A2 DP2 Leidschendam-Voorburg ...` |
+| `p25p2_mmr_idle_48k` | 48 k | `p25p2` @ 0 Hz | WACN BEE00, system 164, NAC 164, CRC-valid SACCH `81900b0c8200c900c900c9`: supergroup 3202 patching TG 201 |
 | `tetra_scbs_offair_50k` | 50 k | `tetra` @ −1.4 kHz | MCC 250, MNC 13, colour code 44, LA 1052, carrier 2716 (467.9125 MHz) |
 | `tetra_weak_offair_144k` | 144 k | `tetra` @ −0.9 kHz | the same cell at about 10 dB SNR |
 | `tetra_call_offair_48k` | 48 k | `tetra` @ +0.3 kHz | MCC 228, MNC 8889, D-SETUP 100701 to group 100601, D-TX GRANTED to 100702 |
@@ -99,6 +118,10 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `stanag/stanag_39tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 39-tone |
 | `stanag/stanag_16tone_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 16-tone |
 | `stanag/stanag_ale_9k6` | 9.6 k | `stanag` @ 0 Hz, USB | 2G ALE |
+| `horus/horus_v1_iq_8k` | 8 k | `horus` @ 0 Hz | v1 `000900071E2A000000000000000000000000259A6B14`: payload 0, sequence 9, 07:30:42 |
+| `horus/horus_v1_4db5_8k` | 8 k | `horus` unit tests | v1 at 4.5 dB `0112000000230000000000000000000000001C9A9545`: payload 1, sequence 18 |
+| `horus/horus_v2_8k` | 8 k | `horus` unit tests | v2 `000108000C2238...0102030405060708091DBB`: payload 256, sequence 8 |
+| `horus/horus_v3_8k` | 8 k | `horus` unit tests | v3 `4FSKTEST-V2`, sequence 0, four `meowmeow` sensors, `WOOF` custom data |
 | `dvbt/qpsk_2k_reference` | 9.142857 M | `dvbt` @ 0 Hz | 2K QPSK, rate 1/2, guard 1/8, 1750 Hz offset; PID 0x123 packets, TPS cell 0x5a |
 | `dab/mode_ii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | Mode II frame: ensemble `0x4a2c`, service `0xc201`, no failed FIB CRCs |
 | `dab/mode_iii_reference_2m048` | 2.048 M | `dab` @ 0 Hz | the same ensemble in Mode III |
@@ -110,6 +133,7 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `dvbs2x/pls214` | symbol rate | `datv` unit tests | PLS 214 256APSK |
 | `dvbs2x/pls248` | symbol rate | `datv` unit tests | PLS 248 short-frame 32APSK |
 | `dvbs2x/superframe0` | symbol rate | `datv` unit tests | 72 repeated 256APSK PLFRAMEs in one Annex E format 0 container |
+| `gps_l1_opensky_2m048` | 2.048 M | `gnss` @ 0 Hz, 1575.42 MHz | GPS PRNs 5, 7, 13, 20 and 30 acquired and tracked above 40 dB-Hz |
 
 ## Playback notes
 
@@ -186,6 +210,18 @@ A 0.69-second reference-modulator render containing a complete four-quarter SACC
 FACCH call addressing. Keeping the waveform fixed prevents a decoder test from regenerating its
 own reference input.
 
+### GPS L1: `gps_l1_opensky_2m048`
+
+The first 1.2 s of the FGI OSNMA open-sky capture (doi:10.23729/9559efea-22fc-48ac-8de4-c4d1cba367be,
+CC BY 4.0, Finnish Geospatial Research Institute), an NSL Stereo front end at 26 MS/s real with
+L1 at +6.39 MHz, shifted to baseband and resampled with `cargo xtask excerpt --format rs8`. The
+annotation pins the source SHA-256. `gnss::tests::an_open_sky_excerpt_acquires_and_tracks_five_satellites`
+reads it directly. The whole 54 s capture is too large to commit:
+`sdrmm_test_support::reference_data::gps_l1_open_sky` says how to fetch and convert it, and with
+`GPS_L1_OPEN_SKY` set `an_open_sky_capture_fixes_within_thirty_metres_of_the_survey` checks every
+fix (11 satellites, PDOP 1.5) against the published survey. `gnss::open_sky` keeps the navigation
+words and one epoch of measurements from that run, so CI solves the fix from real data.
+
 ### ADS-B: `adsb_offair_2m`
 
 A 200 ms excerpt of a 2 MS/s RTL-SDR recording over the Eifel. It includes overlapping replies,
@@ -196,6 +232,27 @@ The window contains six downlink formats and four aircraft in about 3.1 MB.
 `a_recorded_squitter_places_its_aircraft_against_the_receiver` checks local CPR positioning against
 the global position solved from the full recording.
 
+### UAT: `uat_reference_2m083`
+
+A frozen render of `crates/modem-test-support/scripts/uat_reference.py` (standard-library
+Python, independent of the Rust code), about 0.95 MB. Not an antenna recording.
+
+- Five frames from dump978's `sample-data.txt.gz` (lines 1, 547, 1003, 135, 138), messages
+  decoded off air near KPAO in 2015. The script adds sync and its own Reed-Solomon parity and
+  keys them as CPFSK (h = 0.6) with a 30 kHz offset and noise. Source:
+  https://github.com/mutability/dump978 at `c7c4ad2f953692eadc5702aa8f059ea93fba2934`,
+  GPL-2.0-or-later.
+- The seven packets of fisb-978's `eye-samples`: FM discriminator output captured off air at
+  2.083334 MS/s, after the sync word, from very noisy to clean. The script re-modulates each
+  sample as one phase step behind a clean sync word, so the bit errors are the captured ones
+  (one uplink needs 46 symbol repairs). Source: https://github.com/rand-projects/fisb-978 at
+  `7a628016c6897d3ae88286c2fa9c2f00f8d829af`, BSD-2-Clause-Patent, Copyright (C) 2020-2021
+  Michael Barnes.
+
+dump978 (`c7c4ad2`) decodes the fixture, converted to `cu8`, to the same twelve frames its
+sources hold, with 2, 46, 21 and 6 repairs. `uat2text` gives the expected fields and METAR text.
+`uat::tests::the_reference_fixture_*` read it directly.
+
 ### FT8: `ft8_20m_busy_12k`
 
 A 15-second 20 m slot recorded on 2019-11-11 at 11:06:15 UTC. The source is the MIT-licensed
@@ -205,6 +262,61 @@ was converted to `cf32_le` with zero quadrature, centered on the 14.074 MHz dial
 The upstream expected output contains twenty messages; this integration decodes nineteen.
 `weak_signal::tests::a_recorded_slot_reads_the_band_the_reference_decoder_published` appends a
 quiet tail to close the sliding slot window and records the missing decode explicitly.
+
+### Horus Binary: `horus/`
+
+Test samples from horusdemodlib `samples/` at commit 8cc43de5 (LGPL-2.1,
+github.com/projecthorus/horusdemodlib); each annotation pins the source SHA-256. The expected
+payloads are the ones its CTest suite matches. `horus_v1_iq_8k` is the cs16 IQ capture, shifted
+from 6.1 kHz and resampled to 8 kS/s; whether it was off air is unknown. The other three are
+synthetic 8 kHz audio, trimmed to one frame and stored with zero quadrature; their tests search
+for tones above 0 Hz only, as horusdemodlib does, to keep the mirror image out.
+### MSK144: `msk144_wa4cqg_12k`, `msk144_w4imd_kd9vv_12k`
+
+Meteor pings on 6 m from the WSJT-X samples `MSK144/181211_120500.wav` (6 to 11 s) and
+`MSK144/181211_120800.wav` (2 to 14 s), [WSJT-X](https://github.com/WSJTX/wsjtx) commit
+`967c85a6`, GPL-3.0, by K1JT and the WSJT-X team. The 12 kHz audio is I, quadrature zero.
+`msk144::tests::recorded_pings_read_as_wsjtx_reads_them` expects the messages, times and
+frequencies WSJT-X prints for these files.
+
+### Q65: `q65_60a_eme_12k`
+
+One Q65-60A period of 6 m EME at W7GJ, the WSJT-X sample `Q65/60A_EME_6m/210106_1621.wav`
+(same commit, licence and authors as the MSK144 pair), whole. Four stations answer at about 2.8 s
+DT. `q65::tests` reads all four blind, with no a-priori information.
+
+### FST4: `fst4_60_630m_12k`, `fst4w_1800_750`
+
+The WSJT-X samples `FST4+FST4W/210115_0058.wav` (one FST4-60 minute on 630 m, whole) and
+`FST4+FST4W/201230_0300.wav` (one FST4W-1800 period), same commit, licence and authors as the
+MSK144 pair. The first is 12 kHz audio as I, quadrature zero, on a nominal 474.2 kHz dial. The
+second is down-converted by 1450 Hz to 750 S/s, the rate the channel narrows 1800 s periods to.
+`fst4::tests` reads the three CQs, the third only with CQ assumed, and the beacon.
+### JT9 and JT65: `jt9_20m_12k`, `jt65_jt9_20m_12k`
+
+The first 52 s of two WSJT-X sample minutes, `samples/JT9/130418_1742.wav` and
+`samples/JT9+JT65/130610_2343.wav` at WSJT-X commit `967c85a6` (GPL-3.0, K1JT et al.), pinned by
+SHA-256 in each annotation. Their 12 kHz mono audio was converted to `cf32_le` with zero
+quadrature, centered on the 14.078 and 14.076 MHz dial frequencies.
+
+The expected decodes are those the WSJT-X and JTDX user guides show: seven JT9 for the first, and
+for the second nine JT65 (K2OI at 2065 Hz is flagged `@` in the screenshot, but the guide counts
+nine JT65 and decodes JT9 only above 2500 Hz) and eight JT9. `weak_signal::minute::tests` pads each to a full minute and decodes all but `CQ TA4A KM37`,
+a −20 dB JT9 signal that starts 0.4 s before the recording. It also reads `WU7B K9EEI 73`, JT65
+at 1064 Hz and −22 dB under stronger stations; both calls are in WSJT-X's `CALL3.TXT`.
+
+### JS8: `js8_normal_heartbeats_12k`, `js8_normal_data_12k`, `js8_normal_busy_12k`, `js8_slow_12k`
+
+Off-air audio from JS8Call's test set (`media/tests` at
+[js8call commit a7ff1be0](https://github.com/js8call/js8call/tree/a7ff1be0/media/tests),
+GPL-3.0-or-later): `A_2_5.wav`, `A_2_6.wav`, `A_2_9.wav` and `E_2_1.wav`, in that order. The
+12 kHz mono audio was converted to `cf32_le` with zero quadrature; the SigMF annotation pins each
+source's SHA-256. The dial frequency was not recorded, so the captures name 14.078 MHz.
+
+A file name gives the speed (`A` Normal, `E` Slow), the JS8Call decoder depth and the frames its
+CLI reads. This decoder reads the same 5 and 1 frames, and one more than the CLI in `A_2_6`
+(7, not 6) and `A_2_9` (10, not 9), each CRC-valid and addressed like its neighbours.
+`weak_signal::js8::tests` asserts every frame's text.
 
 ### ACARS: `acars_offair_48k`
 
@@ -228,6 +340,14 @@ ACARS block from `HL8217`. The audio carrier at 1066 Hz was mixed to 0 Hz and lo
 1.2 kHz; the capture frequency is nominal. `ci16_le`, like the `dvbt` pairs.
 `inmarsat_aero::tests::decodes_the_recorded_600_bps_channel` reads it directly.
 
+### P25 Phase 2: `p25p2_mmr_idle_48k`
+
+GopherTrunk's Apache-2.0 capture `mmr-s9-420650k-p2-48k.cs16` (commit 5454622771dc,
+`internal/radio/p25/phase2/receiver/testdata/`), off-air, unchanged but for `cf32_le`: 1.09 s of
+an idle two-slot TDMA voice channel at 420.650 MHz. The site's Phase 1 control channel gives WACN
+BEE00, system 164, NAC 164; the decoder works the same out of the scrambled SACCH. The SACCH
+carries a Motorola patch, supergroup 3202 over TG 201. `p25::phase2::tests` reads it directly.
+
 ### TETRA: `tetra_scbs_offair_50k`, `tetra_weak_offair_144k`, `tetra_call_offair_48k`
 
 The first two are GopherTrunk's Apache-2.0 test captures of a 467.9125 MHz control channel,
@@ -248,6 +368,16 @@ IQ was scaled to `cf32_le`; the annotation pins the source SHA-256.
 in `ptrkrysik/test_data` for gr-gsm), resampled to 541.667 kHz. A DCS 1800 cell on ARFCN 725 with
 its real 9.8 kHz offset. The annotation pins the source SHA-256.
 `gsm::tests::decodes_the_recorded_cell` reads it directly.
+
+### HD Radio: `hd_radio/kut_558k`, `hd_radio/kut_hd1_hdc.aus`
+
+2.25 s of the nrsc5 project's sample capture (github.com/theori-io/nrsc5 `support/sample.xz` at
+6d07a1e5fb, GPL-3.0), cu8 at 1 488 375 S/s, resampled to 558 140.625 S/s from 0.2 s on, past a
+sample slip at 0.15 s. Off air: the analog FM host of KUT 90.5 Austin with MP1 sidebands. Every
+PIDS frame passes its CRC. Over the whole capture the HD1 audio envelope follows the analog
+program (correlation 0.87).
+`kut_hd1_hdc.aus` holds twelve HD1 HDC frames from the same capture, two in short windows,
+each led by a 16-bit big-endian length. `hd_radio::tests` and `aac::hdc::tests` read them.
 
 ### LoRa: `lora_rn2483_sf7_250k`
 
@@ -302,6 +432,20 @@ on 2026-10-03. The SigMF metadata names the receiver and pins the source SHA-256
 - `flex_p2000_offair_48k`: 169.650 MHz, Netherlands. FLEX sync reads the low tone as 1, the FIW
   and data the high tone. `flex::tests::decodes_a_p2000_page_off_air`
 
+### MDC-1200 and FleetSync: `mdc1200_*`, `fleetsync*_offair_48k`
+
+GopherTrunk's Apache-2.0 test captures at commit `5454622771dc5377f48244e4a94c6009a18445ec`
+(`internal/radio/mdc1200/afsk/testdata/`, `internal/radio/fleetsync/afsk/testdata/`), converted
+from `cs16` to `cf32_le` unchanged. All are off-air, channelized to 48 kHz at 0 Hz.
+
+- `mdc1200_unit1777_offair_48k`: 0.7 s at 447.100 MHz, clipped at the ADC.
+- `fleetsync1_fleet107_offair_48k`, `fleetsync2_fleet107_offair_48k`: 1.3 s each at
+  462.5625 MHz, one Kenwood radio in each mode.
+- `mdc1200_ref_01_80_1234_48k.s16`: not IQ. Discriminator audio from Matthew Kaufman's reference
+  encoder, 48 kHz signed 16-bit mono: unit `1234`, op `01`, arg `80`.
+
+`mdc1200::tests` and `fleetsync::tests` read them directly.
+
 ### Broadcast FM: `wfm_offair_99m9_240k`, `wfm_offair_96m5_240k`
 
 One second each of two stations from `fm_98.1MHz_8Msps.iq` in LC-Linkous/hackRF_python
@@ -321,6 +465,35 @@ annotation records the source SHA-256, pinned upstream commit, and LGPL-2.1 lice
 Excerpts of sigidwiki's `Tetrapol_2_channels.zip` (`Tetrapol.wav`, 48 kHz IQ, states no license),
 which holds a control channel near +5.8 kHz and a traffic channel near -6.6 kHz. Each is shifted to
 0 Hz; the annotations hold the source SHA-256 and sample range. `tetrapol::tests` reads both.
+
+### Meteor HRPT: `hrpt_meteor_offair_2m66`
+
+0.75 s of a Meteor-M N2-4 HRPT pass on 2026-03-06 from Meti's sat-archive
+(`sat-archive.metislair.com`, CC BY-SA 4.0), received by Seler1500: `2026-03-06_05-19-03_3000000SPS_1700000000Hz_pass2_(northwest).cs8.zst`
+from 175.0 s, resampled from 3 MS/s `cs8` with `cargo xtask excerpt` and stored as `ci16_le`.
+The pair is test data under that license. The carrier sits near +5 kHz. It holds 60 CADUs,
+byte-identical to numbers 8889 to 8948 of the archive's SatDump `meteor_hrpt.cadu`, and four
+MSU-MR lines. `hrpt::tests::a_recorded_meteor_pass_decodes_as_satdump_does` reads it.
+
+### GOES HRIT: `goes_hrit_offair_1m854`
+
+1.25 s of a GOES-19 HRIT pass on 2025-06-26 from Meti's sat-archive (`sat-archive.metislair.com`,
+CC BY-SA 4.0), received by Patrick Cunningham:
+`2025-06-26_22-31-51_3000000SPS_1694100000Hz.cs8.zst` from 14.75 s, resampled from 3 MS/s `cs8`
+with `cargo xtask excerpt` and stored as `ci16_le`. The source SHA-256 is of the first 600 MB of
+the unpacked `cs8`. The pair is test data under that license. It holds 70 CADUs and three whole
+EMWIN bulletins, a Saskatchewan thunderstorm warning and two METAR collections, each matching the
+pass's SatDump `goes_hrit.cadu` byte for byte.
+`goes_hrit::tests::a_recorded_goes19_second_gives_satdumps_files` reads it.
+### MetOp AHRPT: `hrpt/metop_b_avhrr_cadus.bin`
+
+Not IQ: 62 CADUs of virtual channel 9 from a MetOp-B AHRPT pass on 2024-02-29 in Meti's
+sat-archive (`sat-archive.metislair.com`, CC BY-SA 4.0), received by Meti:
+`L-band/Metop/MetOp-B/2024-02-29_08-59_metop-ahrpt_Meti/metop_ahrpt.cadu`, the VCID 9 units among
+CADUs 153714 to 154006 (unit counters 6216516 to 6216577). As SatDump wrote them: derandomized,
+Reed-Solomon parity in place. They hold AVHRR lines 997 to 1000 (APID 103) from 09:06:56.483 UTC.
+The file is test data under that license. `hrpt::tests` reads it straight and through the project's
+AHRPT modulator and the full receiver.
 
 ### Meteor LRPT: `lrpt/meteor_m2_qpsk72_symbols.bin`
 

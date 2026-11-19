@@ -3,6 +3,7 @@ import {
   compass,
   formatDoppler,
   passLine,
+  passWhen,
   pastedElements,
   shownSignals,
   sourceLabel,
@@ -72,5 +73,17 @@ describe("satellite face", () => {
   it("names the source and how old its download is", () => {
     expect(sourceLabel("CelesTrak", 1_000, 1_000 + 3 * 3_600)).toBe("CelesTrak, 3 h old");
     expect(sourceLabel("SatNOGS DB", 0, 1_000)).toBe("SatNOGS DB");
+  });
+});
+
+describe("passWhen", () => {
+  it("keeps only when, for a face with little room", () => {
+    expect(passWhen({ aos: 1_090, los: 1_600, max_elevation_deg: 42, max_at: 1_300 }, 1_000)).toBe(
+      "in 1:30",
+    );
+    expect(passWhen({ aos: 900, los: 1_600, max_elevation_deg: 12, max_at: 1_300 }, 1_000)).toMatch(
+      /^sets in /,
+    );
+    expect(passWhen(null, 1_000)).toBe("none in 48 h");
   });
 });

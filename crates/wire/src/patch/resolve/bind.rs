@@ -221,7 +221,8 @@ fn lane_of(
         let device_set = devices
             .iter()
             .find(|(node, _)| *node == feed.source)
-            .map(|(_, set)| *set)?;
+            .map(|(_, set)| *set)
+            .filter(|set| !sends_only(live, *set))?;
         let stream = feed.stream.unwrap_or_default();
         return Some(Tap::Lane { device_set, stream });
     }
@@ -250,7 +251,7 @@ fn channel_runs(
                 .filter_map(|feed| feed.tap.as_ref()?.lane())
                 .collect();
             if lanes.is_empty() {
-                return Some(unbound(unwired_reason(feeds, radios)));
+                return Some(unbound(unwired_reason(feeds, (live, radios))));
             }
             let placed = live
                 .device_sets
@@ -287,7 +288,10 @@ fn channel_runs(
     }
 }
 
-fn unwired_reason(feeds: &[Feed], radios: &[(String, Runs)]) -> UnboundReason {
+fn unwired_reason(
+    feeds: &[Feed],
+    (live, radios): (&StateSnapshot, &[(String, Runs)]),
+) -> UnboundReason {
     if feeds.is_empty() {
         return UnboundReason::NotWired;
     }
@@ -295,9 +299,19 @@ fn unwired_reason(feeds: &[Feed], radios: &[(String, Runs)]) -> UnboundReason {
         .iter()
         .find_map(|feed| match runs_at(radios, &feed.source) {
             Some(Runs::Unbound { reason }) => Some(*reason),
+            Some(Runs::Radio { device_set }) if sends_only(live, *device_set) => {
+                Some(UnboundReason::SendOnly)
+            }
             _ => None,
         })
         .unwrap_or(UnboundReason::NotRunning)
+}
+
+/// A radio set to send runs no receive stream, so nothing taps its lanes.
+fn sends_only(live: &StateSnapshot, device_set: u32) -> bool {
+    live.device_sets
+        .iter()
+        .any(|set| set.id == device_set && !set.radio_use.receives())
 }
 
 fn placed_on(

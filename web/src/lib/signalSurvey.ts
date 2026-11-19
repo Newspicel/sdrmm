@@ -39,13 +39,8 @@ export function canStart(view: SurveyView): boolean {
   );
 }
 
+/** Where the survey stands once its wires are in; a missing wire is the face's need. */
 export function surveyStatus(view: SurveyView): string {
-  if (!view.radioWired) {
-    return "Wire a radio";
-  }
-  if (!view.positionWired) {
-    return "Wire a position";
-  }
   if (view.recording) {
     return "Recording each new GPS fix";
   }

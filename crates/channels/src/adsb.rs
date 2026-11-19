@@ -87,6 +87,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "ADS-B (1090ES)".to_owned(),
     summary: "Aircraft positions on 1090 MHz".to_owned(),
     family: DecoderFamily::AVIATION,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
@@ -627,7 +628,7 @@ impl AdsbChannel {
     fn message(&mut self, frame: &[u8], df: u8, icao: u32, at: u64) -> AdsbMessage {
         let mut msg = AdsbMessage {
             icao: format!("{icao:06X}"),
-            df,
+            df: Some(df),
             raw: hex_upper(frame),
             ..AdsbMessage::default()
         };
@@ -1184,7 +1185,11 @@ mod tests {
                 "8D3C64449905C10508440002592D",
             ]
         );
-        assert!(messages.iter().all(|m| m.df == 17 && m.icao == "3C6444"));
+        assert!(
+            messages
+                .iter()
+                .all(|m| m.df == Some(17) && m.icao == "3C6444")
+        );
         assert_eq!(messages[0].callsign.as_deref(), Some("DLH123"));
         assert_eq!(messages[1].altitude_ft, Some(38_000));
         let solved = &messages[2];
@@ -1216,7 +1221,7 @@ mod tests {
     fn identification_round_trips_through_the_air() {
         let frame = squitter(0x3C_6444, me_identification("DLH123"));
         let msg = only(decode(&AdsbParams::default(), std::slice::from_ref(&frame)));
-        assert_eq!(msg.df, 17);
+        assert_eq!(msg.df, Some(17));
         assert_eq!(msg.icao, "3C6444");
         assert_eq!(msg.type_code, Some(4));
         assert_eq!(msg.callsign.as_deref(), Some("DLH123"));
@@ -1548,7 +1553,7 @@ mod tests {
                 chan.vouched(0x40_0000 + n, 0),
                 "lost the proof for aircraft {n}"
             );
-            assert_eq!(chan.message(&reply, 4, 0x40_0000 + n, 0).df, 4);
+            assert_eq!(chan.message(&reply, 4, 0x40_0000 + n, 0).df, Some(4));
         }
         assert_eq!(chan.skipped(), 0);
     }
@@ -1582,7 +1587,7 @@ mod tests {
                 &AdsbParams::default(),
                 &[all_call_reply(0x3C_6444, capability, 0)],
             ));
-            assert_eq!(msg.df, 11);
+            assert_eq!(msg.df, Some(11));
             assert_eq!(msg.icao, "3C6444");
             assert_eq!(msg.on_ground, on_ground, "capability {capability}");
             assert_eq!(msg.type_code, None);
@@ -1619,7 +1624,7 @@ mod tests {
 
         let msgs = decode_replies(&AdsbParams::default(), &[proof(icao), reply]);
         assert_eq!(msgs.len(), 2, "{msgs:?}");
-        assert_eq!(msgs[1].df, 4);
+        assert_eq!(msgs[1].df, Some(4));
         assert_eq!(msgs[1].icao, "3C6444");
         assert_eq!(msgs[1].altitude_ft, Some(36_000));
     }
@@ -1722,11 +1727,11 @@ mod tests {
         let [_, altitude, identity] = &msgs[..] else {
             unreachable!()
         };
-        assert_eq!(altitude.df, 20);
+        assert_eq!(altitude.df, Some(20));
         assert_eq!(altitude.altitude_ft, Some(24_000));
         assert_eq!(altitude.callsign.as_deref(), Some("KLM1023"));
         assert_eq!(altitude.on_ground, Some(false));
-        assert_eq!(identity.df, 21);
+        assert_eq!(identity.df, Some(21));
         assert_eq!(identity.squawk.as_deref(), Some("7421"));
         assert_eq!(identity.callsign.as_deref(), Some("KLM1023"));
         assert_eq!(identity.on_ground, Some(true));
@@ -1933,7 +1938,8 @@ mod tests {
                 .collect(),
             "{messages:?}"
         );
-        let formats: std::collections::BTreeSet<u8> = messages.iter().map(|m| m.df).collect();
+        let formats: std::collections::BTreeSet<u8> =
+            messages.iter().filter_map(|m| m.df).collect();
         assert_eq!(
             formats,
             [4, 5, 11, 17, 20, 21].into_iter().collect(),
@@ -1943,7 +1949,7 @@ mod tests {
         let reply = |icao: &str, df: u8| {
             messages
                 .iter()
-                .find(|m| m.icao == icao && m.df == df)
+                .find(|m| m.icao == icao && m.df == Some(df))
                 .unwrap_or_else(|| panic!("no DF{df} from {icao}: {messages:?}"))
                 .clone()
         };

@@ -169,6 +169,8 @@ pub struct DeviceNode {
     pub split_tuning: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stopped: bool,
+    #[serde(default, skip_serializing_if = "crate::RadioUse::is_receive")]
+    pub radio_use: crate::RadioUse,
     /// Set by the server, never saved: a wired controller lets this radio rest for now.
     #[serde(skip)]
     pub waiting: bool,
@@ -179,6 +181,21 @@ impl DeviceNode {
     pub fn tuning_locked(&self, stream: u32) -> bool {
         self.locked_streams.contains(&stream)
     }
+
+    /// What this node uses its radio for: a recording or a generator only receives, and an
+    /// open radio's duplex narrows the setting.
+    #[must_use]
+    pub fn use_on(&self, duplex: Option<crate::Duplex>) -> crate::RadioUse {
+        let plays = self
+            .device
+            .as_ref()
+            .is_some_and(|device| device.is_recording() || device.is_generator());
+        match duplex {
+            _ if plays => crate::RadioUse::Receive,
+            Some(duplex) => self.radio_use.within(duplex),
+            None => self.radio_use,
+        }
+    }
 }
 
 #[must_use]
@@ -186,11 +203,14 @@ pub fn generator_key(node_id: &str) -> String {
     format!("{GENERATOR_PREFIX}{}", node_id.replace(':', "-"))
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelNode {
     pub channel_type: String,
     #[serde(default)]
     pub tuning_locked: bool,
+    /// Filters, denoise and AGC on the decoder's audio, for everything wired to it.
+    #[serde(default, skip_serializing_if = "crate::AudioProcessing::is_off")]
+    pub audio: crate::AudioProcessing,
 }
 
 pub const MAX_TRUNK_SEARCH_RANGES: usize = 8;
@@ -233,6 +253,31 @@ impl TrunkSearchRange {
 pub struct TrunkChannelEntry {
     pub lcn: u16,
     pub freq_hz: u64,
+}
+
+pub const MIN_TRUNK_BAND_SPACING_HZ: u64 = 1_250;
+pub const MAX_TRUNK_BAND_SPACING_HZ: u64 = 1_000_000;
+
+/// Channel numbers counted up from a base frequency, as a site's channel plan numbers them:
+/// channel N transmits on `base_hz + N * spacing_hz`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TrunkBand {
+    pub base_hz: u64,
+    pub spacing_hz: u64,
+}
+
+impl TrunkBand {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.base_hz > 0
+            && (MIN_TRUNK_BAND_SPACING_HZ..=MAX_TRUNK_BAND_SPACING_HZ).contains(&self.spacing_hz)
+    }
+
+    #[must_use]
+    pub fn frequency(&self, channel: u16) -> u64 {
+        self.base_hz
+            .saturating_add(u64::from(channel).saturating_mul(self.spacing_hz))
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -282,6 +327,9 @@ pub struct TrunkNode {
     pub discovery: TrunkDiscovery,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub channel_map: Vec<TrunkChannelEntry>,
+    /// Where numbered channels sit when the operator knows the plan; the map's own entries win.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub band: Option<TrunkBand>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_hz: Option<u64>,
     #[serde(default)]
@@ -309,6 +357,7 @@ impl TrunkNode {
             && self.keys.iter().all(crate::VoiceKey::valid)
             && self.channel_map.len() <= MAX_TRUNK_CHANNEL_MAP
             && self.channel_map.iter().all(|entry| entry.freq_hz > 0)
+            && self.band.as_ref().is_none_or(TrunkBand::valid)
             && self.control_hz.is_none_or(|hz| hz > 0)
     }
 }
@@ -389,6 +438,7 @@ impl Default for TrunkNode {
             protocol: auto_protocol(),
             discovery: TrunkDiscovery::default(),
             channel_map: Vec::new(),
+            band: None,
             control_hz: None,
             ignore_crc: false,
             talkgroups: crate::TrunkTalkgroups::default(),
@@ -624,6 +674,18 @@ impl PatchGraph {
     #[must_use]
     pub fn node(&self, id: &str) -> Option<&PatchNode> {
         self.nodes.iter().find(|node| node.id == id)
+    }
+
+    /// The audio chain a decoder's listeners hear through: the decoder itself while its audio
+    /// processing is on, else none.
+    #[must_use]
+    pub fn audio_fx(&self, source: &str) -> Vec<String> {
+        match self.node(source).map(|node| &node.body) {
+            Some(NodeBody::Channel(channel)) if channel.audio.is_active() => {
+                vec![source.to_owned()]
+            }
+            _ => Vec::new(),
+        }
     }
 
     pub fn device_nodes(&self) -> impl Iterator<Item = &PatchNode> {

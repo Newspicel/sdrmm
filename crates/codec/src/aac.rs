@@ -1,5 +1,6 @@
 mod encode;
 mod hcr;
+pub mod hdc;
 mod huffman;
 mod syntax;
 mod tables;

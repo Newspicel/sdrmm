@@ -9,6 +9,7 @@ const workspace = vi.hoisted(
       graph: { nodes: [], edges: [] },
       edit: vi.fn((edit: (snapshot: unknown) => unknown) => edits.push(edit)),
       select: vi.fn(),
+      inspect: vi.fn(),
       apply: vi.fn(),
     }) as unknown as Workspace,
 );
@@ -50,5 +51,12 @@ describe("useAddNode", () => {
       graph: { nodes: { position: unknown }[] };
     };
     expect(placed.graph.nodes[0]?.position).toEqual({ x: 5, y: 6 });
+  });
+
+  it("opens the new node in the inspector", () => {
+    useAddNode()("scope");
+    expect(workspace.inspect).toHaveBeenCalledWith(
+      vi.mocked(workspace.select).mock.calls.at(-1)?.[0],
+    );
   });
 });

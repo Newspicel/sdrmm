@@ -1,12 +1,20 @@
-import { Collapsible } from "@base-ui/react/collapsible";
-import { Dialog } from "@base-ui/react/dialog";
 import { useQuery } from "@tanstack/react-query";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@ui-sdk/react/collapsible";
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@ui-sdk/react/dialog";
 import { useState } from "react";
 import { aboutQuery, licenseTextQuery } from "../lib/api";
 import type { Attribution } from "../lib/types";
 import { groupComponents, licenseSummary } from "./about";
 import { Button, Input } from "./BaseControls";
 import { BTN, BTN_QUIET, DIALOG_TITLE, FIELD, SURFACE } from "./controls";
+import { pageBody } from "./pageBody";
 
 export function AboutPanel({
   open,
@@ -20,85 +28,84 @@ export function AboutPanel({
   const about = useQuery(aboutQuery(open));
 
   return (
-    <Dialog.Root
+    <Dialog
+      container={pageBody()}
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
         if (!next) setTextId(null);
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-40 bg-bg/85" />
-        <Dialog.Popup
-          className={`${SURFACE} fixed top-1/2 left-1/2 z-40 flex max-h-[85vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col p-4`}
-        >
-          <div className="flex shrink-0 items-baseline justify-between gap-4">
-            <Dialog.Title className={DIALOG_TITLE}>SDRmm {about.data?.version ?? ""}</Dialog.Title>
-            <Dialog.Description className="legend">
-              {about.data ? `${about.data.license} licensed` : "Loading…"}
-            </Dialog.Description>
-          </div>
+      <DialogBackdrop className="fixed inset-0 z-40 bg-bg/85 data-ending-style:hidden" />
+      <DialogContent
+        className={`${SURFACE} fixed top-1/2 data-ending-style:hidden left-1/2 z-40 flex max-h-[85vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col p-4`}
+      >
+        <div className="flex shrink-0 items-baseline justify-between gap-4">
+          <DialogTitle className={DIALOG_TITLE}>SDRmm {about.data?.version ?? ""}</DialogTitle>
+          <DialogDescription className="legend">
+            {about.data ? `${about.data.license} licensed` : "Loading…"}
+          </DialogDescription>
+        </div>
 
-          {about.isError && <p className="mt-3 text-xs text-danger">Could not load the notices.</p>}
+        {about.isError && <p className="mt-3 text-xs text-danger">Could not load the notices.</p>}
 
-          {about.data && (
-            <div className="mt-2 min-h-0 flex-1 overflow-auto">
-              <p className="text-xs text-ink-dim">
-                <a
-                  href={about.data.repository}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent hover:underline"
-                >
-                  {about.data.repository}
-                </a>
-              </p>
+        {about.data && (
+          <div className="mt-2 min-h-0 flex-1 overflow-auto">
+            <p className="text-xs text-ink-dim">
+              <a
+                href={about.data.repository}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                {about.data.repository}
+              </a>
+            </p>
 
-              <Collapsible.Root className="mt-3">
-                <Collapsible.Trigger className="cursor-pointer text-xs text-ink-dim hover:text-ink">
-                  License
-                </Collapsible.Trigger>
-                <Collapsible.Panel>
-                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-control bg-panel-2 p-2 font-mono text-2xs text-ink-dim">
-                    {about.data.license_text}
-                  </pre>
-                </Collapsible.Panel>
-              </Collapsible.Root>
+            <Collapsible className="mt-3">
+              <CollapsibleTrigger className="cursor-pointer text-xs text-ink-dim hover:text-ink">
+                License
+              </CollapsibleTrigger>
+              <CollapsiblePanel>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-control bg-panel-2 p-2 font-mono text-2xs text-ink-dim">
+                  {about.data.license_text}
+                </pre>
+              </CollapsiblePanel>
+            </Collapsible>
 
-              <div className="mt-4 flex items-baseline justify-between gap-4">
-                <h3 className="text-xs font-medium text-ink">
-                  Third-party components ({about.data.components.length})
-                </h3>
-                <Input
-                  className={`${FIELD} w-48`}
-                  type="search"
-                  name="component-filter"
-                  placeholder="Filter by name or license"
-                  aria-label="Filter third-party components"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </div>
-
-              <p className="legend mt-1">
-                {licenseSummary(about.data.components)
-                  .slice(0, 4)
-                  .map((entry) => `${entry.count} × ${entry.license}`)
-                  .join(" · ")}
-              </p>
-
-              <Components components={about.data.components} query={query} onOpenText={setTextId} />
+            <div className="mt-4 flex items-baseline justify-between gap-4">
+              <h3 className="text-xs font-medium text-ink">
+                Third-party components ({about.data.components.length})
+              </h3>
+              <Input
+                className={`${FIELD} w-48`}
+                type="search"
+                name="component-filter"
+                placeholder="Filter by name or license"
+                aria-label="Filter third-party components"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
             </div>
-          )}
 
-          <div className="mt-4 flex shrink-0 justify-end">
-            <Dialog.Close className={BTN}>Close</Dialog.Close>
+            <p className="legend mt-1">
+              {licenseSummary(about.data.components)
+                .slice(0, 4)
+                .map((entry) => `${entry.count} × ${entry.license}`)
+                .join(" · ")}
+            </p>
+
+            <Components components={about.data.components} query={query} onOpenText={setTextId} />
           </div>
+        )}
 
-          {textId !== null && <LicenseText id={textId} onClose={() => setTextId(null)} />}
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <div className="mt-4 flex shrink-0 justify-end">
+          <DialogClose className={BTN}>Close</DialogClose>
+        </div>
+
+        {textId !== null && <LicenseText id={textId} onClose={() => setTextId(null)} />}
+      </DialogContent>
+    </Dialog>
   );
 }
 

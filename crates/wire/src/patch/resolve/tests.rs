@@ -4,9 +4,7 @@ use crate::{
     array::VirtualLane,
     channel::{ChannelInfo, ChannelSettings},
     filter::EventFilterNode,
-    patch::{
-        AudioRecorderNode, ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode, Position,
-    },
+    patch::{ChannelNode, DeviceNode, DeviceRef, PatchEdge, PatchNode, Position},
     state::{DeviceSet, TrunkControl, TrunkFollower, TrunkSystemStatus},
 };
 
@@ -26,6 +24,7 @@ fn channel(id: &str, ty: &str) -> PatchNode {
         NodeBody::Channel(ChannelNode {
             channel_type: ty.to_owned(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
     )
 }
@@ -52,10 +51,6 @@ fn filter(id: &str, kinds: &[EventKind]) -> PatchNode {
             ..EventFilterNode::default()
         }),
     )
-}
-
-fn fx(id: &str) -> PatchNode {
-    node(id, NodeBody::AudioFx(crate::AudioFxNode::default()))
 }
 
 fn log(id: &str) -> PatchNode {
@@ -256,48 +251,21 @@ fn a_filter_with_nothing_downstream_reaches_nothing() {
 }
 
 #[test]
-fn audio_runs_through_an_fx_chain_channel_side_first() {
-    let graph = PatchGraph {
-        nodes: vec![
-            channel("a", "probe_voice"),
-            channel("b", "probe_voice"),
-            fx("near"),
-            fx("far"),
-            node("rec", NodeBody::AudioRecorder(AudioRecorderNode::default())),
-        ],
-        edges: vec![
-            audio("a", "near"),
-            audio("near", "far"),
-            audio("far", "rec"),
-            audio("b", "rec"),
-        ],
-    };
-    let patch = compiled(&graph);
-    assert_eq!(
-        sources(patch.feeds("rec", "audio")),
-        [("a", vec!["near", "far"]), ("b", Vec::new())]
-    );
-}
-
-#[test]
-fn an_fx_chain_deeper_than_the_cap_feeds_nothing() {
+fn a_filter_chain_deeper_than_the_cap_feeds_nothing() {
     let depth = MAX_PASS_DEPTH + 1;
-    let mut nodes = vec![
-        channel("a", "probe_voice"),
-        node("speaker", NodeBody::Speaker(crate::SpeakerNode::default())),
-    ];
-    let mut edges = vec![audio("a", "fx0")];
+    let mut nodes = vec![channel("a", "probe_dv"), log("chat")];
+    let mut edges = vec![events("a", "f0")];
     for index in 0..depth {
-        nodes.push(fx(&format!("fx{index}")));
+        nodes.push(filter(&format!("f{index}"), &[]));
         if index > 0 {
-            edges.push(audio(&format!("fx{}", index - 1), &format!("fx{index}")));
+            edges.push(events(&format!("f{}", index - 1), &format!("f{index}")));
         }
     }
-    edges.push(audio(&format!("fx{}", depth - 1), "speaker"));
+    edges.push(events(&format!("f{}", depth - 1), "chat"));
     let graph = PatchGraph { nodes, edges };
     let patch = compiled(&graph);
-    assert!(patch.feeds("speaker", "audio").is_empty());
-    let shallow = sources(patch.feeds(&format!("fx{}", MAX_PASS_DEPTH - 1), "audio"));
+    assert!(patch.feeds("chat", "events").is_empty());
+    let shallow = sources(patch.feeds(&format!("f{}", MAX_PASS_DEPTH - 1), "events"));
     assert_eq!(shallow.len(), 1);
 }
 
@@ -485,13 +453,11 @@ fn a_feed_from_a_bound_decoder_taps_its_channel() {
         nodes: vec![
             radio("dev", "band"),
             channel("voice", "probe_voice"),
-            fx("clean"),
             node("speaker", NodeBody::Speaker(crate::SpeakerNode::default())),
         ],
         edges: vec![
             wire(("dev", "iq"), ("voice", "iq")),
-            audio("voice", "clean"),
-            audio("clean", "speaker"),
+            audio("voice", "speaker"),
         ],
     };
     let state = live(vec![set(
@@ -501,7 +467,7 @@ fn a_feed_from_a_bound_decoder_taps_its_channel() {
     )]);
     let (patch, _) = bound(&graph, &state);
     let feed = &patch.feeds("speaker", "audio")[0];
-    assert_eq!(feed.via, ["clean"]);
+    assert!(feed.via.is_empty());
     assert_eq!(
         feed.tap,
         Some(Tap::Channel {
@@ -775,6 +741,30 @@ fn a_stopped_radio_frees_its_device_and_says_so() {
 }
 
 #[test]
+fn a_radio_set_to_send_feeds_no_lane_and_its_decoder_says_why() {
+    let graph = PatchGraph {
+        nodes: vec![radio("dev", "band"), channel("voice", "probe_voice")],
+        edges: vec![wire(("dev", "iq"), ("voice", "iq"))],
+    };
+    let mut sending = set(1, "band", Vec::new());
+    sending.radio_use = crate::RadioUse::Send;
+    let (patch, _) = bound(&graph, &live(vec![sending]));
+    assert_eq!(patch.runs("dev"), Some(&Runs::Radio { device_set: 1 }));
+    assert_eq!(
+        patch.runs("voice"),
+        Some(&Runs::Unbound {
+            reason: UnboundReason::SendOnly
+        })
+    );
+    assert!(
+        patch
+            .feeds("voice", "iq")
+            .iter()
+            .all(|feed| feed.tap.is_none())
+    );
+}
+
+#[test]
 fn a_stopped_array_member_leaves_the_beam_unbound() {
     let mut graph = beam_graph();
     graph.nodes[0] = stopped("dev", "band");
@@ -931,6 +921,7 @@ fn a_coherent_radio_offers_the_wires_of_a_new_array() {
 }
 
 mod contracts;
+mod radio_use;
 mod verdicts;
 
 #[test]

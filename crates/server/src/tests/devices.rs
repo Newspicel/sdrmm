@@ -107,6 +107,7 @@ async fn channel_settings_go_to_a_channel_node_and_open_only_where_it_is_wired()
         body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
             channel_type: "nfm".to_string(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
         position: sdrmm_wire::Position { x: 400.0, y: 600.0 },
         size: None,

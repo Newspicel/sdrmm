@@ -15,6 +15,12 @@ function gated(open: boolean): string {
 }
 
 describe("SignalRow", () => {
+  it("reads the floor of the scale, not a dash, with no signal", () => {
+    const html = renderToStaticMarkup(<SignalRow level={undefined} />);
+    expect(html).toContain("-140 dB");
+    expect(html).not.toContain(">-<");
+  });
+
   it("shows a plain meter when the decoder has no squelch", () => {
     const html = renderToStaticMarkup(<SignalRow level={level} />);
     expect(html).toContain('role="meter"');

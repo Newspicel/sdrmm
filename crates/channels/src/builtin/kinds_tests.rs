@@ -150,6 +150,11 @@ fn every_event_kind() -> Vec<DecoderEvent> {
             code: "12345".to_owned(),
             tone_ms: 100,
         }),
+        DecoderEvent::of(&crate::dtmf::DtmfSequence {
+            digits: "123".to_owned(),
+            tone_ms: 40,
+            gap_ms: Some(40),
+        }),
         DecoderEvent::of(&NavtexMessage::default()),
         DecoderEvent::of(&AcarsMessage::default()),
         DecoderEvent::of(&ToneSquelchStatus::default()),

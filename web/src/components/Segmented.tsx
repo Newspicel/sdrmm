@@ -1,6 +1,8 @@
-import { Toggle } from "@base-ui/react/toggle";
-import { ToggleGroup } from "@base-ui/react/toggle-group";
+import { Toggle, ToggleGroup } from "@ui-sdk/react/toggle";
 import { type Options, segment, WELL } from "./controls";
+
+/** A disabled toggle in a group keeps focus with `aria-disabled`, so `disabled:` never matches. */
+const SEGMENT_OFF = "data-disabled:pointer-events-none data-disabled:opacity-45";
 
 export function Segmented<T extends string | number>({
   label,
@@ -17,6 +19,7 @@ export function Segmented<T extends string | number>({
 }) {
   return (
     <ToggleGroup
+      deselectable={false}
       data-hotkeys="off"
       aria-label={label}
       className={`${WELL} ${fill ? "w-full" : "w-fit"}`}
@@ -36,7 +39,7 @@ export function Segmented<T extends string | number>({
             title={option.title}
             disabled={option.disabled}
             className={(state) =>
-              `${segment(state.pressed)} tabular-nums ${
+              `${segment(state.pressed)} ${SEGMENT_OFF} tabular-nums ${
                 fill ? "flex-auto justify-center whitespace-nowrap" : ""
               }`
             }
@@ -94,7 +97,7 @@ export function SegmentedToggles<T extends string | number>({
             title={last ? "Last one stays on" : option.title}
             disabled={option.disabled === true || last}
             className={(state) =>
-              `${segment(state.pressed)} tabular-nums ${last ? "cursor-default" : ""}`
+              `${segment(state.pressed)} ${SEGMENT_OFF} tabular-nums ${last ? "cursor-default" : ""}`
             }
           >
             {option.label}

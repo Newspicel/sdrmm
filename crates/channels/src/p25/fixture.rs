@@ -18,3 +18,23 @@ fn signal() -> Fixture {
         keyed_after_noise(synth::transmission(0x293, 48_000.0)),
     )
 }
+
+pub(crate) fn p25p2_decoder() -> Positive {
+    reads(&[
+        r#""network_id":781824"#,
+        r#""system_id":356"#,
+        r#""color_code":356"#,
+        r#""opcode":"Motorola patch add""#,
+        r#""destination":3202"#,
+        r#""text":"TG 201""#,
+    ])
+    .hearing(|| {
+        Fixture::new(
+            ChannelParams::of(&P25p2Params::default()).expect("p25p2 settings"),
+            sdrmm_decoder_test_support::cf32_le(include_bytes!(
+                "../../../../fixtures/p25p2_mmr_idle_48k.sigmf-data"
+            )),
+        )
+        .heard()
+    })
+}

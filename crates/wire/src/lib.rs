@@ -72,9 +72,9 @@ pub use array::{
     SyncState, VirtualLane, Winding, WorkspaceArray,
 };
 pub use audio::{
-    AudioAgcMode, AudioFilterSettings, AudioFxNode, AudioProcessing, AudioRoute,
-    ClickRemovalSettings, DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseArtifact, DenoiseMode,
-    DenoiseModel, DenoiseModelState, DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings,
+    AudioAgcMode, AudioFilterSettings, AudioProcessing, AudioRoute, ClickRemovalSettings,
+    DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseArtifact, DenoiseMode, DenoiseModel,
+    DenoiseModelState, DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings,
     MAX_AUDIO_FX_CHAIN, MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD,
     MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ, MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ,
     MIN_BLANKER_THRESHOLD, MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB,
@@ -92,7 +92,7 @@ pub use channel::{
     LanePick, MAX_IF_EDGE_HZ, MAX_IF_NOTCH_WIDTH_HZ, MAX_IF_NOTCHES, MAX_SQUELCH_AUTO_MARGIN_DB,
     MIN_IF_NOTCH_WIDTH_HZ, MIN_IF_PASSBAND_HZ, MIN_SQUELCH_AUTO_MARGIN_DB, NumberSpec, ParamChoice,
     ParamOption, PresetOption, RETIRED_CHANNEL_TYPES, SettingChoice, SettingField, Squelch,
-    retired_channel_type,
+    Verification, retired_channel_type,
 };
 pub use control::{
     ControlAck, ControlCommand, ControlVerb, DopplerSteer, SkyTrack, SweepJob, SweepStatus,
@@ -126,9 +126,9 @@ pub use device::{
     BackendReach, BandwidthSetting, Capabilities, ChannelCapabilities, ClockBank, Coherence,
     DcArtifact, DeviceBackend, DeviceInfo, DeviceProfile, DeviceSettings, Direction,
     DirectionalCapabilities, Duplex, ExtraSetting, ExtraValue, GENERATOR_PREFIX, GainKind,
-    GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource, Range, Readout,
-    ReadoutValue, StreamScope, StreamSettings, Tuning, any_range_holds, backend_table,
-    recording_stem_valid,
+    GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource, RadioActivity, RadioUse,
+    Range, Readout, ReadoutValue, StreamScope, StreamSettings, Tuning, any_range_holds,
+    backend_table, recording_stem_valid,
 };
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
@@ -171,19 +171,20 @@ pub use patch::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
     BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelAddr, ChannelNode,
     DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ, DEFAULT_SIGNAL_MAP_OFFSET_HZ, DEFAULT_TRUNK_PROBES,
-    DecoderLogNode, DeviceNode, DeviceRef, EVENTS_PORT, Face, FaceSize, Feed, Held, Hue, HuntNode,
-    IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_MONITORS_PER_RADIO,
-    MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, MAX_SPEAKER_OUTPUT_LEN,
-    MAX_STREAMS, MAX_TRUNK_CHANNEL_MAP, MAX_TRUNK_PROBES, MAX_TRUNK_SEARCH_CANDIDATES,
-    MAX_TRUNK_SEARCH_RANGES, MIN_TRUNK_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind,
+    DecoderLogNode, DeviceNode, DeviceRef, EVENTS_PORT, Face, FaceSize, FamilyEntry, Feed, Held,
+    Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_CHANNELS_PER_RADIO, MAX_EDGES,
+    MAX_MONITORS_PER_RADIO, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ,
+    MAX_SPEAKER_OUTPUT_LEN, MAX_STREAMS, MAX_TRUNK_BAND_SPACING_HZ, MAX_TRUNK_CHANNEL_MAP,
+    MAX_TRUNK_PROBES, MAX_TRUNK_SEARCH_CANDIDATES, MAX_TRUNK_SEARCH_RANGES,
+    MIN_TRUNK_BAND_SPACING_HZ, MIN_TRUNK_SEARCH_STEP_HZ, Multi, NodeBody, NodeCategory, NodeKind,
     NodeProblem, NodeTypeInfo, POSITION_PORT, PatchCatalog, PatchEdge, PatchError, PatchGraph,
     PatchNode, Payload, Picks, PortDirection, PortRef, PortRepeat, PortSpec, PortType,
     PortTypeInfo, Position, ProblemSource, RACK_COLS, RACK_ROWS, REFUSALS, RackCell, RackLayout,
     RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx, ResolvedEdge, ResolvedNode,
     ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT, ScannerNode, SignalMapNode,
-    Size, SpeakerNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkChannelEntry, TrunkDiscovery,
-    TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports, generator_key,
-    port_index, port_lane, port_stream, stream_port,
+    Size, SpeakerNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkBand, TrunkChannelEntry,
+    TrunkDiscovery, TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports,
+    generator_key, port_index, port_lane, port_stream, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;
@@ -817,6 +818,9 @@ mod contract_tests {
             virtual_lanes: Vec::new(),
             held: Vec::new(),
             loss: None,
+            radio_use: crate::RadioUse::Receive,
+            uses: vec![crate::RadioUse::Receive],
+            activity: crate::RadioActivity::Receiving,
         }
     }
 

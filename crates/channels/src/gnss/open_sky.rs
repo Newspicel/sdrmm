@@ -1,0 +1,529 @@
+//! The FGI open-sky capture (doi:10.23729/9559efea-22fc-48ac-8de4-c4d1cba367be, CC BY 4.0): its
+//! surveyed site and the navigation data and measurements the receiver took from it.
+
+use sdrmm_dsp::math::geodesy::{Geodetic, ecef, enu};
+
+use super::nav::{Ephemeris, decode_subframe};
+use super::solve::{Measurement, solve};
+
+/// The survey as published, to three decimals of a degree.
+pub(super) const SURVEY: Geodetic = Geodetic {
+    lat_deg: 60.182,
+    lon_deg: 24.828,
+    alt_m: 47.248,
+};
+const PUBLISHED_STEP_DEG: f64 = 0.001;
+
+/// East-north distance from `fix` to the nearest point that still rounds to the published
+/// survey, and the height above it.
+pub(super) fn off_survey_m(fix: Geodetic) -> (f64, f64) {
+    let half = PUBLISHED_STEP_DEG / 2.0;
+    let nearest = Geodetic {
+        lat_deg: fix
+            .lat_deg
+            .clamp(SURVEY.lat_deg - half, SURVEY.lat_deg + half),
+        lon_deg: fix
+            .lon_deg
+            .clamp(SURVEY.lon_deg - half, SURVEY.lon_deg + half),
+        alt_m: SURVEY.alt_m,
+    };
+    let [east, north, up] = enu(nearest, ecef(fix));
+    (east.hypot(north), up)
+}
+
+/// Subframes 1 to 3 as each satellite sent them during the FGI open-sky capture, raw words with
+/// parity, and the transmit times the receiver measured at one instant 53 s in.
+const OPEN_SKY: [(u8, f64, [[u32; 10]; 3]); 11] = [
+    (
+        5,
+        217_475.21128156592,
+        [
+            [
+                0x1D3F_11F9,
+                0x2E4D_D647,
+                0x311B_FFDF,
+                0x3EAB_2504,
+                0x28A5_6ADB,
+                0x0A08_F1B2,
+                0x0DE6_7A39,
+                0x37B2_6077,
+                0x3FC0_0317,
+                0x04DE_91A3,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_B5D7,
+                0x3782_2B86,
+                0x0B7E_508E,
+                0x1486_583B,
+                0x01E4_3F1F,
+                0x3D85_1B18,
+                0x059B_A853,
+                0x3C7D_D0CE,
+                0x0D9F_9F0F,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_945F,
+                0x000C_BAC7,
+                0x3292_B9E6,
+                0x3FEE_89D7,
+                0x2292_8022,
+                0x0597_CC81,
+                0x2165_9718,
+                0x3FEA_E57E,
+                0x0844_5C8B,
+            ],
+        ],
+    ),
+    (
+        7,
+        217_475.2122259832,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_0020,
+                0x0154_DAFB,
+                0x175A_9524,
+                0x35F7_0E4D,
+                0x3219_85C6,
+                0x0E0D_9FB6,
+                0x003F_EA3F,
+                0x3F27_E1B8,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x0E3F_AAB5,
+                0x32AD_0FD0,
+                0x1B86_AEB7,
+                0x004C_3DB7,
+                0x3E75_240F,
+                0x3BFC_9782,
+                0x0367_1C07,
+                0x3260_6450,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x0033_9AF3,
+                0x1E0D_2254,
+                0x0001_4987,
+                0x1183_149D,
+                0x3906_9615,
+                0x15F2_704D,
+                0x0015_8E5F,
+                0x31C6_0478,
+            ],
+        ],
+    ),
+    (
+        8,
+        217_475.20365370525,
+        [
+            [
+                0x1D3F_11F9,
+                0x2E4D_D647,
+                0x311B_BFD1,
+                0x3CAB_2502,
+                0x28A5_6AF2,
+                0x35F7_0E64,
+                0x0DE6_42EB,
+                0x2AF2_6077,
+                0x3FC0_0426,
+                0x3B16_D62B,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_B5D7,
+                0x2AFC_F877,
+                0x3358_7322,
+                0x3A50_3B4E,
+                0x02AD_0127,
+                0x1F68_E5EA,
+                0x00F3_A86A,
+                0x038E_52C3,
+                0x3260_602F,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_945F,
+                0x0008_9020,
+                0x24E9_0334,
+                0x000A_C9AA,
+                0x3D08_6370,
+                0x0AA3_42E4,
+                0x0ABB_ECEC,
+                0x3FE8_D023,
+                0x2AFF_220B,
+            ],
+        ],
+    ),
+    (
+        9,
+        217_475.20176958817,
+        [
+            [
+                0x1D3F_11F9,
+                0x2E4D_D647,
+                0x311B_FFDF,
+                0x3EAB_2504,
+                0x28A5_6ADB,
+                0x0A08_F1B2,
+                0x0DE6_4087,
+                0x3B32_6063,
+                0x3FFF_E787,
+                0x008B_A5AF,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_B5D7,
+                0x3B3F_E018,
+                0x0D8B_5241,
+                0x1EFE_E490,
+                0x0010_407E,
+                0x20F0_BF13,
+                0x3CBF_D786,
+                0x038D_222C,
+                0x0D9F_9F83,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_945F,
+                0x3FFE_7000,
+                0x35E1_4A49,
+                0x0009_B678,
+                0x3E52_2869,
+                0x380C_ABF2,
+                0x13C1_6004,
+                0x3FE9_EEDC,
+                0x04C3_544B,
+            ],
+        ],
+    ),
+    (
+        13,
+        217_475.20982172654,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_0020,
+                0x0154_DAFB,
+                0x175A_9524,
+                0x35F7_0E4D,
+                0x3219_862D,
+                0x3C32_60B8,
+                0x0000_0941,
+                0x2CA9_5D08,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x03C0_2FF7,
+                0x32AE_B646,
+                0x010E_D1F4,
+                0x0039_40D3,
+                0x04FF_3BFF,
+                0x3CDE_57AD,
+                0x3CB0_1554,
+                0x0D9F_4D40,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x3FFB_11BC,
+                0x1E68_6FA2,
+                0x0011_C9C1,
+                0x1EB9_7E84,
+                0x086B_09B4,
+                0x3002_1E32,
+                0x3FE9_998D,
+                0x3C3E_4920,
+            ],
+        ],
+    ),
+    (
+        14,
+        217_475.2058410187,
+        [
+            [
+                0x1D3F_11F9,
+                0x2E4D_D647,
+                0x311B_FF7A,
+                0x0154_DAD2,
+                0x28A5_6AF2,
+                0x35F7_0E64,
+                0x0DE6_7BED,
+                0x32B2_605C,
+                0x0000_182B,
+                0x3877_5E47,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_B5D7,
+                0x32BC_B970,
+                0x0C06_A8A7,
+                0x106E_4651,
+                0x3D23_3F86,
+                0x37CC_3F42,
+                0x0552_E86C,
+                0x035D_DD1C,
+                0x0D9F_9F83,
+            ],
+            [
+                0x1D3F_11F9,
+                0x2E4D_945F,
+                0x0005_5A09,
+                0x2EBC_9891,
+                0x3FFB_7646,
+                0x274C_8788,
+                0x0583_A1F6,
+                0x370F_2806,
+                0x3FEA_894A,
+                0x0D7E_E8AF,
+            ],
+        ],
+    ),
+    (
+        18,
+        217_475.20177045764,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_00D6,
+                0x0154_DAD2,
+                0x28A5_6AF2,
+                0x35F7_0E64,
+                0x0DE6_7BBE,
+                0x1DCD_9F8D,
+                0x3FC0_18AD,
+                0x0F40_6104,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x1DFC_5505,
+                0x34A1_47FD,
+                0x0810_BBF4,
+                0x3CCA_0071,
+                0x02DE_8BD7,
+                0x3DDF_57A4,
+                0x034E_04A8,
+                0x0D9F_8DF4,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x0003_FB02,
+                0x0E71_C5A5,
+                0x0002_3606,
+                0x2D25_2091,
+                0x367A_DF16,
+                0x2283_AD32,
+                0x3FE9_DB30,
+                0x1DFE_6E28,
+            ],
+        ],
+    ),
+    (
+        20,
+        217_475.2092748303,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_0020,
+                0x0154_DAFB,
+                0x175A_9524,
+                0x35F7_0E4D,
+                0x3219_8468,
+                0x178D_9FBD,
+                0x3FC0_040F,
+                0x32C2_E8AC,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x17BD_A3B8,
+                0x0C78_BFB9,
+                0x0D20_4342,
+                0x3DFC_80A7,
+                0x3994_4933,
+                0x3ACD_57BE,
+                0x034C_E9B5,
+                0x3260_60F0,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x0006_83F1,
+                0x38DC_B055,
+                0x3FFB_B657,
+                0x0FFE_5F10,
+                0x05D1_63B1,
+                0x3A12_57A9,
+                0x0015_CD4C,
+                0x1783_7CF0,
+            ],
+        ],
+    ),
+    (
+        22,
+        217_475.20171003047,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_0020,
+                0x0154_DAFB,
+                0x175A_9524,
+                0x35F7_0E4D,
+                0x3219_85C6,
+                0x118D_9FA7,
+                0x3FC0_0F71,
+                0x3CF7_58A4,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x1183_4014,
+                0x0B1F_D334,
+                0x2AC9_F931,
+                0x3D2C_3E22,
+                0x2F0D_2CBD,
+                0x3B10_17AD,
+                0x3C88_DD49,
+                0x3260_60F0,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x0029_6649,
+                0x0BAC_A1B5,
+                0x3FF5_F63E,
+                0x0FBA_90AC,
+                0x0606_B411,
+                0x306A_CF67,
+                0x0014_A2AD,
+                0x2E41_A5EC,
+            ],
+        ],
+    ),
+    (
+        27,
+        217_475.20410710596,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_0020,
+                0x0154_DAFB,
+                0x175A_9524,
+                0x35F7_0E4D,
+                0x3219_BF2B,
+                0x3C72_606A,
+                0x003F_F3E9,
+                0x0212_EB44,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x0382_F374,
+                0x0C71_8E0C,
+                0x0D35_A482,
+                0x0282_C19E,
+                0x00CC_7363,
+                0x3F34_17A7,
+                0x3CA7_EAED,
+                0x3260_60F0,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x3FEC_7022,
+                0x254C_19FA,
+                0x0008_09FC,
+                0x1457_5DC9,
+                0x34F2_3847,
+                0x3177_A5BC,
+                0x3FE8_BC3E,
+                0x0380_D150,
+            ],
+        ],
+    ),
+    (
+        30,
+        217_475.21400135633,
+        [
+            [
+                0x22C0_EE06,
+                0x11B2_29B8,
+                0x0EE4_0020,
+                0x0154_DAFB,
+                0x175A_9524,
+                0x35F7_0E4D,
+                0x3219_BDCB,
+                0x3C72_606A,
+                0x0000_0895,
+                0x0F80_BA34,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_4A28,
+                0x03BF_77F1,
+                0x31AD_50DC,
+                0x32FB_33CF,
+                0x0082_3F27,
+                0x2806_2E2D,
+                0x3BF2_D791,
+                0x3C86_0CF0,
+                0x0D9F_9FD0,
+            ],
+            [
+                0x22C0_EE06,
+                0x11B2_6BA0,
+                0x0009_1AC4,
+                0x2BBA_2BBC,
+                0x3FF6_49AE,
+                0x07B7_4A29,
+                0x393F_99E0,
+                0x026B_0BE5,
+                0x0016_5AF6,
+                0x03BA_3B40,
+            ],
+        ],
+    ),
+];
+
+fn bits(words: &[u32; 10]) -> Vec<bool> {
+    words
+        .iter()
+        .flat_map(|word| (0..30).rev().map(move |shift| word >> shift & 1 != 0))
+        .collect()
+}
+
+#[test]
+fn recorded_measurements_solve_to_the_survey() {
+    let measurements: Vec<Measurement> = OPEN_SKY
+        .iter()
+        .map(|(prn, transmit_s, subframes)| {
+            let [one, two, three] =
+                subframes.map(|words| decode_subframe(&bits(&words)).expect("parity holds"));
+            Measurement {
+                prn: *prn,
+                transmit_s: *transmit_s,
+                ephemeris: Ephemeris::from_subframes(&one, &two, &three).expect("one issue"),
+            }
+        })
+        .collect();
+    let fix = solve(&measurements).expect("a fix");
+    assert_eq!(fix.satellites().len(), OPEN_SKY.len());
+    let (horizontal, up) = off_survey_m(fix.at);
+    assert!(horizontal < 10.0, "{horizontal:.1} m off: {:?}", fix.at);
+    assert!(up.abs() < 30.0, "{up:.1} m high: {:?}", fix.at);
+    assert!(fix.pdop < 2.0 && fix.residual_rms_m < 10.0, "{fix:?}");
+    assert!((fix.tow_s - 217_475.283).abs() < 1e-3, "{}", fix.tow_s);
+}

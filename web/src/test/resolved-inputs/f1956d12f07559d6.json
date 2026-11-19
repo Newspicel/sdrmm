@@ -1,6 +1,6 @@
 {
   "name": "f1956d12f07559d6",
-  "test": "SpectrumMonitorFace > shows all until a range is set",
+  "test": "SpectrumMonitorFace > keeps its settings off the face",
   "graph": {
     "nodes": [
       {

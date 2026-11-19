@@ -1,6 +1,6 @@
 use sdrmm_modem::framesync::ToneArray;
 
-use super::ldpc;
+use super::ldpc::{self, Code};
 
 pub(crate) const SAMPLE_RATE: f32 = 12_000.0;
 pub(crate) const MAX_SYMBOLS: usize = 103;
@@ -30,6 +30,7 @@ pub(crate) struct Protocol {
     pub(crate) osd_min_presence: f32,
     pub(crate) osd_max_snr_db: f32,
     pub(crate) assume_cq: bool,
+    pub(crate) code: &'static dyn Code,
 }
 
 const FT8_COSTAS: &[u8] = &[3, 1, 4, 0, 6, 5, 2];
@@ -58,6 +59,7 @@ pub(crate) const FT8: Protocol = Protocol {
     osd_min_presence: 0.0,
     osd_max_snr_db: -14.0,
     assume_cq: true,
+    code: &ldpc::Ft,
 };
 
 pub(crate) const FT4: Protocol = Protocol {
@@ -88,6 +90,7 @@ pub(crate) const FT4: Protocol = Protocol {
     osd_min_presence: 1.16,
     osd_max_snr_db: f32::INFINITY,
     assume_cq: false,
+    code: &ldpc::Ft,
 };
 
 impl Protocol {
@@ -123,7 +126,7 @@ impl Protocol {
     }
 
     pub(crate) fn tones_for(&self, payload: u128) -> [u8; MAX_SYMBOLS] {
-        let codeword = ldpc::encode(payload ^ self.scramble);
+        let codeword = self.code.encode(payload ^ self.scramble);
         let mut tones = [0u8; MAX_SYMBOLS];
         let mut bits = codeword.chunks_exact(self.bits_per_symbol);
         for (symbol, tone) in tones.iter_mut().take(self.symbols).enumerate() {

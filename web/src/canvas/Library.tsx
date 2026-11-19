@@ -1,4 +1,4 @@
-import { Tabs } from "@base-ui/react/tabs";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@ui-sdk/react/tabs";
 import { BandsPanel } from "../components/BandsPanel";
 import { BookmarksPanel } from "../components/BookmarksPanel";
 import { TAB_BAR, tab } from "../components/controls";
@@ -50,45 +50,45 @@ export function Library({
   };
 
   return (
-    <Tabs.Root defaultValue="templates" className="flex flex-col overflow-hidden rounded-control">
-      <Tabs.List className={`${TAB_BAR} shrink-0 px-1`} aria-label="Library section">
+    <Tabs defaultValue="templates" className="flex flex-col overflow-hidden rounded-control">
+      <TabsList className={`${TAB_BAR} shrink-0 px-1`} aria-label="Library section">
         {TABS.map((entry) => (
-          <Tabs.Tab key={entry.id} value={entry.id} className={(state) => tab(state.active)}>
+          <TabsTab key={entry.id} value={entry.id} className={(state) => tab(state.selected)}>
             {entry.label}
-          </Tabs.Tab>
+          </TabsTab>
         ))}
-      </Tabs.List>
-      <Tabs.Panel value="templates" className="max-h-[28rem] overflow-y-auto">
+      </TabsList>
+      <TabsPanel value="templates" className="max-h-[28rem] overflow-y-auto">
         <TemplatesPanel
           node={active === null ? null : workspace.selected}
           active={active}
           onApplied={() => workspace.apply()}
         />
-      </Tabs.Panel>
-      <Tabs.Panel value="examples" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="examples" className="max-h-[28rem] overflow-y-auto">
         <ExamplesPanel onImported={onActivate} />
-      </Tabs.Panel>
-      <Tabs.Panel value="presets" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="presets" className="max-h-[28rem] overflow-y-auto">
         <PresetsPanel />
-      </Tabs.Panel>
-      <Tabs.Panel value="bookmarks" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="bookmarks" className="max-h-[28rem] overflow-y-auto">
         <BookmarksPanel target={target} />
-      </Tabs.Panel>
-      <Tabs.Panel value="bands" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="bands" className="max-h-[28rem] overflow-y-auto">
         <BandsPanel target={target} />
-      </Tabs.Panel>
-      <Tabs.Panel value="occupancy" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="occupancy" className="max-h-[28rem] overflow-y-auto">
         <OccupancyPanel target={target} />
-      </Tabs.Panel>
-      <Tabs.Panel value="recordings" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="recordings" className="max-h-[28rem] overflow-y-auto">
         <RecordingsPanel onOpen={openRecording} />
-      </Tabs.Panel>
-      <Tabs.Panel value="tools" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="tools" className="max-h-[28rem] overflow-y-auto">
         <ToolsPanel onOpen={onOpenTool} />
-      </Tabs.Panel>
-      <Tabs.Panel value="phones" className="max-h-[28rem] overflow-y-auto">
+      </TabsPanel>
+      <TabsPanel value="phones" className="max-h-[28rem] overflow-y-auto">
         <PhonesPanel />
-      </Tabs.Panel>
-    </Tabs.Root>
+      </TabsPanel>
+    </Tabs>
   );
 }

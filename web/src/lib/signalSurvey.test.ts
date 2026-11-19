@@ -84,8 +84,6 @@ describe("the survey face state", () => {
   });
 
   it("says what the survey waits for", () => {
-    expect(surveyStatus(view({ radioWired: false }))).toBe("Wire a radio");
-    expect(surveyStatus(view({ positionWired: false }))).toBe("Wire a position");
     expect(surveyStatus(view({ recording: true }))).toBe("Recording each new GPS fix");
     expect(surveyStatus(view({ retuned: true }))).toBe("Retuned: clear to start again");
     expect(surveyStatus(view({ retuned: true, recording: true }))).toBe(

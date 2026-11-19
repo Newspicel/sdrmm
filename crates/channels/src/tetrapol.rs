@@ -44,6 +44,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Tetrapol".to_owned(),
     summary: "Tetrapol PMR control and traffic channels".to_owned(),
     family: DecoderFamily::DIGITAL_VOICE,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: TETRAPOL_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

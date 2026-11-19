@@ -3,6 +3,7 @@ import type { ChannelDescriptor, ChannelSettings, ChannelStatus } from "../lib/t
 import type { ChannelEdit } from "../lib/useChannelPatch";
 import { BlankerChip } from "./BlankerControl";
 import {
+  AUDIO_DEFAULTS,
   AUDIO_LIMITS,
   channelFrequencyHz,
   channelHasAudio,
@@ -19,6 +20,7 @@ import { IfFilterChip } from "./IfFilterControl";
 import { SettingsForm } from "./SettingsForm";
 import { TuneTo } from "./TuneTo";
 import { TuningLock } from "./TuningLock";
+import { Unused } from "./Unused";
 
 export function ChannelDial({
   hz,
@@ -96,8 +98,7 @@ export function ChannelControls({
   const audio = channelHasAudio(descriptor);
   const params = settledParams(settings.params, descriptor?.defaults?.params);
   return (
-    <Chips>
-      {audio && <MarginChip settings={settings} onEdit={onEdit} />}
+    <Chips inset="none">
       <SettingsForm
         form={descriptor?.settings ?? []}
         settings={params.settings ?? {}}
@@ -123,7 +124,8 @@ export function ChannelControls({
   );
 }
 
-function MarginChip({
+/** The auto squelch margin: greyed until Squelch is on Auto, then how far above the noise it opens. */
+export function SquelchMargin({
   settings,
   onEdit,
 }: {
@@ -131,14 +133,11 @@ function MarginChip({
   onEdit: (edit: ChannelEdit) => void;
 }) {
   const marginDb = squelchMarginDb(settings.squelch);
-  if (marginDb === null) {
-    return null;
-  }
   const { min, max } = AUDIO_LIMITS.squelchAutoMarginDb;
-  return (
+  const chip = (
     <NumberChip
       label="Margin"
-      value={marginDb}
+      value={marginDb ?? AUDIO_DEFAULTS.squelchAutoMarginDb}
       unit="dB"
       min={min}
       max={max}
@@ -147,4 +146,7 @@ function MarginChip({
       onCommit={(margin_db) => onEdit({ squelch: { mode: "auto", margin_db } })}
     />
   );
+  return marginDb === null ? <Unused needs={AUTO_SQUELCH}>{chip}</Unused> : chip;
 }
+
+const AUTO_SQUELCH = { key: "squelch", hint: "Set Squelch to Auto" };

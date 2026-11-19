@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Chips } from "../../components/face/Chips";
-import { FoldSection } from "../../components/face/Fold";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { SettingsForm } from "../../components/SettingsForm";
 import { clearAction, useRefusalStore } from "../../lib/refusals";
@@ -9,6 +8,7 @@ import type { Field, ParamChoice, PatchCatalog, PatchNode } from "../../lib/type
 import { formatValue } from "../../sinks/values";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { defaultBody, processorDefaults, processorTypeOf } from "../newNode";
 import { FaceEmpty } from "./NodeShell";
 import { NO_CATALOG, SETTINGS_ACTION } from "./processorFace";
@@ -62,8 +62,8 @@ export function useSettingsCommit(node: PatchNode): (settings: Settings) => void
 }
 
 /**
- * A node's settings as the catalog's form draws them: loose chips after `lead`, the face's own
- * view controls, then one fold per section.
+ * A node's settings as the catalog's form draws them, in the inspector: loose fields after
+ * `lead`, then one group per section.
  */
 export function NodeForm({
   node,
@@ -89,19 +89,21 @@ export function NodeForm({
   }
   const shared = { form, settings, choices, lanes, onSettings: commit };
   return (
-    <>
-      <Chips className="shrink-0">
-        {lead}
-        <SettingsForm {...shared} section={null} />
-      </Chips>
+    <Inspect node={node.id}>
+      <InspectSection>
+        <Chips inset="none">
+          {lead}
+          <SettingsForm {...shared} section={null} />
+        </Chips>
+      </InspectSection>
       {sections(form).map((section) => (
-        <FoldSection key={section} label={section}>
+        <InspectSection key={section} label={section}>
           <Chips inset="none">
             <SettingsForm {...shared} section={section} />
           </Chips>
-        </FoldSection>
+        </InspectSection>
       ))}
-    </>
+    </Inspect>
   );
 }
 

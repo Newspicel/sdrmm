@@ -256,6 +256,9 @@ pub enum ServerEvent {
         fix: Option<PositionFix>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        /// What the node waits for, never a fault: a wire, a setting or data still to come.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        waiting: Option<String>,
     },
     ArrayUpdate {
         status: Box<crate::array::ArrayStatus>,

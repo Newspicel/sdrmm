@@ -1,15 +1,18 @@
+import { AudioControls } from "../../components/AudioControls";
 import { Button } from "../../components/BaseControls";
-import { ChannelControls, ChannelDial } from "../../components/ChannelControls";
+import { ChannelControls, ChannelDial, SquelchMargin } from "../../components/ChannelControls";
 import {
+  audioChainActive,
   channelFrequencyHz,
   channelHasAudio,
   channelWidthHz,
   radioWindowHz,
   reachesHz,
 } from "../../components/channelSettings";
-import { BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN } from "../../components/controls";
 import { ANY_FREQUENCY, tuningRange } from "../../components/dial";
 import { dialId } from "../../components/FrequencyDial";
+import { ChipRows, Chips } from "../../components/face/Chips";
 import { HealthStats, hasHealth } from "../../components/face/Health";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import {
@@ -32,14 +35,14 @@ import { keyedFields } from "../../sinks/Fields";
 import { formatValue } from "../../sinks/values";
 import { useWorkspaceContext } from "../context";
 import { nodeOf, patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { iqLanesOf } from "../lanes";
 import { laneOf, runningSetOf } from "../workspaceDevice";
 import { bandMissOf, bandMissSaid } from "./bandMiss";
 import { type Unbound, unboundOf } from "./channelNode";
 import { laneCenterHz, laneRateHz } from "./deviceNode";
-import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
-
-const AUDIO_FACE_W = 460;
+import { StatusGrid } from "./NodeForm";
+import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 
 type ChannelNodeData = PatchNodeOf<"channel">["data"];
 
@@ -73,6 +76,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     reaches: set === null || frequencyHz === null || reachesHz(frequencyHz, window),
   });
   const locked = node.data.tuning_locked ?? false;
+  const audio = node.data.audio ?? {};
   const scanned = sweptBy(workspace.resolved, node.id);
   const controller = controllerOf(workspace.resolved, node.id);
   const editNode = (next: Partial<ChannelNodeData>): void =>
@@ -100,22 +104,25 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     workspace.channels.get(node.id)?.band,
   );
   const action = live === null ? (unbound?.action ?? null) : null;
+  const standing = unbound?.standing === true ? unbound.hint : null;
 
   return (
     <NodeShell
       node={node}
       title={name}
       category="channel"
-      subtitle={status}
+      subtitle={status ?? "Decoder"}
       badge={
-        widthHz === null ? undefined : <span title="Channel bandwidth">{formatHz(widthHz)}</span>
+        <span className="flex gap-1.5">
+          {widthHz !== null && <span title="Channel bandwidth">{formatHz(widthHz)}</span>}
+          {audioChainActive(audio) && <span title="Audio processing on">FX</span>}
+        </span>
       }
       live={audioPassing(level)}
-      width={channelHasAudio(descriptor) ? AUDIO_FACE_W : undefined}
     >
       <FaceBody>
         {settings !== null && (
-          <div className="@container flex flex-col gap-1 border-b border-line p-2">
+          <div className="@container flex flex-col gap-1 p-2">
             <ChannelDial
               hz={heardHz(channelFrequencyHz(settings), level)}
               descriptor={descriptor}
@@ -129,26 +136,47 @@ export function ChannelFace({ node }: { node: PatchNode }) {
               onTune={(frequency_hz) => onEdit({ frequency_hz })}
               onLock={(tuning_locked) => editNode({ tuning_locked })}
             />
-            {live !== null && (
-              <SignalRow
-                level={levels?.[live.id]}
-                squelch={settings.squelch}
-                onSquelch={
-                  channelHasAudio(descriptor) ? (squelch) => onEdit({ squelch }) : undefined
-                }
-              />
-            )}
+            <SignalRow level={live === null ? undefined : levels?.[live.id]} />
           </div>
         )}
-        {settings !== null && (
-          <ChannelControls
-            settings={settings}
-            descriptor={descriptor}
-            status={channelStatus}
-            onEdit={onEdit}
-          />
-        )}
+        {standing !== null && <FaceEmpty hint={standing} />}
       </FaceBody>
+      <Inspect node={node.id}>
+        {settings !== null && (
+          <InspectSection>
+            {channelHasAudio(descriptor) && (
+              <div className="flex flex-col gap-2">
+                <SignalRow
+                  level={live === null ? undefined : levels?.[live.id]}
+                  squelch={settings.squelch}
+                  onSquelch={(squelch) => onEdit({ squelch })}
+                />
+                <ChipRows>
+                  <SquelchMargin settings={settings} onEdit={onEdit} />
+                </ChipRows>
+              </div>
+            )}
+            <ChannelControls
+              settings={settings}
+              descriptor={descriptor}
+              status={channelStatus}
+              onEdit={onEdit}
+            />
+          </InspectSection>
+        )}
+        {channelHasAudio(descriptor) && (
+          <InspectSection label="Audio">
+            <Chips inset="none">
+              <AudioControls audio={audio} onAudio={(next) => editNode({ audio: next })} />
+            </Chips>
+          </InspectSection>
+        )}
+        {(channelStatus?.readouts ?? []).length > 0 && (
+          <InspectSection label="Status">
+            <StatusGrid readouts={channelStatus?.readouts ?? []} />
+          </InspectSection>
+        )}
+      </Inspect>
       <FaceFooter>
         {live !== null && (
           <ChannelFooterStats
@@ -163,7 +191,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
         {action !== null && (
           <Button
             type="button"
-            className={BTN_PRIMARY}
+            className={FACE_BTN}
             title={unbound?.hint}
             onClick={workspace.apply}
           >

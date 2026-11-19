@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_SM } from "../../components/controls";
+import { FACE_BTN } from "../../components/controls";
 import { ChoiceChip } from "../../components/face/Chips";
 import { COLOUR_OPTIONS } from "../../components/plotFrame";
 import { type Colormap, DEFAULT_COLORMAP } from "../../gl/surface";
@@ -21,6 +21,7 @@ import { useWorkspaceContext } from "../context";
 import { arrayOf } from "../lanes";
 import { NodeForm, StatusGrid } from "./NodeForm";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
+import { useUnwired, type Want } from "./needs";
 import { ProcessorFooter } from "./ProcessorFooter";
 import { ProcessorError } from "./ProcessorHealth";
 import {
@@ -42,6 +43,7 @@ import { GRID_STREAMS, SurfacePanel } from "./views/SurfacePanel";
 import { ViewTable } from "./views/ViewTable";
 
 const AGE_TICK_MS = 1_000;
+const WANTS_ARRAY: readonly Want[] = [{ port: "array" }];
 
 type Action = ProcessorFacets["actions"][number];
 
@@ -50,6 +52,7 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const state = useProcessorStore((store) => store.byNode[node.id]);
   const array = arrayOf(workspace.resolved, node.id);
+  const unwired = useUnwired(node.id, WANTS_ARRAY);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
   const [colormap, setColormap] = useState<Colormap>(DEFAULT_COLORMAP);
@@ -72,7 +75,11 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
       node={node}
       title={kind.title}
       category="tool"
-      subtitle={<span className={subtitle.warn ? "text-warn" : undefined}>{subtitle.text}</span>}
+      subtitle={
+        !unwired ? (
+          <span className={subtitle.warn ? "text-warn" : undefined}>{subtitle.text}</span>
+        ) : undefined
+      }
     >
       <FaceBody scroll={surface === null}>
         <div className={surface === null ? undefined : "flex min-h-0 flex-1 flex-col"}>
@@ -91,26 +98,24 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
             <ViewTable view={state?.view.table ?? null} picked={picked} onPick={setPicked} />
           )}
           <ProcessorError status={health} />
-          <div className={surface === null ? undefined : "max-h-56 shrink-0 overflow-y-auto"}>
-            {kind.loaded && (
-              <NodeForm
-                node={node}
-                lanes={processorLanes(workspace.resolved, array, status)}
-                lead={
-                  surface !== null &&
-                  GRID_STREAMS.includes(surface) && (
-                    <ChoiceChip
-                      label="Colours"
-                      value={colormap}
-                      options={COLOUR_OPTIONS}
-                      title="Plot colours"
-                      onChange={setColormap}
-                    />
-                  )
-                }
-              />
-            )}
-          </div>
+          {kind.loaded && (
+            <NodeForm
+              node={node}
+              lanes={processorLanes(workspace.resolved, array, status)}
+              lead={
+                surface !== null &&
+                GRID_STREAMS.includes(surface) && (
+                  <ChoiceChip
+                    label="Colours"
+                    value={colormap}
+                    options={COLOUR_OPTIONS}
+                    title="Plot colours"
+                    onChange={setColormap}
+                  />
+                )
+              }
+            />
+          )}
         </div>
       </FaceBody>
       <ProcessorFooter
@@ -205,7 +210,7 @@ function FaceActions({
       {ask !== null && (
         <Button
           type="button"
-          className={BTN_SM}
+          className={FACE_BTN}
           title={tuningAskOf(ask).title}
           onClick={() => onRetune(ask)}
         >
@@ -228,7 +233,7 @@ function ActionButton({ node, action, idle }: { node: string; action: Action; id
   return (
     <Button
       type="button"
-      className={BTN}
+      className={FACE_BTN}
       title={action.title}
       disabled={mutation.isPending || idle}
       onClick={() => mutation.mutate()}

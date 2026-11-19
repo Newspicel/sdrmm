@@ -15,6 +15,7 @@ use sdrmm_wire::{
     ControlAck, ControlCommand, ControlVerb, DecodedRecord, DecoderEvent, DopplerSteer,
     EventOrigin, LatLon, NO_CHANNEL, NodeBody, POSITION_PORT, PassPoint, ResolvedPatch,
     SatelliteFix, SatelliteNode, SatellitePass, SatelliteStatus, ServerEvent, SkyTrack,
+    position::{WAITING_FOR_FIX, WIRE_A_POSITION},
 };
 
 use crate::{
@@ -36,6 +37,20 @@ const PASS_HORIZON_S: f64 = 2.0 * 86_400.0;
 const HORIZON_DEG: f64 = 0.0;
 /// Opening a radio takes seconds, so one the satellite runs opens this long before the rise.
 const RUN_LEAD_S: f64 = 30.0;
+const PICK_A_SATELLITE: &str = "Pick a satellite";
+const SET_A_DOWNLINK: &str = "Set a downlink frequency";
+
+/// Why a satellite is not steered: a wait shows faint, a fault red.
+enum Halt {
+    Waiting(&'static str),
+    Fault(String),
+}
+
+impl From<String> for Halt {
+    fn from(error: String) -> Self {
+        Self::Fault(error)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 struct Wiring {
@@ -279,7 +294,11 @@ impl Tracker {
         };
         match self.steer(wiring, now, &mut status) {
             Ok(steering) => (status, Some(steering)),
-            Err(error) => {
+            Err(Halt::Waiting(waiting)) => {
+                status.waiting = Some(waiting.to_owned());
+                (status, None)
+            }
+            Err(Halt::Fault(error)) => {
                 status.error = Some(error);
                 (status, None)
             }
@@ -291,15 +310,19 @@ impl Tracker {
         wiring: &Wiring,
         now: f64,
         status: &mut SatelliteStatus,
-    ) -> Result<track::Steering, String> {
-        let orbit = orbit_of(&mut self.satellites, wiring).ok_or("pick a satellite")?;
+    ) -> Result<track::Steering, Halt> {
+        let orbit =
+            orbit_of(&mut self.satellites, wiring).ok_or(Halt::Waiting(PICK_A_SATELLITE))?;
         let satellite = orbit.satellite.as_ref().map_err(Clone::clone)?;
         status.name = satellite.tle.name.clone();
         status.catalog = Some(satellite.tle.catalog.clone());
         status.tle_age_days = Some(satellite.age_days(now));
         place(&mut orbit.track, satellite, status, now).map_err(|error| error.to_string())?;
-        let source = wiring.position.as_ref().ok_or("wire a position")?;
-        let fix = self.gps.fix(source).ok_or("waiting for a position fix")?;
+        let source = wiring
+            .position
+            .as_ref()
+            .ok_or(Halt::Waiting(WIRE_A_POSITION))?;
+        let fix = self.gps.fix(source).ok_or(Halt::Waiting(WAITING_FOR_FIX))?;
         let observer = track::observer(&fix);
         let steering = track::steer(satellite, &observer, &wiring.settings, now)
             .map_err(|error| error.to_string())?;
@@ -363,7 +386,7 @@ fn drive(
             doppler
         } else {
             if control::takes(patch, node, ControlVerb::Tune) {
-                status.error = Some("set a downlink frequency".to_owned());
+                status.waiting = Some(SET_A_DOWNLINK.to_owned());
             }
             DopplerSteer::default()
         };
@@ -493,12 +516,73 @@ mod tests {
         assert!(!runs(&SatelliteStatus::default(), 0.0));
     }
 
+    const ISS: &str = "ISS (ZARYA)
+1 25544U 98067A   24001.50000000  .00016717  00000-0  30306-3 0  9999
+2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.50377579432041";
+
+    fn tracker() -> Tracker {
+        Tracker {
+            engine: Weak::new(),
+            gps: Arc::default(),
+            resolved: Arc::default(),
+            control: Arc::default(),
+            plan: Arc::default(),
+            statuses: Arc::default(),
+            stop: Arc::default(),
+            satellites: HashMap::new(),
+            published_at: None,
+            placed: HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn a_missing_satellite_or_position_is_a_wait_not_a_fault() {
+        let mut tracker = tracker();
+        let unpicked = Wiring {
+            node: "sat".to_owned(),
+            settings: SatelliteNode::default(),
+            position: None,
+        };
+        let (status, steering) = tracker.follow(&unpicked, 0.0);
+        assert!(steering.is_none());
+        assert_eq!(status.waiting.as_deref(), Some(PICK_A_SATELLITE));
+        assert_eq!(status.error, None);
+        let broken = Wiring {
+            settings: SatelliteNode {
+                tle: Some("not elements".to_owned()),
+                ..SatelliteNode::default()
+            },
+            ..unpicked
+        };
+        let (status, _) = tracker.follow(&broken, 0.0);
+        assert_eq!(status.waiting, None);
+        assert!(status.error.is_some());
+        let unplaced = Wiring {
+            settings: SatelliteNode {
+                tle: Some(ISS.to_owned()),
+                ..SatelliteNode::default()
+            },
+            ..broken
+        };
+        let now = 1_704_110_400.0;
+        let (status, _) = tracker.follow(&unplaced, now);
+        assert_eq!(status.waiting.as_deref(), Some(WIRE_A_POSITION));
+        let fixless = Wiring {
+            position: Some("gps".to_owned()),
+            ..unplaced
+        };
+        let (status, _) = tracker.follow(&fixless, now);
+        assert_eq!(status.waiting.as_deref(), Some(WAITING_FOR_FIX));
+        assert_eq!(status.error, None);
+    }
+
     #[test]
     fn only_the_wired_position_is_followed() {
         let channel = || {
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             })
         };
         let graph = PatchGraph {

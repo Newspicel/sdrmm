@@ -6,6 +6,7 @@ use std::{borrow::Cow, sync::Arc};
 use num_complex::Complex;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ChannelStatus, DecoderEvent, PositionFix};
 
+pub mod aircraft;
 pub mod audio_chain;
 pub mod broadcast;
 pub mod catalog;
@@ -92,6 +93,19 @@ pub struct VideoPicture {
     pub height: u16,
     pub luma: Vec<u8>,
     pub rgb: Vec<u8>,
+}
+
+impl VideoPicture {
+    /// A grey picture: each colour channel carries `luma`.
+    #[must_use]
+    pub fn grey(width: u16, height: u16, luma: &[u8]) -> Self {
+        Self {
+            width,
+            height,
+            luma: luma.to_vec(),
+            rgb: luma.iter().flat_map(|&value| [value; 3]).collect(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

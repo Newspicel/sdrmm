@@ -32,6 +32,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "SID monitor".to_owned(),
     summary: "Solar flares in VLF transmitter levels".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 2.0 * USABLE_HALF_HZ,
     input_rate_hz: RATE,
     has_audio: false,

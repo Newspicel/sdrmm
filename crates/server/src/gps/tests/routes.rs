@@ -84,6 +84,7 @@ fn bench() -> (Arc<Engine>, PatchGraph, u32, u32) {
                 NodeBody::Channel(ChannelNode {
                     channel_type: "adsb".to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
             ),
             node("rec", NodeBody::Recorder(RecorderNode::default())),

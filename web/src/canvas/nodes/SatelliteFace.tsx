@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
-import { BTN, BTN_QUIET, FIELD, ICON_BTN } from "../../components/controls";
+import { BTN, BTN_QUIET, FACE_BTN, FIELD } from "../../components/controls";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
 import { ChipField, Chips, SettingChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
@@ -17,6 +17,7 @@ import { satellitesQuery, transmittersQuery } from "../../lib/api";
 import { useSatelliteStore } from "../../lib/satellite";
 import type {
   CatalogSatellite,
+  PassPoint,
   PatchNode,
   PatchNodeOf,
   SatelliteNode,
@@ -24,11 +25,15 @@ import type {
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
+import { Inspect, InspectSection } from "../inspector";
+import { FaceBody, FaceEmpty, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
+import { useUnwired, type Want } from "./needs";
+import { SkyDome } from "./SkyDome";
 import {
   compass,
   formatDoppler,
   passLine,
+  passWhen,
   pastedElements,
   SATELLITE_RANGE,
   STALE_ELEMENTS_DAYS,
@@ -38,7 +43,6 @@ import {
 } from "./satellite";
 
 const SEARCH_DELAY_MS = 350;
-const SHOWN_RESULTS = 8;
 
 export function SatelliteFace({ node }: { node: PatchNode }) {
   if (node.kind !== "satellite") {
@@ -50,6 +54,7 @@ export function SatelliteFace({ node }: { node: PatchNode }) {
 function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
   const workspace = useWorkspaceContext();
   const status = useSatelliteStore((store) => store.byNode[node.id]) ?? null;
+  const unwired = useUnwired(node.id, WANTS_POSITION);
   const edit = (next: Partial<SatelliteNode>): void =>
     workspace.edit((snapshot) => ({
       ...snapshot,
@@ -61,8 +66,13 @@ function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
   if (data.tle == null) {
     return (
       <NodeShell node={node} title="Satellite" category="tool">
+        <Inspect node={node.id}>
+          <InspectSection label="Satellite">
+            <SatellitePicker onPick={(tle) => edit({ tle })} />
+          </InspectSection>
+        </Inspect>
         <FaceBody>
-          <SatellitePicker onPick={(tle) => edit({ tle })} />
+          <FaceEmpty hint="No satellite" />
         </FaceBody>
       </NodeShell>
     );
@@ -74,6 +84,14 @@ function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
       category="tool"
       subtitle={status?.name ?? status?.catalog ?? undefined}
     >
+      <Inspect node={node.id}>
+        <InspectSection label="Satellite">
+          <SignalChip catalog={status?.catalog ?? null} data={data} onEdit={edit} />
+        </InspectSection>
+        <InspectSection label="Track">
+          <TrackDetail status={status} />
+        </InspectSection>
+      </Inspect>
       <FaceBody>
         <Downlink
           node={node.id}
@@ -83,9 +101,8 @@ function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
           onLock={(tuning_locked) => edit({ tuning_locked })}
           onTune={(downlink_hz) => edit({ downlink_hz, uplink_hz: null, transmitter: null })}
         />
-        <SignalChip catalog={status?.catalog ?? null} data={data} onEdit={edit} />
-        <TrackReadout status={status} />
-        {status?.error != null && <FaceFault message={status.error} />}
+        <Track status={status} standing={unwired ? null : (status?.waiting ?? null)} />
+        {!unwired && status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
       <FaceFooter>
         <FaceStats>
@@ -94,15 +111,18 @@ function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
         </FaceStats>
         <Button
           type="button"
-          className={BTN_QUIET}
+          className={FACE_BTN}
+          title="Pick another satellite"
           onClick={() => edit({ tle: null, downlink_hz: null, uplink_hz: null, transmitter: null })}
         >
-          Change satellite
+          Change
         </Button>
       </FaceFooter>
     </NodeShell>
   );
 }
+
+const WANTS_POSITION: readonly Want[] = [{ port: "position" }];
 
 function useDebounced(value: string): string {
   const [settled, setSettled] = useState(value);
@@ -121,7 +141,7 @@ function SatellitePicker({ onPick }: { onPick: (tle: string) => void }) {
   const results = useQuery({ ...satellitesQuery(search), enabled: pasted === null });
   const found: readonly CatalogSatellite[] = results.data?.satellites ?? [];
   return (
-    <div className="flex flex-col gap-2 p-2">
+    <div className="flex flex-col gap-2">
       <Input
         aria-label="Search satellites"
         title="A name, a NORAD number, or pasted element lines"
@@ -140,18 +160,19 @@ function SatellitePicker({ onPick }: { onPick: (tle: string) => void }) {
         </p>
       ) : (
         <ul
-          className="flex flex-col"
+          aria-label="Satellites"
+          className="flex max-h-72 flex-col overflow-y-auto rounded-control border border-line bg-well py-1"
           title={
             results.data === undefined
               ? undefined
               : `From ${sourceLabel(results.data.source, results.data.fetched ?? 0, now)}`
           }
         >
-          {found.slice(0, SHOWN_RESULTS).map((satellite) => (
+          {found.map((satellite) => (
             <li key={satellite.catalog}>
               <Button
                 type="button"
-                className={`${BTN_QUIET} w-full justify-between`}
+                className={`${BTN_QUIET} w-full shrink-0 justify-between rounded-none`}
                 onClick={() => onPick(satellite.tle)}
               >
                 <span className="truncate">{satellite.name}</span>
@@ -160,7 +181,7 @@ function SatellitePicker({ onPick }: { onPick: (tle: string) => void }) {
             </li>
           ))}
           {results.isSuccess && found.length === 0 && (
-            <li className="text-xs text-ink-dim">Nothing found</li>
+            <li className="px-2 py-1 text-xs text-ink-dim">Nothing found</li>
           )}
         </ul>
       )}
@@ -234,7 +255,7 @@ function SignalChip({
   }
   const picked = transmitters.find((transmitter) => transmitter.id === data.transmitter);
   return (
-    <Chips inset="below">
+    <Chips inset="none">
       <SettingChip
         label="Signal"
         value={picked === undefined ? "own" : transmitterLabel(picked)}
@@ -284,31 +305,87 @@ function useSecondsNow(): number {
   return now;
 }
 
-function TrackReadout({ status }: { status: SatelliteStatus | null }) {
+/**
+ * Where the satellite is: the sky from the ground station beside what tracking needs at a
+ * glance. Until it can say, the dome carries the same faint hint every plot uses and the
+ * readouts keep their rows.
+ */
+function Track({ status, standing }: { status: SatelliteStatus | null; standing: string | null }) {
   const now = useSecondsNow();
+  const look = standing === null ? (status?.look ?? null) : null;
+  const doppler = standing === null ? (status?.doppler_hz ?? null) : null;
+  const pass = standing === null && look !== null ? (status?.next_pass ?? null) : null;
+  return (
+    <div className="flex items-center gap-3 border-t border-line p-2">
+      <div className="relative shrink-0">
+        <SkyDome
+          look={look}
+          track={standing === null ? (status?.pass_track ?? NO_TRACK) : NO_TRACK}
+          visible={status?.visible === true}
+          quiet={standing !== null}
+        />
+        {standing !== null && (
+          <span className="absolute inset-0 flex items-center justify-center p-6 text-center text-2xs text-balance text-ink-faint">
+            {standing}
+          </span>
+        )}
+      </div>
+      <dl className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+        <TrackValue label="Elevation" tone={status?.visible === true ? "text-ok" : undefined}>
+          {look === null ? null : `${look.elevation_deg.toFixed(1)}°`}
+        </TrackValue>
+        <TrackValue label="Azimuth">
+          {look === null ? null : `${look.azimuth_deg.toFixed(0)}° ${compass(look.azimuth_deg)}`}
+        </TrackValue>
+        <TrackValue label="Doppler" title="Added to every wired decoder">
+          {doppler === null ? null : formatDoppler(doppler)}
+        </TrackValue>
+        <TrackValue label="Next pass" title={pass === null ? undefined : passLine(pass, now)}>
+          {look === null ? null : passWhen(pass, now)}
+        </TrackValue>
+      </dl>
+    </div>
+  );
+}
+
+/** One row beside the dome: the value at the far edge, a faint dash until there is one. */
+function TrackValue({
+  label,
+  title,
+  tone,
+  children,
+}: {
+  label: string;
+  title?: string;
+  tone?: string;
+  children: string | null;
+}) {
+  return (
+    <>
+      <dt className="text-ink-dim">{label}</dt>
+      <dd
+        title={title}
+        className={`truncate text-right font-mono tabular-nums ${children === null ? "text-ink-faint" : (tone ?? "text-ink")}`}
+      >
+        {children ?? "-"}
+      </dd>
+    </>
+  );
+}
+
+const NO_TRACK: readonly PassPoint[] = [];
+
+/** What the face leaves out: how far away it is, how fast the shift moves, where to send. */
+function TrackDetail({ status }: { status: SatelliteStatus | null }) {
   const look = status?.look ?? null;
-  const doppler = status?.doppler_hz ?? null;
   const rate = status?.doppler_rate_hz_s ?? null;
   const uplink = status?.uplink_hz ?? null;
   return (
     <Readouts>
-      <Readout label="Azimuth">
-        {look === null ? "-" : `${look.azimuth_deg.toFixed(0)}° ${compass(look.azimuth_deg)}`}
-      </Readout>
-      <Readout label="Elevation" tone={status?.visible === true ? "ok" : undefined}>
-        {look === null ? "-" : `${look.elevation_deg.toFixed(1)}°`}
-      </Readout>
       <Readout label="Range">{look === null ? "-" : `${look.range_km.toFixed(0)} km`}</Readout>
-      <Readout label="Doppler" title="Added to every wired decoder">
-        {doppler === null
-          ? "-"
-          : `${formatDoppler(doppler)}${rate === null ? "" : `, ${formatDoppler(rate)}/s`}`}
-      </Readout>
+      <Readout label="Doppler rate">{rate === null ? "-" : `${formatDoppler(rate)}/s`}</Readout>
       <Readout label="Send on" title="The uplink corrected so the satellite hears it on frequency">
         {uplink === null ? "-" : formatMhz(uplink)}
-      </Readout>
-      <Readout label="Next pass">
-        {status === null || look === null ? "-" : passLine(status.next_pass, now)}
       </Readout>
     </Readouts>
   );
@@ -344,7 +421,7 @@ function RefreshElements({
   return (
     <Button
       type="button"
-      className={`${ICON_BTN} -ml-2`}
+      className={FACE_BTN}
       disabled={fresh.isFetching}
       aria-label="Refresh elements"
       title={fresh.isError ? fresh.error.message : "Fetch the newest elements"}

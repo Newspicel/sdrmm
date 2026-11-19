@@ -1,13 +1,14 @@
 import { Play, Square } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN, ICON_BTN } from "../../components/controls";
-import { meterTone } from "../../components/dbfs";
+import { FACE_BTN, ICON_BTN } from "../../components/controls";
+import { formatPeak, type MeterTone, meterTone, meterUnit } from "../../components/dbfs";
 import { Chips } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
-import { GainMeter, MeterRow } from "../../components/face/Meter";
+import { GainMeter, MeterBar, MeterRow } from "../../components/face/Meter";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { Icon } from "../../components/Icon";
+import { SettingRow } from "../../components/Settings";
 import { Tip } from "../../components/Tip";
 import { tapKey } from "../../lib/audio/engine";
 import { resumeAudioOutput } from "../../lib/audio/sink";
@@ -15,6 +16,7 @@ import { audioEngine, useChannelAudio } from "../../lib/audio/useChannelAudio";
 import { type Input, useInputs } from "../../lib/resolved";
 import type { PatchNode } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
+import { Inspect, InspectSection } from "../inspector";
 import { AudioSpectrogramView } from "./AudioSpectrogramView";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 import { SpeakerOutputChip } from "./SpeakerOutputChip";
@@ -34,12 +36,16 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
   useEffect(() => audioEngine.setOutput(node.id, output), [node.id, output]);
   return (
     <NodeShell node={node} title="Speaker" category="output">
+      <Inspect node={node.id}>
+        <InspectSection label="Output">
+          <Chips inset="none">
+            <SpeakerOutputChip node={node} />
+          </Chips>
+        </InspectSection>
+      </Inspect>
       <FaceBody>
-        <Chips>
-          <SpeakerOutputChip node={node} />
-        </Chips>
         {inputs.length === 0 ? (
-          <FaceEmpty hint="Wire a channel's audio in" />
+          <FaceEmpty />
         ) : (
           inputs.map((input, index) => (
             <AudioInput
@@ -57,7 +63,7 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
           {health.suspended && (
             <Button
               type="button"
-              className={BTN}
+              className={FACE_BTN}
               onClick={resumeAudioOutput}
               title="Audio output is suspended"
             >
@@ -90,16 +96,11 @@ function AudioInput({ node, input, port }: { node: string; input: Input; port?: 
         }
         port={port}
         meter={
-          <GainMeter
-            label={`${name} volume`}
-            className="min-w-0 flex-1"
-            min={0}
-            max={1}
-            step={0.01}
-            value={audio.volume}
-            peakDb={peakDb ?? null}
-            tone={meterTone(peakDb, false)}
-            onChange={audio.setVolume}
+          <MeterBar
+            label={`${name} level`}
+            value={meterUnit(peakDb)}
+            valueText={formatPeak(peakDb)}
+            fill={TONE[meterTone(peakDb, false)]}
           />
         }
         readout={`${Math.round(audio.volume * 100)}%`}
@@ -117,6 +118,25 @@ function AudioInput({ node, input, port }: { node: string; input: Input; port?: 
           />
         }
       />
+      <Inspect node={node}>
+        <InspectSection label={name}>
+          <Chips inset="none">
+            <SettingRow label="Volume">
+              <GainMeter
+                label={`${name} volume`}
+                className="min-w-0 flex-1"
+                min={0}
+                max={1}
+                step={0.01}
+                value={audio.volume}
+                peakDb={peakDb ?? null}
+                tone={meterTone(peakDb, false)}
+                onChange={audio.setVolume}
+              />
+            </SettingRow>
+          </Chips>
+        </InspectSection>
+      </Inspect>
       <AudioSpectrogramView
         node={node}
         port="audio"
@@ -127,6 +147,12 @@ function AudioInput({ node, input, port }: { node: string; input: Input; port?: 
     </div>
   );
 }
+
+const TONE: Record<MeterTone, string> = {
+  ok: "bg-ok",
+  warn: "bg-warn",
+  danger: "bg-danger",
+};
 
 function PlayToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
   return (

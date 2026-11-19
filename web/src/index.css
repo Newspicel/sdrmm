@@ -1,3 +1,5 @@
+@layer ui-sdk;
+
 @import "tailwindcss";
 @import "@xyflow/react/dist/base.css";
 

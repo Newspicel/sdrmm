@@ -36,7 +36,7 @@ import { channelPicker } from "../palette";
 import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
-import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
+import { FaceBody, FaceEmpty, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
 import { ScopeMenu } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
 import { type ScopeChannels, useScopeChannels } from "./scopeChannels";
@@ -228,7 +228,10 @@ function Spectrum({
         waterfall={feed.waterfall}
       />
 
+      {meta === null && <ScopeEmpty hint={emptyHint(source, set)} />}
+
       <ScopeChrome
+        node={node}
         display={display}
         feed={feed}
         active={active}
@@ -257,7 +260,11 @@ function Spectrum({
         <ChannelPicker
           title="New channel"
           note={formatHz(openPicker.hz)}
-          groups={channelPicker(workspace.context.channelTypes, suggestedType(openPicker.hz))}
+          groups={channelPicker(
+            workspace.context.catalog.families ?? [],
+            workspace.context.channelTypes,
+            suggestedType(openPicker.hz),
+          )}
           onChannel={(channelType) => {
             tuning.addChannelAt(openPicker, channelType);
             picks.closePicker();
@@ -267,6 +274,21 @@ function Spectrum({
       )}
 
       <GraphicsFault error={feed.glError} />
+    </div>
+  );
+}
+
+function emptyHint(source: IqLane | null, set: DeviceSet | null): string | undefined {
+  if (source === null) {
+    return undefined;
+  }
+  return set === null ? "Radio stopped" : "Waiting for samples";
+}
+
+function ScopeEmpty({ hint }: { hint: string | undefined }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10 flex bg-panel">
+      <FaceEmpty hint={hint} />
     </div>
   );
 }
@@ -340,6 +362,7 @@ function ScopeOverlays({
 }
 
 function ScopeChrome({
+  node,
   display,
   feed,
   active,
@@ -349,6 +372,7 @@ function ScopeChrome({
   onBands,
   onRange,
 }: {
+  node: string;
   display: ScopeDisplay;
   feed: ScopeFeed;
   active: boolean;
@@ -377,31 +401,32 @@ function ScopeChrome({
         {meta !== null && `${formatCentre(meta, view)}${formatFloor(meta.floorDb)}`}
         {display.range !== null && " · manual"}
       </span>
-      <div
-        data-plot-chrome
-        className="pointer-events-auto flex items-center gap-1 self-start rounded-control bg-plot-bg/85 p-0.5"
-      >
-        <ScopeSettings
-          colormap={display.paletteChoice}
-          onColormap={display.chooseColormap}
-          custom={display.customStops}
-          onCustom={display.chooseCustom}
-          average={display.average}
-          onAverage={display.chooseAverage}
-          overlap={display.overlap}
-          onOverlap={display.chooseOverlap}
-          traces={display.traceModes}
-          onTrace={display.toggleTrace}
-          phosphor={display.phosphor}
-          onPhosphor={togglePhosphor}
-          bands={bands}
-          onBands={onBands}
-          range={clampWindow(displayWindow(meta, display.range))}
-          manual={display.range !== null}
-          onRange={onRange}
-          onAuto={() => onRange(null)}
-        />
-        {!isFullView(view) && (
+      <ScopeSettings
+        node={node}
+        colormap={display.paletteChoice}
+        onColormap={display.chooseColormap}
+        custom={display.customStops}
+        onCustom={display.chooseCustom}
+        average={display.average}
+        onAverage={display.chooseAverage}
+        overlap={display.overlap}
+        onOverlap={display.chooseOverlap}
+        traces={display.traceModes}
+        onTrace={display.toggleTrace}
+        phosphor={display.phosphor}
+        onPhosphor={togglePhosphor}
+        bands={bands}
+        onBands={onBands}
+        range={clampWindow(displayWindow(meta, display.range))}
+        manual={display.range !== null}
+        onRange={onRange}
+        onAuto={() => onRange(null)}
+      />
+      {!isFullView(view) && (
+        <div
+          data-plot-chrome
+          className="pointer-events-auto flex items-center gap-1 self-start rounded-control bg-plot-bg/85 p-0.5"
+        >
           <Button
             type="button"
             className={plotButton(false)}
@@ -409,8 +434,8 @@ function ScopeChrome({
           >
             {(1 / viewWidth(view)).toFixed(1)}× · reset
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

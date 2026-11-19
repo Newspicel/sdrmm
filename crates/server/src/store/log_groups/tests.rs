@@ -32,7 +32,7 @@ fn call(freq_hz: f64, duration_ms: u64) -> DecoderEvent {
 fn adsb(icao: &str) -> DecoderEvent {
     DecoderEvent::of(&AdsbMessage {
         icao: icao.to_owned(),
-        df: 17,
+        df: Some(17),
         raw: "8D3C6444".to_owned(),
         ..AdsbMessage::default()
     })

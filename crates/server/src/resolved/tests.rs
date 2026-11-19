@@ -84,6 +84,7 @@ fn snapshot(channels: &[&str]) -> WorkspaceSnapshot {
             body: NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,

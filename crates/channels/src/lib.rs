@@ -19,14 +19,22 @@ mod dpmr;
 mod drm;
 mod dsc;
 mod dstar;
+mod dtmf;
 mod dvbt;
+mod edacs;
 mod eot;
 mod ermes;
+mod fleetsync;
 mod flex;
 mod freedv;
+mod gk2a_lrit;
 mod gnss;
+mod goes_hrit;
 mod gsm;
+mod hd_radio;
 mod hfdl;
+mod horus;
+mod hrpt;
 mod ident;
 mod ils;
 mod inmarsat_aero;
@@ -36,8 +44,11 @@ mod ism;
 mod ism_survey;
 mod lora;
 mod lrpt;
+mod ltr;
 mod m17;
+mod mdc1200;
 mod morse;
+mod mpt1327;
 mod navtex;
 mod nfm;
 mod noise_figure;
@@ -59,10 +70,12 @@ mod sstv;
 mod stanag;
 mod tetra;
 mod tetrapol;
+mod uat;
 mod vdl2;
 mod vor;
 mod weak_signal;
 mod wefax;
+mod wenet;
 mod wfm;
 mod wifi;
 mod wmbus;
@@ -88,19 +101,25 @@ pub mod synth {
     pub use crate::dpmr::synth as dpmr;
     pub use crate::drm::synth as drm;
     pub use crate::dstar::synth as dstar;
+    pub use crate::dtmf::synth as dtmf;
     pub use crate::dvbt::synth as dvbt;
+    pub use crate::edacs::synth as edacs;
     pub use crate::eot::synth as eot;
     pub use crate::ermes::synth as ermes;
     pub use crate::flex::synth as flex;
+    pub use crate::gk2a_lrit::synth as gk2a_lrit;
     pub use crate::gnss::synth as gnss;
+    pub use crate::goes_hrit::synth as goes_hrit;
     pub use crate::gsm::synth as gsm;
     #[cfg(any(test, feature = "fixtures"))]
     pub use crate::ident::fixtures as ident_fixtures;
     pub use crate::ism_survey::synth as ism_survey;
     pub use crate::lora::synth as lora;
     pub use crate::lrpt::synth as lrpt;
+    pub use crate::ltr::synth as ltr;
     pub use crate::m17::synth as m17;
     pub use crate::morse::synth as morse;
+    pub use crate::mpt1327::synth as mpt1327;
     pub use crate::navtex::synth as navtex;
     pub use crate::nfm::synth as nfm;
     pub use crate::noise_figure::synth as noise_figure;
@@ -121,9 +140,11 @@ pub mod synth {
     pub use crate::sstv::synth as sstv;
     pub use crate::tetra::synth as tetra;
     pub use crate::tetrapol::synth as tetrapol;
+    pub use crate::uat::synth as uat;
     pub use crate::vor::synth as vor;
     pub use crate::weak_signal::synth as weak_signal;
     pub use crate::wefax::synth as wefax;
+    pub use crate::wenet::synth as wenet;
     pub use crate::wfm::rds::synth as rds;
     pub use crate::wfm::synth as wfm;
     pub use crate::wmbus::synth as wmbus;
@@ -150,14 +171,19 @@ pub use dpmr::DpmrChannel;
 pub use drm::DrmChannel;
 pub use dsc::DscChannel;
 pub use dstar::DstarChannel;
+pub use dtmf::DtmfChannel;
 pub use dvbt::{DvbtBandwidth, DvbtChannel, DvbtParams, DvbtStandard, t2 as dvbt2};
 pub use eot::EotChannel;
 pub use ermes::ErmesChannel;
 pub use flex::FlexChannel;
 pub use freedv::FreeDvChannel;
+pub use gk2a_lrit::Gk2aLritChannel;
 pub use gnss::GnssChannel;
+pub use goes_hrit::GoesHritChannel;
 pub use gsm::GsmChannel;
+pub use hd_radio::{HdRadioChannel, HdRadioParams};
 pub use hfdl::HfdlChannel;
+pub use hrpt::HrptChannel;
 pub use ident::IdentChannel;
 pub use ils::IlsChannel;
 pub use inmarsat_aero::InmarsatAeroChannel;
@@ -169,11 +195,12 @@ pub use lora::LoraChannel;
 pub use lrpt::LrptChannel;
 pub use m17::M17Channel;
 pub use morse::MorseChannel;
+pub use mpt1327::Mpt1327Channel;
 pub use navtex::NavtexChannel;
 pub use nfm::{NfmChannel, NfmEncoderSettings, NfmModulator};
 pub use noise_figure::NoiseFigureChannel;
 pub use nxdn::NxdnChannel;
-pub use p25::P25Channel;
+pub use p25::{P25Channel, P25p2Channel};
 pub use per::PerChannel;
 pub use pocsag::PocsagChannel;
 pub use psk::PskChannel;
@@ -192,10 +219,12 @@ pub use sstv::SstvChannel;
 pub use stanag::StanagChannel;
 pub use tetra::TetraChannel;
 pub use tetrapol::TetrapolChannel;
+pub use uat::UatChannel;
 pub use vdl2::Vdl2Channel;
 pub use vor::VorChannel;
-pub use weak_signal::{Ft4Channel, Ft8Channel, WsprChannel};
+pub use weak_signal::{Ft4Channel, Ft8Channel, Js8Channel, Jt9Channel, Jt65Channel, WsprChannel};
 pub use wefax::WefaxChannel;
+pub use wenet::WenetChannel;
 pub use wfm::WfmChannel;
 pub use wifi::WifiOccupancyChannel;
 pub use wmbus::WmbusChannel;
@@ -227,19 +256,23 @@ pub use dpmr::DpmrParams;
 pub use drm::{DrmMode, DrmParams};
 pub use dsc::DscParams;
 pub use dstar::DstarParams;
+pub use dtmf::{DTMF_GAPS_MS, DtmfPace, DtmfParams, DtmfSequence};
 pub use eot::{
     EotArming, EotBattery, EotMessage, EotParams, EotReport, EotStatus, HotCommand, HotRequest,
 };
 pub use ermes::{ErmesMessage, ErmesParams};
 pub use flex::{FlexMessage, FlexParams};
 pub use freedv::{FreeDvMode, FreeDvParams};
-pub use gnss::{GnssFrame, GnssParams};
+pub use gk2a_lrit::{Gk2aLritImage, Gk2aLritParams};
+pub use gnss::{GnssFix, GnssFrame, GnssParams};
+pub use goes_hrit::{GoesHritImage, GoesHritParams, GoesPicture};
 pub use gsm::{
     GSM_CHANNEL_SPACING_HZ, GSM_SYMBOL_RATE_HZ, GsmAssignment, GsmBand, GsmCcch, GsmCell,
     GsmChannelType, GsmDedicated, GsmFrame, GsmHopping, GsmIdentity, GsmIdentityKind,
     GsmLapdmFrame, GsmLogicalChannel, GsmMessage, GsmParams, GsmProtocol, GsmSi, cipher_label,
 };
 pub use hfdl::HfdlParams;
+pub use hrpt::{HrptImage, HrptParams, HrptPicture};
 pub use ident::{
     IdentParams, MAX_IDENT_BANDWIDTH_HZ, MAX_IDENT_INTERVAL_MS, MAX_IDENT_THRESHOLD_DB,
     MIN_IDENT_BANDWIDTH_HZ, MIN_IDENT_INTERVAL_MS, MIN_IDENT_THRESHOLD_DB,
@@ -264,13 +297,14 @@ pub use lora::{
 pub use lrpt::{LrptImage, LrptMode, LrptParams};
 pub use m17::M17Params;
 pub use morse::{MorseParams, MorseText};
+pub use mpt1327::Mpt1327Params;
 pub use navtex::{NavtexMessage, NavtexParams};
 pub use nfm::{NfmParams, NfmScramblerMode, NfmToneMode, ScramblerStatus};
 pub use noise_figure::{
     MAX_ENR_DB, MEASUREMENT_REPORT_MS, MIN_ENR_DB, NoiseFigureParams, NoiseFigureReport,
 };
 pub use nxdn::{NxdnBandwidth, NxdnParams};
-pub use p25::P25Params;
+pub use p25::{P25Params, P25p2Params, P25p2Slots};
 pub use per::{MAX_PER_PAYLOAD_BYTES, MIN_PER_PAYLOAD_BYTES, PerBaud, PerParams, PerReport};
 pub use pocsag::{PocsagBaud, PocsagMessage, PocsagParams, PocsagPayload};
 pub use psk::{PskBaud, PskParams, PskText};
@@ -316,10 +350,15 @@ pub use tetrapol::{
     TetrapolBand, TetrapolCallType, TetrapolCell, TetrapolGroupCall, TetrapolKey,
     TetrapolLogicalChannel, TetrapolMessage, TetrapolParams, TetrapolPayload, TetrapolSystemInfo,
 };
+pub use uat::{FisbReport, UatParams};
 pub use vdl2::Vdl2Params;
 pub use vor::{VorParams, VorReading};
-pub use weak_signal::{WsjtMessage, WsjtParams, WsprParams, WsprSpot};
+pub use weak_signal::{
+    Fst4Message, Fst4Params, Fst4Period, Fst4wParams, Fst4wPeriod, Fst4wSpot, Js8Message,
+    Msk144Params, Q65Params, Q65Period, Q65Submode, WsjtMessage, WsjtParams, WsprParams, WsprSpot,
+};
 pub use wefax::{WefaxIoc, WefaxLpm, WefaxParams, WefaxPicture};
+pub use wenet::{WenetImage, WenetMode, WenetPacket, WenetParams, WenetTelemetry};
 pub use wfm::rds::RdsUpdate;
 pub use wfm::{DEEMPHASIS_US, WfmParams};
 pub use wifi::{WifiBand, WifiChannelLoad, WifiOccupancyParams, WifiOccupancyReport};

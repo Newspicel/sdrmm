@@ -23,6 +23,7 @@ fn channel(id: &str, channel_type: &str) -> PatchNode {
         NodeBody::Channel(ChannelNode {
             channel_type: channel_type.to_owned(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
     )
 }
@@ -64,7 +65,7 @@ fn from(source: &str, event: DecoderEvent) -> DecodedRecord {
 fn aircraft(icao: &str, callsign: &str) -> DecoderEvent {
     DecoderEvent::of(&AdsbMessage {
         icao: icao.to_owned(),
-        df: 17,
+        df: Some(17),
         callsign: Some(callsign.to_owned()),
         lat: Some(52.5),
         lon: Some(13.4),
@@ -573,7 +574,7 @@ fn a_record_its_station_let_through_survives_a_rewire() {
     let mut stations = crate::events::Stations::default();
     let ident = DecoderEvent::of(&AdsbMessage {
         icao: "3c6444".to_owned(),
-        df: 17,
+        df: Some(17),
         callsign: Some("DLH123".to_owned()),
         ..AdsbMessage::default()
     });

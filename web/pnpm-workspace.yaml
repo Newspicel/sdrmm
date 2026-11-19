@@ -19,5 +19,9 @@ trustPolicy: no-downgrade
 # same day through its `cooldown`.
 minimumReleaseAge: 1440
 
+# UI SDK ships betas faster than the cutoff while its API settles.
+minimumReleaseAgeExclude:
+  - "@ui-sdk/*"
+
 allowBuilds:
   '@scarf/scarf': false

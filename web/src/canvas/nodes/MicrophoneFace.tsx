@@ -6,6 +6,7 @@ import { MeterBar } from "../../components/face/Meter";
 import type { PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { talkTargets } from "../pushToTalk";
 import { FaceBody, NodeShell } from "./NodeShell";
 import { withMicrophone } from "./transmit";
@@ -93,39 +94,43 @@ function MicrophoneNodeFace({ node }: { node: PatchNodeOf<"microphone"> }) {
             />
           </span>
         </div>
-        <Chips>
-          <ToggleChip
-            label="VOX"
-            on={node.data.vox}
-            title="Key by voice: listens all the time and sends while you are louder than the threshold"
-            onChange={(vox) => edit({ vox })}
-          />
-          {node.data.vox && (
-            <>
-              <NumberChip
-                label="Opens"
-                title="Peak level that opens the voice key"
-                value={node.data.threshold_db}
-                unit="dB"
-                min={MIN_THRESHOLD_DB}
-                max={0}
-                step={1}
-                onCommit={(threshold_db) => edit({ threshold_db })}
-              />
-              <NumberChip
-                label="Hang"
-                title="How long the voice key stays open after you stop"
-                value={node.data.hang_ms}
-                unit="ms"
-                min={0}
-                max={MAX_HANG_MS}
-                step={100}
-                onCommit={(hang_ms) => edit({ hang_ms })}
-              />
-            </>
-          )}
-        </Chips>
       </FaceBody>
+      <Inspect node={node.id}>
+        <InspectSection label="Voice key">
+          <Chips inset="none">
+            <ToggleChip
+              label="VOX"
+              on={node.data.vox}
+              title="Key by voice: listens all the time and sends while you are louder than the threshold"
+              onChange={(vox) => edit({ vox })}
+            />
+            {node.data.vox && (
+              <>
+                <NumberChip
+                  label="Opens"
+                  title="Peak level that opens the voice key"
+                  value={node.data.threshold_db}
+                  unit="dB"
+                  min={MIN_THRESHOLD_DB}
+                  max={0}
+                  step={1}
+                  onCommit={(threshold_db) => edit({ threshold_db })}
+                />
+                <NumberChip
+                  label="Hang"
+                  title="How long the voice key stays open after you stop"
+                  value={node.data.hang_ms}
+                  unit="ms"
+                  min={0}
+                  max={MAX_HANG_MS}
+                  step={100}
+                  onCommit={(hang_ms) => edit({ hang_ms })}
+                />
+              </>
+            )}
+          </Chips>
+        </InspectSection>
+      </Inspect>
     </NodeShell>
   );
 }

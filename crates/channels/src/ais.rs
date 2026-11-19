@@ -39,6 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "AIS".to_owned(),
     summary: "Ship positions and names".to_owned(),
     family: DecoderFamily::MARINE,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 25_000.0,
     input_rate_hz: 48_000.0,
     has_audio: false,

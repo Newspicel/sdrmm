@@ -1,6 +1,6 @@
 {
   "name": "b2b9d9d8b7086a93",
-  "test": "propagation face > shows an empty model until spots arrive",
+  "test": "propagation face > keeps its settings in the inspector",
   "graph": {
     "nodes": [
       {

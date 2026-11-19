@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use super::per::Per;
+use sdrmm_dsp::coding::per::Per;
 
 mod tables;
 use tables::{DOWNLINK_ELEMENTS, UPLINK_ELEMENTS};

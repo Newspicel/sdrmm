@@ -557,6 +557,12 @@ describe("stopping a radio", () => {
     expect(html).toContain("keep it on the node, wires and settings included");
   });
 
+  it("leaves the radio's settings to the inspector", () => {
+    const devices = new Map([["dev", open]]);
+    expect(renderFace(DeviceFace, node, { graph, devices })).not.toContain(">Rate<");
+    expect(renderFace(DeviceFace, node, { graph, devices, inspected: true })).toContain(">Rate<");
+  });
+
   it("asks twice when a capture is running on the radio", () => {
     const capturing = {
       ...open,
@@ -695,7 +701,13 @@ describe("arrays on a radio", () => {
     const html = renderFace(DeviceFace, radio, { graph, devices: new Map([["kraken", held]]) });
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('title="Tuned by North"');
-    expect(html).toContain('title="Set on North"');
+    expect(html).not.toContain('title="Set on North"');
+    const inspected = renderFace(DeviceFace, radio, {
+      graph,
+      devices: new Map([["kraken", held]]),
+      inspected: true,
+    });
+    expect(inspected).toContain('title="Set on North"');
     expect(html).not.toContain("Make array");
   });
 });

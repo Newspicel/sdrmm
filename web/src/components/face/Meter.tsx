@@ -1,4 +1,10 @@
-import { Slider as Primitive } from "@base-ui/react/slider";
+import {
+  Slider as Primitive,
+  SliderControl,
+  SliderIndicator,
+  SliderThumb,
+  SliderTrack,
+} from "@ui-sdk/react/slider";
 import type { ReactNode } from "react";
 import { PortAnchor } from "../../canvas/nodes/NodeShell";
 import { formatPeak, HEADROOM, type MeterTone, meterUnit } from "../dbfs";
@@ -8,7 +14,9 @@ import {
   SLIDER_THUMB,
   SLIDER_THUMB_IDLE,
   SLIDER_TRACK,
+  SLIDER_TRAVEL,
 } from "../Slider";
+import { useRows } from "./Chips";
 
 const TONE: Record<MeterTone, string> = {
   ok: "bg-ok",
@@ -25,7 +33,15 @@ const THUMB_AUTO =
   "bg-panel shadow-[inset_0_0_0_1.5px_var(--color-ink-dim),0_0_0_1.5px_var(--color-panel)] " +
   "hover:shadow-[inset_0_0_0_1.5px_var(--color-accent),0_0_0_1.5px_var(--color-panel)]";
 
-const ROW = "grid h-7 grid-cols-[3.5rem_minmax(0,1fr)_3.75rem_2.75rem_0] items-center gap-x-2";
+const STACKED_ROW = "grid h-7 grid-cols-[minmax(0,1fr)_3.75rem_2.75rem] items-center gap-x-2";
+
+const STACKED_SOLO = "grid h-7 grid-cols-[minmax(0,1fr)_3.75rem] items-center gap-x-2";
+
+const ROW =
+  "grid h-7 grid-cols-[var(--meter-label,3.5rem)_minmax(0,1fr)_3.75rem_2.75rem_0] items-center gap-x-2";
+
+const SOLO_ROW =
+  "grid h-7 grid-cols-[var(--meter-label,3.5rem)_minmax(0,1fr)_3.75rem_0] items-center gap-x-2";
 
 export const METER_READOUT = "text-right font-mono text-xs tabular-nums whitespace-nowrap text-ink";
 
@@ -64,34 +80,23 @@ export function MeterSlider({
   className?: string;
 }) {
   return (
-    <Primitive.Root
+    <Primitive
       data-hotkeys="off"
-      thumbAlignment="edge"
       className={`flex ${className ?? "w-24"}`}
       value={value}
       min={min}
       max={max}
       step={step}
       disabled={disabled}
-      onValueChange={(next) => {
-        if (typeof next === "number") {
-          onChange(next);
-        }
-      }}
-      onValueCommitted={(next) => {
-        if (typeof next === "number") {
-          onCommit?.(next);
-        }
-      }}
+      onValueChange={(next) => onChange(next)}
+      onValueCommit={(next) => onCommit?.(next)}
     >
-      <Primitive.Control className={SLIDER_CONTROL} title={title}>
-        <Primitive.Track
+      <SliderControl className={SLIDER_CONTROL} title={title}>
+        <div
           className={SLIDER_TRACK}
           style={fill?.tint === undefined ? undefined : { backgroundImage: fill.tint }}
         >
-          {fill === undefined ? (
-            <Primitive.Indicator className={SLIDER_FILL} />
-          ) : (
+          {fill !== undefined && (
             <>
               <span
                 aria-hidden
@@ -107,13 +112,16 @@ export function MeterSlider({
               )}
             </>
           )}
-          <Primitive.Thumb
-            aria-label={label}
-            className={`${SLIDER_THUMB} ${auto ? THUMB_AUTO : SLIDER_THUMB_IDLE}`}
-          />
-        </Primitive.Track>
-      </Primitive.Control>
-    </Primitive.Root>
+          <SliderTrack className={SLIDER_TRAVEL}>
+            {fill === undefined && <SliderIndicator className={SLIDER_FILL} />}
+            <SliderThumb
+              aria-label={label}
+              className={`${SLIDER_THUMB} ${auto ? THUMB_AUTO : SLIDER_THUMB_IDLE}`}
+            />
+          </SliderTrack>
+        </div>
+      </SliderControl>
+    </Primitive>
   );
 }
 
@@ -190,6 +198,7 @@ export function MeterRow({
   trailing,
   port,
   title,
+  solo = false,
 }: {
   label: ReactNode;
   meter: ReactNode;
@@ -197,13 +206,28 @@ export function MeterRow({
   trailing?: ReactNode;
   port?: string;
   title?: string;
+  /** The only row on its face: the meter takes the room a trailing button would. */
+  solo?: boolean;
 }) {
+  const end = solo ? null : (trailing ?? <span />);
+  if (useRows()) {
+    return (
+      <div className="flex min-w-0 flex-col gap-1" title={title}>
+        {typeof label === "string" ? <span className="text-2xs text-ink-dim">{label}</span> : label}
+        <div className={solo ? STACKED_SOLO : STACKED_ROW}>
+          {meter}
+          {readout === undefined ? <span /> : <span className={METER_READOUT}>{readout}</span>}
+          {end}
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className={ROW} title={title}>
+    <div className={solo ? SOLO_ROW : ROW} title={title}>
       {typeof label === "string" ? <span className="legend truncate">{label}</span> : label}
       {meter}
       {readout === undefined ? <span /> : <span className={METER_READOUT}>{readout}</span>}
-      {trailing ?? <span />}
+      {end}
       {port !== undefined && <PortAnchor port={port} />}
     </div>
   );

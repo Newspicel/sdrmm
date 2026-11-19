@@ -19,27 +19,31 @@ export interface ScanPreset {
   channels: BandChannel[];
 }
 
+export function rangeNeed(settings: ScanSettings): string | null {
+  const empty = (settings.ranges ?? []).length === 0 && (settings.frequencies ?? []).length === 0;
+  return empty ? "Add a range" : null;
+}
+
 export function rangeProblem(settings: ScanSettings): string | null {
   const ranges = settings.ranges ?? [];
-  if (ranges.length === 0 && (settings.frequencies ?? []).length === 0) {
-    return "add a range";
-  }
   const reversed = ranges.findIndex((range) => range.stop_hz < range.start_hz);
   if (reversed >= 0) {
-    return `${rangeLine(ranges, reversed)}the stop frequency is below the start`;
+    return rangeSaid(ranges, reversed, "the stop frequency is below the start");
   }
   const unstepped = ranges.findIndex((range) => !(range.step_hz > 0));
   if (unstepped >= 0) {
-    return `${rangeLine(ranges, unstepped)}the step has to be above zero`;
+    return rangeSaid(ranges, unstepped, "the step has to be above zero");
   }
   if (targetCount(settings) > MAX_SCAN_TARGETS) {
-    return `over ${MAX_SCAN_TARGETS} targets: widen the step or narrow the range`;
+    return `Over ${MAX_SCAN_TARGETS} targets: widen the step or narrow the range`;
   }
   return null;
 }
 
-function rangeLine(ranges: readonly ScanRange[], index: number): string {
-  return ranges.length > 1 ? `range ${index + 1}: ` : "";
+function rangeSaid(ranges: readonly ScanRange[], index: number, text: string): string {
+  return ranges.length > 1
+    ? `Range ${index + 1}: ${text}`
+    : `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 
 function rangeTargets(range: ScanRange): number {

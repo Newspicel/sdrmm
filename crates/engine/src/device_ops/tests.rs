@@ -117,7 +117,7 @@ fn open(engine: &Engine, per_stream: StreamScope) -> u32 {
         sinks: Vec::new(),
     };
     engine
-        .create_opened_set(info, Box::new(device))
+        .create_opened_set(info, Box::new(device), sdrmm_wire::RadioUse::Receive)
         .expect("the mock radio opens")
 }
 

@@ -12,7 +12,9 @@ import type { PatchNode, PatchNodeOf, ScheduleNode, ScheduleWindow } from "../..
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
-import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
+import { Inspect, InspectSection } from "../inspector";
+import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
+import { useUnwired, type Want } from "./needs";
 import {
   clockText,
   daysOn,
@@ -24,6 +26,7 @@ import {
 } from "./schedule";
 
 const NOW_EVERY_MS = 30_000;
+const WANTS: readonly Want[] = [{ port: "control", out: true }];
 
 export function ScheduleFace({ node }: { node: PatchNode }) {
   if (node.kind !== "schedule") {
@@ -36,6 +39,7 @@ function ScheduleNodeFace({ node }: { node: PatchNodeOf<"schedule"> }) {
   const workspace = useWorkspaceContext();
   const status = useScheduleStore((store) => store.byNode[node.id]) ?? null;
   const now = useNow(NOW_EVERY_MS);
+  const unwired = useUnwired(node.id, WANTS);
   const windows = node.data.windows ?? [];
   const edit = (next: ScheduleNode): void =>
     workspace.edit((snapshot) => ({
@@ -55,45 +59,45 @@ function ScheduleNodeFace({ node }: { node: PatchNodeOf<"schedule"> }) {
       category="tool"
       subtitle={stateLine(status, windows.length, now)}
     >
+      <Inspect node={node.id}>
+        <InspectSection label="Windows">
+          {windows.map((window, index) => (
+            <WindowRow
+              // biome-ignore lint/suspicious/noArrayIndexKey: windows have no identity of their own
+              key={index}
+              window={window}
+              onChange={(next) =>
+                setWindows(windows.map((held, at) => (at === index ? next : held)))
+              }
+              onRemove={() => setWindows(windows.filter((_, at) => at !== index))}
+            />
+          ))}
+          <Button
+            type="button"
+            className={`${BTN} self-start`}
+            disabled={full}
+            title={full ? `At most ${SCHEDULE_LIMITS.windows}` : undefined}
+            onClick={() => setWindows([...windows, newWindow()])}
+          >
+            Add window
+          </Button>
+        </InspectSection>
+        <InspectSection label="Clock">
+          <Chips inset="none">
+            <TextChip
+              label="Zone"
+              title="IANA time zone, such as Europe/Berlin. Empty keeps the server clock"
+              value={node.data.zone ?? ""}
+              placeholder="server"
+              maxLength={SCHEDULE_LIMITS.zone_len}
+              onCommit={(zone) => edit(zoned(zone.trim()))}
+            />
+          </Chips>
+        </InspectSection>
+      </Inspect>
       <FaceBody>
-        {windows.length > 0 && (
-          <div className="flex flex-col gap-1.5 p-2">
-            {windows.map((window, index) => (
-              <WindowRow
-                // biome-ignore lint/suspicious/noArrayIndexKey: windows have no identity of their own
-                key={index}
-                window={window}
-                onChange={(next) =>
-                  setWindows(windows.map((held, at) => (at === index ? next : held)))
-                }
-                onRemove={() => setWindows(windows.filter((_, at) => at !== index))}
-              />
-            ))}
-          </div>
-        )}
-        <Chips>
-          <TextChip
-            label="Zone"
-            title="IANA time zone, such as Europe/Berlin. Empty keeps the server clock"
-            value={node.data.zone ?? ""}
-            placeholder="server"
-            maxLength={SCHEDULE_LIMITS.zone_len}
-            onCommit={(zone) => edit(zoned(zone.trim()))}
-          />
-        </Chips>
-        {status?.error != null && <FaceFault message={status.error} />}
+        {unwired || status?.error == null ? <FaceEmpty /> : <FaceFault message={status.error} />}
       </FaceBody>
-      <FaceFooter>
-        <Button
-          type="button"
-          className={BTN}
-          disabled={full}
-          title={full ? `At most ${SCHEDULE_LIMITS.windows}` : undefined}
-          onClick={() => setWindows([...windows, newWindow()])}
-        >
-          Add window
-        </Button>
-      </FaceFooter>
     </NodeShell>
   );
 }

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 558140.625,
+    "core:recorder": "SDRmm",
+    "core:hw": "RTL-SDR, nrsc5 project sample capture",
+    "core:description": "KUT 90.5 MHz Austin HD Radio hybrid FM, primary main sidebands (MP1)"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-19T15:29:32.32451Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "github.com/theori-io/nrsc5 support/sample.xz at 6d07a1e5fb, GPL-3.0; source SHA-256 4d6d3505d5aabef7bbafb4f7d5963a407b2e44916613e513c3cbb0a4604f03c9; samples 297675..3646519 at 1488375 Hz",
+      "core:sample_count": 1255817,
+      "core:sample_start": 0
+    }
+  ]
+}

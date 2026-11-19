@@ -38,6 +38,9 @@ export function FusionHeat({
     }
   });
   const box = { w: size.width, h: size.height };
+  if (frame === null && hint !== null) {
+    return <FaceEmpty hint={hint} />;
+  }
   return (
     <div
       ref={ref}

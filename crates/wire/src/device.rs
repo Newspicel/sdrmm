@@ -191,6 +191,97 @@ impl Duplex {
     }
 }
 
+/// What the operator uses a radio for. Receive keeps a transmitter off it; Send runs no
+/// receive stream, so a half-duplex radio never has to stop listening for a burst.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RadioUse {
+    #[default]
+    Receive,
+    Send,
+    Both,
+}
+
+impl RadioUse {
+    pub const ALL: [Self; 3] = [Self::Receive, Self::Send, Self::Both];
+
+    #[must_use]
+    pub const fn receives(self) -> bool {
+        matches!(self, Self::Receive | Self::Both)
+    }
+
+    #[must_use]
+    pub const fn sends(self) -> bool {
+        matches!(self, Self::Send | Self::Both)
+    }
+
+    #[must_use]
+    pub const fn is_receive(&self) -> bool {
+        matches!(self, Self::Receive)
+    }
+
+    #[must_use]
+    pub const fn does(self, side: Direction) -> bool {
+        match side {
+            Direction::Rx => self.receives(),
+            Direction::Tx => self.sends(),
+        }
+    }
+
+    /// The uses that do `side`.
+    #[must_use]
+    pub fn doing(side: Direction) -> Vec<Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|used| used.does(side))
+            .collect()
+    }
+
+    /// The uses a radio of this duplex offers.
+    #[must_use]
+    pub fn offered(duplex: Duplex) -> Vec<Self> {
+        match duplex {
+            Duplex::RxOnly => vec![Self::Receive],
+            Duplex::TxOnly => vec![Self::Send],
+            Duplex::Half | Duplex::Full => vec![Self::Receive, Self::Send, Self::Both],
+        }
+    }
+
+    /// This use, narrowed to what a radio of `duplex` can do.
+    #[must_use]
+    pub const fn within(self, duplex: Duplex) -> Self {
+        match duplex {
+            Duplex::RxOnly => Self::Receive,
+            Duplex::TxOnly => Self::Send,
+            Duplex::Half | Duplex::Full => self,
+        }
+    }
+}
+
+/// What a radio does right now, for its node's header.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RadioActivity {
+    #[default]
+    Idle,
+    Receiving,
+    Sending,
+    /// A half-duplex radio on air: its receiver waits for the burst to end.
+    ReceivePaused,
+}
+
+impl RadioActivity {
+    #[must_use]
+    pub const fn of(radio_use: RadioUse, duplex: Duplex, running: bool, on_air: bool) -> Self {
+        match (on_air, running && radio_use.receives()) {
+            (true, true) if !duplex.simultaneous() => Self::ReceivePaused,
+            (true, _) => Self::Sending,
+            (false, true) => Self::Receiving,
+            (false, false) => Self::Idle,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct Range {
     pub min: f64,
@@ -1437,6 +1528,45 @@ impl DeviceSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_radio_offers_only_the_uses_its_duplex_allows() {
+        assert_eq!(RadioUse::offered(Duplex::RxOnly), [RadioUse::Receive]);
+        assert_eq!(RadioUse::offered(Duplex::TxOnly), [RadioUse::Send]);
+        assert_eq!(RadioUse::offered(Duplex::Half).len(), 3);
+        assert_eq!(RadioUse::Both.within(Duplex::RxOnly), RadioUse::Receive);
+        assert_eq!(RadioUse::Receive.within(Duplex::TxOnly), RadioUse::Send);
+        assert_eq!(RadioUse::Send.within(Duplex::Full), RadioUse::Send);
+    }
+
+    #[test]
+    fn a_half_duplex_radio_on_air_pauses_its_receiver() {
+        let of = RadioActivity::of;
+        assert_eq!(
+            of(RadioUse::Both, Duplex::Half, true, true),
+            RadioActivity::ReceivePaused
+        );
+        assert_eq!(
+            of(RadioUse::Both, Duplex::Full, true, true),
+            RadioActivity::Sending
+        );
+        assert_eq!(
+            of(RadioUse::Send, Duplex::Half, true, true),
+            RadioActivity::Sending
+        );
+        assert_eq!(
+            of(RadioUse::Send, Duplex::Half, true, false),
+            RadioActivity::Idle
+        );
+        assert_eq!(
+            of(RadioUse::Receive, Duplex::Half, true, false),
+            RadioActivity::Receiving
+        );
+        assert_eq!(
+            of(RadioUse::Receive, Duplex::Half, false, false),
+            RadioActivity::Idle
+        );
+    }
 
     fn caps(freq_ranges: Vec<Range>, sample_rates: Vec<f64>, duplex: Duplex) -> Capabilities {
         Capabilities {

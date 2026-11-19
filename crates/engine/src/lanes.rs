@@ -7,7 +7,7 @@ use crate::{
 
 impl Engine {
     pub(crate) fn restart_lanes(&self, ds: u32) -> Result<(), EngineError> {
-        let (runtime, settings, blocking) = {
+        let (runtime, settings, blocking, receive) = {
             let inner = self.lock();
             let state = inner
                 .device_sets
@@ -17,6 +17,7 @@ impl Engine {
                 state.runtime.clone(),
                 state.settings.clone(),
                 dc_block(&state.capabilities, &state.settings),
+                state.radio_use.receives(),
             )
         };
         let handover = self.prepare_handover(ds);
@@ -32,6 +33,7 @@ impl Engine {
             &settings,
             blocking,
             &taps,
+            receive,
             fault_handler(self, ds),
         )?;
         swap_runtime(self, ds, receiving, handover)?;

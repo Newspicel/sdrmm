@@ -1,14 +1,13 @@
 use super::*;
+use crate::DecoderFamily;
 
 const OLD_FACES: &[(&str, Face)] = &[
-    ("device", Face::fit(420).dial()),
+    ("device", Face::fit(320).dial()),
     ("gps", Face::fit(360)),
-    ("channel", Face::fit(440).dial()),
+    ("channel", Face::fit(320).dial()),
     ("event_output", Face::fit(420)),
     ("event_filter", Face::fit(380)),
-    ("audio_fx", Face::fit(400)),
     ("scope", Face::sized(520, 360).min(320, 200)),
-    ("baseband_scope", Face::sized(420, 340).min(320, 200)),
     ("speaker", Face::fit(320)),
     ("map", Face::sized(520, 380).min(300, 220)),
     ("signal_map", Face::sized(600, 440).min(400, 300)),
@@ -26,7 +25,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("scanner", Face::fit(400)),
     ("hunt", Face::fit(360)),
     ("schedule", Face::fit(360)),
-    ("satellite", Face::fit(420).dial()),
+    ("satellite", Face::fit(320).dial()),
     ("rotator", Face::fit(340)),
     ("aim", Face::fit(340)),
     ("sky_scan", Face::fit(400)),
@@ -36,8 +35,8 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("processor", Face::fit(400)),
     ("note", Face::sized(320, 200).min(200, 120)),
     ("microphone", Face::fit(300)),
-    ("encoder", Face::fit(280)),
-    ("transmit", Face::fit(360)),
+    ("encoder", Face::fit(320).dial()),
+    ("transmit", Face::fit(320).dial()),
 ];
 
 fn as_sent(body: &NodeBody) -> serde_json::Value {
@@ -114,7 +113,6 @@ fn every_kind_has_a_role_and_a_face() {
         .collect();
     assert_eq!(radios, [NodeKind::Device], "one node picks a radio");
     assert_eq!(NodeKind::EventFilter.role(), Role::Pass(PortType::Events));
-    assert_eq!(NodeKind::AudioFx.role(), Role::Pass(PortType::Audio));
 }
 
 #[test]
@@ -205,4 +203,25 @@ fn channels_encoders_and_processors_each_pick_from_their_own_registry() {
             .all(|(kind, _)| ["channel", "encoder", "processor"].contains(kind)),
         "{picked:?}"
     );
+}
+
+#[test]
+fn the_catalog_lists_built_in_groups_then_a_plugins_own() {
+    let plugin = ChannelDescriptor {
+        family: DecoderFamily::new("space_weather"),
+        ..ChannelDescriptor::default()
+    };
+    let aviation = ChannelDescriptor {
+        family: DecoderFamily::AVIATION,
+        ..ChannelDescriptor::default()
+    };
+    let catalog = PatchCatalog::build().with_families_of(&[plugin.clone(), aviation, plugin]);
+    let titles: Vec<&str> = catalog
+        .families
+        .iter()
+        .map(|family| family.title.as_str())
+        .collect();
+    assert_eq!(titles.len(), DecoderFamily::BUILT_IN.len() + 1);
+    assert_eq!(titles[0], "Analog voice");
+    assert_eq!(titles.last(), Some(&"Space weather"));
 }

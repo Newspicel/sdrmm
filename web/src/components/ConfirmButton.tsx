@@ -2,10 +2,10 @@ import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./BaseControls";
 import {
-  BTN_DANGER,
-  BTN_DANGER_ARMED,
   BTN_DANGER_SM,
   BTN_SM_DANGER,
+  FACE_BTN_DANGER,
+  FACE_BTN_DANGER_ARMED,
   ICON_BTN_SM_DANGER,
   ICON_BTN_SM_DANGER_ARMED,
 } from "./controls";
@@ -13,10 +13,10 @@ import { Icon } from "./Icon";
 
 export const CONFIRM_ARM_MS = 3000;
 
-export type ConfirmSize = "md" | "sm" | "icon";
+export type ConfirmSize = "face" | "sm" | "icon";
 
 const CLASS: Record<ConfirmSize, readonly [idle: string, armed: string]> = {
-  md: [BTN_DANGER, BTN_DANGER_ARMED],
+  face: [FACE_BTN_DANGER, FACE_BTN_DANGER_ARMED],
   sm: [BTN_SM_DANGER, BTN_DANGER_SM],
   icon: [ICON_BTN_SM_DANGER, ICON_BTN_SM_DANGER_ARMED],
 };
@@ -34,7 +34,7 @@ export function ConfirmButton({
   onConfirm,
   title,
   disabled = false,
-  size = "md",
+  size = "face",
   icon,
 }: {
   label: string;

@@ -14,7 +14,6 @@ import { arrayStatus, capabilities, deviceSet, laneStatus, placed } from "../../
 import { portName } from "../../test/resolved";
 import { ArrayFace } from "./ArrayFace";
 import { ALIASING, NOT_WIRED, SAME_PLACE } from "./ArrayGeometryEditor";
-import { NO_LANES_HINT } from "./ArrayLanes";
 import { NO_HEADING, NO_HEADING_TITLE, TIER_TITLE } from "./ArraySettings";
 import { PICK_ONE } from "./arrayNode";
 
@@ -62,13 +61,32 @@ function render(
   array: PatchNode = ARRAY,
   devices: ReadonlyMap<string, DeviceSet> = DEVICES,
 ): string {
+  return draw(false, edges, status, array, devices);
+}
+
+function inspect(
+  edges: PatchEdge[],
+  status?: ArrayStatus,
+  array: PatchNode = ARRAY,
+  devices: ReadonlyMap<string, DeviceSet> = DEVICES,
+): string {
+  return draw(true, edges, status, array, devices);
+}
+
+function draw(
+  inspected: boolean,
+  edges: PatchEdge[],
+  status: ArrayStatus | undefined,
+  array: PatchNode,
+  devices: ReadonlyMap<string, DeviceSet>,
+): string {
   useArrayStore.setState({
     byNode: status === undefined ? {} : { north: status },
     receivedAt: status === undefined ? {} : { north: Date.now() },
   });
   const drawn = graph(edges);
   const nodes = drawn.nodes.map((node) => (node.id === array.id ? array : node));
-  return renderFace(ArrayFace, array, { graph: { ...drawn, nodes }, devices });
+  return renderFace(ArrayFace, array, { graph: { ...drawn, nodes }, devices, inspected });
 }
 
 function withData(data: Partial<ArrayNode>): PatchNode {
@@ -95,7 +113,6 @@ afterEach(() => useArrayStore.getState().reset());
 describe("ArrayFace", () => {
   it("shows a row per wired lane and a Calibrate button", () => {
     const empty = render([]);
-    expect(empty).toContain(NO_LANES_HINT);
     expect(laneRows(empty)).toBe(0);
     expect(empty).toContain("no lanes");
     expect(attributesOf(empty, "Calibrate")).toContain('disabled=""');
@@ -110,11 +127,14 @@ describe("ArrayFace", () => {
     expect(five).toContain("No cal");
     expect(attributesOf(five, "Calibrate")).toContain('title="Line up lane phase and gain"');
     expect(attributesOf(five, "Calibrate")).not.toContain('disabled=""');
-    expect(five).toContain('aria-label="Lane tuning"');
     expect(five).toContain('aria-label="Lane 2 quality"');
-    expect(five).toContain('aria-label="Auto gain"');
-    for (const section of ["Geometry", "Calibration"]) {
-      expect(five).toMatch(new RegExp(`</span>${section}</\\w+>`));
+    expect(five).not.toContain('aria-label="Auto gain"');
+    expect(five).not.toContain('aria-label="Lane tuning"');
+    const inspected = inspect(wires("kraken", 5), fiveLanes({ cal: "none" }));
+    expect(inspected).toContain('aria-label="Auto gain"');
+    expect(inspected).toContain('aria-label="Lane tuning"');
+    for (const section of ["Gain", "Orientation", "Geometry", "Calibration"]) {
+      expect(inspected).toContain(`>${section}</h3>`);
     }
   });
 
@@ -128,8 +148,8 @@ describe("ArrayFace", () => {
     const one = render(wires("kraken", 5), fiveLanes({ tier: "phase_coherent" }));
     expect(one).not.toContain(`aria-label="${TIER_TITLE}"`);
     expect(one).toMatch(/>Tier<.*>Shared LO</);
-    expect(render(wires("kraken", 5))).toMatch(/>Tier<\/span><b[^>]*>Shared LO</);
-    const two = render([...wires("kraken", 4), ...wires("rtl", 1, 4)], fiveLanes());
+    expect(inspect(wires("kraken", 5))).toMatch(/>Tier<\/span>.*>Shared LO</);
+    const two = inspect([...wires("kraken", 4), ...wires("rtl", 1, 4)], fiveLanes());
     expect(two).toContain(`aria-label="${TIER_TITLE}"`);
     expect(two).toContain("RTL-SDR iq");
   });
@@ -167,6 +187,13 @@ describe("ArrayFace", () => {
     expect(render(wires("kraken", 5), fiveLanes())).not.toContain(ALIASING);
   });
 
+  it("shows a missing wire as a need, not a fault", () => {
+    const html = render(wires("kraken", 5), fiveLanes({ failure: { kind: "needs_position" } }));
+    expect(html).toContain("Wire a GPS");
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain("failed");
+  });
+
   it("spans spread lanes and hides the span when tuned together", () => {
     const spread = deviceSet({
       capabilities: capabilities({ rx_streams: 3, per_stream: { tuning: true } }),
@@ -180,16 +207,18 @@ describe("ArrayFace", () => {
     });
     const devices = new Map([["kraken", spread]]);
     const status = fiveLanes({ tuning: "spread" });
-    const html = render(wires("kraken", 3), status, withData({ tuning: "spread" }), devices);
-    expect(html).toMatch(/>Span<\/span><b[^>]*>6.0480 MHz</);
-    expect(render(wires("kraken", 3), status, ARRAY, devices)).not.toContain("Span");
+    const html = inspect(wires("kraken", 3), status, withData({ tuning: "spread" }), devices);
+    expect(html).toMatch(/>Span<\/span>.*>6.0480 MHz</);
+    expect(inspect(wires("kraken", 3), status, ARRAY, devices)).not.toContain("Span");
   });
 
   it("asks for a heading source when the array follows one", () => {
     const heading = withData({ orientation: { kind: "heading", mount_offset_deg: 0 } });
     const html = render(wires("kraken", 5), fiveLanes(), heading);
     expect(html).toContain(`>${NO_HEADING}<`);
-    expect(html).toContain(`aria-label="${NO_HEADING_TITLE}"`);
+    expect(html).toContain(`title="${NO_HEADING_TITLE}"`);
+    expect(html).not.toMatch(/[" ]text-danger/);
+    expect(inspect(wires("kraken", 5), fiveLanes(), heading)).toContain(`>${NO_HEADING}<`);
     expect(render(wires("kraken", 5), fiveLanes())).not.toContain(`>${NO_HEADING}<`);
   });
 
@@ -205,15 +234,16 @@ describe("ArrayFace", () => {
         ],
       },
     });
-    const html = render(wires("kraken", 3), fiveLanes(), custom);
+    const html = inspect(wires("kraken", 3), fiveLanes(), custom);
     expect(html.match(new RegExp(`<tr title="${NOT_WIRED}"`, "g"))).toHaveLength(1);
     expect(html.match(new RegExp(`<tr title="${SAME_PLACE}"`, "g"))).toHaveLength(1);
     expect(html).toContain(">Trim<");
-    expect(render(wires("kraken", 4), fiveLanes(), custom)).not.toContain(">Trim<");
+    expect(inspect(wires("kraken", 4), fiveLanes(), custom)).not.toContain(">Trim<");
+    expect(render(wires("kraken", 3), fiveLanes(), custom)).not.toContain(">Trim<");
   });
 
   it("asks to pick a tier and swaps Rec for Stop while recording", () => {
-    const html = render(
+    const html = inspect(
       [...wires("kraken", 4), ...wires("rtl", 1, 4)],
       fiveLanes({
         recording: { stem: "north-1", started_at: "", samples: 4_096_000, dropped: 0 },

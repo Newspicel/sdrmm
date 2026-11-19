@@ -159,3 +159,7 @@ export function isTyping(target: EventTarget | null): boolean {
     target.closest('[data-hotkeys="off"]') !== null
   );
 }
+
+export function inPopup(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.closest('[role="dialog"], [role="menu"]') !== null;
+}

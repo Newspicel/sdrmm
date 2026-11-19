@@ -41,6 +41,39 @@ impl ViterbiK7 {
         self.run(coded, out, Some(0))
     }
 
+    /// Decodes one tail-biting block, whose encoder started in the state its own last six bits
+    /// leave. The trellis opens `wrap` steps before the block on its own end and runs `wrap`
+    /// steps past it into its start, so both edges settle; the bits in between are the block.
+    pub fn decode_tail_biting(&mut self, coded: &[Soft], wrap: usize, out: &mut Vec<bool>) -> i32 {
+        let outputs = self.code.outputs();
+        let steps = coded.len() / outputs;
+        if steps == 0 {
+            return 0;
+        }
+        let wrap = wrap.min(steps);
+        self.decisions.clear();
+        self.decisions.reserve(steps + 2 * wrap);
+        self.trellis.open();
+        for index in 0..steps + 2 * wrap {
+            let at = (index + steps - wrap) % steps * outputs;
+            let word = self.trellis.step(&self.code, &coded[at..at + outputs]);
+            self.decisions.push(word);
+            self.trellis.normalize();
+        }
+        let state = self.trellis.best_state();
+        let metric = self.trellis.metrics()[state];
+        let start = out.len();
+        let mut visited = 0usize;
+        trace(&self.decisions, state, |bit| {
+            if (wrap..wrap + steps).contains(&visited) {
+                out.push(bit);
+            }
+            visited += 1;
+        });
+        out[start..].reverse();
+        metric
+    }
+
     fn run(&mut self, coded: &[Soft], out: &mut Vec<bool>, end: Option<usize>) -> i32 {
         let outputs = self.code.outputs();
         let steps = coded.len() / outputs;

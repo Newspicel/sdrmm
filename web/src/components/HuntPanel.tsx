@@ -1,15 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { HuntSweep, HuntSweepChips } from "../canvas/nodes/HuntSweep";
-import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
+import { HuntSweep } from "../canvas/nodes/HuntSweep";
+import { FaceBody, FaceEmpty, FaceFooter } from "../canvas/nodes/NodeShell";
 import { nodeAction, STATE_KEY } from "../lib/api";
 import { type Clicker, startClicker } from "../lib/geiger";
 import { useHuntStore } from "../lib/hunt";
 import { clearAction, failAction } from "../lib/refusals";
-import type { HuntAction, HuntStatus, HuntSweepParams } from "../lib/types";
+import type { HuntAction, HuntStatus } from "../lib/types";
 import { Button } from "./BaseControls";
-import { BTN, BTN_DANGER, BTN_PRIMARY } from "./controls";
-import { Chips, ToggleChip } from "./face/Chips";
+import { FACE_BTN, FACE_BTN_DANGER } from "./controls";
 import { FaceFault } from "./face/Fault";
 import { Readout, Readouts } from "./face/Readouts";
 import { FaceStats, Stat } from "./face/Stats";
@@ -33,13 +32,10 @@ export const MARK_ACTION = "Mark";
 export interface HuntPanelProps {
   node: string;
   target: HuntTarget | null;
-  hint: string;
+  unwired: boolean;
   scanning: boolean;
   clicks: boolean;
-  onClicks: (clicks: boolean) => void;
   positionWired: boolean;
-  sweep: HuntSweepParams | null;
-  onSweep: (next: Partial<HuntSweepParams>) => void;
 }
 
 function useClicks(running: boolean, clicks: boolean, strength: number): void {
@@ -100,24 +96,23 @@ function useHuntActions(node: string) {
 export function HuntPanel({
   node,
   target,
-  hint,
+  unwired,
   scanning,
   clicks,
-  onClicks,
   positionWired,
-  sweep,
-  onSweep,
 }: HuntPanelProps) {
   const pushed = useHuntStore((s) => s.byNode[node]);
   const status = liveHunt(target?.set ?? null, node, pushed);
   useClicks(status !== null, clicks, status?.strength ?? 0);
   const actions = useHuntActions(node);
   const refusal = huntRefusal(target, scanning);
-  const blocked = target === null || actions.busy || refusal !== null;
+  const blocked = target === null || unwired || actions.busy || refusal !== null;
   return (
     <>
-      <FaceBody title={target === null ? hint : undefined}>
-        {status !== null && target !== null ? (
+      <FaceBody>
+        {unwired ? (
+          <FaceEmpty />
+        ) : status !== null && target !== null ? (
           <>
             <HuntReading status={status} target={target} />
             {positionWired && (
@@ -143,18 +138,14 @@ export function HuntPanel({
             {refusal !== null && <FaceFault message={refusal.label} detail={refusal.title} />}
           </>
         )}
-        {status?.error != null && <FaceFault message={status.error} />}
-        <Chips className="border-t border-line">
-          <ToggleChip label="Clicks" title="Geiger clicks" on={clicks} onChange={onClicks} />
-          {positionWired && sweep !== null && <HuntSweepChips params={sweep} edit={onSweep} />}
-        </Chips>
+        {!unwired && status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
       <FaceFooter>
         {status !== null && <HuntStats status={status} />}
         {status !== null && target !== null ? (
           <Button
             type="button"
-            className={BTN_DANGER}
+            className={FACE_BTN_DANGER}
             disabled={actions.busy}
             onClick={() => actions.stop.mutate(target)}
           >
@@ -165,7 +156,7 @@ export function HuntPanel({
             {positionWired && (
               <Button
                 type="button"
-                className={BTN}
+                className={FACE_BTN}
                 title="Turn slowly all the way round"
                 disabled={blocked}
                 onClick={() => target !== null && actions.turn.mutate(target)}
@@ -175,7 +166,7 @@ export function HuntPanel({
             )}
             <Button
               type="button"
-              className={BTN_PRIMARY}
+              className={FACE_BTN}
               disabled={blocked}
               onClick={() => target !== null && actions.start.mutate(target)}
             >

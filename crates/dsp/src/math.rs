@@ -9,4 +9,5 @@ pub mod rng;
 pub mod special;
 pub mod stats;
 pub mod vector;
+pub mod walsh;
 pub mod window;

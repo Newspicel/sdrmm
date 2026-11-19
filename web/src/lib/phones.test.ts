@@ -119,10 +119,10 @@ describe("phones", () => {
   it("tells online, offline and not paired apart", () => {
     const phones = [phone({ online: true })];
     expect(phoneStanding(phones, "p0123456789abcdef", null)).toBe("online");
-    expect(phoneStanding(phones, "p0123456789abcdef", "phone offline")).toBe("offline");
+    expect(phoneStanding(phones, "p0123456789abcdef", "Phone offline")).toBe("offline");
     expect(phoneStanding([phone()], "p0123456789abcdef", null)).toBe("offline");
     expect(phoneStanding(phones, "p9999999999999999", null)).toBe("not_paired");
-    expect(phoneStanding(undefined, "p0123456789abcdef", "phone not paired")).toBe("not_paired");
+    expect(phoneStanding(undefined, "p0123456789abcdef", "Phone not paired")).toBe("not_paired");
     expect(phoneStanding(undefined, "p0123456789abcdef", null)).toBeNull();
   });
 

@@ -6,8 +6,8 @@ use std::{
 
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
-    AgcSetting, Capabilities, DeviceSetStatus, DeviceSettings, GainValue, ServerEvent, StateScope,
-    StreamScope, StreamSettings, Tuning,
+    AgcSetting, Capabilities, DeviceSetStatus, DeviceSettings, GainValue, RadioUse, ServerEvent,
+    StateScope, StreamScope, StreamSettings, Tuning,
 };
 
 use crate::{
@@ -461,9 +461,13 @@ impl Engine {
             if state.status != DeviceSetStatus::Error {
                 return;
             }
-            (state.info.id(), state.settings.clone())
+            (
+                state.info.id(),
+                state.settings.clone(),
+                state.radio_use.receives(),
+            )
         };
-        let (device_id, stored_settings) = stored;
+        let (device_id, stored_settings, receive) = stored;
 
         let opened = self
             .registry
@@ -490,23 +494,24 @@ impl Engine {
         let gate = Arc::new(Mutex::new(FaultGate::Pending(None)));
         let fault_tx = self.fault_tx.clone();
         let handler_gate = gate.clone();
-        let runtime = match CaptureRuntime::start(device, &settings, blocking, move |err| {
-            let mut gate = handler_gate
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match &mut *gate {
-                FaultGate::Pending(slot) => *slot = Some(err),
-                FaultGate::Armed => {
-                    let _ = fault_tx.send((ds, err));
+        let runtime =
+            match CaptureRuntime::start(device, &settings, blocking, receive, move |err| {
+                let mut gate = handler_gate
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                match &mut *gate {
+                    FaultGate::Pending(slot) => *slot = Some(err),
+                    FaultGate::Armed => {
+                        let _ = fault_tx.send((ds, err));
+                    }
                 }
-            }
-        }) {
-            Ok(runtime) => runtime,
-            Err(e) => {
-                self.note_reconnect_failure(ds, &e.to_string());
-                return;
-            }
-        };
+            }) {
+                Ok(runtime) => runtime,
+                Err(e) => {
+                    self.note_reconnect_failure(ds, &e.to_string());
+                    return;
+                }
+            };
         let cmd_txs = runtime.command_senders();
         let overruns = runtime.overruns_counters();
         let stalls = runtime.stall_counters();
@@ -607,14 +612,24 @@ impl Engine {
         }
     }
 
+    /// Opens a radio for whatever it can do, as a patch-free caller wants it.
     pub fn create_device_set(&self, device_id: &str) -> Result<u32, EngineError> {
+        self.open_device_set(device_id, RadioUse::Both)
+    }
+
+    /// Opens a radio for `radio_use`, narrowed to what the radio can do.
+    pub fn open_device_set(
+        &self,
+        device_id: &str,
+        radio_use: RadioUse,
+    ) -> Result<u32, EngineError> {
         let _claim = self.claim(device_id)?;
         let (info, device) = self.registry.open(device_id)?;
         let resolved = info.id();
         let _same_radio_other_spelling = (resolved != device_id)
             .then(|| self.claim(&resolved))
             .transpose()?;
-        self.create_opened_set(info, device)
+        self.create_opened_set(info, device, radio_use)
     }
 
     fn claim(&self, device_id: &str) -> Result<Claim<'_>, EngineError> {
@@ -636,12 +651,14 @@ impl Engine {
         &self,
         info: sdrmm_wire::DeviceInfo,
         device: Box<dyn sdrmm_device::SdrDevice>,
+        radio_use: RadioUse,
     ) -> Result<u32, EngineError> {
         if let Err(already) = self.refuse_reopen(&info.id()) {
             drop(device);
             return Err(already);
         }
         let capabilities = device.capabilities().clone();
+        let radio_use = radio_use.within(capabilities.duplex);
         let settings = DeviceSettings {
             tuning: Some(Tuning::default()),
             ..device.settings().clone()
@@ -660,6 +677,7 @@ impl Engine {
             device,
             &settings,
             dc_block(&capabilities, &settings),
+            radio_use.receives(),
             move |err| {
                 let _ = fault_tx.send((id, err));
             },
@@ -724,6 +742,7 @@ impl Engine {
                     held: BTreeMap::new(),
                     locked: BTreeSet::new(),
                     virtual_lanes: BTreeMap::new(),
+                    radio_use,
                 },
             );
             inner.revision += 1;

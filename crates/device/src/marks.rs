@@ -45,6 +45,12 @@ pub enum LaneEvent {
         at: u64,
         ns: i64,
     },
+    /// The receiver stepped aside for a transmit burst: `samples` from `at` were never taken,
+    /// so they are a gap in time but not a loss.
+    Deaf {
+        at: u64,
+        samples: u64,
+    },
 }
 
 #[derive(Clone)]

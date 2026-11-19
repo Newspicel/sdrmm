@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "WSJT-X sample 181211_120500.wav",
+    "core:description": "MSK144 off air on 6 m: a meteor ping carrying K1JT WA4CQG EM72, 12:05:06 to 12:05:11 UTC"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 50260000.0,
+      "core:datetime": "2018-12-11T12:05:06Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:sample_start": 0,
+      "core:sample_count": 60000,
+      "core:comment": "Source: https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/samples/MSK144/181211_120500.wav (GPL-3.0); source SHA-256 3247e2ab4dbdd51e3d1b4c5ef8ead6d499335180fe6ebd26417a8f89a46fd5b7; samples 72000..132000 at 12000 Hz; 16-bit mono audio as I, quadrature zero"
+    }
+  ]
+}

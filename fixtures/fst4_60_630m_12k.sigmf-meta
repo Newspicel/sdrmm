@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "WSJT-X sample 210115_0058.wav",
+    "core:description": "FST4-60 off air on 630 m: three stations calling CQ, 2021-01-15 00:58 UTC; the dial frequency is nominal"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 474200.0,
+      "core:datetime": "2021-01-15T00:58:00Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:sample_start": 0,
+      "core:sample_count": 720000,
+      "core:comment": "Source: https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/samples/FST4+FST4W/210115_0058.wav (GPL-3.0); source SHA-256 0dd5f25cfba45835bcde54ee60fbff7500c95c4f7b9b25f98a57fe319013987f; samples 0..720000 at 12000 Hz; 16-bit mono audio as I, quadrature zero"
+    }
+  ]
+}

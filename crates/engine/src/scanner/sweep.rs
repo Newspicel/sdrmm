@@ -58,6 +58,9 @@ pub(crate) fn enter(engine: &Engine, ds: u32, plan: &SweepPlan) -> Result<(), En
                 "the device set is not running".to_string(),
             ));
         }
+        if !state.radio_use.receives() {
+            return Err(EngineError::Scan("the radio is set to send".to_string()));
+        }
         if let Some(array) = state.holder() {
             return Err(EngineError::Held {
                 array: array.to_owned(),
@@ -105,14 +108,13 @@ fn restore_receiving(
     taps: &[SpectrumTap],
     handover: Handover,
 ) -> Result<(), EngineError> {
-    let settings = {
+    let (settings, receive) = {
         let inner = engine.lock();
-        inner
+        let state = inner
             .device_sets
             .get(&ds)
-            .ok_or(EngineError::DeviceSetNotFound(ds))?
-            .settings
-            .clone()
+            .ok_or(EngineError::DeviceSetNotFound(ds))?;
+        (state.settings.clone(), state.radio_use.receives())
     };
     let blocking = dc_block(device.capabilities(), &settings);
     device
@@ -123,6 +125,7 @@ fn restore_receiving(
         &settings,
         blocking,
         taps,
+        receive,
         fault_handler(engine, ds),
     )
     .map_err(EngineError::Device)?;

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
+import { Inspect, InspectSection } from "../canvas/inspector";
+import { FaceBody, FaceEmpty, FaceFooter } from "../canvas/nodes/NodeShell";
 import {
   clearDecoderLog,
   DECODER_LOG_KEY,
@@ -40,7 +41,7 @@ import {
   writeColumnWidths,
 } from "./decoderLog";
 import { formatClock } from "./decoderViews";
-import { ChoiceChip } from "./face/Chips";
+import { Chips, ChoiceChip } from "./face/Chips";
 import { FaceFault } from "./face/Fault";
 import { FaceStats, Stat } from "./face/Stats";
 import { formatMhz } from "./format";
@@ -133,16 +134,9 @@ export function DecoderLogPanel({
 
   return (
     <>
-      <FaceBody scroll={false}>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 p-2">
-          <div className="flex items-center gap-2">
-            <Input
-              className={`${FIELD_SM} min-w-0 flex-1`}
-              placeholder="Search station or summary"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Search decoder log"
-            />
+      <Inspect node={wires.sink}>
+        <InspectSection>
+          <Chips inset="none">
             <ChoiceChip
               label="Group"
               title="One row per frequency or station"
@@ -156,6 +150,19 @@ export function DecoderLogPanel({
               value={filter.limit}
               options={LIMIT_CHOICES}
               onChange={pickLimit}
+            />
+          </Chips>
+        </InspectSection>
+      </Inspect>
+      <FaceBody scroll={false}>
+        <div className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+          <div className="flex items-center gap-2">
+            <Input
+              className={`${FIELD_SM} min-w-0 flex-1`}
+              placeholder="Search station or summary"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search decoder log"
             />
           </div>
 
@@ -175,15 +182,7 @@ export function DecoderLogPanel({
               <DecoderLogGroups rows={groups} by={group} scroller={scroller} />
             )}
 
-            {shown === 0 && (
-              <div className="px-3 py-2 text-sm text-ink-dim">
-                {source.isPending
-                  ? "Loading…"
-                  : isFiltered(filter)
-                    ? "No rows match this filter."
-                    : "Nothing logged yet."}
-              </div>
-            )}
+            {shown === 0 && <FaceEmpty hint={emptyHint(wires, filter, source.isPending)} />}
           </div>
         </div>
         {source.isError && <FaceFault message={`Log unavailable: ${source.error.message}`} />}
@@ -220,6 +219,16 @@ export function DecoderLogPanel({
       </FaceFooter>
     </>
   );
+}
+
+function emptyHint(wires: WireScope, filter: LogFilter, pending: boolean): string | undefined {
+  if (!wires.wired) {
+    return undefined;
+  }
+  if (pending) {
+    return "Loading";
+  }
+  return isFiltered(filter) ? "No rows match" : "Nothing logged yet";
 }
 
 function LogTable({

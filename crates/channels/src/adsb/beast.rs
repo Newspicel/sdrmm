@@ -32,6 +32,9 @@ pub(crate) fn feeds() -> Vec<FeedSpec> {
 }
 
 fn encode(message: &AdsbMessage) -> Result<Vec<u8>, &'static str> {
+    if message.df.is_none() {
+        return Err("Beast carries Mode S, not UAT");
+    }
     let kind = match message.raw.len() {
         14 => b'2',
         28 => b'3',
@@ -72,6 +75,7 @@ mod tests {
     fn message() -> AdsbMessage {
         AdsbMessage {
             raw: "8D40621D58C382D690C8AC2863A7".to_owned(),
+            df: Some(17),
             timestamp_12mhz: Some(0x0102_0304_0506),
             signal_level: Some(128),
             ..AdsbMessage::default()
@@ -119,6 +123,15 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn a_uat_report_is_refused_rather_than_framed_as_mode_s() {
+        let uat = AdsbMessage {
+            df: None,
+            ..message()
+        };
+        assert_eq!(encode(&uat), Err("Beast carries Mode S, not UAT"));
     }
 
     #[test]

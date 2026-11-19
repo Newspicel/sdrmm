@@ -68,6 +68,9 @@ pub struct AimStatus {
     pub driving: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What the node waits for, never a fault: a wire, a setting or data still to come.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub readouts: Vec<Field>,
 }

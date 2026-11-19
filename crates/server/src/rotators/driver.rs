@@ -21,7 +21,7 @@ use crate::{AppState, satellites::unix_now};
 
 const POLL: Duration = Duration::from_secs(1);
 const RETRY: Duration = Duration::from_secs(5);
-const UNWIRED: &str = "wire what to point at";
+const UNWIRED: &str = "Wire what to point at";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Aim {
@@ -112,7 +112,8 @@ impl Driver {
                 target: aim.map(|aim| mount.bearing(aim.target)),
                 awaiting_pass: aim.is_some_and(|aim| aim.awaiting_pass),
                 flipped: aim.is_some_and(|aim| aim.flipped),
-                error: (follow.settings.mode == RotatorMode::Track && !follow.wired)
+                error: None,
+                waiting: (follow.settings.mode == RotatorMode::Track && !follow.wired)
                     .then(|| UNWIRED.to_owned()),
             });
             if !wait(woken, POLL) {

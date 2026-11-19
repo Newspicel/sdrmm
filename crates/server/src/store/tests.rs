@@ -511,7 +511,7 @@ fn an_upserted_recording_carries_the_annotation_disk_last_reported() {
 fn adsb(icao: &str, callsign: &str) -> DecoderEvent {
     DecoderEvent::of(&AdsbMessage {
         icao: icao.to_string(),
-        df: 17,
+        df: Some(17),
         callsign: Some(callsign.to_string()),
         raw: "8D3C6444".to_string(),
         ..AdsbMessage::default()
@@ -2481,39 +2481,35 @@ fn tapped_scope_snapshot(fed: bool) -> serde_json::Value {
 }
 
 #[test]
-fn a_scope_wired_only_to_baseband_becomes_a_baseband_scope() {
+fn a_scope_wired_only_to_baseband_retires_with_the_baseband_scopes() {
     let migrated = parse_workspace_snapshot(&tapped_scope_snapshot(false).to_string()).unwrap();
     migrated.validate().unwrap();
-    assert_eq!(
-        migrated.graph.node("scope").unwrap().body,
-        sdrmm_wire::NodeBody::BasebandScope
+    assert!(migrated.graph.node("scope").is_none());
+    assert!(
+        migrated
+            .graph
+            .edges
+            .iter()
+            .all(|edge| edge.to.node != "scope")
     );
 }
 
 #[test]
-fn a_scope_wired_to_both_hands_baseband_to_a_new_node() {
+fn a_scope_wired_to_both_keeps_its_iq_and_loses_the_baseband_wire() {
     let migrated = parse_workspace_snapshot(&tapped_scope_snapshot(true).to_string()).unwrap();
     migrated.validate().unwrap();
     assert_eq!(
         migrated.graph.node("scope").unwrap().body,
         sdrmm_wire::NodeBody::Scope
     );
-    let twin = migrated.graph.node("baseband_scope:scope").unwrap();
-    assert_eq!(twin.body, sdrmm_wire::NodeBody::BasebandScope);
-    assert!(
-        migrated
-            .graph
-            .edges
-            .iter()
-            .any(|edge| edge.to.node == "baseband_scope:scope" && edge.to.port == "baseband")
-    );
-    assert!(
-        !migrated
-            .graph
-            .edges
-            .iter()
-            .any(|edge| edge.to.node == "scope" && edge.to.port == "baseband")
-    );
+    let into_scope: Vec<&str> = migrated
+        .graph
+        .edges
+        .iter()
+        .filter(|edge| edge.to.node == "scope")
+        .map(|edge| edge.to.port.as_str())
+        .collect();
+    assert_eq!(into_scope, vec!["iq"]);
     let again = serde_json::to_string(&migrated).unwrap();
     assert_eq!(parse_workspace_snapshot(&again).unwrap(), migrated);
 }

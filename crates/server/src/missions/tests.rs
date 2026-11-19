@@ -72,6 +72,7 @@ fn channel(id: &str) -> PatchNode {
         NodeBody::Channel(ChannelNode {
             channel_type: "nfm".to_owned(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
     )
 }

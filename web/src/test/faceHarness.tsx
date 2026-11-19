@@ -3,6 +3,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import type { ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { type Workspace, WorkspaceProvider } from "../canvas/context";
+import { InlineInspector } from "../canvas/inspector";
 import type {
   ChannelDescriptor,
   ChannelInfo,
@@ -31,6 +32,8 @@ export interface FaceHarness {
   problems?: readonly NodeProblem[];
   selected?: string | null;
   trunks?: readonly TrunkSystemStatus[];
+  /** Draws the face as inspected, its inspector content in place. */
+  inspected?: boolean;
 }
 
 const NO_DEVICES: ReadonlyMap<string, DeviceSet> = new Map();
@@ -63,6 +66,8 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     select: () => {},
     expanded: null,
     expand: () => {},
+    inspected: null,
+    inspect: () => {},
     talking: false,
     edit: () => {},
     editSettings: () => {},
@@ -79,8 +84,15 @@ export function renderFace(
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <ReactFlowProvider>
-        <WorkspaceProvider value={stubWorkspace(harness)}>
-          <Face node={node} />
+        <WorkspaceProvider
+          value={{
+            ...stubWorkspace(harness),
+            inspected: harness.inspected === true ? node.id : null,
+          }}
+        >
+          <InlineInspector>
+            <Face node={node} />
+          </InlineInspector>
         </WorkspaceProvider>
       </ReactFlowProvider>
     </QueryClientProvider>,

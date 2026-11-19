@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "JS8Call test recording E_2_1.wav",
+    "core:description": "JS8 Slow off-air audio from the JS8Call test set, represented as real-valued complex IQ; the dial frequency was not recorded"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 14078000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://github.com/js8call/js8call/blob/a7ff1be0/media/tests/E_2_1.wav (GPL-3.0-or-later); source SHA-256 4d0fde963c9f07501572234582c1bb5ae5f847b53fd51137377f9805ea7e157b; samples 0..360000 at 12000 Hz",
+      "core:sample_count": 360000,
+      "core:sample_start": 0
+    }
+  ]
+}

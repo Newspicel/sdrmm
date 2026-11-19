@@ -16,6 +16,7 @@ import {
   formatMhz,
   liveStatus,
   presetIn,
+  rangeNeed,
   rangeProblem,
   scanPresets,
   stateLabel,
@@ -38,9 +39,17 @@ describe("rangeProblem", () => {
 
   it("names the reversed line when there is more than one", () => {
     const reversed = { start_hz: 2, stop_hz: 1, step_hz: 1 };
-    expect(rangeProblem({ ranges: [reversed] })).toMatch(/^the stop frequency/);
-    expect(rangeProblem({ ranges: [...(SETTINGS.ranges ?? []), reversed] })).toMatch(/^range 2: /);
-    expect(rangeProblem({ ranges: [] })).toMatch(/add a range/);
+    expect(rangeProblem({ ranges: [reversed] })).toMatch(/^The stop frequency/);
+    expect(rangeProblem({ ranges: [...(SETTINGS.ranges ?? []), reversed] })).toMatch(/^Range 2: /);
+  });
+});
+
+describe("rangeNeed", () => {
+  it("asks for a range only while there is nothing to sweep", () => {
+    expect(rangeNeed({ ranges: [] })).toBe("Add a range");
+    expect(rangeNeed(SETTINGS)).toBeNull();
+    expect(rangeNeed({ ranges: [], frequencies: [227_360_000] })).toBeNull();
+    expect(rangeProblem({ ranges: [] })).toBeNull();
   });
 });
 
@@ -80,7 +89,7 @@ describe("the engine's target cap", () => {
 
   it("names the line whose step cannot advance", () => {
     expect(rangeProblem({ ranges: [{ start_hz: 1, stop_hz: 2, step_hz: 0 }] })).toMatch(
-      /^the step has to be above zero/,
+      /^The step has to be above zero/,
     );
   });
 });

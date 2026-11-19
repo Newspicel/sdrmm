@@ -1,5 +1,5 @@
-import { Collapsible } from "@base-ui/react/collapsible";
 import { useMutation } from "@tanstack/react-query";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@ui-sdk/react/collapsible";
 import { Button } from "../../components/BaseControls";
 import { ALERT, BTN, LABEL } from "../../components/controls";
 import { formatHz } from "../../components/format";
@@ -129,16 +129,16 @@ export function DeviceReport({
       </div>
 
       {report.info.length > 0 && (
-        <Collapsible.Root className="text-xs text-ink-dim">
-          <Collapsible.Trigger className="cursor-pointer text-xs text-ink-dim hover:text-ink">
+        <Collapsible className="text-xs text-ink-dim">
+          <CollapsibleTrigger className="cursor-pointer text-xs text-ink-dim hover:text-ink">
             Device info
-          </Collapsible.Trigger>
-          <Collapsible.Panel>
+          </CollapsibleTrigger>
+          <CollapsiblePanel>
             <pre className="mt-2 overflow-x-auto rounded-control border border-line bg-panel-2 p-2 font-mono text-2xs leading-relaxed">
               {report.info.join("\n")}
             </pre>
-          </Collapsible.Panel>
-        </Collapsible.Root>
+          </CollapsiblePanel>
+        </Collapsible>
       )}
     </div>
   );

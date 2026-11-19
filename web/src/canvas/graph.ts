@@ -150,7 +150,7 @@ export interface NodeSize {
 
 export const FIT_MIN_W = 280;
 
-const DIAL_MIN_W = 420;
+const DIAL_MIN_W = 320;
 
 export function nodeType(kind: NodeKind): NodeTypeInfo | undefined {
   return catalogType(kind);

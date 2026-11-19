@@ -1,0 +1,178 @@
+---
+import Page from "../layouts/Page.astro";
+import { ALL, allocations, band, CATALOG, counts, familyTitle, levelOf, rate } from "../modes";
+
+const summary = "Every mode SDRmm decodes, and how well each is tested.";
+const tally = counts(CATALOG, "");
+const groups = [{ id: ALL, title: "All" }, ...CATALOG.families];
+---
+
+<Page title="Modes · SDRmm" description={summary} summary={summary}>
+  <div class="wrap top">
+    <h1>Modes</h1>
+    <p class="lede">{summary}</p>
+
+    <div class="filters">
+      <label class="search">
+        <span>Search</span>
+        <input type="search" placeholder="Name" autocomplete="off" />
+      </label>
+      <div class="tabs" role="tablist" aria-label="Group">
+        {
+          groups.map((group) => (
+            <button
+              type="button"
+              role="tab"
+              data-family={group.id}
+              aria-selected={group.id === ALL ? "true" : "false"}
+              tabindex={group.id === ALL ? undefined : -1}
+            >
+              {group.title} <span class="count">{tally.get(group.id) ?? 0}</span>
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="sheet" role="table" aria-label="Modes">
+      <div class="row head" role="row">
+        <span role="columnheader">Mode</span>
+        <span role="columnheader">Group</span>
+        <span role="columnheader">Band</span>
+        <span role="columnheader" title="Sample rate the mode needs">Rate</span>
+        <span role="columnheader">Tested</span>
+      </div>
+      {
+        CATALOG.modes.map((mode) => {
+          const level = levelOf(CATALOG, mode.verification);
+          return (
+            <div class="row" role="row" data-family={mode.family} data-id={mode.type_id}>
+              <span class="mode" role="cell">
+                <strong>{mode.name}</strong>
+                <small>{mode.summary}</small>
+              </span>
+              <span role="cell">{familyTitle(CATALOG, mode.family)}</span>
+              <span role="cell" class="num" title={allocations(mode.bands) || undefined}>
+                {band(mode.bands)}
+              </span>
+              <span role="cell" class="num">{rate(mode.input_rate_hz)}</span>
+              <span role="cell" class={`level ${mode.verification}`} title={level?.means}>
+                {level?.label ?? mode.verification}
+              </span>
+            </div>
+          );
+        })
+      }
+      <p class="none" hidden>No mode matches.</p>
+    </div>
+
+    <dl class="key">
+      {
+        CATALOG.levels.map((level) => (
+          <div>
+            <dt class={`level ${level.id}`}>{level.label}</dt>
+            <dd>{level.means}</dd>
+          </div>
+        ))
+      }
+    </dl>
+    <p class="note">Details in the <a href="/docs/user-guide/decoders">decoder docs</a>.</p>
+  </div>
+</Page>
+
+<style>
+  .top { padding-block: clamp(56px, 9vw, 112px); }
+  .filters { display: grid; gap: 16px; margin-bottom: 24px; }
+  .search { display: flex; flex-direction: column; gap: 6px; max-width: 360px; }
+  .search span { font-size: 14px; font-weight: 500; color: var(--ink-dim); }
+  .search input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--well);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+  }
+  .search input:hover { border-color: var(--line-strong); }
+  .search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+  .count { color: var(--ink-faint); }
+  .sheet {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-face);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: baseline;
+    padding: 12px 20px;
+    font-size: 15px;
+    color: var(--ink-dim);
+  }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row[hidden] { display: none; }
+  .head { font: 12px var(--mono); color: var(--ink-faint); text-transform: uppercase; }
+  .mode { display: flex; flex-direction: column; }
+  .mode strong { font-weight: 600; color: var(--ink); }
+  .mode small { font-size: 14px; color: var(--ink-faint); }
+  .num { font: 13px var(--mono); }
+  .level { font: 13px var(--mono); }
+  .level.on_air { color: var(--audio); }
+  .level.reference_fixture { color: var(--accent); }
+  .level.own_modulator { color: var(--ink-dim); }
+  .level.experimental, .level.unverified { color: var(--events); }
+  .none { margin: 0; padding: 20px; color: var(--ink-faint); }
+  .key { display: grid; gap: 6px; margin: 28px 0 0; font-size: 15px; }
+  .key div { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .key dd { margin: 0; color: var(--ink-faint); }
+
+  @media (max-width: 760px) {
+    .head { display: none; }
+    .row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; }
+    .mode { grid-column: 1 / -1; }
+  }
+</style>
+
+<script>
+  import { ALL, CATALOG, counts, shown } from "../modes";
+  import { tabs } from "../tabs";
+
+  const search = document.querySelector<HTMLInputElement>(".search input");
+  const list = document.querySelector<HTMLElement>(".filters .tabs");
+  const rows = [...document.querySelectorAll<HTMLElement>(".row[data-family]")];
+  const none = document.querySelector<HTMLElement>(".none");
+  const byId = new Map(CATALOG.modes.map((mode) => [mode.type_id, mode]));
+  let family = ALL;
+
+  function refresh() {
+    const query = search?.value ?? "";
+    let left = 0;
+    for (const row of rows) {
+      const mode = byId.get(row.dataset.id ?? "");
+      row.hidden = mode === undefined || !shown(mode, query, family);
+      left += row.hidden ? 0 : 1;
+    }
+    if (none !== null) {
+      none.hidden = left > 0;
+    }
+    const tally = counts(CATALOG, query);
+    for (const count of list?.querySelectorAll<HTMLElement>("[data-family]") ?? []) {
+      const label = count.querySelector(".count");
+      if (label !== null) {
+        label.textContent = String(tally.get(count.dataset.family ?? "") ?? 0);
+      }
+    }
+  }
+
+  if (list !== null) {
+    tabs(list, (tab) => {
+      family = tab.dataset.family ?? ALL;
+      refresh();
+    });
+  }
+  search?.addEventListener("input", refresh);
+</script>

@@ -13,13 +13,14 @@
     "record:resolved": "node scripts/record-resolved.mjs",
     "e2e": "playwright test",
     "demo:record": "playwright test -c playwright.demo.config.ts",
-    "lint": "node scripts/check-base-ui.mjs && node scripts/check-design-tokens.mjs && oxlint --type-aware",
+    "lint": "node scripts/check-ui-sdk.mjs && node scripts/check-design-tokens.mjs && oxlint --type-aware",
     "format": "biome check --write ."
   },
   "dependencies": {
-    "@base-ui/react": "^1.9.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@tanstack/react-query": "5.107.1",
+    "@ui-sdk/core": "0.1.0-beta.5",
+    "@ui-sdk/react": "0.1.0-beta.5",
     "@xyflow/react": "^12.12.1",
     "lucide-react": "1.70.0",
     "maplibre-gl": "6.17.0",

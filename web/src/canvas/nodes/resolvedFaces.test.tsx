@@ -15,7 +15,7 @@ const OUTPUT: PatchNode = placed("out", {
   data: { target: { service: "desktop" } },
 });
 const DECODER = placed("nfm", { kind: "channel", data: { channel_type: "nfm" } });
-const WIRE_IN = "Wire events in";
+const FED = "One notification per event";
 
 function call(id: number): ChannelInfo {
   return {
@@ -45,13 +45,13 @@ describe("faces read the resolved patch", () => {
     };
     expect(
       renderFace(EventOutputFace, OUTPUT, { graph: drawn, resolved: fedOutput([]) }),
-    ).toContain(WIRE_IN);
+    ).not.toContain(FED);
     expect(
       renderFace(EventOutputFace, OUTPUT, {
         graph: { nodes: [OUTPUT], edges: [] },
         resolved: fedOutput(["nfm"]),
       }),
-    ).not.toContain(WIRE_IN);
+    ).toContain(FED);
   });
 
   it("marks a node with the problems the server found", () => {
@@ -153,11 +153,11 @@ describe("faces read the resolved patch", () => {
         ),
       ]),
     ]);
-    const html = renderFace(EventFilterFace, filter, {
-      graph: { nodes: [filter], edges: [] },
-      catalog: PROBE_CATALOG,
-      resolved,
-    });
+    const harness = { graph: { nodes: [filter], edges: [] }, catalog: PROBE_CATALOG, resolved };
+    const face = renderFace(EventFilterFace, filter, harness);
+    expect(face).toContain(">keep every event<");
+    expect(face).not.toContain(`aria-label="Match Satellite events"`);
+    const html = renderFace(EventFilterFace, filter, { ...harness, inspected: true });
     expect(html).toContain(`aria-label="Match Satellite events"`);
     expect(html).toContain(`aria-label="Match Probe plane events"`);
   });

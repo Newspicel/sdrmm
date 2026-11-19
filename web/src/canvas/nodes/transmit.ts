@@ -59,7 +59,3 @@ export function withMicrophone(
 ): PatchNode {
   return node.kind === "microphone" ? { ...node, data: { ...node.data, ...next } } : node;
 }
-
-export function peakText(status: TransmitStatus): string {
-  return status.peak_db == null ? "none" : `${status.peak_db.toFixed(1)} dBFS`;
-}

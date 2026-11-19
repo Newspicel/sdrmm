@@ -33,6 +33,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "SSB".to_owned(),
     summary: "Single sideband voice, USB or LSB".to_owned(),
     family: DecoderFamily::ANALOG_VOICE,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 3_000.0,
     input_rate_hz: 48_000.0,
     has_audio: true,

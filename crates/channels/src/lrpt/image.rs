@@ -12,7 +12,6 @@ pub const FIRST_APID: u16 = 64;
 pub const LAST_APID: u16 = 69;
 #[cfg(any(test, feature = "synth"))]
 pub const TELEMETRY_APID: u16 = 70;
-pub const IDLE_APID: u16 = 0x7FF;
 pub const BLUE_APID: u16 = 64;
 pub const RED_APID: u16 = 65;
 pub const PACKETS_PER_ROW: i64 = 3 * MCUS_PER_PACKET as i64 + 1;

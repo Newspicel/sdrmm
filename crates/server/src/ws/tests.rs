@@ -162,6 +162,7 @@ fn channel(id: &str, channel_type: &str) -> sdrmm_wire::PatchNode {
         sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
             channel_type: channel_type.to_owned(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
     )
 }
@@ -952,6 +953,7 @@ fn map_workspace(state: &AppState) {
             sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
                 channel_type: "adsb".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
         ),
         ("map", sdrmm_wire::NodeBody::Map),
@@ -996,7 +998,7 @@ fn aircraft(icao: &str) -> sdrmm_wire::DecodedRecord {
         freq_hz: 1_090_000_000.0,
         event: sdrmm_wire::DecoderEvent::of(&sdrmm_channels::AdsbMessage {
             icao: icao.to_string(),
-            df: 17,
+            df: Some(17),
             lat: Some(52.5),
             lon: Some(13.4),
             raw: "8D3C6444".to_string(),

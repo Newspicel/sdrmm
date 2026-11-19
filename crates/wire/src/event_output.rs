@@ -549,6 +549,9 @@ pub struct FeedStatus {
     pub clients: u32,
     pub frames: u64,
     pub error: Option<String>,
+    /// What the node waits for, never a fault: a wire, a setting or data still to come.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

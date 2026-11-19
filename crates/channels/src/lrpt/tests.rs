@@ -5,10 +5,9 @@ use num_complex::Complex;
 use sdrmm_wire::ChannelParams;
 
 use super::{
-    frame::Deframer,
     image::{BLUE_APID, Imagery, Placement, RED_APID, WIDTH},
     jpeg::{Block, MCU_PIXELS, MCUS_PER_PACKET, McuDecoder},
-    link::{PairMap, VCDU_BYTES, VcduHeader, conv_code},
+    link::{IMAGE_VCID, deframer, depacketizer},
     *,
 };
 use crate::synth::{
@@ -17,6 +16,7 @@ use crate::synth::{
 };
 use sdrmm_decoder::VideoPicture;
 use sdrmm_decoder_test_support::{at_snr, complex_noise, settings};
+use sdrmm_modem::ccsds::{CODED_BITS, PairMap, VCDU_BYTES, VcduHeader, conv_code};
 
 const RATE: f64 = INPUT_RATE_HZ;
 const BLOCKS: [usize; 5] = [4_096, 1, 997, 65_536, 12_288];
@@ -171,6 +171,19 @@ fn damaged_frames_are_counted_and_leave_gaps_in_place() {
 }
 
 #[test]
+fn a_failed_frame_is_rejected_beyond_the_picture() {
+    let (_, mut frames) = scene_cadus(&DEFAULT_APIDS, 4);
+    for byte in &mut frames[8][200..600] {
+        *byte ^= 0xC3;
+    }
+    let iq = with_tail(modulate(LrptMode::Qpsk72, &frames, RATE));
+    let mut chan = channel(LrptMode::Qpsk72);
+    assert_eq!(chan.rejected(), 0);
+    run(&mut chan, &iq, &BLOCKS, &mut Received::default());
+    assert!(chan.rejected() >= 1, "rejected {}", chan.rejected());
+}
+
+#[test]
 fn a_night_pass_shows_the_infrared_channel() {
     let (scene, frames) = scene_cadus(&[68], 2);
     let iq = with_tail(modulate(LrptMode::Oqpsk72, &frames, RATE));
@@ -263,21 +276,17 @@ fn the_deframer_resolves_every_rotation_and_offset() {
                 received.push(a);
                 received.push(b);
             }
-            let mut deframer = Deframer::new();
+            let mut deframer = deframer();
             let mut decoded = Vec::new();
             for chunk in received.chunks(3_000) {
                 deframer.push(chunk);
                 while let Some(outcome) = deframer.next_frame() {
-                    decoded.push((outcome, VcduHeader::parse(deframer.vcdu())));
+                    decoded.push((outcome, VcduHeader::parse(deframer.vcdu()).expect("VCDU")));
                 }
             }
             assert_eq!(decoded.len(), frames.len() - 1, "{map:?} skew {skew}");
             assert!(decoded.iter().all(|(outcome, _)| !outcome.failed));
-            assert!(
-                decoded
-                    .iter()
-                    .any(|(_, header)| header.vcid == link::IMAGE_VCID)
-            );
+            assert!(decoded.iter().any(|(_, header)| header.vcid == IMAGE_VCID));
             assert_eq!(deframer.vcdu().len(), VCDU_BYTES);
         }
     }
@@ -299,8 +308,8 @@ fn recorded_soft() -> Vec<i16> {
 
 #[test]
 fn a_recorded_meteor_m2_row_decodes_cleanly() {
-    let mut deframer = Deframer::new();
-    let mut depacketizer = Depacketizer::new();
+    let mut deframer = deframer();
+    let mut depacketizer = depacketizer();
     let mut imagery = Imagery::new();
     let mut counters = Vec::new();
     let mut placed = Vec::new();
@@ -308,12 +317,12 @@ fn a_recorded_meteor_m2_row_decodes_cleanly() {
         deframer.push(chunk);
         while let Some(outcome) = deframer.next_frame() {
             assert!(!outcome.failed, "frame {}", counters.len());
-            let header = VcduHeader::parse(deframer.vcdu());
-            assert_eq!(header.vcid, link::IMAGE_VCID);
+            let header = VcduHeader::parse(deframer.vcdu()).expect("VCDU");
+            assert_eq!(header.vcid, IMAGE_VCID);
             counters.push(header.counter);
             depacketizer.load(deframer.vcdu());
             while let Some(packet) = depacketizer.next_packet() {
-                let header = PacketHeader::parse(packet);
+                let header = PacketHeader::parse(packet).expect("packet");
                 let placement = imagery.place(packet, header.apid, header.sequence);
                 if placement != Placement::Ignored {
                     placed.push((header.apid, placement));
@@ -348,7 +357,7 @@ fn a_recorded_meteor_m2_row_decodes_cleanly() {
 fn a_quarter_turn_phase_slip_costs_one_frame() {
     let (_, frames) = scene_cadus(&DEFAULT_APIDS, 1);
     let soft = coded_soft(&frames);
-    let slip = link::CODED_BITS * 5 + link::CODED_BITS / 3;
+    let slip = CODED_BITS * 5 + CODED_BITS / 3;
     let turned = PairMap {
         swap: true,
         negate_first: true,
@@ -365,7 +374,7 @@ fn a_quarter_turn_phase_slip_costs_one_frame() {
         received.push(a);
         received.push(b);
     }
-    let mut deframer = Deframer::new();
+    let mut deframer = deframer();
     let mut outcomes = Vec::new();
     for chunk in received.chunks(3_000) {
         deframer.push(chunk);

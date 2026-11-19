@@ -7,7 +7,7 @@ export function BearingFixFace({ node }: { node: PatchNode }) {
   return (
     <NodeShell node={node} title="Bearing fix" category="tool">
       <FaceBody>
-        <FaceEmpty hint={wires.wired ? "Fix goes out on events" : "Wire bearings in"} />
+        <FaceEmpty hint={wires.wired ? "Fix goes out on events" : undefined} />
       </FaceBody>
     </NodeShell>
   );

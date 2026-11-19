@@ -206,3 +206,33 @@ fn a_rotctld_link_reads_points_and_stops_over_tcp() {
         ]
     );
 }
+
+#[test]
+fn an_unwired_tracking_rotator_waits_instead_of_failing() {
+    let state = AppState::new(
+        sdrmm_engine::Engine::new(None),
+        Arc::new(crate::Store::open(None).expect("store")),
+    );
+    let settings = RotatorNode {
+        link: Some(RotatorLink::Virtual),
+        ..RotatorNode::default()
+    };
+    let want = wanted(&resolved(PatchGraph {
+        nodes: vec![node("dish", NodeBody::Rotator(settings))],
+        edges: Vec::new(),
+    }))
+    .remove(0);
+    let hub = RotatorHub::default();
+    let worker = hub.spawn(&state, want).expect("spawns");
+    locked(&hub.workers).insert("dish".to_owned(), worker);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = hub.status("dish") {
+            break status;
+        }
+        assert!(std::time::Instant::now() < deadline, "no status");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    assert_eq!(status.waiting.as_deref(), Some("Wire what to point at"));
+    assert_eq!(status.error, None);
+}

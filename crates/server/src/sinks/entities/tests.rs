@@ -24,7 +24,7 @@ fn from(source: &str, event: DecoderEvent) -> DecodedRecord {
 fn adsb(callsign: Option<&str>, place: Option<(f64, f64)>) -> DecoderEvent {
     DecoderEvent::of(&AdsbMessage {
         icao: "3c6444".to_owned(),
-        df: 17,
+        df: Some(17),
         callsign: callsign.map(str::to_owned),
         lat: place.map(|(lat, _)| lat),
         lon: place.map(|(_, lon)| lon),

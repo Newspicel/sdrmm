@@ -8,6 +8,7 @@ mod frame_fixtures;
 mod fuzz_seeds;
 mod icons;
 mod ident_matrix;
+mod modes;
 mod replay;
 mod resolved_fixtures;
 mod wires;
@@ -93,6 +94,7 @@ fn generated(root: &Path) -> Result<Vec<(&'static str, String)>> {
     sdrmm_channels::builtin::install();
     sdrmm_array::builtin::install();
     let catalog = sdrmm_wire::PatchCatalog::build();
+    let decoders = modes::decoders();
     let spec = sdrmm_server::openapi()
         .to_pretty_json()
         .context("serialize OpenAPI")?;
@@ -126,6 +128,15 @@ fn generated(root: &Path) -> Result<Vec<(&'static str, String)>> {
             serde_json::to_string_pretty(&sdrmm_wire::backend_table())?,
         ),
         ("docs/src/wires.md", wires::page(&catalog)),
+        (
+            modes::DOCS_PAGE,
+            modes::docs_page(
+                &std::fs::read_to_string(root.join(modes::DOCS_PAGE))
+                    .with_context(|| format!("read {}", modes::DOCS_PAGE))?,
+                &decoders,
+            )?,
+        ),
+        (modes::SITE_DATA, modes::site_data(&decoders)?),
         (
             "web/src/generated/frame.ts",
             sdrmm_wire::typescript_frames(),

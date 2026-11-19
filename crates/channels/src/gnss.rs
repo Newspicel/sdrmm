@@ -1,77 +1,60 @@
+//! GPS L1 C/A receiver: searches every PRN, tracks up to twelve satellites at once, reads their
+//! ephemeris and time, and solves the receiver's position and clock.
+
 use sdrmm_decoder::registry::Native;
 use sdrmm_wire::FilterSpec;
 use sdrmm_wire::{EventContract, KindSpec, NumberSpec, SettingField};
+mod acquire;
+mod code;
 mod model;
+mod nav;
+mod solve;
 #[cfg(any(test, feature = "synth"))]
 pub mod synth;
+mod track;
 pub use model::*;
-use std::{f32::consts::TAU, sync::LazyLock};
+use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::math::fft::FftPair;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
 
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 
-const RATE: f64 = 2_048_000.0;
-const SAMPLES_PER_MS: usize = 2_048;
-const CHIPS: usize = 1_023;
-const DOPPLER_STEP_HZ: i32 = 500;
-const ACQUIRE_MS: usize = 16;
-const ACQUIRE_GAP_MS: u8 = 16;
-const CONFIRM_SAMPLES: usize = 2;
-const PEAK_GUARD_CHIPS: usize = 2;
-const PEAK_GUARD_SAMPLES: usize = PEAK_GUARD_CHIPS * SAMPLES_PER_MS / CHIPS;
-const CROSS_CORRELATION_MARGIN: f32 = 2.0;
-const _: () = assert!(RATE as usize / SAMPLES_PER_MS == 2 * DOPPLER_STEP_HZ as usize);
+use acquire::{Found, RATE, SAMPLES_PER_MS, Search};
+use code::CHIPS;
+use nav::Subframe;
+use solve::{MAX_SATELLITES, Measurement, SPEED_OF_LIGHT, Solution, solve};
+use track::{Step, Tracker};
+
+const HISTORY_MS: usize = 3;
+const HISTORY: usize = HISTORY_MS * SAMPLES_PER_MS;
+const FIX_EVERY_MS: u64 = 1_000;
+/// Weeks before the ten-bit broadcast week number's latest rollover, 7 April 2019.
+const WEEK_ROLLOVER: u16 = 2_048;
+const HEALTHY: u8 = 0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "gnss".to_owned(),
     name: "GNSS lab (GPS L1 C/A)".to_owned(),
-    summary: "GPS satellite acquisition and tracking".to_owned(),
+    summary: "GPS satellite tracking and position fix".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::Experimental,
     bandwidth_hz: 2_046_000.0,
     input_rate_hz: RATE,
     has_audio: false,
-    emits: vec![GnssFrame::KIND],
+    emits: vec![GnssFrame::KIND, GnssFix::KIND],
     ..ChannelDescriptor::default()
 });
 
-#[derive(Clone, Copy)]
-struct Lock {
-    doppler_hz: f32,
-    code_phase: usize,
-    cn0_db_hz: f32,
-    carrier_phase: f32,
-}
-
-impl Lock {
-    fn repeats(&self, before: &Self) -> bool {
-        let phase = self.code_phase.abs_diff(before.code_phase);
-        let phase = phase.min(SAMPLES_PER_MS - phase);
-        phase <= CONFIRM_SAMPLES
-            && (self.doppler_hz - before.doppler_hz).abs() <= DOPPLER_STEP_HZ as f32
-    }
-}
-
 pub struct GnssChannel {
     params: GnssParams,
-    code: Vec<f32>,
-    code_fft: Vec<Complex<f32>>,
-    samples: Vec<Complex<f32>>,
-    fft_buf: Vec<Complex<f32>>,
-    spectra: Vec<Complex<f32>>,
-    fft: FftPair,
-    lock: Option<Lock>,
-    acquisition_wait_ms: u8,
-    powers: Vec<f32>,
-    summed_ms: usize,
-    candidate: Option<Lock>,
-    prompt_ms: Vec<f32>,
-    bit_phase: Option<usize>,
-    nav: NavDecoder,
+    pending: Vec<Complex<f32>>,
+    history: Vec<Complex<f32>>,
+    blocks: u64,
+    search: Search,
+    trackers: Vec<Tracker>,
 }
 
 fn params(settings: &ChannelSettings) -> Result<GnssParams, ChannelError> {
@@ -107,26 +90,21 @@ impl Channel for GnssChannel {
     }
 
     fn retuned(&mut self) {
-        self.lock = None;
-        self.acquisition_wait_ms = 0;
-        self.summed_ms = 0;
-        self.powers.fill(0.0);
-        self.candidate = None;
-        self.samples.clear();
-        self.prompt_ms.clear();
-        self.bit_phase = None;
-        self.nav.clear();
+        self.pending.clear();
+        self.blocks = 0;
+        self.search.reset();
+        self.trackers.clear();
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let mut rest = iq;
         while !rest.is_empty() {
-            let take = (SAMPLES_PER_MS - self.samples.len()).min(rest.len());
-            self.samples.extend_from_slice(&rest[..take]);
+            let take = (SAMPLES_PER_MS - self.pending.len()).min(rest.len());
+            self.pending.extend_from_slice(&rest[..take]);
             rest = &rest[take..];
-            if self.samples.len() == SAMPLES_PER_MS {
+            if self.pending.len() == SAMPLES_PER_MS {
                 self.process_millisecond(out);
-                self.samples.clear();
+                self.pending.clear();
             }
         }
     }
@@ -134,421 +112,158 @@ impl Channel for GnssChannel {
 
 impl GnssChannel {
     fn build(params: GnssParams) -> Self {
-        let code = sampled_code(params.prn);
-        let mut code_fft: Vec<_> = code.iter().map(|&v| Complex::new(v, 0.0)).collect();
-        let mut fft = FftPair::new(SAMPLES_PER_MS);
-        fft.forward(&mut code_fft);
         Self {
             params,
-            code,
-            code_fft,
-            samples: Vec::with_capacity(SAMPLES_PER_MS),
-            fft_buf: vec![Complex::default(); SAMPLES_PER_MS],
-            spectra: vec![Complex::default(); 2 * SAMPLES_PER_MS],
-            powers: vec![0.0; doppler_bins(params.doppler_hz) * SAMPLES_PER_MS],
-            summed_ms: 0,
-            candidate: None,
-            fft,
-            lock: None,
-            acquisition_wait_ms: 0,
-            prompt_ms: Vec::with_capacity(6_400),
-            bit_phase: None,
-            nav: NavDecoder::default(),
+            pending: Vec::with_capacity(SAMPLES_PER_MS),
+            history: vec![Complex::default(); HISTORY],
+            blocks: 0,
+            search: Search::new(params.doppler_hz, params.threshold),
+            trackers: Vec::with_capacity(MAX_SATELLITES),
         }
+    }
+
+    /// Absolute sample just past the newest one held.
+    fn end(&self) -> u64 {
+        self.blocks * SAMPLES_PER_MS as u64
+    }
+
+    fn origin(&self) -> u64 {
+        self.end().saturating_sub(HISTORY as u64)
     }
 
     fn process_millisecond(&mut self, out: &mut ChannelOutputs) {
-        if self.lock.is_none() {
-            if self.acquisition_wait_ms > 0 {
-                self.acquisition_wait_ms -= 1;
-                return;
-            }
-            self.accumulate();
-            if self.summed_ms < ACQUIRE_MS {
-                return;
-            }
-            let found = self.acquire();
-            let confirmed = found
-                .zip(self.candidate)
-                .filter(|(now, before)| now.repeats(before));
-            self.candidate = found.filter(|_| confirmed.is_none());
-            self.acquisition_wait_ms = if self.candidate.is_some() {
-                0
-            } else {
-                ACQUIRE_GAP_MS
-            };
-            if let Some((found, _)) = confirmed {
-                self.lock = Some(found);
-                out.events.push(DecoderEvent::of(&self.event(found, None)));
-            }
+        self.history.copy_within(SAMPLES_PER_MS.., 0);
+        self.history[HISTORY - SAMPLES_PER_MS..].copy_from_slice(&self.pending);
+        self.blocks += 1;
+        if self.blocks < HISTORY_MS as u64 {
             return;
         }
-        let mut lock = self.lock.unwrap_or(Lock {
-            doppler_hz: 0.0,
-            code_phase: 0,
-            cn0_db_hz: 0.0,
-            carrier_phase: 0.0,
-        });
-        let prompt = prompt(
-            &self.samples,
-            &self.code,
-            lock.code_phase,
-            lock.doppler_hz,
-            lock.carrier_phase,
-        );
-        let error = prompt.im.atan2(prompt.re.abs().max(1e-9));
-        lock.doppler_hz += error * 20.0;
-        lock.carrier_phase =
-            wrap_phase(lock.carrier_phase - TAU * lock.doppler_hz / 1_000.0 + error * 0.1);
-        self.prompt_ms.push(prompt.re);
-        self.lock = Some(lock);
-        self.extract_nav(lock, out);
-    }
-
-    fn transform(&mut self) {
-        let lowest = -(self.params.doppler_hz as i32);
-        for (slot, spectrum) in self
-            .spectra
-            .as_chunks_mut::<SAMPLES_PER_MS>()
-            .0
-            .iter_mut()
-            .enumerate()
-        {
-            let doppler = lowest + slot as i32 * DOPPLER_STEP_HZ;
-            wipe(&self.samples, doppler as f32, spectrum);
-            self.fft.forward(spectrum);
+        self.track(out);
+        if self.trackers.len() < MAX_SATELLITES {
+            self.search(out);
+        }
+        if self.blocks.is_multiple_of(FIX_EVERY_MS) {
+            self.fix(out);
         }
     }
 
-    fn correlate(&mut self, row: usize) {
-        let spectrum = &self.spectra[(row % 2) * SAMPLES_PER_MS..][..SAMPLES_PER_MS];
-        let (head, tail) = spectrum.split_at((row / 2) % SAMPLES_PER_MS);
-        let shifted = tail.iter().chain(head);
-        for ((bin, &value), code) in self.fft_buf.iter_mut().zip(shifted).zip(&self.code_fft) {
-            *bin = value * code.conj();
-        }
-        self.fft.inverse(&mut self.fft_buf);
-    }
-
-    fn dopplers(&self) -> impl Iterator<Item = i32> + use<> {
-        let span = self.params.doppler_hz as i32;
-        (-span..=span).step_by(DOPPLER_STEP_HZ as usize)
-    }
-
-    fn accumulate(&mut self) {
-        self.transform();
-        for row in 0..self.powers.len() / SAMPLES_PER_MS {
-            self.correlate(row);
-            let powers = &mut self.powers[row * SAMPLES_PER_MS..(row + 1) * SAMPLES_PER_MS];
-            for (sum, value) in powers.iter_mut().zip(&self.fft_buf) {
-                *sum += value.norm_sqr();
-            }
-        }
-        self.summed_ms += 1;
-    }
-
-    fn strongest_away_from(&self, phase: usize) -> f32 {
-        self.powers
-            .iter()
-            .enumerate()
-            .filter(|&(index, _)| {
-                let gap = (index % SAMPLES_PER_MS).abs_diff(phase);
-                gap.min(SAMPLES_PER_MS - gap) > PEAK_GUARD_SAMPLES
-            })
-            .map(|(_, &power)| power)
-            .fold(0.0f32, f32::max)
-    }
-
-    fn acquire(&mut self) -> Option<Lock> {
-        let floor = self.powers.iter().map(|&p| f64::from(p)).sum::<f64>()
-            / self.powers.len().max(1) as f64;
-        let (best, &best_power) = self
-            .powers
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.total_cmp(b.1))?;
-        let runner_up = self.strongest_away_from(best % SAMPLES_PER_MS);
-        self.summed_ms = 0;
-        self.powers.fill(0.0);
-        let ratio = best_power / (floor as f32).max(f32::MIN_POSITIVE);
-        if ratio < self.params.threshold || best_power < CROSS_CORRELATION_MARGIN * runner_up {
-            return None;
-        }
-        let row = best / SAMPLES_PER_MS;
-        let doppler = self.dopplers().nth(row)?;
-        let phase = best % SAMPLES_PER_MS;
-        self.correlate(row);
-        Some(Lock {
-            doppler_hz: doppler as f32,
-            code_phase: (SAMPLES_PER_MS - phase) % SAMPLES_PER_MS,
-            cn0_db_hz: (10.0 * ((ratio - 1.0).max(1e-6) * 1_000.0).log10()).clamp(0.0, 65.0),
-            carrier_phase: -self.fft_buf[phase].arg(),
-        })
-    }
-
-    fn extract_nav(&mut self, lock: Lock, out: &mut ChannelOutputs) {
-        if self.bit_phase.is_none() && self.prompt_ms.len() >= 6_160 {
-            self.bit_phase = find_bit_phase(&self.prompt_ms);
-            if let Some(phase) = self.bit_phase {
-                let chunks = self.prompt_ms[phase..].as_chunks::<20>().0;
-                for chunk in chunks {
-                    if let Some(nav) = self.nav.feed(sum(chunk) >= 0.0) {
-                        out.events
-                            .push(DecoderEvent::of(&self.event(lock, Some(nav))));
+    fn track(&mut self, out: &mut ChannelOutputs) {
+        let (origin, end) = (self.origin(), self.end() as f64);
+        let mut index = 0;
+        while index < self.trackers.len() {
+            let mut lost = false;
+            while !lost && self.trackers[index].needs_until() <= end {
+                match self.trackers[index].step(&self.history, origin) {
+                    Step::Nothing => {}
+                    Step::Subframe(subframe) => {
+                        let frame = self.frame(&self.trackers[index], Some(&subframe));
+                        out.events.push(DecoderEvent::of(&frame));
                     }
+                    Step::Lost => lost = true,
                 }
-                let consumed = phase + ((self.prompt_ms.len() - phase) / 20) * 20;
-                self.prompt_ms.drain(..consumed);
+            }
+            if lost {
+                self.trackers.swap_remove(index);
             } else {
-                self.prompt_ms.drain(..3_000);
+                index += 1;
             }
+        }
+    }
+
+    fn search(&mut self, out: &mut ChannelOutputs) {
+        let start = self.end() - SAMPLES_PER_MS as u64;
+        let block = &self.history[HISTORY - SAMPLES_PER_MS..];
+        let trackers = &self.trackers;
+        let tracked = |prn: u8| trackers.iter().any(|t| t.prn == prn);
+        let Some(found) = self.search.feed(block, start, tracked) else {
             return;
-        }
-        if self.bit_phase.is_some() {
-            while self.prompt_ms.len() >= 20 {
-                let bit = sum(&self.prompt_ms[..20]) >= 0.0;
-                self.prompt_ms.drain(..20);
-                if let Some(nav) = self.nav.feed(bit) {
-                    out.events
-                        .push(DecoderEvent::of(&self.event(lock, Some(nav))));
-                }
-            }
-        }
+        };
+        let tracker = Tracker::new(found, self.origin());
+        out.events
+            .push(DecoderEvent::of(&self.acquired(&tracker, found)));
+        self.trackers.push(tracker);
     }
 
-    fn event(&self, lock: Lock, nav: Option<NavFrame>) -> GnssFrame {
-        let (subframe, tow_seconds, week, words) = nav
-            .map_or((None, None, None, Vec::new()), |n| {
-                (Some(n.subframe), Some(n.tow_seconds), n.week, n.words)
-            });
+    /// The acquisition's own view: code phase at the newest block's start at the nominal chip
+    /// rate, since the search knows no code Doppler.
+    fn acquired(&self, tracker: &Tracker, found: Found) -> GnssFrame {
+        let block_start = (self.end() - SAMPLES_PER_MS as u64) as f64;
+        let chips = (block_start - found.code_start) * CHIPS as f64 / SAMPLES_PER_MS as f64;
         GnssFrame {
-            prn: self.params.prn,
-            doppler_hz: lock.doppler_hz,
-            code_phase_chips: lock.code_phase as f32 * CHIPS as f32 / SAMPLES_PER_MS as f32,
-            cn0_db_hz: lock.cn0_db_hz,
-            subframe,
-            tow_seconds,
-            week,
-            words,
+            cn0_db_hz: found.cn0_db_hz,
+            code_phase_chips: chips.rem_euclid(CHIPS as f64) as f32,
+            ..self.frame(tracker, None)
         }
     }
-}
 
-fn doppler_bins(span_hz: u32) -> usize {
-    (2 * span_hz as usize) / DOPPLER_STEP_HZ as usize + 1
-}
-
-fn wipe(input: &[Complex<f32>], doppler_hz: f32, out: &mut [Complex<f32>]) {
-    let step = Complex::from_polar(1.0, -TAU * doppler_hz / RATE as f32);
-    let mut carrier = Complex::new(1.0, 0.0);
-    for (slot, &sample) in out.iter_mut().zip(input) {
-        *slot = sample * carrier;
-        carrier *= step;
-    }
-}
-
-fn prompt(
-    input: &[Complex<f32>],
-    code: &[f32],
-    phase: usize,
-    doppler_hz: f32,
-    carrier_phase: f32,
-) -> Complex<f32> {
-    let step = Complex::from_polar(1.0, -TAU * doppler_hz / RATE as f32);
-    let mut carrier = Complex::from_polar(1.0, carrier_phase);
-    let mut value = Complex::default();
-    for (n, &sample) in input.iter().enumerate() {
-        value += sample * carrier * code[(n + phase) % SAMPLES_PER_MS];
-        carrier *= step;
-    }
-    value
-}
-
-fn wrap_phase(phase: f32) -> f32 {
-    (phase + std::f32::consts::PI).rem_euclid(TAU) - std::f32::consts::PI
-}
-
-pub(crate) fn sampled_code(prn: u8) -> Vec<f32> {
-    let chips = ca_code(prn);
-    (0..SAMPLES_PER_MS)
-        .map(|n| chips[n * CHIPS / SAMPLES_PER_MS])
-        .collect()
-}
-
-fn ca_code(prn: u8) -> [f32; CHIPS] {
-    const TAPS: [(usize, usize); 32] = [
-        (2, 6),
-        (3, 7),
-        (4, 8),
-        (5, 9),
-        (1, 9),
-        (2, 10),
-        (1, 8),
-        (2, 9),
-        (3, 10),
-        (2, 3),
-        (3, 4),
-        (5, 6),
-        (6, 7),
-        (7, 8),
-        (8, 9),
-        (9, 10),
-        (1, 4),
-        (2, 5),
-        (3, 6),
-        (4, 7),
-        (5, 8),
-        (6, 9),
-        (1, 3),
-        (4, 6),
-        (5, 7),
-        (6, 8),
-        (7, 9),
-        (8, 10),
-        (1, 6),
-        (2, 7),
-        (3, 8),
-        (4, 9),
-    ];
-    let (tap1, tap2) = TAPS[usize::from(prn.saturating_sub(1).min(31))];
-    let mut g1 = [true; 10];
-    let mut g2 = [true; 10];
-    let mut out = [0.0; CHIPS];
-    for chip in &mut out {
-        let bit = g1[9] ^ g2[tap1 - 1] ^ g2[tap2 - 1];
-        *chip = if bit { -1.0 } else { 1.0 };
-        let g1_feedback = g1[2] ^ g1[9];
-        let g2_feedback = g2[1] ^ g2[2] ^ g2[5] ^ g2[7] ^ g2[8] ^ g2[9];
-        g1.copy_within(0..9, 1);
-        g2.copy_within(0..9, 1);
-        g1[0] = g1_feedback;
-        g2[0] = g2_feedback;
-    }
-    out
-}
-
-fn sum(values: &[f32]) -> f32 {
-    values.iter().sum()
-}
-
-fn find_bit_phase(prompt: &[f32]) -> Option<usize> {
-    for phase in 0..20 {
-        let mut bits = [false; 310];
-        let chunks = prompt[phase..].as_chunks::<20>().0;
-        let count = chunks.len().min(bits.len());
-        for (slot, chunk) in bits[..count].iter_mut().zip(chunks) {
-            *slot = sum(chunk) >= 0.0;
-        }
-        for start in 0..=count.saturating_sub(300) {
-            if decode_subframe(&bits[start..start + 300]).is_some() {
-                return Some(phase);
-            }
+    fn frame(&self, tracker: &Tracker, subframe: Option<&Subframe>) -> GnssFrame {
+        let block_start = (self.end() - SAMPLES_PER_MS as u64) as f64;
+        GnssFrame {
+            prn: tracker.prn,
+            doppler_hz: tracker.doppler_hz().round() as f32,
+            code_phase_chips: tracker.code_phase_chips(block_start) as f32,
+            cn0_db_hz: tracker.cn0_db_hz,
+            subframe: subframe.map(|s| s.id),
+            tow_seconds: subframe.map(|s| s.next_tow_s),
+            week: subframe
+                .filter(|s| s.id == 1)
+                .map(|s| ((s.data[2] >> 14) & 0x3FF) as u16),
+            words: subframe.map_or_else(Vec::new, |s| {
+                s.raw.iter().map(|word| format!("{word:08X}")).collect()
+            }),
         }
     }
-    None
-}
 
-#[derive(Default)]
-struct NavDecoder {
-    bits: Vec<bool>,
-}
-
-struct NavFrame {
-    subframe: u8,
-    tow_seconds: u32,
-    week: Option<u16>,
-    words: Vec<String>,
-}
-
-impl NavDecoder {
-    fn clear(&mut self) {
-        self.bits.clear();
-    }
-
-    fn feed(&mut self, bit: bool) -> Option<NavFrame> {
-        self.bits.push(bit);
-        while self.bits.len() >= 300 {
-            if let Some(frame) = decode_subframe(&self.bits[..300]) {
-                self.bits.drain(..300);
-                return Some(frame);
-            }
-            self.bits.remove(0);
-        }
-        None
-    }
-}
-
-fn decode_subframe(bits: &[bool]) -> Option<NavFrame> {
-    let transmitted_preamble = byte(bits.get(..8)?)?;
-    if transmitted_preamble != 0x8B && transmitted_preamble != !0x8B {
-        return None;
-    }
-    let previous_d30 = transmitted_preamble != 0x8B;
-    for previous_d29 in [false, true] {
-        let mut d29 = previous_d29;
-        let mut d30 = previous_d30;
-        let mut data = [0_u32; 10];
-        let mut raw = [0_u32; 10];
-        let mut valid = true;
-        for word_index in 0..10 {
-            let word = word(bits.get(word_index * 30..(word_index + 1) * 30)?)?;
-            raw[word_index] = word;
-            let Some(decoded) = check_word(word, d29, d30) else {
-                valid = false;
-                break;
+    fn measurements(&self, at: f64) -> ([Measurement; MAX_SATELLITES], usize) {
+        let mut measurements = [Measurement::default(); MAX_SATELLITES];
+        let mut count = 0;
+        for tracker in &self.trackers {
+            let (Some(ephemeris), Some(transmit_s)) = (tracker.ephemeris, tracker.transmit_s(at))
+            else {
+                continue;
             };
-            data[word_index] = decoded;
-            d29 = word & 2 != 0;
-            d30 = word & 1 != 0;
-        }
-        if valid {
-            let how = data[1];
-            let subframe = ((how >> 2) & 0x7) as u8;
-            if !(1..=5).contains(&subframe) {
+            if ephemeris.health != HEALTHY || count == MAX_SATELLITES {
                 continue;
             }
-            let tow_seconds = ((how >> 7) & 0x1_FFFF) * 6;
-            let week = (subframe == 1).then_some(((data[2] >> 14) & 0x3FF) as u16);
-            return Some(NavFrame {
-                subframe,
-                tow_seconds,
-                week,
-                words: raw.iter().map(|value| format!("{value:08X}")).collect(),
-            });
+            measurements[count] = Measurement {
+                prn: tracker.prn,
+                transmit_s,
+                ephemeris,
+            };
+            count += 1;
         }
+        (measurements, count)
     }
-    None
+
+    fn fix(&self, out: &mut ChannelOutputs) {
+        let (measurements, count) = self.measurements(self.end() as f64);
+        if count < 4 {
+            return;
+        }
+        let Some(solution) = solve(&measurements[..count]) else {
+            return;
+        };
+        out.events
+            .push(DecoderEvent::of(&fix_event(&solution, &measurements[0])));
+    }
 }
 
-fn byte(bits: &[bool]) -> Option<u8> {
-    (bits.len() == 8).then(|| bits.iter().fold(0, |v, &bit| (v << 1) | u8::from(bit)))
-}
-
-fn word(bits: &[bool]) -> Option<u32> {
-    (bits.len() == 30).then(|| bits.iter().fold(0, |v, &bit| (v << 1) | u32::from(bit)))
-}
-
-fn check_word(raw: u32, previous_d29: bool, previous_d30: bool) -> Option<u32> {
-    let transmitted = raw >> 6;
-    let data = if previous_d30 {
-        transmitted ^ 0xFF_FFFF
-    } else {
-        transmitted
-    };
-    let d = |n: u8| data >> (24 - n) & 1 != 0;
-    let x = |values: &[u8]| values.iter().fold(false, |v, &n| v ^ d(n));
-    let expected = [
-        previous_d29 ^ x(&[1, 2, 3, 5, 6, 10, 11, 12, 13, 14, 17, 18, 20, 23]),
-        previous_d30 ^ x(&[2, 3, 4, 6, 7, 11, 12, 13, 14, 15, 18, 19, 21, 24]),
-        previous_d29 ^ x(&[1, 3, 4, 5, 7, 8, 12, 13, 14, 15, 16, 19, 20, 22]),
-        previous_d30 ^ x(&[2, 4, 5, 6, 8, 9, 13, 14, 15, 16, 17, 20, 21, 23]),
-        previous_d30 ^ x(&[1, 3, 5, 6, 7, 9, 10, 14, 15, 16, 17, 18, 21, 22, 24]),
-        previous_d29 ^ x(&[3, 5, 6, 8, 9, 10, 11, 13, 15, 19, 22, 23, 24]),
-    ];
-    let parity = expected
-        .iter()
-        .fold(0_u32, |v, &bit| (v << 1) | u32::from(bit));
-    (parity == raw & 0x3F).then_some(data)
+fn fix_event(solution: &Solution, any: &Measurement) -> GnssFix {
+    let mut satellites = solution.satellites().to_vec();
+    satellites.sort_unstable();
+    GnssFix {
+        lat: solution.at.lat_deg,
+        lon: solution.at.lon_deg,
+        altitude_m: solution.at.alt_m,
+        satellites,
+        pdop: solution.pdop as f32,
+        hdop: solution.hdop as f32,
+        vdop: solution.vdop as f32,
+        residual_m: solution.residual_rms_m as f32,
+        clock_bias_us: solution.clock_bias_m / SPEED_OF_LIGHT * 1e6,
+        week: WEEK_ROLLOVER + any.ephemeris.week,
+        tow_seconds: solution.tow_s,
+    }
 }
 
 pub(crate) fn gnss_decoder() -> Native<GnssParams> {
@@ -565,8 +280,6 @@ pub(crate) fn gnss_decoder() -> Native<GnssParams> {
 
 pub(crate) fn gnss_form() -> Vec<SettingField> {
     vec![
-        SettingField::new("prn", "PRN", NumberSpec::new(1.0, 32.0, 1.0))
-            .title("GPS L1 C/A satellite PRN"),
         SettingField::new(
             "doppler_hz",
             "Doppler",
@@ -583,306 +296,12 @@ pub(crate) fn gnss_form() -> Vec<SettingField> {
 }
 
 fn gnss_kinds() -> Vec<KindSpec> {
-    vec![gnss_kind()]
+    vec![gnss_kind(), gnss_fix_kind()]
 }
 
 #[cfg(test)]
 pub(crate) mod fixture;
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use sdrmm_decoder_test_support::realtime_budget;
-
-    const GPS_SPS_TABLE_2_1_FIRST_TEN_CHIPS_OCTAL: [u16; 32] = [
-        0o1440, 0o1620, 0o1710, 0o1744, 0o1133, 0o1455, 0o1131, 0o1454, 0o1626, 0o1504, 0o1642,
-        0o1750, 0o1764, 0o1772, 0o1775, 0o1776, 0o1156, 0o1467, 0o1633, 0o1715, 0o1746, 0o1763,
-        0o1063, 0o1706, 0o1743, 0o1761, 0o1770, 0o1774, 0o1127, 0o1453, 0o1625, 0o1712,
-    ];
-
-    const GPS_SPS_TABLE_2_14_PARITY_TERMS: [&[u8]; 6] = [
-        &[1, 2, 3, 5, 6, 10, 11, 12, 13, 14, 17, 18, 20, 23],
-        &[2, 3, 4, 6, 7, 11, 12, 13, 14, 15, 18, 19, 21, 24],
-        &[1, 3, 4, 5, 7, 8, 12, 13, 14, 15, 16, 19, 20, 22],
-        &[2, 4, 5, 6, 8, 9, 13, 14, 15, 16, 17, 20, 21, 23],
-        &[1, 3, 5, 6, 7, 9, 10, 14, 15, 16, 17, 18, 21, 22, 24],
-        &[3, 5, 6, 8, 9, 10, 11, 13, 15, 19, 22, 23, 24],
-    ];
-
-    const GPS_SPS_TABLE_2_14_TAKES_PREVIOUS_D29: [bool; 6] =
-        [true, false, true, false, false, true];
-
-    fn published_parity(data: u32, previous_d29: bool, previous_d30: bool) -> u32 {
-        GPS_SPS_TABLE_2_14_PARITY_TERMS
-            .iter()
-            .zip(GPS_SPS_TABLE_2_14_TAKES_PREVIOUS_D29)
-            .fold(0, |word, (terms, takes_d29)| {
-                let seed = if takes_d29 {
-                    previous_d29
-                } else {
-                    previous_d30
-                };
-                let bit = terms
-                    .iter()
-                    .fold(seed, |value, &n| value ^ (data >> (24 - n) & 1 != 0));
-                (word << 1) | u32::from(bit)
-            })
-    }
-
-    #[test]
-    fn every_prn_reproduces_the_published_first_ten_chips_octal() {
-        for (index, &octal) in GPS_SPS_TABLE_2_1_FIRST_TEN_CHIPS_OCTAL.iter().enumerate() {
-            let prn = index as u8 + 1;
-            let chips = ca_code(prn);
-            let first_ten = chips[..10]
-                .iter()
-                .fold(0u16, |value, &chip| (value << 1) | u16::from(chip < 0.0));
-            assert_eq!(first_ten, octal, "PRN {prn} starts {first_ten:04o}");
-        }
-    }
-
-    #[test]
-    fn word_parity_follows_the_published_parity_encoding_equations() {
-        let mut data = 0x5A_3C7Fu32;
-        for round in 0..64 {
-            data = data.rotate_left(7) ^ 0x0A_C3B1;
-            data &= 0xFF_FFFF;
-            let previous_d29 = round & 1 == 1;
-            let previous_d30 = round & 2 == 2;
-            let parity = published_parity(data, previous_d29, previous_d30);
-            let transmitted = if previous_d30 { data ^ 0xFF_FFFF } else { data };
-            let raw = transmitted << 6 | parity;
-            assert_eq!(
-                check_word(raw, previous_d29, previous_d30),
-                Some(data),
-                "{data:06X} parity {parity:02X}"
-            );
-            for bit in 0..30 {
-                let flipped = raw ^ (1 << bit);
-                assert!(
-                    check_word(flipped, previous_d29, previous_d30).is_none(),
-                    "{data:06X} survived a flip of bit {bit}"
-                );
-            }
-        }
-    }
-
-    const GOLD_CORRELATION_VALUES: [i32; 3] = [-65, -1, 63];
-
-    fn periodic_correlation(one: &[f32; CHIPS], two: &[f32; CHIPS], shift: usize) -> i32 {
-        one.iter()
-            .enumerate()
-            .map(|(index, &chip)| chip * two[(index + shift) % CHIPS])
-            .sum::<f32>() as i32
-    }
-
-    #[test]
-    fn code_correlation_only_ever_takes_the_three_published_gold_values() {
-        for (a, b) in [(1u8, 2u8), (7, 19), (12, 25), (31, 32)] {
-            let one = ca_code(a);
-            let two = ca_code(b);
-            assert_eq!(periodic_correlation(&one, &one, 0), CHIPS as i32);
-            for shift in 0..CHIPS {
-                let cross = periodic_correlation(&one, &two, shift);
-                assert!(
-                    GOLD_CORRELATION_VALUES.contains(&cross),
-                    "PRN {a} against {b} at shift {shift} is {cross}"
-                );
-                if shift > 0 {
-                    let sidelobe = periodic_correlation(&one, &one, shift);
-                    assert!(
-                        GOLD_CORRELATION_VALUES.contains(&sidelobe),
-                        "PRN {a} sidelobe at shift {shift} is {sidelobe}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn a_clean_signal_from_another_satellite_acquires_nothing() {
-        let iq = crate::synth::gnss::acquisition(7, 1_000.0, 317, 64);
-        for prn in [1, 2, 12, 19] {
-            let mut channel = GnssChannel::build(GnssParams {
-                prn,
-                ..GnssParams::default()
-            });
-            let mut out = ChannelOutputs::default();
-            channel.process(&iq, &mut out);
-            assert!(
-                out.events.is_empty(),
-                "PRN {prn} locked onto a PRN 7 signal: {:?}",
-                out.events.first()
-            );
-            assert!(channel.lock.is_none(), "PRN {prn} holds a lock");
-        }
-    }
-
-    #[test]
-    fn ca_codes_have_the_gold_code_balance_and_distinct_prns() {
-        let one = ca_code(1);
-        let two = ca_code(2);
-        assert_eq!(one.iter().filter(|&&v| v > 0.0).count(), 511);
-        assert_eq!(two.iter().filter(|&&v| v > 0.0).count(), 511);
-        assert_ne!(one, two);
-        let sidelobe: f32 = one
-            .iter()
-            .zip(one.iter().cycle().skip(1))
-            .map(|(a, b)| a * b)
-            .sum();
-        assert_eq!(sidelobe, -1.0);
-    }
-
-    #[test]
-    fn clean_prn_fixture_acquires_doppler_and_code_phase() {
-        let params = GnssParams {
-            prn: 7,
-            doppler_hz: 2_000,
-            threshold: 4.0,
-        };
-        let mut channel = GnssChannel::build(params);
-        let code = sampled_code(7);
-        let shift = 317;
-        let doppler = 1_000.0;
-        channel.samples.extend((0..SAMPLES_PER_MS).map(|n| {
-            let carrier = Complex::from_polar(1.0, TAU * doppler * n as f32 / RATE as f32);
-            carrier * code[(n + shift) % SAMPLES_PER_MS]
-        }));
-        channel.accumulate();
-        let lock = channel.acquire().expect("clean fixture acquires");
-        assert_eq!(lock.doppler_hz, doppler);
-        assert_eq!(lock.code_phase, shift);
-        assert!(lock.cn0_db_hz > 45.0);
-    }
-
-    #[test]
-    fn shifted_spectra_match_a_direct_doppler_wipe() {
-        let mut channel = GnssChannel::build(GnssParams {
-            prn: 3,
-            doppler_hz: 3_250,
-            ..GnssParams::default()
-        });
-        channel.samples = sdrmm_decoder_test_support::complex_noise(9, 0.5, SAMPLES_PER_MS);
-        channel.transform();
-        let mut direct = vec![Complex::default(); SAMPLES_PER_MS];
-        for (row, doppler) in channel.dopplers().enumerate() {
-            channel.correlate(row);
-            wipe(&channel.samples, doppler as f32, &mut direct);
-            channel.fft.forward(&mut direct);
-            for (bin, code) in direct.iter_mut().zip(&channel.code_fft) {
-                *bin *= code.conj();
-            }
-            channel.fft.inverse(&mut direct);
-            let peak = direct.iter().map(|v| v.norm()).fold(0.0f32, f32::max);
-            let worst = direct
-                .iter()
-                .zip(&channel.fft_buf)
-                .map(|(a, b)| (a - b).norm())
-                .fold(0.0f32, f32::max);
-            assert!(
-                worst < 1e-3 * peak,
-                "{doppler} Hz differs by {worst} of {peak}"
-            );
-        }
-    }
-
-    #[test]
-    fn acquisition_refuses_noise_floor() {
-        let mut channel = GnssChannel::build(GnssParams::default());
-        channel
-            .samples
-            .resize(SAMPLES_PER_MS, Complex::new(0.0, 0.0));
-        channel.accumulate();
-        assert!(channel.acquire().is_none());
-    }
-
-    #[test]
-    fn noise_acquires_no_satellite() {
-        for prn in [1, 7, 19, 30] {
-            let mut channel = GnssChannel::build(GnssParams {
-                prn,
-                ..GnssParams::default()
-            });
-            let noise =
-                sdrmm_decoder_test_support::complex_noise(u32::from(prn), 0.5, RATE as usize);
-            let mut out = ChannelOutputs::default();
-            channel.process(&noise, &mut out);
-            assert!(out.events.is_empty(), "PRN {prn}: {:?}", out.events.first());
-        }
-    }
-
-    #[test]
-    fn a_weak_satellite_still_acquires() {
-        let code = sampled_code(12);
-        let doppler = -2_500.0f32;
-        let snr_per_ms = 10f32.powf((40.0 - 30.0) / 10.0);
-        let noise_amp = 0.5f32;
-        let noise_power = 2.0 * noise_amp * noise_amp / 3.0;
-        let amplitude = (snr_per_ms * noise_power / SAMPLES_PER_MS as f32).sqrt();
-        let mut iq = sdrmm_decoder_test_support::complex_noise(5, noise_amp, SAMPLES_PER_MS * 40);
-        for (n, sample) in iq.iter_mut().enumerate() {
-            let carrier = Complex::from_polar(amplitude, TAU * doppler * n as f32 / RATE as f32);
-            *sample += carrier * code[(n + 900) % SAMPLES_PER_MS];
-        }
-        let mut channel = GnssChannel::build(GnssParams {
-            prn: 12,
-            ..GnssParams::default()
-        });
-        let mut out = ChannelOutputs::default();
-        channel.process(&iq, &mut out);
-        let lock = channel.lock.expect("a 40 dB-Hz satellite acquires");
-        assert!(
-            (lock.doppler_hz - doppler).abs() < 100.0,
-            "{}",
-            lock.doppler_hz
-        );
-        assert_eq!(lock.code_phase, 900);
-    }
-
-    #[test]
-    fn parity_checked_nav_fixture_reports_subframe_time_and_week() {
-        let mut data = [0_u32; 10];
-        data[0] = 0x8B << 16;
-        data[1] = (100 << 7) | (1 << 2);
-        data[2] = 512 << 14;
-        let bits = encode_subframe(data);
-        let frame = decode_subframe(&bits).expect("valid GPS NAV fixture");
-        assert_eq!(frame.subframe, 1);
-        assert_eq!(frame.tow_seconds, 600);
-        assert_eq!(frame.week, Some(512));
-        let mut corrupt = bits;
-        corrupt[35] = !corrupt[35];
-        assert!(decode_subframe(&corrupt).is_none());
-    }
-
-    #[test]
-    fn acquisition_search_stays_ahead_of_realtime() {
-        let iq = vec![Complex::default(); RATE as usize];
-        let mut channel = GnssChannel::build(GnssParams::default());
-        let mut output = ChannelOutputs::default();
-        channel.process(&iq[..SAMPLES_PER_MS * 20], &mut output);
-        let started = std::time::Instant::now();
-        channel.process(&iq, &mut output);
-        let elapsed = started.elapsed().as_secs_f64();
-        assert!(
-            elapsed < realtime_budget(1.0),
-            "one second of acquisition search took {elapsed:.3} s"
-        );
-    }
-
-    fn encode_subframe(data: [u32; 10]) -> Vec<bool> {
-        let mut d29 = false;
-        let mut d30 = false;
-        let mut bits = Vec::with_capacity(300);
-        for value in data {
-            let transmitted = if d30 { value ^ 0xFF_FFFF } else { value };
-            let raw = (0..64)
-                .map(|parity| transmitted << 6 | parity)
-                .find(|&candidate| check_word(candidate, d29, d30) == Some(value))
-                .expect("one parity pattern matches");
-            bits.extend((0..30).rev().map(|shift| raw >> shift & 1 != 0));
-            d29 = raw & 2 != 0;
-            d30 = raw & 1 != 0;
-        }
-        bits
-    }
-}
+mod open_sky;
+#[cfg(test)]
+mod tests;

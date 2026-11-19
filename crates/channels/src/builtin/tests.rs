@@ -84,6 +84,18 @@ fn every_descriptor_has_a_short_summary() {
 }
 
 #[test]
+fn every_descriptor_says_how_it_is_verified() {
+    for d in descriptors() {
+        assert_ne!(
+            d.verification,
+            sdrmm_wire::Verification::Unverified,
+            "{} does not say how it is verified",
+            d.type_id
+        );
+    }
+}
+
+#[test]
 fn descriptors_are_unique_and_complete() {
     let all = descriptors();
     let ids: HashSet<&str> = all.iter().map(|d| d.type_id.as_str()).collect();
@@ -91,12 +103,12 @@ fn descriptors_are_unique_and_complete() {
     for d in &all {
         let (bandwidth, rate) = match d.type_id.as_str() {
             "nfm" => (12_500.0, 48_000.0),
-            "selcall" => (12_500.0, 48_000.0),
+            "selcall" | "dtmf" | "mdc1200" | "fleetsync" => (12_500.0, 48_000.0),
             "am" => (10_000.0, 48_000.0),
             "ssb" => (3_000.0, 48_000.0),
             "wfm" => (200_000.0, 240_000.0),
             "pocsag" => (12_500.0, 24_000.0),
-            "flex" | "ermes" | "eot" => (12_500.0, 48_000.0),
+            "flex" | "ermes" | "eot" | "mpt1327" => (12_500.0, 48_000.0),
             "sarsat" => (20_000.0, 24_000.0),
             "tetrapol" => (12_500.0, 48_000.0),
             "adsb" => (2_000_000.0, 2_400_000.0),
@@ -113,11 +125,18 @@ fn descriptors_are_unique_and_complete() {
             "datv" => (449_550.0, 2_000_000.0),
             "dvbt" => (8_000_000.0, 64_000_000.0 / 7.0),
             "drm" => (100_000.0, 192_000.0),
-            "dmr" | "ysf" | "p25" => (12_500.0, 48_000.0),
+            "hd_radio" => (
+                1_092.0 * 1_488_375.0 / 4_096.0,
+                1_536.0 * 1_488_375.0 / 4_096.0,
+            ),
+            "dmr" | "ysf" | "p25" | "p25p2" => (12_500.0, 48_000.0),
             "dstar" | "nxdn" | "dpmr" => (6_250.0, 48_000.0),
             "m17" => (9_000.0, 48_000.0),
+            "edacs" => (25_000.0, 48_000.0),
+            "ltr" => (12_500.0, 48_000.0),
             "tetra" => (25_000.0, 72_000.0),
-            "ft8" | "ft4" | "wspr" => (3_200.0, 12_000.0),
+            "ft8" | "ft4" | "wspr" | "msk144" | "q65" | "jt65" | "jt9" | "js8" | "fst4"
+            | "fst4w" => (3_200.0, 12_000.0),
             "psk" => (650.0, 8_000.0),
             "freedv" => (1_400.0, 8_000.0),
             "ident" => (192_000.0, 240_000.0),
@@ -135,9 +154,14 @@ fn descriptors_are_unique_and_complete() {
             "gsm" => (200_000.0, 1_625_000.0 / 3.0),
             "apt" => (40_000.0, 60_000.0),
             "lrpt" => (140_000.0, 288_000.0),
+            "wenet" => (300_000.0, 921_416.0),
+            "hrpt" => (2_400_000.0, 2_661_600.0),
+            "goes_hrit" => (1_205_100.0, 1_854_000.0),
+            "gk2a_lrit" => (192_000.0, 256_000.0),
             "wefax" => (1_600.0, 12_000.0),
             "same" => (12_500.0, 50_000.0),
             "radiosonde" => (20_000.0, 48_000.0),
+            "horus" => (6_000.0, 8_000.0),
             "lora" => (125_000.0, 250_000.0),
             "remote_id" | "ble" => (2_000_000.0, 4_000_000.0),
             "wifi_occupancy" | "ism_survey" => (17_000_000.0, 20_000_000.0),
@@ -147,6 +171,7 @@ fn descriptors_are_unique_and_complete() {
             "per" => (28_800.0, 96_000.0),
             "sid" => (42_000.0, 48_000.0),
             "stanag" => (3_400.0, 9_600.0),
+            "uat" => (1_300_000.0, 2_083_334.0),
             other => panic!("unexpected type id {other}"),
         };
         assert_eq!(d.bandwidth_hz, bandwidth, "{}", d.type_id);
@@ -169,16 +194,20 @@ fn descriptors_are_unique_and_complete() {
                     | "dab"
                     | "datv"
                     | "drm"
+                    | "hd_radio"
                     | "dvbt"
                     | "dmr"
                     | "dstar"
                     | "ysf"
                     | "nxdn"
                     | "p25"
+                    | "p25p2"
                     | "dpmr"
                     | "m17"
                     | "freedv"
                     | "dect"
+                    | "edacs"
+                    | "ltr"
             ),
             "{} audio flag does not match its mode class",
             d.type_id
@@ -187,7 +216,17 @@ fn descriptors_are_unique_and_complete() {
             d.has_video,
             matches!(
                 d.type_id.as_str(),
-                "atv" | "sstv" | "datv" | "dvbt" | "apt" | "lrpt" | "wefax"
+                "atv"
+                    | "sstv"
+                    | "datv"
+                    | "dvbt"
+                    | "apt"
+                    | "lrpt"
+                    | "hrpt"
+                    | "goes_hrit"
+                    | "gk2a_lrit"
+                    | "wefax"
+                    | "wenet"
             ),
             "{} video flag does not match its mode class",
             d.type_id
@@ -295,9 +334,8 @@ fn every_view_hint_is_one_the_frontend_can_draw() {
 fn calls_follow_the_mode_class() {
     for d in descriptors() {
         let expected = match d.type_id.as_str() {
-            "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "dpmr" | "m17" | "freedv" | "tetra" => {
-                Some(CallGate::Frames)
-            }
+            "dmr" | "dstar" | "ysf" | "nxdn" | "p25" | "p25p2" | "dpmr" | "m17" | "freedv"
+            | "tetra" | "edacs" | "ltr" | "mpt1327" => Some(CallGate::Frames),
             "nfm" | "am" | "ssb" | "dect" => Some(CallGate::Squelch),
             _ => None,
         };

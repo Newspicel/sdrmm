@@ -12,6 +12,8 @@ pub const MAX_POSITION_ENDPOINT_LEN: usize = 256;
 pub const MAX_POSITION_TIME_LEN: usize = 64;
 pub const MAX_YAW_RATE_DPS: f64 = 1_000.0;
 pub const MAX_HEADING_ACCURACY_DEG: f64 = 180.0;
+pub const WAITING_FOR_FIX: &str = "Waiting for a fix";
+pub const WIRE_A_POSITION: &str = "Wire a position";
 
 const fn default_nmea_update_interval_ms() -> u32 {
     DEFAULT_NMEA_UPDATE_INTERVAL_MS

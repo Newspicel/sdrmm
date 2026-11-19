@@ -27,8 +27,11 @@ use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 use sdrmm_modem::cpm::c4fm::{DibitWindow, c4fm_demod, c4fm_params};
+pub(crate) mod phase2;
 pub(crate) mod privacy;
 pub(crate) mod trunk;
+pub(crate) use phase2::p25p2_decoder;
+pub use phase2::{P25p2Channel, P25p2Params, P25p2Slots};
 use privacy::{ALGORITHM_CLEAR, CipherKey, CipherKeys, Privacy};
 
 const INPUT_RATE_HZ: f64 = 48_000.0;
@@ -84,6 +87,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "P25 Phase 1".to_owned(),
     summary: "P25 public safety voice".to_owned(),
     family: DecoderFamily::DIGITAL_VOICE,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

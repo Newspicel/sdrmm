@@ -1,5 +1,5 @@
-import { Collapsible } from "@base-ui/react/collapsible";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@ui-sdk/react/collapsible";
 import { BookmarkPlus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import {
@@ -260,17 +260,17 @@ export function DeviceChoices({
 
 function HardwareCheck() {
   return (
-    <Collapsible.Root>
-      <Collapsible.Trigger
+    <Collapsible>
+      <CollapsibleTrigger
         className={BTN_QUIET}
         title="Run the checks behind sdrmm --doctor: drivers, permissions, and what the USB bus reports"
       >
         Check hardware
-      </Collapsible.Trigger>
-      <Collapsible.Panel className="pt-2">
+      </CollapsibleTrigger>
+      <CollapsiblePanel className="pt-2">
         <Doctor />
-      </Collapsible.Panel>
-    </Collapsible.Root>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 

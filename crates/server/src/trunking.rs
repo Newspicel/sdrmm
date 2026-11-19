@@ -84,6 +84,7 @@ fn resolve(store: &Store, engine: &Engine, resolved: &Resolved) -> Vec<TrunkSyst
                 protocol: settings.protocol.clone(),
                 discovery: settings.discovery.clone(),
                 channel_map: settings.channel_map.clone(),
+                band: settings.band,
                 learned: learned_for(&saved, &node.id, &live_trunks),
                 radio: own_radio(&resolved.patch, &node.id, settings),
                 talkgroups: settings.talkgroups.clone(),

@@ -1,0 +1,52 @@
+{
+  "name": "99ef7a96d48cf939",
+  "test": "ChannelFace > marks the header while audio processing is on",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "band"
+          }
+        }
+      },
+      {
+        "id": "ble",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "channel",
+        "data": {
+          "channel_type": "ble",
+          "audio": {
+            "auto_notch": true
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "radio",
+          "port": "iq"
+        },
+        "to": {
+          "node": "ble",
+          "port": "iq"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

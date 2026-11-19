@@ -5,7 +5,10 @@ import { dismissNotice, WORKSPACES_KEY } from "../lib/api";
 import { toastError } from "../lib/toasts";
 import type { WorkspaceNotice } from "../lib/types";
 
-const RETIRED_NAMES: Readonly<Record<string, string>> = { df: "DF" };
+const RETIRED_NAMES: Readonly<Record<string, string>> = {
+  df: "DF",
+  baseband_scope: "Baseband scope",
+};
 
 const SHOWN_KINDS = 4;
 

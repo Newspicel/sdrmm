@@ -1,6 +1,8 @@
 use sdrmm_wire::{
     Attitude, GpsNode, HeadingSource, NodeBody, PatchNode, Position, PositionSource,
     SurfaceRefusal, WorkspaceSnapshot,
+    phone::{PHONE_NOT_PAIRED, PHONE_OFFLINE},
+    position::WAITING_FOR_FIX,
 };
 use tokio_tungstenite::tungstenite::{
     client::IntoClientRequest,
@@ -100,6 +102,7 @@ async fn position_of(ws: &mut WsClient, node: &str) -> (Option<PositionFix>, Opt
             node: changed,
             fix,
             error,
+            ..
         } = next_event(ws).await
             && changed == node
         {
@@ -156,7 +159,8 @@ async fn a_phone_socket_gets_only_phone_events() {
         ServerEvent::PositionChanged {
             node: "car".to_owned(),
             fix: None,
-            error: Some("phone offline".to_owned()),
+            error: Some(PHONE_OFFLINE.to_owned()),
+            waiting: None,
         },
         ServerEvent::Error {
             message: "x".to_owned(),
@@ -294,7 +298,8 @@ async fn revoke_closes_the_phone_socket() {
     let waiting = ServerEvent::PositionChanged {
         node: "car".to_owned(),
         fix: None,
-        error: Some("waiting for a position fix".to_owned()),
+        error: None,
+        waiting: Some(WAITING_FOR_FIX.to_owned()),
     };
     wait_until(|| state.gps.snapshot().contains(&waiting)).await;
     let revoking = state.clone();
@@ -307,7 +312,8 @@ async fn revoke_closes_the_phone_socket() {
     let offline = ServerEvent::PositionChanged {
         node: "car".to_owned(),
         fix: None,
-        error: Some("phone not paired".to_owned()),
+        error: Some(PHONE_NOT_PAIRED.to_owned()),
+        waiting: None,
     };
     wait_until(|| state.gps.snapshot().contains(&offline)).await;
     assert!(!state.phones.online(&paired.phone.id));
@@ -419,29 +425,29 @@ async fn a_closed_phone_socket_makes_its_nodes_offline() {
     let paired = pair_one(&state.phones);
     let id = paired.phone.id.clone();
     bind_gps(&state, "car", &id);
-    let error = |state: &AppState| {
+    let standing = |state: &AppState| {
         state
             .gps
             .snapshot()
             .into_iter()
             .find_map(|event| match event {
-                ServerEvent::PositionChanged { error, .. } => error,
+                ServerEvent::PositionChanged { error, waiting, .. } => error.or(waiting),
                 _ => None,
             })
     };
-    assert_eq!(error(&state).as_deref(), Some("phone offline"));
+    assert_eq!(standing(&state).as_deref(), Some(PHONE_OFFLINE));
     let mut first = dial_phone(addr, &paired.token).await;
     hello(&mut first).await;
     let mut second = dial_phone(addr, &paired.token).await;
     hello(&mut second).await;
-    wait_until(|| error(&state).as_deref() == Some("waiting for a position fix")).await;
+    wait_until(|| standing(&state).as_deref() == Some(WAITING_FOR_FIX)).await;
     first.close(None).await.expect("close");
     drop(first);
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(state.phones.online(&id));
-    assert_eq!(error(&state).as_deref(), Some("waiting for a position fix"));
+    assert_eq!(standing(&state).as_deref(), Some(WAITING_FOR_FIX));
     second.close(None).await.expect("close");
     drop(second);
-    wait_until(|| error(&state).as_deref() == Some("phone offline")).await;
+    wait_until(|| standing(&state).as_deref() == Some(PHONE_OFFLINE)).await;
     assert!(!state.phones.online(&id));
 }

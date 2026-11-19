@@ -301,6 +301,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
                 NodeBody::Channel(ChannelNode {
                     channel_type: "rtty".to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
             ),
             node(
@@ -1508,6 +1509,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
                 NodeBody::Channel(ChannelNode {
                     channel_type: "adsb".to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
             ),
             node("wired", beast(true)),

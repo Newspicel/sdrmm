@@ -74,7 +74,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
 
 function emptyHint(inputs: number, configured: boolean, target: EventOutputTarget, audio: boolean) {
   if (inputs === 0) {
-    return "Wire events in";
+    return undefined;
   }
   if (target.service === "recordings") {
     return "One WAV per call in Recordings";

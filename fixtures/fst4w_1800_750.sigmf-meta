@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 750.0,
+    "core:recorder": "SDR--",
+    "core:hw": "WSJT-X sample 201230_0300.wav",
+    "core:description": "FST4W-1800 off air: the beacon DL0HOT JO60 30, 2020-12-30 03:00 UTC, the audio around 1450 Hz moved to 0 Hz"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1450.0,
+      "core:datetime": "2020-12-30T03:00:00Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:sample_start": 0,
+      "core:sample_count": 1350000,
+      "core:comment": "Source: https://github.com/WSJTX/wsjtx/blob/967c85a6119110788b0df3782cf796485b2cee14/samples/FST4+FST4W/201230_0300.wav (GPL-3.0); source SHA-256 5c3c84dbbdcae734776ee8b681666ff26bf3399b4b2aa5cc02a7c1ca0278fd17; samples 0..21600000 at 12000 Hz; 16-bit mono audio as I, quadrature zero, then down-converted by 1450 Hz to 750 Hz"
+    }
+  ]
+}

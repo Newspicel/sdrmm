@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
-import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
+import { Inspect, InspectSection } from "../canvas/inspector";
+import { FaceBody, FaceEmpty, FaceFooter } from "../canvas/nodes/NodeShell";
 import { nodeAction, STATE_KEY, scanStatusOf } from "../lib/api";
 import { useScannerStore } from "../lib/scanner";
 import { pushToast } from "../lib/toasts";
@@ -17,7 +18,7 @@ import type {
 } from "../lib/types";
 import { useBandPlan } from "../lib/useBandPlan";
 import { Button } from "./BaseControls";
-import { BTN, BTN_DANGER, BTN_PRIMARY, BTN_SM, listItem } from "./controls";
+import { BTN, BTN_SM, FACE_BTN, FACE_BTN_DANGER, listItem } from "./controls";
 import { ChipField, Chips, ChoiceChip, NumberChip, SettingChip, ToggleChip } from "./face/Chips";
 import { FaceFault } from "./face/Fault";
 import { Readout, Readouts } from "./face/Readouts";
@@ -34,6 +35,7 @@ import {
   liveStatus,
   MIN_STEP_KHZ,
   presetIn,
+  rangeNeed,
   rangeProblem,
   scanPresets,
   stateLabel,
@@ -53,14 +55,14 @@ export function ScannerPanel({
   node,
   active,
   channel,
-  hint,
+  unwired,
   settings,
   onSettings,
 }: {
   node: string;
   active: DeviceSet | null;
   channel: ChannelInfo | null;
-  hint: string;
+  unwired: boolean;
   settings: ScanSettings;
   onSettings: (next: ScanSettings) => void;
 }) {
@@ -99,16 +101,21 @@ export function ScannerPanel({
     onSettled: invalidate,
   });
 
+  const need = unwired ? null : rangeNeed(settings);
   const problem = rangeProblem(settings);
   const busy = startMut.isPending || stopMut.isPending || skipMut.isPending;
   const decoder = active !== null && channel !== null;
   return (
     <>
-      <FaceBody title={active === null ? hint : undefined}>
+      <FaceBody>
         {status !== null ? (
           <>
             <ScanReadouts status={status} active={active} plan={plan} />
-            {status.error != null && <FaceFault message={status.error} />}
+            {need !== null ? (
+              <FaceEmpty hint={need} />
+            ) : (
+              !unwired && status.error != null && <FaceFault message={status.error} />
+            )}
           </>
         ) : (
           <>
@@ -120,16 +127,25 @@ export function ScannerPanel({
               )}
               <Readout label="Sweep">{sweepKind(active, null)}</Readout>
             </Readouts>
-            <ScanSetup
-              settings={settings}
-              onSettings={onSettings}
-              plan={plan}
-              firmwareSweep={active?.capabilities.hardware_sweep === true}
-            />
-            {problem !== null && <FaceFault message={problem} />}
+            {need !== null ? (
+              <FaceEmpty hint={need} />
+            ) : (
+              problem !== null && <FaceFault message={problem} />
+            )}
           </>
         )}
       </FaceBody>
+
+      {status === null && (
+        <Inspect node={node}>
+          <ScanSetup
+            settings={settings}
+            onSettings={onSettings}
+            plan={plan}
+            firmwareSweep={active?.capabilities.hardware_sweep === true}
+          />
+        </Inspect>
+      )}
 
       <FaceFooter>
         {status !== null ? (
@@ -147,7 +163,7 @@ export function ScannerPanel({
           <>
             <Button
               type="button"
-              className={BTN}
+              className={FACE_BTN}
               disabled={busy || status.state !== "holding"}
               title="Leave this frequency and lock it out"
               onClick={() => skipMut.mutate()}
@@ -156,7 +172,7 @@ export function ScannerPanel({
             </Button>
             <Button
               type="button"
-              className={status.state === "done" ? BTN : BTN_DANGER}
+              className={status.state === "done" ? FACE_BTN : FACE_BTN_DANGER}
               disabled={busy}
               onClick={() => stopMut.mutate()}
             >
@@ -164,28 +180,14 @@ export function ScannerPanel({
             </Button>
           </>
         ) : (
-          <>
-            <Button
-              type="button"
-              className={BTN}
-              onClick={() =>
-                onSettings({
-                  ...settings,
-                  ranges: [...(settings.ranges ?? []), nextRange(settings)],
-                })
-              }
-            >
-              Add range
-            </Button>
-            <Button
-              type="button"
-              className={BTN_PRIMARY}
-              disabled={!decoder || busy || problem !== null}
-              onClick={() => startMut.mutate()}
-            >
-              Start scan
-            </Button>
-          </>
+          <Button
+            type="button"
+            className={FACE_BTN}
+            disabled={!decoder || busy || unwired || need !== null || problem !== null}
+            onClick={() => startMut.mutate()}
+          >
+            Start scan
+          </Button>
         )}
       </FaceFooter>
     </>
@@ -269,83 +271,98 @@ function ScanSetup({
     patch({ ranges: ranges.map((r, i) => (i === index ? { ...r, ...next } : r)) });
   const keys = rowKeys(ranges);
   return (
-    <Chips className="border-t border-line">
-      <BandChip settings={settings} plan={plan} onSettings={onSettings} />
-      {ranges.map((range, index) => (
-        <RangeChip
-          key={keys[index]}
-          range={range}
-          index={index}
-          numbered={ranges.length > 1}
-          onPatch={(next) => patchRange(index, next)}
-          onRemove={() => patch({ ranges: ranges.filter((_, i) => i !== index) })}
-        />
-      ))}
-      {(settings.frequencies ?? []).length > 0 && (
-        <FrequencyListChip
-          label="Channels"
-          title="Listed channels"
-          values={settings.frequencies ?? []}
-          plan={plan}
-          onChange={(frequencies) => patch({ frequencies })}
-        />
-      )}
-      <ChoiceChip
-        label="Find"
-        title="Scan mode"
-        value={mode}
-        options={SCAN_MODES}
-        onChange={(next) => patch({ mode: next })}
-      />
-      <NumberChip
-        label="Over noise"
-        title="How far over the noise floor counts as busy"
-        unit="dB"
-        value={settings.margin_db ?? 12}
-        min={1}
-        max={60}
-        step={1}
-        onCommit={(margin_db) => patch({ margin_db })}
-      />
-      {mode === "all" ? (
-        <NumberChip
-          label="Hold"
-          title="Time on each busy frequency, long enough for the decoder to read it"
-          unit="s"
-          value={(settings.hold_ms ?? 5000) / 1000}
-          min={0.5}
-          max={120}
-          step={0.5}
-          onCommit={(seconds) => patch({ hold_ms: Math.round(seconds * 1000) })}
-        />
-      ) : (
-        <FrequencyListChip
-          label="Priority"
-          title="Checked every 2 s and taken over anything else"
-          values={settings.priority ?? []}
-          plan={plan}
-          addable
-          onChange={(priority) => patch({ priority })}
-        />
-      )}
-      {(settings.lockouts ?? []).length > 0 && (
-        <FrequencyListChip
-          label="Lockouts"
-          title="Never held. Skip adds to this list."
-          values={settings.lockouts ?? []}
-          plan={plan}
-          onChange={(lockouts) => patch({ lockouts })}
-        />
-      )}
-      {firmwareSweep && (
-        <ToggleChip
-          label="Firmware sweep"
-          title="Let the radio sweep itself"
-          on={settings.hardware_sweep ?? true}
-          onChange={(hardware_sweep) => patch({ hardware_sweep })}
-        />
-      )}
-    </Chips>
+    <>
+      <InspectSection label="Frequencies">
+        <Chips inset="none">
+          <BandChip settings={settings} plan={plan} onSettings={onSettings} />
+          {ranges.map((range, index) => (
+            <RangeChip
+              key={keys[index]}
+              range={range}
+              index={index}
+              numbered={ranges.length > 1}
+              onPatch={(next) => patchRange(index, next)}
+              onRemove={() => patch({ ranges: ranges.filter((_, i) => i !== index) })}
+            />
+          ))}
+          {(settings.frequencies ?? []).length > 0 && (
+            <FrequencyListChip
+              label="Channels"
+              title="Listed channels"
+              values={settings.frequencies ?? []}
+              plan={plan}
+              onChange={(frequencies) => patch({ frequencies })}
+            />
+          )}
+        </Chips>
+        <Button
+          type="button"
+          className={`${BTN} self-start`}
+          onClick={() => patch({ ranges: [...ranges, nextRange(settings)] })}
+        >
+          Add range
+        </Button>
+      </InspectSection>
+      <InspectSection label="Scan">
+        <Chips inset="none">
+          <ChoiceChip
+            label="Find"
+            title="Scan mode"
+            value={mode}
+            options={SCAN_MODES}
+            onChange={(next) => patch({ mode: next })}
+          />
+          <NumberChip
+            label="Over noise"
+            title="How far over the noise floor counts as busy"
+            unit="dB"
+            value={settings.margin_db ?? 12}
+            min={1}
+            max={60}
+            step={1}
+            onCommit={(margin_db) => patch({ margin_db })}
+          />
+          {mode === "all" ? (
+            <NumberChip
+              label="Hold"
+              title="Time on each busy frequency, long enough for the decoder to read it"
+              unit="s"
+              value={(settings.hold_ms ?? 5000) / 1000}
+              min={0.5}
+              max={120}
+              step={0.5}
+              onCommit={(seconds) => patch({ hold_ms: Math.round(seconds * 1000) })}
+            />
+          ) : (
+            <FrequencyListChip
+              label="Priority"
+              title="Checked every 2 s and taken over anything else"
+              values={settings.priority ?? []}
+              plan={plan}
+              addable
+              onChange={(priority) => patch({ priority })}
+            />
+          )}
+          {(settings.lockouts ?? []).length > 0 && (
+            <FrequencyListChip
+              label="Lockouts"
+              title="Never held. Skip adds to this list."
+              values={settings.lockouts ?? []}
+              plan={plan}
+              onChange={(lockouts) => patch({ lockouts })}
+            />
+          )}
+          {firmwareSweep && (
+            <ToggleChip
+              label="Firmware sweep"
+              title="Let the radio sweep itself"
+              on={settings.hardware_sweep ?? true}
+              onChange={(hardware_sweep) => patch({ hardware_sweep })}
+            />
+          )}
+        </Chips>
+      </InspectSection>
+    </>
   );
 }
 

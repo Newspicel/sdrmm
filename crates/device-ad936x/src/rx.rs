@@ -557,6 +557,16 @@ impl FanOut {
                     sink.stamp_hardware(ns);
                 }
             }
+            LaneEvent::Deaf { at, samples } => {
+                if at > self.expected {
+                    self.gap(at - self.expected);
+                }
+                self.expected = at.saturating_add(samples);
+                let deaf = self.per_lane(samples);
+                for sink in &mut self.sinks {
+                    sink.deaf(deaf);
+                }
+            }
         }
     }
 

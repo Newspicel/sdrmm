@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { useWorkspaceContext } from "./context";
+import { NoInspect } from "./inspector";
 import { faceSize, NodeFace } from "./nodes";
-import { isTyping } from "./useHotkeys";
+import { inPopup, isTyping } from "./useHotkeys";
 
 export function FullFace() {
   const workspace = useWorkspaceContext();
@@ -40,12 +41,10 @@ export function FullFace() {
       className="absolute inset-0 z-30 flex items-center justify-center bg-bg p-px"
     >
       <div className="max-h-full max-w-full" style={faceSize(node)}>
-        <NodeFace node={node} />
+        <NoInspect>
+          <NodeFace node={node} />
+        </NoInspect>
       </div>
     </div>
   );
-}
-
-function inPopup(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && target.closest('[role="dialog"], [role="menu"]') !== null;
 }

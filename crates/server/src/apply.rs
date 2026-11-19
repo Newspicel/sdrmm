@@ -3,8 +3,10 @@ use sdrmm_wire::{
     PatchNode, PatchRefusal, ProblemSource, StateSnapshot, WorkspaceSnapshot, WorkspaceState,
 };
 
+mod radio_use;
 mod release;
 
+use radio_use::settle_uses;
 pub(crate) use release::{drops_radio, release};
 
 use crate::{
@@ -30,6 +32,7 @@ pub(crate) fn bring_up(
     let graph = app.runs.gated(&snapshot.graph);
     forget_closed_bindings(app, &app.engine.snapshot());
     restore_bound(app, workspace, &graph, saved, &mut report);
+    report.refused.extend(settle_uses(app, &graph));
     open_radios(app, workspace, &graph, saved, &mut report);
     crate::placement::settle_workspace(app, &graph, saved, &mut report);
     let resolved = Resolved::of(graph.clone(), &app.engine.snapshot());
@@ -115,7 +118,10 @@ fn open_radios(
             }
             continue;
         };
-        match app.engine.create_device_set(&device_id) {
+        match app
+            .engine
+            .open_device_set(&device_id, radio_use::of(&node.body))
+        {
             Ok(id) => {
                 report.opened += 1;
                 first_binding(app, workspace, &node.id, id);

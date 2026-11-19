@@ -156,8 +156,9 @@ test.describe("the workspace", () => {
     await expect(receiver.locator('[id^="frequency-dial"]')).toBeVisible();
 
     await addNode(page, "Device");
-    const library = page.locator('.react-flow__node[data-id^="device:"]').last();
-    await expect(library).toBeVisible();
+    const added = page.locator('.react-flow__node[data-id^="device:"]').last();
+    await expect(added).toBeVisible();
+    const library = node((await added.getAttribute("data-id")) ?? "");
     await activate(library);
     await library.getByRole("button", { name: "Recording" }).click();
     await expect(library.getByRole("button", { name: /Upload SigMF/i })).toBeVisible();
@@ -227,14 +228,17 @@ test.describe("the workspace", () => {
       })
       .toEqual(["am"]);
     await expect(channel).toHaveCount(1);
-    await expect(channel.getByRole("slider", { name: /squelch threshold/i })).toBeVisible();
+    await expect(channel.getByText("Signal", { exact: true })).toBeVisible();
+    await expect(channel.getByRole("slider", { name: /squelch threshold/i })).toHaveCount(0);
 
     await expect(channel.locator('.react-flow__handle[data-handleid="video"]')).toHaveCount(0);
     await expect(channel.locator('.react-flow__handle[data-handleid="iq"] + span')).toHaveCount(0);
     expect(await rowOffset(channel, "audio")).toBeLessThan(1);
 
-    const squelchAuto = channel.getByRole("button", { name: "Automatic squelch" });
-    const threshold = channel.getByRole("slider", { name: /squelch threshold/i });
+    await activate(channel);
+    const inspector = page.getByRole("complementary", { name: "Inspector" });
+    const squelchAuto = inspector.getByRole("button", { name: "Automatic squelch" });
+    const threshold = inspector.getByRole("slider", { name: /squelch threshold/i });
     await expect(threshold).toBeEnabled();
     await expect(squelchAuto).toHaveAttribute("aria-pressed", "false");
     expect(await cursor(squelchAuto)).toBe("pointer");
@@ -243,7 +247,6 @@ test.describe("the workspace", () => {
     expect(await cursor(channel.locator("header"))).toBe("grab");
     expect(await cursor(node("scope").locator("header"))).toBe("grab");
 
-    await activate(node("device"));
     const viewport = page.locator(".react-flow__viewport");
     const framing = (): Promise<string> =>
       viewport.evaluate((element) => getComputedStyle(element).transform);
@@ -253,22 +256,18 @@ test.describe("the workspace", () => {
     if (thumb === null) {
       throw new Error("a squelch threshold to drag across");
     }
-    const sweep = async (from: number, by: number): Promise<void> => {
-      const y = thumb.y + thumb.height / 2;
-      await page.mouse.move(from, y);
-      await page.mouse.down();
-      await page.mouse.move(from + by, y, { steps: 8 });
-      await page.mouse.up();
-    };
+    const y = thumb.y + thumb.height / 2;
     const grip = thumb.x + thumb.width / 2;
-    await sweep(grip, 90);
+    await page.mouse.move(grip, y);
+    await page.mouse.down();
+    await page.mouse.move(grip + 60, y, { steps: 8 });
+    await page.mouse.up();
     expect(await threshold.inputValue()).not.toBe(held);
-    await expect(channel).toHaveClass(/selected/);
     expect(await framing()).toBe(framedAt);
 
-    await activate(channel);
     await squelchAuto.click();
     await expect(squelchAuto).toHaveAttribute("aria-pressed", "true");
+    await inspector.getByRole("button", { name: "Close inspector" }).click();
 
     await expect(node("scope").getByText(/MHz/).first()).toBeVisible();
 
@@ -334,8 +333,8 @@ test.describe("the workspace", () => {
     };
     const tuning = await tunedTo();
 
-    await scopePlot.getByRole("button", { name: "Scope settings" }).click();
-    const settings = page.getByRole("dialog");
+    await scopePlot.getByRole("button", { name: "Inspect" }).click();
+    const settings = page.getByRole("complementary", { name: "Inspector" });
     const peak = settings.getByRole("button", { name: /^peak hold$/i });
     await peak.click();
     await expect(peak).toHaveAttribute("aria-pressed", "true");
@@ -358,19 +357,22 @@ test.describe("the workspace", () => {
 
     const floor = settings.getByRole("slider", { name: /waterfall dBFS floor/i });
     const ceiling = settings.getByRole("slider", { name: /waterfall dBFS ceiling/i });
-    const auto = settings.getByRole("switch", { name: "Automatic levels" });
-    await expect(auto).toBeChecked();
+    const auto = settings.getByRole("combobox", {
+      name: "Fit the waterfall colours to the signal",
+    });
+    await expect(auto).toHaveText(/Yes/);
     const automatic = await floor.inputValue();
     await floor.press("ArrowUp");
     await expect(floor).not.toHaveValue(automatic);
-    await expect(auto).not.toBeChecked();
+    await expect(auto).toHaveText(/No/);
     await expect(scopePlot.getByText(/· manual/)).toBeVisible();
 
     await ceiling.press("ArrowDown");
     expect(Number(await ceiling.inputValue())).toBeGreaterThan(Number(await floor.inputValue()));
 
     await auto.click();
-    await expect(auto).toBeChecked();
+    await page.getByRole("option", { name: "Yes" }).click();
+    await expect(auto).toHaveText(/Yes/);
     await expect(scopePlot.getByText(/· manual/)).toHaveCount(0);
 
     const viridis = settings.getByRole("button", { name: /^viridis$/i });
@@ -402,17 +404,17 @@ test.describe("the workspace", () => {
     await expect(node("scope").getByRole("button", { name: /unpin from the rack/i })).toBeVisible();
     await expect(node("device").locator('[id^="frequency-dial"]')).toBeVisible();
     await expect(
-      page
-        .locator('.react-flow__node[data-id^="channel:"]')
-        .getByRole("slider", { name: /squelch threshold/i }),
+      page.locator('.react-flow__node[data-id^="channel:"]').getByText("Signal", { exact: true }),
     ).toBeVisible();
     await rack.click();
     await expect(page.getByText(/nothing pinned/i)).toHaveCount(0);
 
     await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Patch" }).click();
     await activate(node("device"));
-    await node("device").getByRole("button", { name: "Sample rate" }).click();
-    await page.getByRole("combobox", { name: "Sample rate" }).click();
+    await page
+      .getByRole("complementary", { name: "Inspector" })
+      .getByRole("combobox", { name: "Sample rate" })
+      .click();
     await page.getByRole("option", { name: "2 MS/s", exact: true }).click();
 
     await addNode(page, "ADS-B (1090ES)");
@@ -534,13 +536,12 @@ test.describe("the workspace", () => {
       return node;
     };
 
-    const nmea = await addGps();
-    await expect(nmea.getByText("u-blox GNSS receiver · GNSS-1")).toBeVisible();
-    await nmea.getByRole("button", { name: /usbmodem11401/ }).click();
+    const inspector = page.getByRole("complementary", { name: "Inspector" });
+    await addGps();
+    await expect(inspector.getByText("u-blox GNSS receiver · GNSS-1")).toBeVisible();
+    await inspector.getByRole("button", { name: /usbmodem11401/ }).click();
 
-    const portChip = nmea.getByRole("button", { name: "Serial port of the receiver" });
-    await portChip.click();
-    const device = nmea.getByRole("combobox", { name: "Serial device" });
+    const device = inspector.getByRole("combobox", { name: "Serial device" });
     await expect(device).toHaveValue("/dev/cu.usbmodem11401");
     await device.fill("");
     await device.click();
@@ -555,26 +556,18 @@ test.describe("the workspace", () => {
     await expect(device).toHaveValue("/dev/cu.usbmodem11401");
     await device.fill("/dev/ttyACM7");
     await device.press("Tab");
-    await page.keyboard.press("Escape");
-    await expect(portChip).toContainText("/dev/ttyACM7");
-    const baudChip = nmea.getByRole("button", { name: "Serial baud rate" });
-    await baudChip.click();
-    const baud = nmea.getByRole("combobox", { name: "Baud" });
+    await expect(device).toHaveValue("/dev/ttyACM7");
+    const baud = inspector.getByRole("combobox", { name: "Baud" });
     await baud.fill("38400");
     await baud.press("Tab");
-    await page.keyboard.press("Escape");
-    await nmea.getByRole("button", { name: "Update rate" }).click();
+    await inspector.getByRole("combobox", { name: "Update rate" }).click();
     await page.getByRole("option", { name: "5 Hz" }).click();
-    await portChip.click();
     await device.fill(" ");
     await device.press("Tab");
-    await page.keyboard.press("Escape");
-    await expect(portChip).toContainText("/dev/ttyACM7");
-    await baudChip.click();
+    await expect(device).toHaveValue("/dev/ttyACM7");
     await baud.fill("100");
     await baud.press("Tab");
-    await page.keyboard.press("Escape");
-    await expect(baudChip).toContainText("38400");
+    await expect(baud).toHaveValue("38400");
 
     await expect
       .poll(async () => {
@@ -595,40 +588,37 @@ test.describe("the workspace", () => {
         }),
       );
 
-    const gpsd = await addGps();
-    await gpsd.getByRole("group", { name: "Position source" }).getByText("Network").click();
-    const typedAddress = gpsd.getByRole("textbox", { name: "GPSD address" });
-    await typedAddress.fill("not-an-endpoint");
-    await expect(gpsd.getByRole("button", { name: "Read" })).toBeDisabled();
-    await typedAddress.fill("127.0.0.1:2947");
-    await gpsd.getByRole("button", { name: "Read" }).click();
+    await addGps();
+    await inspector.getByRole("group", { name: "Position source" }).getByText("Network").click();
+    const address = inspector.getByRole("textbox", { name: "GPSD address" });
+    await address.fill("not-an-endpoint");
+    await expect(inspector.getByRole("button", { name: "Read" })).toBeDisabled();
+    await address.fill("127.0.0.1:2947");
+    await inspector.getByRole("button", { name: "Read" }).click();
 
-    const addressChip = gpsd.getByRole("button", { name: "Host and port of the gpsd daemon" });
-    await expect(addressChip).toContainText("127.0.0.1:2947");
-    await addressChip.click();
-    const address = gpsd.getByRole("textbox", { name: "GPSD address" });
+    await expect(inspector.getByRole("button", { name: "Read" })).toHaveCount(0);
+    await expect(address).toHaveValue("127.0.0.1:2947");
     await address.fill("not-an-endpoint");
     await address.press("Enter");
-    await page.keyboard.press("Escape");
-    await expect(addressChip).toContainText("127.0.0.1:2947");
+    await expect(address).toHaveValue("127.0.0.1:2947");
 
     const fixed = await addGps();
-    await fixed.getByRole("group", { name: "Position source" }).getByText("Fixed").click();
-    const latitude = fixed.getByRole("textbox", { name: "Latitude" });
+    await inspector.getByRole("group", { name: "Position source" }).getByText("Fixed").click();
+    const latitude = inspector.getByRole("textbox", { name: "Latitude" });
     await latitude.fill("52.52");
     await latitude.press("Tab");
-    const longitude = fixed.getByRole("textbox", { name: "Longitude" });
+    const longitude = inspector.getByRole("textbox", { name: "Longitude" });
     await longitude.fill("13.405");
     await longitude.press("Tab");
-    await fixed.getByRole("button", { name: "Set" }).click();
+    await inspector.getByRole("button", { name: "Set" }).click();
     await expect(fixed.getByText("52.520000, 13.405000")).toBeVisible();
     await expect(fixed.getByText("JO62qm")).toBeVisible();
 
-    await fixed.getByRole("button", { name: "Forget source" }).click();
-    const sources = fixed.getByRole("group", { name: "Position source" });
+    await inspector.getByRole("button", { name: "Forget source" }).click();
+    const sources = inspector.getByRole("group", { name: "Position source" });
     await expect(sources).toBeVisible();
     await sources.getByText("Phone", { exact: true }).click();
-    await expect(fixed.getByText("No phones", { exact: true })).toBeVisible();
+    await expect(inspector.getByText("No phones", { exact: true })).toBeVisible();
   });
 
   test("keeps the band plan in the workspace, not in the browser", async ({ page }) => {
@@ -743,7 +733,7 @@ test.describe("the workspace", () => {
     await expect.poll(stored).toEqual(before);
   });
 
-  test("splits baseband into its own scope and works from the frequency under the pointer", async ({
+  test("shows a channel's baseband in the inspector and works from the frequency under the pointer", async ({
     page,
   }) => {
     await page.goto("/");
@@ -754,28 +744,14 @@ test.describe("the workspace", () => {
 
     await expect(scope.locator('.react-flow__handle[data-handleid="baseband"]')).toHaveCount(0);
 
-    await addNode(page, "Baseband scope");
-    const baseband = page.locator('.react-flow__node[data-id^="baseband_scope:"]');
-    await expect(baseband).toBeVisible();
-    await fitPatch(page);
-    await dragWire(
-      page,
-      page
-        .locator(
-          '.react-flow__node[data-id^="channel:"] .react-flow__handle[data-handleid="baseband"]',
-        )
-        .first(),
-      baseband.locator('.react-flow__handle[data-handleid="baseband"]'),
-    );
-    const views = baseband.getByRole("group", { name: "Baseband view" });
-    await expect(views.getByRole("button", { name: "Spectrum" })).toBeVisible();
-    await activate(baseband);
-    const barTop = (await views.boundingBox())?.y;
+    await activate(page.locator('.react-flow__node[data-id^="channel:"]').first());
+    const inspector = page.getByRole("complementary", { name: "Inspector" });
+    const views = inspector.getByRole("group", { name: "Baseband view" });
     await views.getByRole("button", { name: "Levels" }).click();
-    await baseband.getByRole("button", { name: "View settings", exact: true }).click();
-    await expect(page.getByRole("textbox", { name: "Symbol rate" })).toBeVisible();
-    await page.keyboard.press("Escape");
-    expect((await views.boundingBox())?.y, "the view bar stays put").toBe(barTop);
+    await expect(views.getByRole("button", { name: "Spectrum" })).toBeVisible();
+    await inspector.getByRole("button", { name: "Close inspector" }).click();
+    await expect(inspector).toHaveCount(0);
+    await fitPatch(page);
 
     const plot = scope.locator(".bg-plot-bg");
     const box = await plot.boundingBox();
@@ -831,8 +807,8 @@ test.describe("the workspace", () => {
     await page.goto("/");
     const scope = page.locator('.react-flow__node[data-id="scope"]');
     await expect(scope).toBeVisible();
-    await fitPatch(page);
     await activate(page.locator('.react-flow__node[data-id="device"]'));
+    await fitPatch(page);
 
     const viewport = page.locator(".react-flow__viewport");
     const transform = () => viewport.evaluate((element) => getComputedStyle(element).transform);
@@ -1010,8 +986,12 @@ test.describe("the workspace", () => {
     await page.goto("/");
 
     const channel = page.locator('.react-flow__node[data-id="voice"]');
-    await expect(channel.getByRole("button", { name: /bandwidth/i })).toBeVisible();
     await activate(channel);
+    await expect(
+      page
+        .getByRole("complementary", { name: "Inspector" })
+        .getByRole("combobox", { name: "Channel bandwidth" }),
+    ).toHaveText("12.5 kHz");
     const dial = channel.getByRole("spinbutton", { name: "Tuned frequency" });
     await dial.focus();
     await dial.press("ArrowUp");
@@ -1125,7 +1105,7 @@ test.describe("the workspace", () => {
     await page.goto("/");
 
     const channel = page.locator('.react-flow__node[data-id="voice"]');
-    await expect(channel.getByRole("button", { name: /bandwidth/i })).toBeVisible();
+    await expect(channel.getByTitle("Channel bandwidth")).toHaveText("12.5 kHz");
     await activate(channel);
     await channel.getByRole("button", { name: "Type a frequency to listen on" }).click();
 
@@ -1205,7 +1185,7 @@ test.describe("the workspace", () => {
     await page.request.delete(`/api/workspaces/${created.id}`);
   });
 
-  test("sits a radio's iq port on its gain row as the face first opens", async ({ page }) => {
+  test("sits each lane's iq port on its dial row as the face first opens", async ({ page }) => {
     const list = await page.request.get("/api/workspaces").then((r) => r.json());
     const created = await page.request
       .post("/api/workspaces", {
@@ -1219,11 +1199,14 @@ test.describe("the workspace", () => {
                   id: "radio",
                   kind: "device",
                   position: { x: 0, y: 0 },
-                  data: { device: { backend: "virtual", key: "band" } },
+                  data: {
+                    device: { backend: "virtual", key: "transceiver" },
+                    split_tuning: true,
+                  },
                 },
                 { id: "view", kind: "scope", position: { x: 440, y: 0 } },
               ],
-              edges: [{ from: { node: "radio", port: "iq" }, to: { node: "view", port: "iq" } }],
+              edges: [{ from: { node: "radio", port: "iq2" }, to: { node: "view", port: "iq" } }],
             },
           },
         },
@@ -1233,10 +1216,15 @@ test.describe("the workspace", () => {
     try {
       await page.goto("/");
       const radio = page.locator('.react-flow__node[data-id="radio"]');
-      const gain = radio.getByRole("slider", { name: /gain$/i }).first();
-      await expect(gain).toBeVisible();
-      const port = radio.locator('.react-flow__handle[data-handleid="iq"]');
-      await expect.poll(() => verticalGap(port, gain)).toBeLessThan(4);
+      for (const [port, row] of [
+        ["iq", "iq1"],
+        ["iq2", "iq2"],
+      ] as const) {
+        const label = radio.getByText(row, { exact: true });
+        await expect(label).toBeVisible();
+        const handle = radio.locator(`.react-flow__handle[data-handleid="${port}"]`);
+        await expect.poll(() => verticalGap(handle, label)).toBeLessThan(4);
+      }
     } finally {
       await page.request.post(`/api/workspaces/${list.active}/activate`);
       await page.request.delete(`/api/workspaces/${created.id}`);

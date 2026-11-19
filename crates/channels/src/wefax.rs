@@ -74,6 +74,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "WEFAX".to_owned(),
     summary: "HF weather fax charts".to_owned(),
     family: DecoderFamily::WEATHER,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 1_600.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

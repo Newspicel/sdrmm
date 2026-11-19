@@ -26,6 +26,7 @@ export function useAddNode(): AddNode {
     const node = { ...fresh, position: at ?? placeNode(workspace.graph, fresh) };
     workspace.edit((snapshot) => ({ ...snapshot, graph: addNode(snapshot.graph, node) }));
     workspace.select(id);
+    workspace.inspect(id);
     if (opensDevice(kind)) {
       workspace.apply();
     }

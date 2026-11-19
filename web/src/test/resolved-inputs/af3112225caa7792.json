@@ -1,6 +1,6 @@
 {
   "name": "af3112225caa7792",
-  "test": "RecorderFace > offers Record only once a device's IQ is wired in",
+  "test": "RecorderFace > sets pre-roll in the inspector, not on the face",
   "graph": {
     "nodes": [
       {

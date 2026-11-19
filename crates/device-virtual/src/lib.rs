@@ -722,7 +722,7 @@ impl SdrDevice for MarkerGen {
                     generator.set_marker_offset_hz(offset);
                     generator.fill(&mut block, params.sample_rate);
                     if quiet {
-                        sink.dropped(n as u64);
+                        sink.deaf(n as u64);
                         continue;
                     }
                     if let (Some(antenna), Some(center)) =

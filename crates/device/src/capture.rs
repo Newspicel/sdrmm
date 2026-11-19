@@ -359,8 +359,8 @@ fn supervise<R: CaptureRadio, C: SampleConverter>(
                 break;
             };
             *lock(published) = Some(fresh.stop_handle());
-            let lost = (held.elapsed().as_secs_f64() * config.sample_rate).ceil() as u64;
-            sink.dropped_estimate(lost, lost, GapScope::Lane);
+            let deaf = (held.elapsed().as_secs_f64() * config.sample_rate).ceil() as u64;
+            sink.deaf(deaf);
             sink.realigned(Uncertainty::Rearmed, UNKNOWN_ERROR, GapScope::Lane);
             dropped = 0;
             stream = fresh;

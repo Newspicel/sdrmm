@@ -5,6 +5,8 @@ export interface Unbound {
   status: string | null;
   hint: string;
   action: string | null;
+  /** The hint also stands on the face, where a missing wire's would. */
+  standing?: true;
 }
 
 const UNBOUND: Record<UnboundReason, Unbound> = {
@@ -20,6 +22,7 @@ const UNBOUND: Record<UnboundReason, Unbound> = {
   not_running: { status: "not running", hint: "Its source is not running yet", action: null },
   stopped: { status: "stopped", hint: "Start it on the node that feeds this one", action: null },
   waiting: { status: "waiting", hint: "Its radio opens when its controller says so", action: null },
+  send_only: { status: "send only", hint: "Radio set to send only", action: null, standing: true },
 };
 
 export function unboundOf(runs: Runs | undefined): Unbound | null {

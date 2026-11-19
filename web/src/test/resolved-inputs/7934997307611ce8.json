@@ -1,6 +1,6 @@
 {
   "name": "7934997307611ce8",
-  "test": "TriangulationFace > asks for finders when nothing is wired",
+  "test": "TriangulationFace > holds its shape when nothing is wired",
   "graph": {
     "nodes": [
       {

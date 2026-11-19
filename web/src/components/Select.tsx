@@ -1,8 +1,30 @@
-import { Select as Primitive } from "@base-ui/react/select";
+import {
+  Select as Root,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@ui-sdk/react/select";
 import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 import { CONTROL_W, FIELD, listItem, type Options, SURFACE } from "./controls";
 import { Icon } from "./Icon";
 import { usePortalContainer } from "./PortalContainer";
+
+/**
+ * Where a popup mounts: the surrounding portal container, else the body. In place, the trigger's
+ * parent would style it through child selectors. Read on open, as the ref is empty on first render.
+ */
+export function usePopupHost(): readonly [Element | undefined, (open: boolean) => void] {
+  const portal = usePortalContainer();
+  const [host, setHost] = useState<Element>();
+  const follow = (open: boolean): void => {
+    if (open) {
+      setHost(portal?.current ?? document.body);
+    }
+  };
+  return [host, follow];
+}
 
 export function Select<T extends string | number>({
   label,
@@ -19,59 +41,51 @@ export function Select<T extends string | number>({
   className?: string;
   disabled?: boolean;
 }) {
-  const portalContainer = usePortalContainer();
+  const [host, follow] = usePopupHost();
   return (
-    <Primitive.Root
-      items={options}
+    <Root
+      items={[...options]}
       value={value}
       disabled={disabled}
+      container={host}
+      onOpenChange={follow}
       onValueChange={(next) => {
-        const picked = options.find((option) => option.value === next);
-        if (picked !== undefined) {
-          onChange(picked.value);
+        if (next !== null) {
+          onChange(next);
         }
       }}
     >
-      <Primitive.Trigger
+      <SelectTrigger
         data-hotkeys="off"
         aria-label={label}
         className={`${FIELD} justify-between ${className}`}
       >
-        <Primitive.Value className="truncate" />
-        <Primitive.Icon aria-hidden className="shrink-0 text-ink-faint">
+        <SelectValue className="truncate" />
+        <span aria-hidden className="shrink-0 text-ink-faint">
           <Icon glyph={ChevronDown} size={12} />
-        </Primitive.Icon>
-      </Primitive.Trigger>
-      <Primitive.Portal container={portalContainer} className="contents">
-        <Primitive.Positioner
-          className="z-30"
-          alignItemWithTrigger={false}
-          side="bottom"
-          align="start"
-          sideOffset={4}
-        >
-          <Primitive.Popup
-            data-hotkeys="off"
-            className={`${SURFACE} max-w-[calc(100vw-1rem)] min-w-[var(--anchor-width)]`}
+        </span>
+      </SelectTrigger>
+      <SelectContent
+        data-hotkeys="off"
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        className={`${SURFACE} flex max-h-(--available-height) max-w-[calc(100vw-1rem)] min-w-(--anchor-width) flex-col overflow-y-auto p-0.5`}
+      >
+        {options.map((option) => (
+          <SelectItem
+            key={String(option.value)}
+            value={option.value}
+            disabled={option.disabled}
+            title={option.title}
+            className={(state) =>
+              `${listItem(state.selected, state.highlighted)} shrink-0 data-disabled:opacity-45`
+            }
           >
-            <Primitive.List className="flex max-h-[var(--available-height)] flex-col overflow-y-auto p-0.5">
-              {options.map((option) => (
-                <Primitive.Item
-                  key={String(option.value)}
-                  value={option.value}
-                  disabled={option.disabled}
-                  title={option.title}
-                  className={(state) =>
-                    `${listItem(state.selected, state.highlighted)} data-[disabled]:opacity-45`
-                  }
-                >
-                  <Primitive.ItemText>{option.label}</Primitive.ItemText>
-                </Primitive.Item>
-              ))}
-            </Primitive.List>
-          </Primitive.Popup>
-        </Primitive.Positioner>
-      </Primitive.Portal>
-    </Primitive.Root>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Root>
   );
 }

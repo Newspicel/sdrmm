@@ -21,7 +21,7 @@ import {
 import type { Control, NumberSpec, PresetOption, SettingField } from "../lib/types";
 import { Button } from "./BaseControls";
 import { Checkbox } from "./Checkbox";
-import { BTN_SM, type Options } from "./controls";
+import { BTN_SM, ICON_BTN_DANGER, type Options } from "./controls";
 import { SettingChip } from "./face/Chips";
 import { HzField } from "./HzField";
 import { Icon } from "./Icon";
@@ -176,7 +176,7 @@ function EntryRow({
       </div>
       <Button
         type="button"
-        className={`${BTN_SM} hover:text-danger`}
+        className={`${ICON_BTN_DANGER} shrink-0`}
         aria-label={`Remove ${name.toLowerCase()}`}
         onClick={onRemove}
       >
@@ -307,6 +307,7 @@ function ValueControl({
       return (
         <ItemNumber
           name={name}
+          hint={field.label}
           spec={shownSpec(control)}
           value={shownNumber(control, value)}
           onCommit={(shown) => onCommit(storedNumber(control, shown))}
@@ -333,11 +334,13 @@ function ValueControl({
 
 function ItemNumber({
   name,
+  hint,
   spec,
   value,
   onCommit,
 }: {
   name: string;
+  hint: string;
   spec: NumberSpec;
   value: unknown;
   onCommit: (value: number | null) => void;
@@ -362,7 +365,7 @@ function ItemNumber({
       <OptionalNumberField
         label={name}
         className={ITEM}
-        placeholder={spec.optional ?? name}
+        placeholder={spec.optional ?? hint}
         value={number}
         unit={spec.unit ?? undefined}
         step={spec.step ?? undefined}

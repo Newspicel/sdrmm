@@ -30,6 +30,7 @@ fn channel(id: &str, ty: &str) -> PatchNode {
         NodeBody::Channel(ChannelNode {
             channel_type: ty.to_owned(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
     )
 }
@@ -219,6 +220,7 @@ fn topology_ignores_where_a_face_sits_and_what_it_is_called() {
     retyped.nodes[1].body = NodeBody::Channel(ChannelNode {
         channel_type: "probe_am".to_owned(),
         tuning_locked: false,
+        audio: Default::default(),
     });
     assert!(!graph.same_topology(&retyped));
 
@@ -258,6 +260,7 @@ fn a_device_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() 
         locked_streams: vec![1],
         split_tuning: false,
         stopped: false,
+        radio_use: crate::RadioUse::Receive,
         waiting: false,
     });
     let json = serde_json::to_string(&locked).expect("serialize the body");
@@ -268,6 +271,25 @@ fn a_device_node_saved_before_the_frequency_lock_existed_still_loads_unlocked() 
     };
     assert!(!back.tuning_locked(0), "only the named stream is held");
     assert!(back.tuning_locked(1));
+}
+
+#[test]
+fn a_device_node_receives_unless_told_otherwise_and_saves_only_a_change() {
+    let stored = r#"{"id":"dev","kind":"device","data":{},"position":{"x":0.0,"y":0.0}}"#;
+    let back: PatchNode = serde_json::from_str(stored).expect("an older device node parses");
+    let NodeBody::Device(device) = &back.body else {
+        panic!("the node is still a device");
+    };
+    assert_eq!(device.radio_use, crate::RadioUse::Receive);
+    let json = serde_json::to_value(&back).expect("serialize");
+    assert!(json["data"].get("radio_use").is_none());
+
+    let both = NodeBody::Device(DeviceNode {
+        radio_use: crate::RadioUse::Both,
+        ..DeviceNode::default()
+    });
+    let json = serde_json::to_value(&both).expect("serialize");
+    assert_eq!(json["data"]["radio_use"], "both");
 }
 
 #[test]
@@ -282,6 +304,7 @@ fn a_channel_node_saved_before_the_frequency_lock_existed_still_loads_unlocked()
     let locked = NodeBody::Channel(ChannelNode {
         channel_type: channel.channel_type,
         tuning_locked: true,
+        audio: Default::default(),
     });
     let json = serde_json::to_string(&locked).expect("serialize the body");
     assert_eq!(
@@ -748,10 +771,7 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
         .filter(|&kind| reachable[kind][kind])
         .map(|kind| catalog.nodes[kind].kind.as_str())
         .collect();
-    assert_eq!(
-        cycle,
-        vec!["event_filter", "audio_fx", "triangulation", "bearing_fix"]
-    );
+    assert_eq!(cycle, vec!["event_filter", "triangulation", "bearing_fix"]);
 }
 
 fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &PortSpec) -> bool {
@@ -1250,10 +1270,7 @@ fn a_channel_tap_cannot_be_wired_where_a_wideband_stream_belongs() {
     assert!(!takes("audio_recorder", PortType::Iq));
     assert!(!takes("signal_map", PortType::Baseband));
     assert!(!takes("scope", PortType::Baseband));
-    assert!(
-        takes("baseband_scope", PortType::Baseband),
-        "the baseband scope is what reads it"
-    );
+    assert!(takes("network_export", PortType::Baseband));
 
     let mut graph = workspace();
     graph.edges.push(edge(("ch", "baseband"), ("ch", "iq")));
@@ -2011,6 +2028,7 @@ fn a_satellite_drives_many_decoders_but_a_decoder_answers_to_one_controller() {
             NodeBody::Channel(ChannelNode {
                 channel_type: "probe_voice".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
         )
     };
@@ -2115,44 +2133,29 @@ fn a_rotator_with_nonsense_settings_is_refused() {
     assert!(matches!(graph.validate(), Err(PatchError::NodeSettings(_))));
 }
 
-fn audio_fx(id: &str) -> PatchNode {
-    node(id, NodeBody::AudioFx(crate::AudioFxNode::default()))
-}
-
 #[test]
-fn audio_fx_sits_between_a_channel_and_its_speaker() {
+fn a_decoder_with_audio_settings_out_of_range_is_refused() {
     let mut graph = workspace();
-    graph.nodes.push(audio_fx("fx"));
-    graph.edges.pop();
-    graph.edges.push(edge(("ch", "audio"), ("fx", "audio")));
-    graph.edges.push(edge(("fx", "audio"), ("spk", "audio")));
-    assert!(graph.validate().is_ok());
-}
-
-#[test]
-fn audio_fx_wired_back_into_itself_is_a_loop() {
-    let graph = PatchGraph {
-        nodes: vec![audio_fx("a"), audio_fx("b")],
-        edges: vec![
-            edge(("a", "audio"), ("b", "audio")),
-            edge(("b", "audio"), ("a", "audio")),
-        ],
+    let NodeBody::Channel(channel) = &mut graph.nodes[2].body else {
+        panic!("ch is a decoder");
     };
-    assert!(matches!(graph.validate(), Err(PatchError::Cycle(_))));
-}
-
-#[test]
-fn audio_fx_with_settings_outside_their_range_is_refused() {
-    let mut fx = crate::AudioFxNode::default();
-    fx.settings.denoise.strength = 3.0;
-    let graph = PatchGraph {
-        nodes: vec![node("fx", NodeBody::AudioFx(fx))],
-        edges: Vec::new(),
-    };
+    channel.audio.denoise.strength = 3.0;
     assert_eq!(
         graph.validate(),
-        Err(PatchError::NodeSettings("fx".to_owned()))
+        Err(PatchError::NodeSettings("ch".to_owned()))
     );
+}
+
+#[test]
+fn a_decoder_runs_its_listeners_through_its_own_audio_chain_only_while_on() {
+    let mut graph = workspace();
+    assert!(graph.audio_fx("ch").is_empty());
+    let NodeBody::Channel(channel) = &mut graph.nodes[2].body else {
+        panic!("ch is a decoder");
+    };
+    channel.audio.auto_notch = true;
+    assert_eq!(graph.audio_fx("ch"), ["ch"]);
+    assert!(graph.audio_fx("nowhere").is_empty());
 }
 
 fn radio(key: &str) -> DeviceNode {
@@ -2235,6 +2238,7 @@ fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {
                 NodeBody::Channel(ChannelNode {
                     channel_type: "nfm".to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
             ),
             node(
@@ -2307,4 +2311,47 @@ fn a_recording_and_a_generator_have_nothing_to_transmit_from() {
                 .all(|port| port.port_type != PortType::Transmit)
         );
     }
+}
+
+#[test]
+fn a_trunk_system_refuses_a_channel_band_it_cannot_place_channels_with() {
+    let banded = |band: TrunkBand| {
+        PatchGraph {
+            nodes: vec![node(
+                "system",
+                NodeBody::Trunk(TrunkNode {
+                    band: Some(band),
+                    ..TrunkNode::default()
+                }),
+            )],
+            edges: Vec::new(),
+        }
+        .validate()
+    };
+
+    banded(TrunkBand {
+        base_hz: 423_000_000,
+        spacing_hz: 12_500,
+    })
+    .expect("a band of 12.5 kHz channels");
+    for (base_hz, spacing_hz) in [(0, 12_500), (423_000_000, 0), (423_000_000, 2_000_000)] {
+        assert_eq!(
+            banded(TrunkBand {
+                base_hz,
+                spacing_hz
+            }),
+            Err(PatchError::NodeSettings("system".to_owned())),
+            "{base_hz} / {spacing_hz} was accepted"
+        );
+    }
+}
+
+#[test]
+fn a_band_counts_channels_up_from_its_base() {
+    let band = TrunkBand {
+        base_hz: 423_000_000,
+        spacing_hz: 12_500,
+    };
+    assert_eq!(band.frequency(0), 423_000_000);
+    assert_eq!(band.frequency(48), 423_600_000);
 }

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 8000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "horusdemodlib samples/horusb_iq_s16.raw",
+    "core:description": "Horus Binary v1 frame: payload ID 0, sequence 9, no GPS fix"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 6100.0,
+      "core:datetime": "2026-11-19T15:09:00.390948Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "samples/horusb_iq_s16.raw from horusdemodlib (LGPL-2.1, github.com/projecthorus/horusdemodlib at 8cc43de5), cs16 IQ at 48 kHz; tones near 6.1 kHz shifted to 0 Hz; source SHA-256 43577341cae02eb1265555a0620995d757daca5f2bcb9c1edb9dfd4ac794785d; samples 0..262080 at 48000 Hz",
+      "core:sample_count": 43680,
+      "core:sample_start": 0
+    }
+  ]
+}

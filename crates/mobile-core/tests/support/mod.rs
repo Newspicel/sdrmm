@@ -475,6 +475,7 @@ pub fn hunt_graph(phone: Option<&str>) -> PatchGraph {
                     locked_streams: Vec::new(),
                     split_tuning: false,
                     stopped: false,
+                    radio_use: sdrmm_wire::RadioUse::Receive,
                     waiting: false,
                 }),
             ),
@@ -483,6 +484,7 @@ pub fn hunt_graph(phone: Option<&str>) -> PatchGraph {
                 NodeBody::Channel(ChannelNode {
                     channel_type: "nfm".to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
             ),
             node(HUNT, NodeBody::Hunt(HuntNode::default())),

@@ -1,4 +1,4 @@
-/// DES (FIPS 46-3), encryption only: the land mobile radio ciphers run it in output feedback.
+/// DES (FIPS 46-3): land mobile radio runs it in output feedback, GK-2A xRIT in ECB.
 #[derive(Clone)]
 pub struct Des {
     subkeys: [u64; ROUNDS],
@@ -121,13 +121,22 @@ impl Des {
     }
 
     pub fn encrypt(&self, block: &mut [u8; 8]) {
-        let permuted = permute(u64::from_be_bytes(*block), 64, &INITIAL);
-        let (mut left, mut right) = (permuted >> 32, permuted & 0xFFFF_FFFF);
-        for subkey in self.subkeys {
-            (left, right) = (right, left ^ feistel(right, subkey));
-        }
-        *block = permute(right << 32 | left, 64, &FINAL).to_be_bytes();
+        rounds(block, self.subkeys.iter().copied());
     }
+
+    /// The inverse cipher: the same rounds with the subkeys in reverse.
+    pub fn decrypt(&self, block: &mut [u8; 8]) {
+        rounds(block, self.subkeys.iter().rev().copied());
+    }
+}
+
+fn rounds(block: &mut [u8; 8], subkeys: impl Iterator<Item = u64>) {
+    let permuted = permute(u64::from_be_bytes(*block), 64, &INITIAL);
+    let (mut left, mut right) = (permuted >> 32, permuted & 0xFFFF_FFFF);
+    for subkey in subkeys {
+        (left, right) = (right, left ^ feistel(right, subkey));
+    }
+    *block = permute(right << 32 | left, 64, &FINAL).to_be_bytes();
 }
 
 #[cfg(test)]
@@ -138,6 +147,14 @@ mod tests {
         let mut block = plain.to_be_bytes();
         Des::new(key.to_be_bytes()).encrypt(&mut block);
         u64::from_be_bytes(block)
+    }
+
+    #[test]
+    fn decryption_undoes_encryption() {
+        let des = Des::new(0x1334_5779_9BBC_DFF1u64.to_be_bytes());
+        let mut block = 0x85E8_1354_0F0A_B405u64.to_be_bytes();
+        des.decrypt(&mut block);
+        assert_eq!(u64::from_be_bytes(block), 0x0123_4567_89AB_CDEF);
     }
 
     #[test]

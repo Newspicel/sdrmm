@@ -2,7 +2,8 @@ use std::time::{Duration, Instant};
 
 use sdrmm_wire::{
     EncoderNode, MicrophoneNode, NodeActed, NodeBody, PatchEdge, PatchNode, PortRef, Position,
-    TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus, WorkspaceSnapshot,
+    RadioActivity, RadioUse, TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus,
+    WorkspaceSnapshot,
 };
 
 use super::*;
@@ -35,8 +36,18 @@ fn encoder(encoder_type: &str) -> NodeBody {
     })
 }
 
+/// Sets the bench radio to `radio_use`, as its Device node's use setting does.
+fn used_for(snapshot: &mut WorkspaceSnapshot, radio_use: RadioUse) {
+    for held in &mut snapshot.graph.nodes {
+        if let NodeBody::Device(device) = &mut held.body {
+            device.radio_use = radio_use;
+        }
+    }
+}
+
 fn station(encoder_type: &str) -> WorkspaceSnapshot {
     let mut snapshot = virtual_snapshot("transceiver", &[]);
+    used_for(&mut snapshot, RadioUse::Both);
     snapshot.graph.nodes.extend([
         node("mic", NodeBody::Microphone(MicrophoneNode::default())),
         node("mod", encoder(encoder_type)),
@@ -227,9 +238,43 @@ async fn an_armed_transmitter_follows_the_patch() {
 }
 
 #[tokio::test]
+async fn a_radio_set_to_receive_keeps_its_transmitter_off_the_air() {
+    let app = test_router();
+    let mut snapshot = station("nfm");
+    used_for(&mut snapshot, RadioUse::Receive);
+    on_the_bench(&app, &snapshot).await;
+    let (status, body) = act(&app, "tx", arm()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains(sdrmm_engine::SET_TO_RECEIVE), "{body}");
+
+    used_for(&mut snapshot, RadioUse::Both);
+    put_active_workspace(&app, &snapshot).await;
+    acted(&app, "tx", arm()).await;
+
+    used_for(&mut snapshot, RadioUse::Send);
+    put_active_workspace(&app, &snapshot).await;
+    let radio = get_state(&app).await.device_sets.remove(0);
+    assert_eq!(radio.radio_use, RadioUse::Send);
+    assert_eq!(
+        radio.activity,
+        RadioActivity::Idle,
+        "armed, not keyed, not listening"
+    );
+
+    used_for(&mut snapshot, RadioUse::Receive);
+    put_active_workspace(&app, &snapshot).await;
+    assert_eq!(
+        transmitting(&app).await,
+        None,
+        "receive takes it off the air"
+    );
+}
+
+#[tokio::test]
 async fn a_channels_audio_keys_the_transmitter_it_is_wired_to() {
     let app = test_router();
     let mut snapshot = virtual_snapshot("transceiver", &[("ear", "nfm", "iq")]);
+    used_for(&mut snapshot, RadioUse::Both);
     snapshot.graph.nodes.extend([
         node("mod", encoder("nfm")),
         node("tx", NodeBody::Transmit(TransmitNode::default())),
@@ -250,6 +295,7 @@ async fn a_channels_audio_keys_the_transmitter_it_is_wired_to() {
 async fn a_channels_baseband_wired_to_a_transmitter_is_what_it_sends() {
     let app = test_router();
     let mut snapshot = virtual_snapshot("transceiver", &[("ear", "nfm", "iq")]);
+    used_for(&mut snapshot, RadioUse::Both);
     snapshot
         .graph
         .nodes

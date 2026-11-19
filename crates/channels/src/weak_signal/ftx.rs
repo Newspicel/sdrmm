@@ -1,17 +1,19 @@
 mod engine;
 mod expect;
 mod ldpc;
-mod message;
+pub(crate) mod message;
 mod protocol;
 mod synth;
 
 #[cfg(test)]
 mod comparison;
 
-pub(crate) use engine::Found;
+pub(crate) use engine::{Engine, Found, Search};
+pub(crate) use ldpc::{Code, N as LDPC_N};
+#[cfg(test)]
+pub(crate) use ldpc::{Decoder as LdpcDecoder, parity_check};
 pub(crate) use protocol::{FT4, FT8, Protocol};
 
-use engine::{Engine, Search};
 use expect::History;
 use message::CallBook;
 

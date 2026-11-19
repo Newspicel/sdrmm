@@ -43,7 +43,10 @@ pub use demod::fm::FmDemod;
 pub use demod::ofdm::{CyclicPrefix, CyclicPrefixSearch};
 pub use demod::pll::{Costas, LoopFilter, Pll};
 pub use demod::sync::{BitSync, SymbolSync, farrow};
-pub use demod::tone::{Envelope, Goertzel, KeyingSlicer, KeyingTiming, ToneCorrelator};
+pub use demod::tone::{
+    DTMF_COLUMN_HZ, DTMF_ROW_HZ, DtmfDetector, DtmfKey, DtmfPress, DtmfTiming, Envelope, Goertzel,
+    KeyingSlicer, KeyingTiming, ToneCorrelator,
+};
 pub use filter::decim::{Decimator, RealDecimator};
 pub use filter::fir::{
     design_bandpass, design_cosine_biphase, design_cosine_shaping, design_gaussian,

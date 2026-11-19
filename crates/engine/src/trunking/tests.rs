@@ -1,4 +1,4 @@
-use sdrmm_channels::{DmrParams, DmrSlots, P25Params};
+use sdrmm_channels::{DmrParams, DmrSlots, P25Params, P25p2Params, P25p2Slots};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::VirtualDriver;
 use sdrmm_wire::{
@@ -82,6 +82,7 @@ fn searching_follower(
             protocol: protocol.to_owned(),
             discovery,
             channel_map,
+            band: None,
             learned: Vec::new(),
             talkgroups: TrunkTalkgroups::default(),
             keys: Vec::new(),
@@ -501,6 +502,7 @@ fn a_system_given_a_radio_opens_its_own_control_channel() {
             protocol: "tier_three".to_owned(),
             discovery: TrunkDiscovery::default(),
             channel_map: Vec::new(),
+            band: None,
             learned: Vec::new(),
             talkgroups: TrunkTalkgroups::default(),
             keys: Vec::new(),
@@ -579,6 +581,7 @@ fn moving_the_control_frequency_retunes_the_receiver_in_place() {
             protocol: "tier_three".to_owned(),
             discovery: TrunkDiscovery::default(),
             channel_map: Vec::new(),
+            band: None,
             learned: Vec::new(),
             talkgroups: TrunkTalkgroups::default(),
             keys: Vec::new(),
@@ -631,6 +634,7 @@ fn retuning_the_radio_keeps_the_control_receiver_on_its_frequency() {
             protocol: "tier_three".to_owned(),
             discovery: TrunkDiscovery::default(),
             channel_map: Vec::new(),
+            band: None,
             learned: Vec::new(),
             talkgroups: TrunkTalkgroups::default(),
             keys: Vec::new(),
@@ -1368,6 +1372,48 @@ fn a_protocol_with_one_call_per_carrier_follows_its_grant_without_a_timeslot() {
 }
 
 #[test]
+fn a_p25_grant_in_a_timeslot_follows_on_phase_2() {
+    let engine = engine();
+    let p25 = ChannelParams::new("p25", &P25Params::default()).expect("p25 settings");
+    let (device_set, channel, center_hz) = control_channel_of(&engine, p25);
+    let carrier = (device_set, channel);
+    let mut follower = follower(&engine, "p25", carrier);
+    follower.systems[0].decoder = "p25".to_owned();
+    follower.reconcile();
+    let traffic = center_hz as u64 + 125_000;
+    let logical_channel = (2 << 12) | 0x15;
+
+    follower.observe(&record(
+        carrier,
+        &DvFrame {
+            trunk_protocol: Some("p25".to_owned()),
+            slot: Some(2),
+            channel: Some(logical_channel),
+            destination: Some(201),
+            group_call: Some(true),
+            channel_definition: Some(DvChannelDefinition {
+                channel: logical_channel,
+                tx_hz: traffic + 30_000_000,
+                rx_hz: traffic,
+                color_code: None,
+            }),
+            ..DvFrame::new("P25", DvFrameKind::Control)
+        },
+    ));
+
+    let set = engine.snapshot().device_sets.remove(0);
+    assert_eq!(set.channels.len(), 2, "the follower was not created");
+    assert_eq!(set.channels[1].settings.frequency_hz, traffic as f64);
+    let phase_two = ChannelParams::of(&P25p2Params {
+        slots: P25p2Slots::Two,
+        vocoder: None,
+    })
+    .expect("p25p2 settings");
+    assert_eq!(set.channels[1].settings.params, phase_two);
+    assert_eq!(status(&follower).followers[0].slot, Some(2));
+}
+
+#[test]
 fn a_site_code_wider_than_a_dmr_colour_code_keys_the_site() {
     let engine = engine();
     let p25 = ChannelParams::new("p25", &P25Params::default()).expect("p25 settings");
@@ -1451,4 +1497,53 @@ fn bursts_on_a_traffic_channel_keep_it_open() {
     follower.reconcile();
 
     assert_eq!(follower.followers.len(), 1);
+}
+
+fn analog_grant(channel: u16) -> DvFrame {
+    DvFrame {
+        trunk_protocol: Some("mpt1327".to_owned()),
+        control_channel: Some(true),
+        crc_verified: Some(true),
+        opcode: Some("GTC".to_owned()),
+        channel: Some(channel),
+        destination: Some(10 * 8192 + 4105),
+        source: Some(10 * 8192 + 77),
+        ..DvFrame::new("MPT 1327", DvFrameKind::Control)
+    }
+}
+
+#[test]
+fn an_analog_grant_is_followed_by_a_squelched_fm_receiver_on_the_band() {
+    let engine = engine();
+    let (device_set, channel, center_hz) = control_channel_of(
+        &engine,
+        ChannelParams::of(&sdrmm_channels::Mpt1327Params::default()).expect("mpt1327 settings"),
+    );
+    let carrier = (device_set, channel);
+    let mut follower = follower(&engine, "mpt1327", carrier);
+    let spacing_hz = 12_500;
+    follower.systems[0].decoder = "mpt1327".to_owned();
+    follower.systems[0].band = Some(TrunkBand {
+        base_hz: center_hz as u64 - 10 * spacing_hz,
+        spacing_hz,
+    });
+    follower.reconcile();
+
+    follower.observe(&record(carrier, &analog_grant(14)));
+
+    let set = engine.snapshot().device_sets.remove(0);
+    assert_eq!(set.channels.len(), 2, "the call was not followed");
+    let followed = &set.channels[1];
+    assert_eq!(
+        followed.settings.frequency_hz,
+        center_hz + 4.0 * spacing_hz as f64
+    );
+    assert_eq!(followed.settings.params.type_id(), "nfm");
+    assert!(matches!(
+        followed.settings.squelch,
+        sdrmm_wire::Squelch::Auto { .. }
+    ));
+    let status = status(&follower);
+    assert_eq!(status.followers[0].logical_channel, Some(14));
+    assert_eq!(status.followers[0].destination, Some(10 * 8192 + 4105));
 }

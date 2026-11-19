@@ -41,10 +41,10 @@
     "tuning_mode": "Wrong tuning"
   },
   "phone": {
-    "not_paired": "phone not paired",
-    "offline": "phone offline",
+    "not_paired": "Phone not paired",
+    "offline": "Phone offline",
     "port_in_use": "port in use",
-    "silent": "phone silent"
+    "silent": "Phone silent"
   },
   "radar_problem": {
     "no_array": "No array",

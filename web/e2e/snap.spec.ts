@@ -59,6 +59,10 @@ test("dragging and resizing land on the grid", async ({ page }) => {
   expect(onGrid((await stored(page)).slice(0, 2))).toBe(true);
 
   await scope.locator("header").click();
+  await page
+    .getByRole("complementary", { name: "Inspector" })
+    .getByRole("button", { name: "Close inspector" })
+    .click();
   const moved = await stored(page);
   await drag(page, scope.locator(".react-flow__resize-control.handle.bottom.right"), 41, 29);
   await expect.poll(async () => (await stored(page)).slice(2)).not.toEqual(moved.slice(2));

@@ -361,6 +361,11 @@ pub struct AudioProcessing {
 
 impl AudioProcessing {
     #[must_use]
+    pub fn is_off(&self) -> bool {
+        *self == Self::default()
+    }
+
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.click_removal.enabled
             || self.filter.enabled
@@ -406,12 +411,6 @@ impl AudioProcessing {
         }
         self.peak.validate()
     }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct AudioFxNode {
-    #[serde(default)]
-    pub settings: AudioProcessing,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]

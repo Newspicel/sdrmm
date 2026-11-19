@@ -1,5 +1,6 @@
-import { Checkbox as Primitive } from "@base-ui/react/checkbox";
+import { CheckboxIndicator, Checkbox as Primitive } from "@ui-sdk/react/checkbox";
 import { Check } from "lucide-react";
+import { useRows, YesNo } from "./face/Chips";
 import { Icon } from "./Icon";
 
 export function Checkbox({
@@ -13,17 +14,20 @@ export function Checkbox({
   disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  if (useRows()) {
+    return <YesNo label={label ?? ""} on={checked} disabled={disabled} onChange={onChange} />;
+  }
   return (
-    <Primitive.Root
+    <Primitive
       aria-label={label}
       checked={checked}
       disabled={disabled}
-      onCheckedChange={onChange}
+      onCheckedChange={(next) => onChange(next === true)}
       className="relative flex size-4 shrink-0 items-center justify-center rounded-control border border-line-strong bg-well text-on-accent data-checked:border-accent data-checked:bg-accent data-disabled:opacity-45 pointer-coarse:before:absolute pointer-coarse:before:-inset-3"
     >
-      <Primitive.Indicator className="flex data-unchecked:hidden">
+      <CheckboxIndicator className="flex data-unchecked:hidden">
         <Icon glyph={Check} size={12} />
-      </Primitive.Indicator>
-    </Primitive.Root>
+      </CheckboxIndicator>
+    </Primitive>
   );
 }

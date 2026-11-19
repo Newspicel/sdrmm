@@ -11,7 +11,7 @@ use std::{
 use sdrmm_serial::{SerialPortInfo, SerialPortType};
 use sdrmm_wire::{
     NodeBody, PositionFix, PositionSource, ProblemSource, SerialDeviceInfo, SerialDevicesResponse,
-    ServerEvent,
+    ServerEvent, position::WAITING_FOR_FIX,
 };
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -42,12 +42,29 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const GPSD_MAX_LINE: usize = 16 * 1024;
 const NMEA_MAX_LINE: usize = 512;
 const MAX_ERROR_LEN: usize = 256;
-const WAITING: &str = "waiting for a position fix";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct PositionState {
     fix: Option<PositionFix>,
     error: Option<String>,
+    waiting: Option<String>,
+}
+
+impl PositionState {
+    fn awaiting_fix() -> Self {
+        Self {
+            waiting: Some(WAITING_FOR_FIX.to_owned()),
+            ..Self::default()
+        }
+    }
+
+    fn of(fix: Option<PositionFix>, error: Option<String>) -> Self {
+        Self {
+            fix,
+            error,
+            waiting: None,
+        }
+    }
 }
 
 #[derive(Default, PartialEq)]
@@ -223,7 +240,7 @@ impl GpsHub {
             }
         }
         for node in &changed_sources {
-            self.publish_state(state, node, None, Some(WAITING.to_owned()));
+            self.publish_waiting(state, node);
         }
 
         let mut tasks = self
@@ -262,7 +279,7 @@ impl GpsHub {
                     state,
                     node,
                     None,
-                    Some("no async runtime is available for this GPS source".to_owned()),
+                    Some("No async runtime for this GPS source".to_owned()),
                 );
                 continue;
             };
@@ -329,32 +346,30 @@ impl GpsHub {
         fix: Option<PositionFix>,
         error: Option<String>,
     ) {
-        self.publish_routed(RouteState::from(state), node, fix, error);
+        self.publish_routed(RouteState::from(state), node, PositionState::of(fix, error));
     }
 
-    fn publish_routed(
-        &self,
-        route: RouteState,
-        node: &str,
-        fix: Option<PositionFix>,
-        error: Option<String>,
-    ) {
-        let next = PositionState { fix, error };
-        let changed = {
+    fn publish_waiting(&self, state: &AppState, node: &str) {
+        self.publish_routed(RouteState::from(state), node, PositionState::awaiting_fix());
+    }
+
+    fn publish_routed(&self, route: RouteState, node: &str, next: PositionState) {
+        let event = {
             let mut latest = self
                 .latest
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if latest.get(node) == Some(&next) {
-                false
+                None
             } else {
-                latest.insert(node.to_owned(), next.clone());
-                true
+                let event = position_event(node, &next);
+                latest.insert(node.to_owned(), next);
+                Some(event)
             }
         };
-        if changed {
+        if let Some(event) = event {
             self.send_route(route);
-            let _ = self.events.send(position_event(node, &next));
+            let _ = self.events.send(event);
         }
     }
 
@@ -419,6 +434,7 @@ fn position_event(node: &str, state: &PositionState) -> ServerEvent {
         node: node.to_owned(),
         fix: state.fix.clone(),
         error: state.error.clone(),
+        waiting: state.waiting.clone(),
     }
 }
 
@@ -499,12 +515,7 @@ async fn gpsd_session(
     {
         match parser.line(&line, std::time::Instant::now()) {
             GpsdOutcome::Fix(fix) => hub.publish_state(state, node, Some(fix), None),
-            GpsdOutcome::NoFix => hub.publish_state(
-                state,
-                node,
-                None,
-                Some("gpsd has no position fix".to_owned()),
-            ),
+            GpsdOutcome::NoFix => hub.publish_waiting(state, node),
             GpsdOutcome::Nothing => {}
         }
     }

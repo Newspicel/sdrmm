@@ -11,7 +11,9 @@ use std::{
 
 use arc_swap::ArcSwap;
 use num_complex::Complex;
-use sdrmm_device::{DeviceError, MarkPoster, RxSink, SdrDevice, SinkItem, SweepPlan, SweepSink};
+use sdrmm_device::{
+    DeviceError, LaneEvent, MarkPoster, RxSink, SdrDevice, SinkItem, SweepPlan, SweepSink,
+};
 use sdrmm_wire::{
     DeviceSettings, MAX_STREAMS, SpectrumOverlap, StreamScope, array::MAX_VIRTUAL_LANES,
 };
@@ -208,6 +210,8 @@ impl VirtualLaneSink {
 pub struct CaptureRuntime {
     device: Option<Box<dyn SdrDevice>>,
     lanes: Vec<Lane>,
+    /// The lane sinks of a radio set to send: held, so its lanes stay and nothing reaches them.
+    parked: Vec<RxSink>,
     virtual_lanes: BTreeMap<u32, Lane>,
     tap_ports: Vec<Arc<TapPort>>,
     mark_posters: Vec<MarkPoster>,
@@ -257,16 +261,20 @@ impl CaptureRuntime {
         device: Box<dyn SdrDevice>,
         settings: &DeviceSettings,
         dc_block: bool,
+        receive: bool,
         on_fatal: impl FnOnce(DeviceError) + Send + 'static,
     ) -> Result<Self, DeviceError> {
-        Self::start_with_taps(device, settings, dc_block, &[], on_fatal)
+        Self::start_with_taps(device, settings, dc_block, &[], receive, on_fatal)
     }
 
+    /// Builds the lanes and starts the receive stream, or with `receive` off parks the lanes so a
+    /// radio set to send runs no receiver at all.
     pub fn start_with_taps(
         mut device: Box<dyn SdrDevice>,
         settings: &DeviceSettings,
         dc_block: bool,
         taps: &[SpectrumTap],
+        receive: bool,
         on_fatal: impl FnOnce(DeviceError) + Send + 'static,
     ) -> Result<Self, DeviceError> {
         let max_age = max_age_for(device.as_ref());
@@ -284,6 +292,7 @@ impl CaptureRuntime {
         let mut runtime = Self {
             device: None,
             lanes: Vec::with_capacity(lane_count),
+            parked: Vec::new(),
             virtual_lanes: BTreeMap::new(),
             tap_ports: Vec::with_capacity(lane_count),
             mark_posters: Vec::with_capacity(lane_count),
@@ -339,7 +348,11 @@ impl CaptureRuntime {
                 return Err(error);
             }
         }
-        device.rx_start(sinks)?;
+        if receive {
+            device.rx_start(sinks)?;
+        } else {
+            runtime.parked = sinks;
+        }
         runtime.device = Some(device);
         Ok(runtime)
     }
@@ -542,11 +555,12 @@ impl CaptureRuntime {
         let device = self.device.take().map(|mut device| {
             if self.sweeping {
                 device.sweep_stop();
-            } else {
+            } else if self.receiving() {
                 device.rx_stop();
             }
             device
         });
+        self.parked.clear();
         for lane in self.lanes.iter_mut().chain(self.virtual_lanes.values_mut()) {
             lane.halt();
         }
@@ -564,6 +578,11 @@ impl CaptureRuntime {
     #[must_use]
     pub const fn is_sweeping(&self) -> bool {
         self.sweeping
+    }
+
+    #[must_use]
+    pub const fn receiving(&self) -> bool {
+        self.parked.is_empty()
     }
 
     pub fn start_sweep(
@@ -606,6 +625,7 @@ impl CaptureRuntime {
         Ok(Self {
             device: Some(device),
             lanes,
+            parked: Vec::new(),
             virtual_lanes: BTreeMap::new(),
             tap_ports: Vec::new(),
             mark_posters: Vec::new(),
@@ -634,6 +654,7 @@ fn lane_sink(
                 producer.push(samples, index);
                 wake.wake();
             }
+            SinkItem::Event(LaneEvent::Deaf { at, samples }) => producer.deaf(at, samples),
             SinkItem::Event(event) => writer.event(event),
         },
         move |error| {

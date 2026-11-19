@@ -28,10 +28,10 @@ const POLL: Duration = Duration::from_secs(1);
 const SETTLE: Duration = Duration::from_secs(180);
 const SAME_BEARING_DEG: f64 = 1.0;
 const TURN: f64 = 360.0;
-const NOT_THERE: &str = "the rotator did not get there";
-const NOT_HEARD: &str = "no spectrum in the band";
-const RADIO_GONE: &str = "the radio stopped";
-const REWIRED: &str = "stopped, settings or wires changed";
+const NOT_THERE: &str = "Rotator did not get there";
+const NOT_HEARD: &str = "No spectrum in the band";
+const RADIO_GONE: &str = "Radio stopped";
+const REWIRED: &str = "Stopped, settings or wires changed";
 
 pub(crate) enum SkyScanRefusal {
     Missing(String),
@@ -143,6 +143,7 @@ impl SkyScanHub {
                     session.status.cells.clear();
                     session.status.frequency_hz = None;
                     session.status.error = None;
+                    session.status.waiting = None;
                     session.status.shape(&plan.settings);
                     session.status.running = true;
                     session.task = spawn(state, node, plan, session.generation);
@@ -151,6 +152,7 @@ impl SkyScanHub {
                 SurveyAction::Clear => {
                     session.status.cells.clear();
                     session.status.error = None;
+                    session.status.waiting = None;
                 }
             }
             session.view()
@@ -179,7 +181,7 @@ impl SkyScanHub {
             }
             if session.status.running {
                 session.halt();
-                session.status.error = Some(REWIRED.to_owned());
+                session.status.waiting = Some(REWIRED.to_owned());
             }
             session.status.node = node;
             if session.wiring.settings != wiring.settings {

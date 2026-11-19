@@ -83,6 +83,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Radiosonde".to_owned(),
     summary: "Weather balloon telemetry".to_owned(),
     family: DecoderFamily::WEATHER,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 20_000.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

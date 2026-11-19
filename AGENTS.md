@@ -36,6 +36,12 @@
 - User-visible changes add a changeset: `cargo xtask changeset <patch|minor|major> "..."`.
 - Always Format, Lint, Check & Test at the End of Every Change. But only test what you changed, full test suite will run in the CI.
 - Max 3000 lines per file, 200 lines per function. Split large files into modules, large functions into helpers.
+- Never hide a readout or meter because it has no value yet. Show it empty or at zero, so a
+  face keeps its shape.
+- A missing wire is never an error and never said in words: the empty port shows it. Red is
+  only for real faults.
+- One control language for settings: on/off and choices are dropdowns, numbers are fields,
+  levels are sliders, each with its name small above it. No switches or checkboxes.
 - Never long text of ours on a node. A face carries controls and readouts; what a setting means
   belongs in a title attribute or the docs, not in a paragraph on the canvas. Text the
   operator writes about their own patch is theirs, and the Note node is where it lives.

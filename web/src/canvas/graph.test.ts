@@ -164,7 +164,7 @@ describe("echoesWire", () => {
 
 describe("nodeSize", () => {
   it("holds the satellite face at the dial floor", () => {
-    expect(nodeSize("satellite").w).toBe(420);
+    expect(nodeSize("satellite").w).toBe(320);
   });
 });
 
@@ -294,7 +294,7 @@ describe("ports", () => {
   });
 
   it("gives a content-sized kind one fixed width", () => {
-    expect(nodeSize("device")).toEqual({ w: 420 });
+    expect(nodeSize("device")).toEqual({ w: 320 });
     expect(nodeSize("speaker")).toEqual({ w: 320 });
     expect(nodeSize("scanner")).toEqual({ w: 400 });
   });

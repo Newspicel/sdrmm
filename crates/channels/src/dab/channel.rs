@@ -44,6 +44,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "DAB / DAB+".to_owned(),
     summary: "DAB and DAB+ digital radio".to_owned(),
     family: DecoderFamily::BROADCAST,
+    verification: sdrmm_wire::Verification::ReferenceFixture,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

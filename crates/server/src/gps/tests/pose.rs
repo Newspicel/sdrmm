@@ -64,6 +64,20 @@ fn error_of(app: &AppState, node: &str) -> Option<String> {
         })
 }
 
+fn waits_for_a_fix(app: &AppState, node: &str) -> bool {
+    app.gps.snapshot().into_iter().any(|event| {
+        matches!(
+            event,
+            ServerEvent::PositionChanged {
+                node: shown,
+                fix: None,
+                error: None,
+                waiting: Some(waiting),
+            } if shown == node && waiting == WAITING_FOR_FIX
+        )
+    })
+}
+
 #[test]
 fn a_pose_reaches_every_gps_node_of_that_phone() {
     let app = app();
@@ -170,10 +184,10 @@ fn an_unknown_phone_is_not_paired() {
     assert_eq!(error_of(&app, "car").as_deref(), Some(PHONE_OFFLINE));
     let (_socket, _) = app.phones.join(&phone);
     app.gps.phone_online(&app, &phone);
-    assert_eq!(error_of(&app, "car").as_deref(), Some(WAITING));
+    assert!(waits_for_a_fix(&app, "car"));
     app.resolve_now();
     app.gps.reconcile(&app);
-    assert_eq!(error_of(&app, "car").as_deref(), Some(WAITING));
+    assert!(waits_for_a_fix(&app, "car"));
 }
 
 #[test]
@@ -198,7 +212,7 @@ fn going_offline_drops_the_old_coordinates() {
     assert_eq!(error_of(&app, "car").as_deref(), Some(PHONE_OFFLINE));
     let (_again, _) = app.phones.join(&phone);
     app.gps.phone_online(&app, &phone);
-    assert_eq!(error_of(&app, "car").as_deref(), Some(WAITING));
+    assert!(waits_for_a_fix(&app, "car"));
 }
 
 #[test]
@@ -232,7 +246,7 @@ fn a_late_offline_leaves_a_reconnected_phone_online() {
     assert!(first);
     app.gps.phone_online(&app, &phone);
     app.gps.phone_offline(&app, &phone);
-    assert_eq!(error_of(&app, "car").as_deref(), Some(WAITING));
+    assert!(waits_for_a_fix(&app, "car"));
     app.gps
         .publish_pose(&app, &phone, Some(pose(52.52, 87.5)), None)
         .expect("pose");

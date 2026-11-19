@@ -7,6 +7,7 @@ import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatMhz } from "../../components/format";
 import { MapPanel } from "../../components/LazyMapPanel";
+import { MapSettings } from "../../components/map/MapSettings";
 import { clearSink, ionosondeQuery } from "../../lib/api";
 import {
   type CellComparison,
@@ -21,6 +22,7 @@ import { toastError } from "../../lib/toasts";
 import type { PatchNode, PatchNodeOf, PropagationCell, PropagationView } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 
 const NO_POSITIONS: readonly string[] = [];
@@ -118,6 +120,15 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
 
   return (
     <>
+      <Inspect node={node.id}>
+        <PropagationSections
+          settings={settings}
+          layer={layer}
+          onLayer={setLayer}
+          onChange={update}
+        />
+        <MapSettings />
+      </Inspect>
       <FaceBody scroll={false}>
         <MapPanel
           positionNodes={positionNode === null ? NO_POSITIONS : [positionNode]}
@@ -125,7 +136,6 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
           active={active}
           className="min-h-0 w-full flex-1"
         />
-        <PropagationChips settings={settings} layer={layer} onLayer={setLayer} onChange={update} />
         <Readouts columns="fit">
           <Readout label="Decodes">{summary.decodes}</Readout>
           <Readout label="Grids">{summary.grids}</Readout>
@@ -177,7 +187,7 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
 
 type PropagationSettings = PatchNodeOf<"propagation">["data"];
 
-function PropagationChips({
+function PropagationSections({
   settings,
   layer,
   onLayer,
@@ -189,41 +199,49 @@ function PropagationChips({
   onChange: (patch: Partial<PropagationSettings>) => void;
 }) {
   return (
-    <Chips className="shrink-0 border-t border-line">
-      <ChoiceChip
-        label="Half-life"
-        title="Decay half-life"
-        value={settings.half_life_minutes}
-        options={HALF_LIFE_OPTIONS}
-        onChange={(half_life_minutes) => onChange({ half_life_minutes })}
-      />
-      <ChoiceChip
-        label="Height"
-        title="Reflecting layer height"
-        value={settings.reflection_height_km}
-        options={HEIGHT_OPTIONS}
-        onChange={(reflection_height_km) => onChange({ reflection_height_km })}
-      />
-      <ChoiceChip
-        label="Map"
-        title="Map layer"
-        value={layer}
-        options={LAYER_OPTIONS}
-        onChange={onLayer}
-      />
-      <ToggleChip
-        label="Paths"
-        title="Draw the path to every station heard"
-        on={settings.show_paths}
-        onChange={(show_paths) => onChange({ show_paths })}
-      />
-      <ToggleChip
-        label="Ionosondes"
-        title="Compare against the ionosonde network"
-        on={settings.compare_forecast}
-        onChange={(compare_forecast) => onChange({ compare_forecast })}
-      />
-    </Chips>
+    <>
+      <InspectSection>
+        <Chips inset="none">
+          <ChoiceChip
+            label="Half-life"
+            title="Decay half-life"
+            value={settings.half_life_minutes}
+            options={HALF_LIFE_OPTIONS}
+            onChange={(half_life_minutes) => onChange({ half_life_minutes })}
+          />
+          <ChoiceChip
+            label="Height"
+            title="Reflecting layer height"
+            value={settings.reflection_height_km}
+            options={HEIGHT_OPTIONS}
+            onChange={(reflection_height_km) => onChange({ reflection_height_km })}
+          />
+          <ToggleChip
+            label="Ionosondes"
+            title="Compare against the ionosonde network"
+            on={settings.compare_forecast}
+            onChange={(compare_forecast) => onChange({ compare_forecast })}
+          />
+        </Chips>
+      </InspectSection>
+      <InspectSection label="Map">
+        <Chips inset="none">
+          <ChoiceChip
+            label="Layer"
+            title="Map layer"
+            value={layer}
+            options={LAYER_OPTIONS}
+            onChange={onLayer}
+          />
+          <ToggleChip
+            label="Paths"
+            title="Draw the path to every station heard"
+            on={settings.show_paths}
+            onChange={(show_paths) => onChange({ show_paths })}
+          />
+        </Chips>
+      </InspectSection>
+    </>
   );
 }
 

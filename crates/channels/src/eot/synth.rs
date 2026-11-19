@@ -1,11 +1,10 @@
 use sdrmm_modem::synth::{NARROW_HZ, Render, Signal};
-use std::f64::consts::TAU;
 
 use crate::eot::EotStatus;
 use num_complex::Complex;
 
 use crate::eot::{
-    BAUD, DEVIATION_HZ, MARK_HZ, SPACE_HZ,
+    DEVIATION_HZ, TONES,
     frame::{self, HEAD, HEAD_COPIES, REAR},
 };
 use sdrmm_modem::synth::{fm_modulate, silence};
@@ -66,15 +65,7 @@ pub fn head_bits(head: Head) -> Vec<bool> {
 
 #[must_use]
 pub fn ffsk(bits: &[bool], rate: f64) -> Vec<f32> {
-    let len = (bits.len() as f64 * rate / BAUD) as usize;
-    let mut phase = 0.0f64;
-    (0..len)
-        .map(|k| {
-            let bit = bits[((k as f64 * BAUD / rate) as usize).min(bits.len() - 1)];
-            phase = (phase + TAU * if bit { MARK_HZ } else { SPACE_HZ } / rate).rem_euclid(TAU);
-            LEVEL * phase.sin() as f32
-        })
-        .collect()
+    TONES.audio(bits, LEVEL, rate)
 }
 
 #[must_use]

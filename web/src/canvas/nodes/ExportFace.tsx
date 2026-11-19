@@ -9,7 +9,7 @@ export function ExportFace({ node }: { node: PatchNode }) {
   return (
     <NodeShell node={node} title="Export" category="output">
       <FaceBody>
-        <FaceEmpty hint={!wires.wired ? "Wire decoders in" : "Every logged row, as one file"} />
+        <FaceEmpty hint={wires.wired ? "Every logged row, as one file" : undefined} />
       </FaceBody>
       <FaceFooter>
         <DownloadMenu

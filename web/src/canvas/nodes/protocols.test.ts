@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelDescriptor } from "../../lib/types";
+import { CATALOG } from "../../test/catalog";
 import {
   activePreset,
   choiceSummary,
@@ -26,7 +27,7 @@ const TYPES = [
   type("ident", "Signal identifier", "utility", false),
 ];
 
-const GROUPS = protocolGroups(TYPES);
+const GROUPS = protocolGroups(CATALOG.families ?? [], TYPES);
 
 describe("protocol groups", () => {
   it("lists only identifiable protocols by family with short labels", () => {

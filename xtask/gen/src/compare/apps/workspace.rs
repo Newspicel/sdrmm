@@ -44,6 +44,7 @@ pub fn snapshot(receivers: usize) -> WorkspaceSnapshot {
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
             COLUMN,
             row,

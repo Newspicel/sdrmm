@@ -1,31 +1,59 @@
 use super::super::{
-    PatchGraph, PatchNode, PortDirection, PortRef, PortRepeat, PortSpec, port_index, stream_port,
+    NodeBody, PatchGraph, PatchNode, PortDirection, PortRef, PortRepeat, PortSpec, port_index,
+    stream_port,
 };
-use crate::{channel::ChannelDescriptor, device::Capabilities};
+use crate::{
+    channel::ChannelDescriptor,
+    device::{Capabilities, RadioUse},
+};
 
+/// A port the radio's use leaves out is not offered, unless a wire still holds it: that wire
+/// stays drawn and carries nothing, so it never hides.
 pub(super) fn concrete(
     graph: &PatchGraph,
     node: &PatchNode,
     descriptors: Option<&[ChannelDescriptor]>,
     caps: Option<&Capabilities>,
 ) -> Vec<PortSpec> {
+    let used = radio_use(node, caps);
+    let offered = |spec: &PortSpec| used.is_none_or(|used| spec.offered_in(used));
     let mut ports = Vec::new();
     for spec in node.body.ports(descriptors) {
         if spec.repeat == PortRepeat::Once {
-            ports.push(spec);
+            if offered(&spec) || holds_wire(graph, &node.id, &spec.name) {
+                ports.push(spec);
+            }
             continue;
         }
         let highest = highest_wired(graph, &node.id, &spec);
         for stream in 0..count(spec.repeat, caps, highest) {
-            ports.push(PortSpec {
-                name: stream_port(&spec.name, stream),
-                repeat: PortRepeat::Once,
-                stream: Some(stream),
-                ..spec.clone()
-            });
+            let name = stream_port(&spec.name, stream);
+            if offered(&spec) || holds_wire(graph, &node.id, &name) {
+                ports.push(PortSpec {
+                    name,
+                    repeat: PortRepeat::Once,
+                    stream: Some(stream),
+                    ..spec.clone()
+                });
+            }
         }
     }
     ports
+}
+
+fn radio_use(node: &PatchNode, caps: Option<&Capabilities>) -> Option<RadioUse> {
+    match &node.body {
+        NodeBody::Device(device) => Some(device.use_on(caps.map(|caps| caps.duplex))),
+        _ => None,
+    }
+}
+
+fn holds_wire(graph: &PatchGraph, node: &str, port: &str) -> bool {
+    graph
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.from, &edge.to])
+        .any(|end| end.node == node && end.port == port)
 }
 
 pub(super) fn find<'a>(

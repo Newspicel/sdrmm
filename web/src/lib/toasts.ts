@@ -1,4 +1,4 @@
-import { Toast } from "@base-ui/react/toast";
+import { createToaster } from "@ui-sdk/react/toast";
 import { describeError, recordEvent } from "./diagnostics";
 import type { ErrorCode } from "./types";
 
@@ -10,7 +10,9 @@ export interface ToastData {
   detail?: string;
 }
 
-export const toastManager = Toast.createToastManager<ToastData>();
+const LIFETIME_MS = 12_000;
+
+export const toaster = createToaster<string>({ duration: LIFETIME_MS });
 
 const repeats = new Map<string, number>();
 
@@ -24,17 +26,12 @@ export function pushToast(message: string, tone: Tone = "error", extra: ToastDet
   const seen = (repeats.get(id) ?? -1) + 1;
   repeats.set(id, seen);
   recordEvent(tone === "error" ? "error" : "info", "toast", toastRecord(message, extra));
-  toastManager.add({
-    id,
-    type: tone,
-    title: message,
-    data: { repeats: seen, code: extra.code, detail: extra.detail },
-    onRemove: () => repeats.delete(id),
-  });
+  const data: ToastData = { repeats: seen, code: extra.code, detail: extra.detail };
+  toaster({ id, type: tone, title: message, data, onDismiss: () => repeats.delete(id) });
 }
 
 export function closeToast(message: string, tone: Tone = "error"): void {
-  toastManager.close(`${tone}:${message}`);
+  toaster.dismiss(`${tone}:${message}`);
 }
 
 function toastRecord(message: string, extra: ToastDetail): string {

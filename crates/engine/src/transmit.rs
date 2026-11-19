@@ -197,6 +197,9 @@ impl Inner {
         if !state.capabilities.duplex.supports(Direction::Tx) {
             return Err(refused("this radio does not transmit"));
         }
+        if !state.radio_use.sends() {
+            return Err(refused(crate::SET_TO_RECEIVE));
+        }
         if let Some(held) = state
             .transmit
             .as_ref()

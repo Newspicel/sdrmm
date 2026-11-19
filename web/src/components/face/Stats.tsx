@@ -9,7 +9,7 @@ const TONE: Record<ChipTone, string> = {
 
 export function FaceStats({ children }: { children: ReactNode }) {
   return (
-    <span className="flex min-w-0 flex-[1_1_10rem] flex-wrap items-center gap-3">{children}</span>
+    <span className="flex min-w-0 flex-[1_1_auto] flex-wrap items-center gap-3">{children}</span>
   );
 }
 

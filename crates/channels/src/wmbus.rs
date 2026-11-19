@@ -32,6 +32,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Wireless M-Bus".to_owned(),
     summary: "Water, heat and energy meters in modes S, T and C".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: WMBUS_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,

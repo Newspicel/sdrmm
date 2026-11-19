@@ -21,19 +21,17 @@ test("persists all DAB transmission modes separately from audio generation", asy
   try {
     await page.goto("/");
     const node = page.locator('.react-flow__node[data-id="dab"]');
+    const inspector = page.getByRole("complementary", { name: "Inspector" });
     await node.locator("header").click();
-    const chip = (title: string) => node.getByRole("button", { name: title, exact: true });
+    const chip = (title: string) => inspector.getByRole("combobox", { name: title, exact: true });
     const pick = async (title: string, option: string): Promise<void> => {
       await chip(title).click();
-      await node
-        .getByRole("listbox", { name: title })
-        .getByRole("option", { name: option, exact: true })
-        .click();
+      await page.getByRole("option", { name: option, exact: true }).click();
     };
     await pick("DAB generation", "DAB+");
     for (const mode of ["II", "III", "IV", "I"]) {
       await pick("DAB transmission mode", mode);
-      await expect(chip("DAB transmission mode")).toHaveText(`Mode${mode}`);
+      await expect(chip("DAB transmission mode")).toHaveText(mode);
       await expect
         .poll(async () => {
           const detail = await page.request
@@ -45,8 +43,9 @@ test("persists all DAB transmission modes separately from audio generation", asy
         .toMatchObject({ mode: "dab_plus", transmission_mode: mode.toLowerCase() });
     }
     await page.reload();
-    await expect(chip("DAB transmission mode")).toHaveText("ModeI");
-    await expect(chip("DAB generation")).toHaveText("TypeDAB+");
+    await node.locator("header").click();
+    await expect(chip("DAB transmission mode")).toHaveText("I");
+    await expect(chip("DAB generation")).toHaveText("DAB+");
   } finally {
     await page.request.post(`/api/workspaces/${desk.active}/activate`, { data: {} });
     await page.request.delete(`/api/workspaces/${id}`);

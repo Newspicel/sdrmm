@@ -1,5 +1,5 @@
-import { Tooltip } from "@base-ui/react/tooltip";
-import { memo, useMemo, useRef, useState } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { memo, useMemo, useState } from "react";
 import { Button } from "../../components/BaseControls";
 import type { BandIdentity, BandSpan } from "../../components/bandPlan";
 import {
@@ -15,8 +15,8 @@ import {
 } from "../../components/bandPlan";
 import { CHIP_SM, LABEL, SURFACE } from "../../components/controls";
 import { formatHz } from "../../components/format";
-import { usePortalContainer } from "../../components/PortalContainer";
 import { type SpectrumView, spanToOffset, viewWidth } from "../../components/spectrumView";
+import { useTipMount } from "../../components/Tip";
 import type { BandAllocation, BandPlan, ChannelParams } from "../../lib/types";
 import { useBandPlan } from "../../lib/useBandPlan";
 
@@ -37,9 +37,9 @@ export const BandRuler = memo(function BandRuler({
   onTune: (hz: number, suggested: ChannelParams | null) => void;
 }) {
   const { plan, ruler } = useBandPlan();
-  const portalContainer = usePortalContainer();
-  const rulerRef = useRef<HTMLDivElement>(null);
+  const [strip, setStrip] = useState<HTMLDivElement | null>(null);
   const [hoverAt, setHoverAt] = useState<number | null>(null);
+  const { host, open, onOpenChange } = useTipMount();
 
   const visibleHz = spanHz * viewWidth(view);
   const lowHz = centerHz + spanToOffset(view.start, spanHz);
@@ -57,7 +57,7 @@ export const BandRuler = memo(function BandRuler({
 
   const hzAt = (fraction: number): number => lowHz + fraction * visibleHz;
   const fractionAt = (clientX: number): number | null => {
-    const rect = rulerRef.current?.getBoundingClientRect();
+    const rect = strip?.getBoundingClientRect();
     if (rect === undefined || rect.width === 0) {
       return null;
     }
@@ -75,32 +75,49 @@ export const BandRuler = memo(function BandRuler({
   };
 
   return (
-    <Tooltip.Root trackCursorAxis="x" disableHoverablePopup>
-      <Tooltip.Trigger
-        render={<div ref={rulerRef} />}
-        delay={TIP_DELAY_MS}
+    <Tooltip container={host} delay={TIP_DELAY_MS} onOpenChange={onOpenChange}>
+      <TooltipTrigger
+        render={<div ref={setStrip} />}
         data-plot-chrome
         className="relative shrink-0 bg-bg"
         onPointerEnter={(event) => setHoverAt(fractionAt(event.clientX))}
         onPointerMove={(event) => setHoverAt(fractionAt(event.clientX))}
       >
         <Lane spans={spans} onTune={tuneAt} />
-      </Tooltip.Trigger>
-      <Tooltip.Portal container={portalContainer} className="contents">
-        <Tooltip.Positioner
-          className="z-30 nodrag nopan"
+      </TooltipTrigger>
+      {open && (
+        <TooltipContent
+          anchor={cursorAnchor(strip, hoverAt)}
           side="bottom"
           sideOffset={6}
           collisionPadding={8}
+          className={`${SURFACE} nodrag nopan pointer-events-none w-72 max-w-[calc(100vw-1rem)] p-2 text-left`}
         >
-          <Tooltip.Popup className={`${SURFACE} w-72 max-w-[calc(100vw-1rem)] p-2 text-left`}>
-            {hoverAt !== null && <IdentifyTip plan={plan} hz={hzAt(hoverAt)} />}
-          </Tooltip.Popup>
-        </Tooltip.Positioner>
-      </Tooltip.Portal>
-    </Tooltip.Root>
+          {hoverAt !== null && <IdentifyTip plan={plan} hz={hzAt(hoverAt)} />}
+        </TooltipContent>
+      )}
+    </Tooltip>
   );
 });
+
+/**
+ * Follows the pointer along the ruler, so the card names the band under it. Pointer events pass
+ * through the card, so moving onto it closes it like leaving the ruler.
+ */
+function cursorAnchor(
+  strip: HTMLElement | null,
+  at: number | null,
+): { getBoundingClientRect: () => DOMRect } | undefined {
+  if (strip === null || at === null) {
+    return undefined;
+  }
+  return {
+    getBoundingClientRect: () => {
+      const rect = strip.getBoundingClientRect();
+      return new DOMRect(rect.left + at * rect.width, rect.top, 0, rect.height);
+    },
+  };
+}
 
 function Lane({
   spans,

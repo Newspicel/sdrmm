@@ -194,14 +194,56 @@ const COLUMN_CHECKS: [[u8; 3]; N] = [
 
 type Bits = [u64; WORDS];
 
-struct Code {
+/// A (174, k) LDPC code and the CRC that guards its message: how a payload becomes a codeword
+/// and how a codeword is read back. Codeword bits are in the order the symbols carry them.
+pub(crate) trait Code: Sync {
+    /// The parity checks each codeword bit takes part in.
+    fn column_checks(&self) -> &[[u8; 3]; N];
+
+    fn checks(&self) -> usize;
+
+    fn encode(&self, payload: u128) -> [u8; N];
+
+    /// The payload of a codeword whose CRC holds.
+    fn payload_of(&self, codeword: &[u8; N]) -> Option<u128>;
+
+    /// Whether ordered statistics decoding may search this code.
+    fn ordered_statistics(&self) -> bool;
+}
+
+/// The (174, 91) code FT8 and FT4 share, with its 14-bit CRC.
+pub(crate) struct Ft;
+
+impl Code for Ft {
+    fn column_checks(&self) -> &[[u8; 3]; N] {
+        &COLUMN_CHECKS
+    }
+
+    fn checks(&self) -> usize {
+        M
+    }
+
+    fn encode(&self, payload: u128) -> [u8; N] {
+        encode(payload)
+    }
+
+    fn payload_of(&self, codeword: &[u8; N]) -> Option<u128> {
+        payload_of(codeword)
+    }
+
+    fn ordered_statistics(&self) -> bool {
+        true
+    }
+}
+
+struct FtTables {
     parity: [u128; M],
     crc_syndrome: [u16; K],
 }
 
-static CODE: LazyLock<Code> = LazyLock::new(Code::build);
+static CODE: LazyLock<FtTables> = LazyLock::new(FtTables::build);
 
-impl Code {
+impl FtTables {
     fn build() -> Self {
         Self {
             parity: parity_rows(),
@@ -216,13 +258,14 @@ impl Code {
     }
 }
 
-fn parity_check() -> ParityCheck {
-    let edges: Vec<(usize, usize)> = COLUMN_CHECKS
+pub(crate) fn parity_check(code: &dyn Code) -> ParityCheck {
+    let edges: Vec<(usize, usize)> = code
+        .column_checks()
         .iter()
         .enumerate()
         .flat_map(|(bit, rows)| rows.iter().map(move |&row| (usize::from(row), bit)))
         .collect();
-    ParityCheck::from_edges(M, N, &edges)
+    ParityCheck::from_edges(code.checks(), N, &edges)
 }
 
 fn parity_rows() -> [u128; M] {
@@ -300,15 +343,17 @@ pub(crate) struct Decoded {
 }
 
 pub(crate) struct Decoder {
+    code: &'static dyn Code,
     min_sum: MinSum,
-    osd: Osd,
+    osd: Option<Osd>,
 }
 
 impl Decoder {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(code: &'static dyn Code) -> Self {
         Self {
-            min_sum: MinSum::new(parity_check(), Schedule::Layered, MIN_SUM_SCALE),
-            osd: Osd::new(),
+            code,
+            min_sum: MinSum::new(parity_check(code), Schedule::Layered, MIN_SUM_SCALE),
+            osd: code.ordered_statistics().then(Osd::new),
         }
     }
 
@@ -319,7 +364,7 @@ impl Decoder {
         osd_order: usize,
     ) -> Option<Decoded> {
         if let Some(codeword) = self.belief_propagation(llr, iterations)
-            && let Some(payload) = payload_of(&codeword)
+            && let Some(payload) = self.code.payload_of(&codeword)
         {
             return Some(Decoded {
                 payload,
@@ -331,9 +376,9 @@ impl Decoder {
         if osd_order == 0 {
             return None;
         }
-        let codeword = self.osd.decode(llr, osd_order)?;
+        let codeword = self.osd.as_mut()?.decode(llr, osd_order)?;
         Some(Decoded {
-            payload: payload_of(&codeword)?,
+            payload: self.code.payload_of(&codeword)?,
             hard_errors: hard_errors(llr, &codeword),
             distance: distance(llr, &codeword),
             osd: true,
@@ -343,7 +388,7 @@ impl Decoder {
     fn belief_propagation(&mut self, llr: &[f32; N], iterations: usize) -> Option<[u8; N]> {
         let negated = llr.map(|value| -value);
         self.min_sum.load(&negated);
-        let mut fewest = M;
+        let mut fewest = self.code.checks();
         let mut stale = 0;
         for iteration in 0..iterations {
             let unsatisfied = self.min_sum.iterate(&negated);
@@ -607,7 +652,7 @@ mod tests {
     fn every_codeword_satisfies_every_check() {
         for payload in [0u128, 1, 0x1234_5678_9abc_def0_1234, (1 << 77) - 1] {
             let codeword = encode(payload).map(|bit| bit == 1);
-            assert!(parity_check().satisfies(&codeword));
+            assert!(parity_check(&Ft).satisfies(&codeword));
             let codeword = encode(payload);
             assert_eq!(payload_of(&codeword), Some(payload));
         }
@@ -621,7 +666,7 @@ mod tests {
         for bit in [3, 40, 77, 101, 150, 170] {
             llr[bit] = -llr[bit] * 0.3;
         }
-        let decoded = Decoder::new().decode(&llr, 30, 0).unwrap();
+        let decoded = Decoder::new(&Ft).decode(&llr, 30, 0).unwrap();
         assert_eq!(decoded.payload, payload);
         assert!(!decoded.osd);
     }
@@ -630,7 +675,7 @@ mod tests {
     fn ordered_statistics_recovers_what_belief_propagation_cannot() {
         let payload = 0x1f00_ba11_c0ff_ee00_0042u128;
         let codeword = encode(payload);
-        let mut decoder = Decoder::new();
+        let mut decoder = Decoder::new(&Ft);
         let mut seed = 7u64;
         let mut osd_wins = 0;
         for _ in 0..40 {

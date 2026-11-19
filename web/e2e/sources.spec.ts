@@ -40,8 +40,9 @@ test.describe("the source nodes", () => {
 
     await expect(generator.locator("header")).not.toContainText("CTCSS");
 
-    await generator.getByRole("button", { name: "Signal", exact: true }).click();
-    await page.getByRole("combobox", { name: "Signal", exact: true }).click();
+    const inspector = page.getByRole("complementary", { name: "Inspector" });
+    const signal = inspector.getByRole("combobox", { name: "Signal", exact: true });
+    await signal.click();
     const search = page.getByRole("combobox", { name: "Search signal" });
     await expect(search).toBeVisible();
     await search.fill("adsb");
@@ -51,10 +52,8 @@ test.describe("the source nodes", () => {
     await page.screenshot({ path: "/tmp/shot-signals.png" });
     await options.first().click();
 
-    await expect(generator.getByRole("button", { name: "Signal", exact: true })).toContainText(
-      "ADS-B",
-    );
-    await expect(generator.getByRole("button", { name: "Sample rate" })).toContainText("2 MS/s");
+    await expect(signal).toContainText("ADS-B");
+    await expect(inspector.getByRole("combobox", { name: "Sample rate" })).toContainText("2 MS/s");
   });
 
   test("a device node picks from the library and plays what it is given", async ({ page }) => {

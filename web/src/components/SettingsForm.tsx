@@ -1,3 +1,5 @@
+import { Fragment, type ReactNode } from "react";
+import { needsOf, settingBlocks } from "../lib/settingBlocks";
 import {
   ceiling,
   choiceItems,
@@ -36,6 +38,7 @@ import {
   OptionalNumberChip,
   SettingChip,
   ToggleChip,
+  useRows,
 } from "./face/Chips";
 import { TextChip } from "./face/TextChip";
 import { HzChip } from "./HzField";
@@ -45,6 +48,7 @@ import { NumberField } from "./NumberField";
 import { rowKeys } from "./rowKeys";
 import { Segmented } from "./Segmented";
 import { SerialPortChip } from "./SerialPortChip";
+import { settingMark, Unused } from "./Unused";
 
 const NO_READOUTS: readonly Field[] = [];
 
@@ -88,10 +92,18 @@ export function SettingsForm({
 }) {
   const keys = rowKeys(form);
   const status = readoutStatus(readouts);
-  return form.map((field, index) =>
-    inSection(field, section) && fieldShown(form, settings, field) ? (
+  const rows = useRows();
+  const draw = (index: number): ReactNode => {
+    const field = form[index];
+    if (field === undefined || !inSection(field, section)) {
+      return null;
+    }
+    const shown = fieldShown(form, settings, field);
+    if (!shown && !rows) {
+      return null;
+    }
+    const chip = (
       <FieldChip
-        key={keys[index]}
         form={form}
         field={field}
         settings={settings}
@@ -100,8 +112,27 @@ export function SettingsForm({
         lanes={lanes}
         onSettings={onSettings}
       />
-    ) : null,
-  );
+    );
+    if (!rows) {
+      return <Fragment key={keys[index]}>{chip}</Fragment>;
+    }
+    return (
+      <div key={keys[index]} {...settingMark(field.key)}>
+        {shown ? chip : <Unused needs={needsOf(form, settings, field)}>{chip}</Unused>}
+      </div>
+    );
+  };
+  if (!rows) {
+    return form.map((_, index) => draw(index));
+  }
+  return settingBlocks(form).map((block) => {
+    const drawn = block.map(draw).filter((node) => node !== null);
+    return drawn.length === 0 ? null : (
+      <div key={keys[block[0] ?? 0]} className="flex flex-col gap-2">
+        {drawn}
+      </div>
+    );
+  });
 }
 
 function inSection(field: SettingField, section: string | null | undefined): boolean {
@@ -138,6 +169,7 @@ function FieldChip({ form, field, settings, choices, status, lanes, onSettings }
       return (
         <OptionChip
           {...shared}
+          listed={field.control.type === "live"}
           options={belowCeiling(control.options, ceiling(field, settings))}
           value={value}
           status={status}
@@ -236,18 +268,21 @@ function OptionChip({
   options,
   value,
   status,
+  listed,
   onCommit,
   ...chip
 }: ChipProps & {
   options: readonly ParamOption[];
   value: unknown;
   status: OptionStatus;
+  listed: boolean;
   onCommit: (value: unknown) => void;
 }) {
   const items = choiceItems(options, value, status);
   return (
     <ChoiceChip
       {...chip}
+      listed={listed}
       value={items.chosen}
       options={items.options}
       onChange={(key) => onCommit(chosenValue(options, key, value))}

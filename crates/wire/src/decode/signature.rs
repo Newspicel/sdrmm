@@ -372,6 +372,8 @@ impl SignalSignature {
         (score >= MIN_SCORE).then_some((score, allocation == Some(1.0)))
     }
 
+    /// A synced mode keys at the one rate its frame sync is built for, so a rate measured
+    /// beyond its skirt rules it out rather than only lowering the score.
     fn waveform_score(&self, measure: &SignalMeasure) -> Option<(f32, f32)> {
         let mut total = self.bandwidth_hz.score(measure.bandwidth_hz) * WEIGHT_BANDWIDTH;
         let mut weight = WEIGHT_BANDWIDTH;
@@ -383,6 +385,9 @@ impl SignalSignature {
             let part = measure
                 .symbol_rate_hz
                 .map_or(UNMEASURED, |measured| expected.score(measured));
+            if self.sync.is_some() && part <= 0.0 {
+                return None;
+            }
             add(part, WEIGHT_SYMBOL_RATE);
         }
         if let Some(expected) = self.deviation_hz {
@@ -506,6 +511,38 @@ mod tests {
         let json = serde_json::to_value(&signature).expect("signature serializes");
         let back: SignalSignature = serde_json::from_value(json).expect("signature parses");
         assert_eq!(back, signature);
+    }
+
+    #[test]
+    fn a_synced_signature_refuses_a_far_off_symbol_rate() {
+        let sync = FrameSync {
+            symbol_rate_hz: 9_600.0,
+            deviation_hz: 4_000.0,
+            pulse: SyncPulse::Gaussian {
+                bt: 0.5,
+                pulse_span: 3,
+                matched_span: 3,
+            },
+            bits: 48,
+            tolerance: 2,
+            patterns: vec![0x5555_5557_12E7],
+            min_hits: 2,
+        };
+        let signature = SignalSignature::synced("Trunk", 13_750.0, sync);
+        let measure = SignalMeasure {
+            bandwidth_hz: 13_750.0,
+            deviation_hz: 4_000.0,
+            ..SignalMeasure::default()
+        };
+        let at = |rate: f64| {
+            signature.matched(&SignalMeasure {
+                symbol_rate_hz: Some(rate),
+                ..measure
+            })
+        };
+        assert!(at(9_600.0).is_some());
+        assert!(at(1_200.0).is_none());
+        assert!(signature.matched(&measure).is_some());
     }
 
     #[test]

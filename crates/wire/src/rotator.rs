@@ -23,9 +23,19 @@ pub const FLIP_ELEVATION_DEG: f64 = 180.0;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RotatorLink {
-    Gs232 { device: String, baud: u32 },
-    Rotctld { address: String },
-    Winegard { device: String, baud: u32 },
+    Gs232 {
+        device: String,
+        baud: u32,
+    },
+    Rotctld {
+        address: String,
+    },
+    Winegard {
+        device: String,
+        baud: u32,
+    },
+    /// A simulated mount that slews like a real one, for trying rotator patches with no hardware.
+    Virtual,
 }
 
 impl RotatorLink {
@@ -40,6 +50,7 @@ impl RotatorLink {
             Self::Rotctld { address } => {
                 address.len() <= MAX_POSITION_ENDPOINT_LEN && valid_host_port(address)
             }
+            Self::Virtual => true,
         }
     }
 
@@ -192,6 +203,9 @@ pub struct RotatorStatus {
     pub flipped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What the node waits for, never a fault: a wire, a setting or data still to come.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<String>,
 }
 
 #[cfg(test)]
@@ -291,6 +305,7 @@ mod tests {
                 device: "/dev/ttyUSB0".to_owned(),
                 baud: DEFAULT_WINEGARD_BAUD,
             },
+            RotatorLink::Virtual,
         ] {
             assert!(link.valid(), "{link:?}");
         }
@@ -323,6 +338,23 @@ mod tests {
             ..travler
         };
         assert!(turntable.elevation_max_deg().abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_virtual_mount_needs_no_endpoint_and_reaches_the_whole_range() {
+        let json = serde_json::json!({ "type": "virtual" });
+        let link: RotatorLink = serde_json::from_value(json.clone()).expect("parses");
+        assert_eq!(link, RotatorLink::Virtual);
+        assert_eq!(serde_json::to_value(&link).expect("serializes"), json);
+        let node = RotatorNode {
+            link: Some(link),
+            azimuth_max_deg: MAX_ROTATOR_AZIMUTH_DEG,
+            flip: true,
+            ..RotatorNode::default()
+        };
+        assert!(node.valid());
+        assert!((node.azimuth_reach_deg() - MAX_ROTATOR_AZIMUTH_DEG).abs() < f64::EPSILON);
+        assert!(node.flips());
     }
 
     #[test]

@@ -29,6 +29,9 @@ pub struct Excerpt {
     pub input_rate: Option<f64>,
     #[arg(long)]
     pub center: Option<f64>,
+    /// Raw sample format when the extension does not say: cu8, cs8, cs16, cf32 or rs8.
+    #[arg(long)]
+    pub format: Option<String>,
     #[arg(long)]
     pub description: String,
     #[arg(long)]
@@ -38,7 +41,10 @@ pub struct Excerpt {
 }
 
 pub fn run(root: &Path, args: &Excerpt) -> Result<()> {
-    let mut source = Source::open(&args.input, args.input_rate, args.center)?;
+    let mut source = match &args.format {
+        Some(name) => Source::open_raw(&args.input, name, args.input_rate, args.center)?,
+        None => Source::open(&args.input, args.input_rate, args.center)?,
+    };
     let input_rate = source.rate;
     let output_rate = args.rate.unwrap_or(input_rate);
     ensure!(
@@ -177,13 +183,7 @@ enum Reader {
 impl Source {
     pub fn open(path: &Path, rate: Option<f64>, center: Option<f64>) -> Result<Self> {
         if let Some(format) = RawFormat::of(path) {
-            let rate = rate.context("a raw IQ file carries no sample rate: pass --input-rate")?;
-            return Ok(Self {
-                reader: Reader::Raw(Raw::open(path, format)?),
-                rate,
-                center: center.unwrap_or(0.0),
-                data_path: path.to_path_buf(),
-            });
+            return Self::raw(path, format, rate, center);
         }
         if path
             .extension()
@@ -215,6 +215,27 @@ impl Source {
             rate,
             center: center.or(meta_center).unwrap_or(0.0),
             data_path: sdrmm_recorder::data_path(&stem),
+        })
+    }
+
+    pub fn open_raw(
+        path: &Path,
+        format: &str,
+        rate: Option<f64>,
+        center: Option<f64>,
+    ) -> Result<Self> {
+        let format = RawFormat::named(format)
+            .with_context(|| format!("unknown raw format {format}: cu8, cs8, cs16, cf32 or rs8"))?;
+        Self::raw(path, format, rate, center)
+    }
+
+    fn raw(path: &Path, format: RawFormat, rate: Option<f64>, center: Option<f64>) -> Result<Self> {
+        let rate = rate.context("a raw IQ file carries no sample rate: pass --input-rate")?;
+        Ok(Self {
+            reader: Reader::Raw(Raw::open(path, format)?),
+            rate,
+            center: center.unwrap_or(0.0),
+            data_path: path.to_path_buf(),
         })
     }
 
@@ -415,22 +436,29 @@ enum RawFormat {
     Cs8,
     Cs16,
     Cf32,
+    /// Real signed bytes, as a GNSS front end writes an IF stream.
+    Rs8,
 }
 
 impl RawFormat {
     fn of(path: &Path) -> Option<Self> {
-        let ext = path.extension()?.to_str()?.to_ascii_lowercase();
-        Some(match ext.as_str() {
+        Self::named(path.extension()?.to_str()?)
+    }
+
+    fn named(name: &str) -> Option<Self> {
+        Some(match name.to_ascii_lowercase().as_str() {
             "cu8" => Self::Cu8,
             "cs8" | "sc8" => Self::Cs8,
             "cs16" | "sc16" => Self::Cs16,
             "cf32" | "fc32" => Self::Cf32,
+            "rs8" => Self::Rs8,
             _ => return None,
         })
     }
 
     fn stride(self) -> usize {
         match self {
+            Self::Rs8 => 1,
             Self::Cu8 | Self::Cs8 => 2,
             Self::Cs16 => 4,
             Self::Cf32 => 8,
@@ -443,6 +471,7 @@ impl RawFormat {
                 (f32::from(bytes[0]) - 127.5) / 127.5,
                 (f32::from(bytes[1]) - 127.5) / 127.5,
             ),
+            Self::Rs8 => Complex::new(f32::from(bytes[0] as i8) / 128.0, 0.0),
             Self::Cs8 => Complex::new(
                 f32::from(bytes[0] as i8) / 128.0,
                 f32::from(bytes[1] as i8) / 128.0,

@@ -4,8 +4,8 @@ use std::{
 };
 
 use sdrmm_wire::{
-    DvFrame, DvFrameKind, TrunkChannel, TrunkChannelEntry, TrunkChannelSource, TrunkDiscovery,
-    TrunkKind, TrunkScheme,
+    DvFrame, DvFrameKind, TrunkBand, TrunkChannel, TrunkChannelEntry, TrunkChannelSource,
+    TrunkDiscovery, TrunkKind, TrunkScheme,
 };
 
 use super::Heard;
@@ -146,6 +146,7 @@ pub(crate) struct Prospector {
     candidates: Vec<u64>,
     cursor: usize,
     manual: HashMap<u16, u64>,
+    band: Option<TrunkBand>,
     learned: HashMap<u16, u64>,
     scores: HashMap<(u16, u64), i32>,
     pending: Vec<PendingGrant>,
@@ -167,11 +168,16 @@ pub(crate) struct Prospector {
 }
 
 impl Prospector {
-    pub(crate) fn new(discovery: &TrunkDiscovery, channel_map: &[TrunkChannelEntry]) -> Self {
+    pub(crate) fn new(
+        discovery: &TrunkDiscovery,
+        channel_map: &[TrunkChannelEntry],
+        band: Option<TrunkBand>,
+    ) -> Self {
         let mut prospector = Self {
             candidates: Vec::new(),
             cursor: 0,
             manual: HashMap::new(),
+            band: None,
             learned: HashMap::new(),
             scores: HashMap::new(),
             pending: Vec::new(),
@@ -191,7 +197,7 @@ impl Prospector {
             agreement: HashMap::new(),
             repeaters: HashSet::new(),
         };
-        prospector.configure(discovery, channel_map);
+        prospector.configure(discovery, channel_map, band);
         prospector
     }
 
@@ -199,7 +205,9 @@ impl Prospector {
         &mut self,
         discovery: &TrunkDiscovery,
         channel_map: &[TrunkChannelEntry],
+        band: Option<TrunkBand>,
     ) {
+        self.band = band.filter(TrunkBand::valid);
         self.manual = channel_map
             .iter()
             .map(|entry| (entry.lcn, entry.freq_hz))
@@ -334,11 +342,14 @@ impl Prospector {
         found
     }
 
+    /// Where `logical_channel` transmits: the operator's map, then the operator's band, then
+    /// what the search learned.
     pub(crate) fn frequency_of(&self, logical_channel: u16) -> Option<u64> {
         self.manual
             .get(&logical_channel)
-            .or_else(|| self.learned.get(&logical_channel))
             .copied()
+            .or_else(|| self.band.map(|band| band.frequency(logical_channel)))
+            .or_else(|| self.learned.get(&logical_channel).copied())
     }
 
     pub(crate) fn searching(&self) -> u32 {
@@ -840,11 +851,11 @@ mod tests {
     }
 
     fn prospector() -> Prospector {
-        Prospector::new(&discovery(), &[])
+        Prospector::new(&discovery(), &[], None)
     }
 
     fn capacity_plus() -> Prospector {
-        let mut prospector = Prospector::new(&discovery(), &[]);
+        let mut prospector = Prospector::new(&discovery(), &[], None);
         prospector.set_scheme(Some(scheme("capacity_plus", TrunkKind::Distributed)));
         prospector
     }
@@ -997,6 +1008,7 @@ mod tests {
                 max_probes: 4,
             },
             &[],
+            None,
         );
         let now = Instant::now();
         prospector.cover(460_137_500, &(459_612_500..=461_012_500));
@@ -1343,9 +1355,32 @@ mod tests {
                 lcn: LCN,
                 freq_hz: TRAFFIC_HZ,
             }],
+            None,
         );
 
         assert_eq!(prospector.frequency_of(LCN), Some(TRAFFIC_HZ));
+    }
+
+    #[test]
+    fn a_band_places_every_numbered_channel_the_map_leaves() {
+        let band = TrunkBand {
+            base_hz: 423_000_000,
+            spacing_hz: 12_500,
+        };
+        let mut prospector = Prospector::new(
+            &discovery(),
+            &[TrunkChannelEntry {
+                lcn: LCN,
+                freq_hz: TRAFFIC_HZ,
+            }],
+            Some(band),
+        );
+        let now = Instant::now();
+
+        assert_eq!(prospector.frequency_of(LCN), Some(TRAFFIC_HZ));
+        assert_eq!(prospector.frequency_of(48), Some(423_600_000));
+        prospector.note_grant(48, None, 91, Some(4001), now);
+        assert_eq!(prospector.searching(), 0);
     }
 
     #[test]
@@ -1356,6 +1391,7 @@ mod tests {
                 lcn: LCN,
                 freq_hz: TRAFFIC_HZ,
             }],
+            None,
         );
         let now = Instant::now();
 
@@ -1422,7 +1458,7 @@ mod tests {
                 freq_hz: *freq_hz,
             })
             .collect();
-        Prospector::new(&discovery(), &map)
+        Prospector::new(&discovery(), &map, None)
     }
 
     #[test]
@@ -1685,7 +1721,7 @@ mod tests {
 
     #[test]
     fn a_disabled_search_probes_nothing() {
-        let mut prospector = Prospector::new(&TrunkDiscovery::default(), &[]);
+        let mut prospector = Prospector::new(&TrunkDiscovery::default(), &[], None);
         let now = Instant::now();
         prospector.note_grant(LCN, Some(1), 91, Some(4001), now);
 
@@ -1720,6 +1756,7 @@ mod tests {
                 lcn: 1,
                 freq_hz: 451_000_000,
             }],
+            None,
         );
         let now = Instant::now();
         prospector.note_grant(LCN, Some(1), 91, Some(4001), now);

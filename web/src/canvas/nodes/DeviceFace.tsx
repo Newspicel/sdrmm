@@ -5,9 +5,9 @@ import { Button } from "../../components/BaseControls";
 import { ConfirmButton } from "../../components/ConfirmButton";
 import {
   BTN_PRIMARY,
-  BTN_QUIET,
-  BTN_QUIET_DANGER,
   BTN_SM,
+  FACE_BTN,
+  FACE_BTN_DANGER,
   ICON_BTN,
 } from "../../components/controls";
 import { inTuningRange, isTunable, tuningRange } from "../../components/dial";
@@ -37,6 +37,8 @@ import type {
 import { useRadioTune } from "../../lib/useRadioTune";
 import { useWorkspaceContext } from "../context";
 import { patchNode, rxStreamCount } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
+import { activitySignal } from "./activity";
 import { dialHold, type LaneHold, laneHolds } from "./arrayNode";
 import {
   allAutoTuning,
@@ -64,8 +66,10 @@ import {
   tunerDials,
 } from "./deviceNode";
 import { MakeArrayButton } from "./MakeArrayButton";
-import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
+import { FaceBody, FaceFooter, NodeShell, PortAnchor, useFaceActive } from "./NodeShell";
+import { RadioUseChip } from "./RadioUseChip";
 import { Library, RecordingFace } from "./RecordingFace";
+import { activityOf, radioUseOf, withRadioUse } from "./radioUse";
 import { SignalGenFace } from "./SignalGenFace";
 import { SourceHealth } from "./SourceHealth";
 
@@ -223,12 +227,14 @@ function LaneDial({
   dial,
   locked,
   hold,
+  port,
 }: {
   node: string;
   set: DeviceSet;
   dial: TunerDial;
   locked: boolean;
   hold: LaneHold | null;
+  port: string | undefined;
 }) {
   const { tuneRadio } = useRadioTune();
   const active = useFaceActive();
@@ -240,6 +246,7 @@ function LaneDial({
       className="flex h-7 items-center gap-2"
       title={hold === null ? undefined : `Tuned by ${hold.label}`}
     >
+      {port !== undefined && <PortAnchor port={port} />}
       <span className="w-14 shrink-0 truncate font-mono text-2xs text-hue-blue">{dial.port}</span>
       <div className="@container w-52 min-w-0">
         <FrequencyDial
@@ -340,6 +347,12 @@ const TONE: Record<Hearing["tone"], string> = {
 
 const INSIDE = "Decoders wired to this radio that sit inside its window";
 
+/** While the radio listens, how many of its decoders it hears; what it does is on the dot. */
+export function DeviceStatus({ set }: { set: DeviceSet }) {
+  const activity = activityOf(set);
+  return activity === "receiving" || activity === "receive_paused" ? <Heard set={set} /> : null;
+}
+
 function Heard({ set }: { set: DeviceSet }) {
   const heard = hearing(set);
   return (
@@ -392,7 +405,7 @@ function StopButton({ set, onStop }: { set: DeviceSet; onStop: () => void }) {
     return <ConfirmButton label="Stop" title={said} onConfirm={onStop} />;
   }
   return (
-    <Button type="button" className={BTN_QUIET} title={said} onClick={onStop}>
+    <Button type="button" className={FACE_BTN_DANGER} title={said} onClick={onStop}>
       Stop
     </Button>
   );
@@ -439,7 +452,7 @@ function ClosedRadioFace({
       <FaceFooter>
         <Button
           type="button"
-          className={BTN_QUIET_DANGER}
+          className={FACE_BTN_DANGER}
           title="Free this node so you can pick a different radio"
           onClick={onForget}
         >
@@ -448,7 +461,7 @@ function ClosedRadioFace({
         {stopped ? (
           <Button
             type="button"
-            className={BTN_PRIMARY}
+            className={FACE_BTN}
             title="Open this radio again and start the decoders wired to it"
             onClick={onStart}
           >
@@ -457,7 +470,7 @@ function ClosedRadioFace({
         ) : (
           <Button
             type="button"
-            className={BTN_PRIMARY}
+            className={FACE_BTN}
             title={openSaid(waiting, onBus)}
             onClick={onOpen}
             disabled={!onBus}
@@ -575,11 +588,9 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   const holds = laneHolds(workspace.graph, set);
   const heldBy = new Map([...holds].map(([stream, hold]) => [stream, hold.label]));
-  const merged = lanesMerged(set);
-  const dials = tunerDials(set);
-  const streams = rxStreamCount(set.capabilities);
+  const perLane = lanesMerged(set) && split;
   const rowPorts =
-    laneLayout(set.capabilities).lanes === streams
+    perLane && laneLayout(set.capabilities).lanes === rxStreamCount(set.capabilities)
       ? iqOutputs(workspace.resolved, node.id)
       : undefined;
 
@@ -588,54 +599,69 @@ export function DeviceFace({ node }: { node: PatchNode }) {
       node={node}
       title={set.device.label}
       category="source"
-      subtitle={<Heard set={set} />}
+      subtitle={<DeviceStatus set={set} />}
+      live={activitySignal(activityOf(set)) ?? false}
       rowPorts={rowPorts}
     >
       <FaceBody>
-        <RadioSettings
-          node={node.id}
-          active={set}
-          className="p-2"
-          advised={new Set(holds.keys())}
-          heldBy={heldBy}
-          lead={
-            <Tuner
-              node={node.id}
-              set={set}
-              holds={holds}
-              lockedStreams={lockedStreams}
-              onLock={(locked_streams) => editNode({ locked_streams })}
-              split={split}
-              onSplit={(split_tuning) => editNode({ split_tuning })}
-            />
-          }
-          laneLeads={
-            merged && split
-              ? dials.map((dial) => (
-                  <LaneDial
-                    key={dial.stream}
-                    node={node.id}
-                    set={set}
-                    dial={dial}
-                    locked={lockedStreams.includes(dial.stream)}
-                    hold={dialHold(holds, dial.stream, true)}
-                  />
-                ))
-              : undefined
-          }
-          ports={rowPorts}
-        />
-
+        <div className="flex flex-col gap-2 p-2">
+          <Tuner
+            node={node.id}
+            set={set}
+            holds={holds}
+            lockedStreams={lockedStreams}
+            onLock={(locked_streams) => editNode({ locked_streams })}
+            split={split}
+            onSplit={(split_tuning) => editNode({ split_tuning })}
+          />
+          {perLane && (
+            <div className="flex flex-col gap-px">
+              {tunerDials(set).map((dial) => (
+                <LaneDial
+                  key={dial.stream}
+                  node={node.id}
+                  set={set}
+                  dial={dial}
+                  locked={lockedStreams.includes(dial.stream)}
+                  hold={dialHold(holds, dial.stream, true)}
+                  port={rowPorts?.[dial.stream]}
+                />
+              ))}
+            </div>
+          )}
+        </div>
         {set.error != null && <Fault set={set} />}
         <Refused set={set} />
       </FaceBody>
+      <Inspect node={node.id}>
+        <InspectSection label="Radio">
+          <RadioSettings
+            node={node.id}
+            active={set}
+            advised={new Set(holds.keys())}
+            heldBy={heldBy}
+            lead={
+              <RadioUseChip
+                set={set}
+                value={radioUseOf(node, set)}
+                onChange={(radioUse) =>
+                  workspace.edit((snapshot) => ({
+                    ...snapshot,
+                    graph: withRadioUse(snapshot.graph, workspace.context, node.id, radioUse),
+                  }))
+                }
+              />
+            }
+          />
+        </InspectSection>
+      </Inspect>
       <FaceFooter>
         <DeviceHealth set={set} />
         <MakeArrayButton node={node.id} />
         <StopButton set={set} onStop={stop} />
         <Button
           type="button"
-          className={BTN_QUIET_DANGER}
+          className={FACE_BTN_DANGER}
           title="Close this radio and free the node: the device is released and the wires stay drawn"
           onClick={forget}
         >

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { Button } from "../BaseControls";
 import {
   CHIP_READOUT,
@@ -10,6 +10,7 @@ import {
 } from "../controls";
 import { NumberField, OptionalNumberField } from "../NumberField";
 import { Popover } from "../Popover";
+import { Select } from "../Select";
 import { Tip } from "../Tip";
 
 export type ChipTone = "ok" | "warn" | "danger";
@@ -19,6 +20,128 @@ const TONE: Record<ChipTone, string> = {
   warn: "text-warn",
   danger: "text-danger",
 };
+
+/** How chips draw: compact on a face, or one labelled row each where there is room. */
+export type ChipLayout = "chip" | "row";
+
+const Layout = createContext<ChipLayout>("chip");
+
+export function ChipRows({ children }: { children: ReactNode }) {
+  return <Layout value="row">{children}</Layout>;
+}
+
+/** True inside the inspector, where every setting is a labelled row. */
+export function useRows(): boolean {
+  return useContext(Layout) === "row";
+}
+
+const YES_NO = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+] as const;
+
+/** An on/off setting as the inspector draws it: the same dropdown every choice uses. */
+export function YesNo({
+  label,
+  on,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  on: boolean;
+  disabled?: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <Select
+      label={label}
+      value={on ? "yes" : "no"}
+      options={YES_NO}
+      disabled={disabled}
+      className="w-full"
+      onChange={(next) => onChange(next === "yes")}
+    />
+  );
+}
+
+const ROWS = "flex flex-col gap-5";
+
+/** A setting with its name small above it. */
+function ChipRow({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-2xs text-ink-dim wrap-anywhere" title={title}>
+        {label}
+      </span>
+      <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-2">{children}</div>
+    </div>
+  );
+}
+
+/** A setting that fits on one line: its name, then the switch or value at the far edge. */
+function InlineRow({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-7 min-w-0 items-center justify-between gap-2">
+      <span className="text-ink-dim text-xs wrap-anywhere" title={title}>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function OptionList<T extends string | number>({
+  value,
+  options,
+  title,
+  disabled,
+  onPick,
+}: {
+  value: T;
+  options: Options<T>;
+  title: string;
+  disabled?: boolean;
+  onPick: (value: T) => void;
+}) {
+  return (
+    <div
+      role="listbox"
+      aria-label={title}
+      className="flex max-h-56 w-full flex-col overflow-y-auto rounded-control border border-line bg-well py-1"
+    >
+      {options.map((option) => (
+        <Button
+          key={String(option.value)}
+          type="button"
+          role="option"
+          aria-selected={option.value === value}
+          title={option.title}
+          disabled={disabled === true || option.disabled === true}
+          className={listItem(option.value === value, false)}
+          onClick={() => onPick(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
 
 export type ChipsInset = "full" | "below" | "none";
 
@@ -37,6 +160,9 @@ export function Chips({
   className?: string;
   inset?: ChipsInset;
 }) {
+  if (useRows()) {
+    return <div className={`${ROWS} ${className ?? ""}`}>{children}</div>;
+  }
   return (
     <div
       className={`flex flex-wrap items-center gap-x-1 gap-y-[3px] contain-inline-size ${INSET[inset]} ${className ?? ""}`}
@@ -75,6 +201,16 @@ function ChipFace({
 }
 
 export function ChipField({ label, children }: { label: string; children: ReactNode }) {
+  if (useRows()) {
+    return (
+      <div className="group/field flex min-w-0 flex-col gap-1">
+        <span className="text-2xs text-ink-dim group-only/field:hidden">{label}</span>
+        <span className="flex min-w-0 flex-wrap items-center gap-2 [&>div]:min-w-0 [&>div]:flex-1 [&>input]:min-w-0 [&>input]:flex-1">
+          {children}
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2">
       <span className={WRAPPED_LABEL}>{label}</span>
@@ -106,6 +242,21 @@ export function SettingChip({
   width?: string;
   children: (close: () => void) => ReactNode;
 }) {
+  if (useRows()) {
+    return (
+      <div className="flex min-w-0 flex-col gap-1 [&:has(>fieldset>:nth-child(2))>span]:hidden">
+        <span className="text-2xs text-ink-dim wrap-anywhere" title={title}>
+          {label}
+        </span>
+        <fieldset
+          disabled={disabled}
+          className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0 disabled:opacity-45"
+        >
+          {children(stayOpen)}
+        </fieldset>
+      </div>
+    );
+  }
   return (
     <Popover
       label={<ChipFace label={label} value={value} unit={unit} quiet={quiet} tone={tone} />}
@@ -120,6 +271,8 @@ export function SettingChip({
   );
 }
 
+function stayOpen(): void {}
+
 export function ChoiceChip<T extends string | number>({
   label,
   value,
@@ -128,6 +281,7 @@ export function ChoiceChip<T extends string | number>({
   quiet,
   tone,
   disabled,
+  listed = false,
   onChange,
 }: {
   label: string;
@@ -137,9 +291,41 @@ export function ChoiceChip<T extends string | number>({
   quiet?: boolean;
   tone?: ChipTone;
   disabled?: boolean;
+  /** In the inspector, every option in view at once: for what the running decoder found. */
+  listed?: boolean;
   onChange: (value: T) => void;
 }) {
+  const rows = useRows();
   const current = options.find((option) => option.value === value);
+  const pick = (next: T): void => {
+    if (next !== value) {
+      onChange(next);
+    }
+  };
+  if (rows) {
+    return (
+      <ChipRow label={label} title={title}>
+        {listed ? (
+          <OptionList
+            value={value}
+            options={options}
+            title={title}
+            disabled={disabled}
+            onPick={pick}
+          />
+        ) : (
+          <Select
+            label={title}
+            value={value}
+            options={options}
+            disabled={disabled}
+            className={`w-full ${tone === undefined ? "" : TONE[tone]}`}
+            onChange={pick}
+          />
+        )}
+      </ChipRow>
+    );
+  }
   return (
     <SettingChip
       label={label}
@@ -297,6 +483,16 @@ export function ReadoutChip({
   title: string;
   tone?: ChipTone;
 }) {
+  if (useRows()) {
+    return (
+      <InlineRow label={label} title={title}>
+        <span className={`font-mono text-xs ${tone === undefined ? "text-ink" : TONE[tone]}`}>
+          {value}
+          {unit !== undefined && unit !== "" && ` ${unit}`}
+        </span>
+      </InlineRow>
+    );
+  }
   return (
     <span className={CHIP_READOUT} title={title}>
       <ChipFace label={label} value={value} unit={unit} quiet={false} tone={tone} />
@@ -319,6 +515,13 @@ export function ToggleChip({
   disabled?: boolean;
   onChange: (on: boolean) => void;
 }) {
+  if (useRows()) {
+    return (
+      <ChipRow label={label} title={title}>
+        <YesNo label={title} on={on} disabled={disabled} onChange={onChange} />
+      </ChipRow>
+    );
+  }
   return (
     <Tip
       text={title}

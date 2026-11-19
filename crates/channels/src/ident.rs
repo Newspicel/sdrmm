@@ -49,6 +49,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Signal identifier".to_owned(),
     summary: "Guesses what an unknown signal is".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: MAX_IDENT_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

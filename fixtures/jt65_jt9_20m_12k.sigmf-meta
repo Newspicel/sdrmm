@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDR--",
+    "core:hw": "WSJT-X sample 130610_2343.wav",
+    "core:description": "JT65 and JT9 on 20 m, recorded 2013-06-10 23:43 UTC: nine JT65 and eight JT9 stations in one minute, as real-valued complex IQ"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 14076000.0
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Source: https://github.com/WSJTX/wsjtx/blob/967c85a6/samples/JT9+JT65/130610_2343.wav (GPL-3.0); source SHA-256 5f1ac56197afc3373746edea12869ea35e2e6f3798980825c3af8103996bbea4; samples 0..624000 at 12000 Hz",
+      "core:sample_count": 624000,
+      "core:sample_start": 0
+    }
+  ]
+}

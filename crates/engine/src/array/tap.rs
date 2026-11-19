@@ -44,7 +44,8 @@ impl TapEvent {
             | Self::Lane(
                 LaneEvent::Mark { at, .. }
                 | LaneEvent::Uncertain { at, .. }
-                | LaneEvent::HardwareTime { at, .. },
+                | LaneEvent::HardwareTime { at, .. }
+                | LaneEvent::Deaf { at, .. },
             ) => at,
         }
     }

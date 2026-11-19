@@ -22,7 +22,6 @@ export function ChannelPlanTable({
   entries,
   found,
   following,
-  maxChannel,
   onChange,
 }: {
   label: string;
@@ -30,20 +29,8 @@ export function ChannelPlanTable({
   entries: readonly TrunkChannelEntry[];
   found: readonly TrunkChannelEntry[];
   following: ReadonlySet<number>;
-  maxChannel: number;
   onChange: (entries: TrunkChannelEntry[]) => void;
 }) {
-  const [lcn, setLcn] = useState<number | null>(null);
-  const [mhz, setMhz] = useState<number | null>(null);
-  const pending = channelEntry(lcn, mhz, maxChannel);
-  const add = () => {
-    if (pending === null) {
-      return;
-    }
-    onChange(withChannel(entries, pending));
-    setLcn(null);
-    setMhz(null);
-  };
   return (
     <div className="border-b border-line">
       <div className="flex items-center justify-between gap-2 px-2 pt-2">
@@ -106,33 +93,58 @@ export function ChannelPlanTable({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center gap-2 px-2 pt-2">
-        <OptionalNumberField
-          label="Logical channel to add"
-          placeholder="LCN"
-          value={lcn}
-          min={0}
-          max={maxChannel}
-          step={1}
-          className="w-16"
-          onCommit={setLcn}
-        />
-        <OptionalNumberField
-          label="Frequency to add"
-          placeholder="451.0125"
-          value={mhz}
-          min={0}
-          step={0.0125}
-          digits={MHZ_DIGITS}
-          className="w-28"
-          unit="MHz"
-          onCommit={setMhz}
-        />
-        <Button type="button" className={BTN_SM} disabled={pending === null} onClick={add}>
-          Add
-        </Button>
-      </div>
       <p className="px-2 py-2 text-xs text-ink-dim">{planSummary(rows)}</p>
+    </div>
+  );
+}
+
+/** Adds a channel the site never announces, by logical number and frequency. */
+export function ChannelPlanAdd({
+  entries,
+  maxChannel,
+  onChange,
+}: {
+  entries: readonly TrunkChannelEntry[];
+  maxChannel: number;
+  onChange: (entries: TrunkChannelEntry[]) => void;
+}) {
+  const [lcn, setLcn] = useState<number | null>(null);
+  const [mhz, setMhz] = useState<number | null>(null);
+  const pending = channelEntry(lcn, mhz, maxChannel);
+  const add = () => {
+    if (pending === null) {
+      return;
+    }
+    onChange(withChannel(entries, pending));
+    setLcn(null);
+    setMhz(null);
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <OptionalNumberField
+        label="Logical channel to add"
+        placeholder="LCN"
+        value={lcn}
+        min={0}
+        max={maxChannel}
+        step={1}
+        className="w-16"
+        onCommit={setLcn}
+      />
+      <OptionalNumberField
+        label="Frequency to add"
+        placeholder="451.0125"
+        value={mhz}
+        min={0}
+        step={0.0125}
+        digits={MHZ_DIGITS}
+        className="w-28"
+        unit="MHz"
+        onCommit={setMhz}
+      />
+      <Button type="button" className={BTN_SM} disabled={pending === null} onClick={add}>
+        Add
+      </Button>
     </div>
   );
 }

@@ -43,9 +43,6 @@
     "kind": "scope"
   },
   {
-    "kind": "baseband_scope"
-  },
-  {
     "kind": "speaker",
     "data": null
   },
@@ -103,37 +100,6 @@
       "talkgroups": [],
       "radios": [],
       "min_duration_ms": 0
-    }
-  },
-  {
-    "kind": "audio_fx",
-    "data": {
-      "settings": {
-        "click_removal": {
-          "enabled": false,
-          "threshold": 6.0
-        },
-        "filter": {
-          "enabled": false,
-          "low_hz": 300.0,
-          "high_hz": 3000.0
-        },
-        "notches": [],
-        "peak": {
-          "enabled": false,
-          "freq_hz": 700.0,
-          "width_hz": 100.0,
-          "gain_db": 12.0
-        },
-        "auto_notch": false,
-        "denoise": {
-          "enabled": false,
-          "mode": "spectral",
-          "model": "dpdfnet2_8khz",
-          "strength": 0.5
-        },
-        "agc": "off"
-      }
     }
   },
   {

@@ -1,6 +1,6 @@
 {
   "name": "29a1a1cca6ffbb68",
-  "test": "GpsFace with a phone > shows offline and not paired in the header, not as a fault",
+  "test": "GpsFace with a phone > shows a wait for a fix as a hint, not as a fault",
   "graph": {
     "nodes": [
       {

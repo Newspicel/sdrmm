@@ -140,6 +140,17 @@ export const GATE_TEXT: Readonly<Record<ProcessorGate, string>> = labels.gate;
 
 const FAILURE_TEXT: Readonly<Record<ArrayFailure["kind"], string>> = labels.failure;
 
+const NEED_KINDS: ReadonlySet<ArrayFailure["kind"]> = new Set([
+  "unwired",
+  "lane_gap",
+  "needs_position",
+]);
+
+/** A failure that is only a missing wire: the face shows it as a need, never as a fault. */
+export function isNeed(failure: ArrayFailure): boolean {
+  return NEED_KINDS.has(failure.kind);
+}
+
 export function failureText(failure: ArrayFailure): string {
   const template = FAILURE_TEXT[failure.kind];
   switch (failure.kind) {

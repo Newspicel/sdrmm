@@ -1,5 +1,31 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { isLastOn, keptOn } from "./Segmented";
+import { isLastOn, keptOn, Segmented } from "./Segmented";
+
+describe("Segmented", () => {
+  const html = renderToStaticMarkup(
+    createElement(Segmented<string>, {
+      label: "Mode",
+      value: "b",
+      options: [
+        { value: "a", label: "A" },
+        { value: "b", label: "B" },
+        { value: "c", label: "C", disabled: true },
+      ],
+      onChange: () => {},
+    }),
+  );
+
+  it("presses only the chosen segment", () => {
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>B</);
+  });
+
+  it("dims a disabled segment that stays focusable", () => {
+    expect(html).toMatch(/data-disabled:opacity-45[^"]*"[^>]*aria-disabled="true"[^>]*>C</);
+  });
+});
 
 describe("keptOn", () => {
   const options = [

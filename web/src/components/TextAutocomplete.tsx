@@ -1,10 +1,18 @@
-import { Autocomplete as Primitive } from "@base-ui/react/autocomplete";
+import {
+  Autocomplete,
+  AutocompleteContent,
+  AutocompleteEmpty,
+  AutocompleteInput,
+  AutocompleteItem,
+  AutocompleteList,
+  AutocompleteTrigger,
+} from "@ui-sdk/react/autocomplete";
 import { ChevronDown } from "lucide-react";
 import type { ReactElement } from "react";
 import { useState } from "react";
 import { commitText, FIELD, SURFACE } from "./controls";
 import { Icon } from "./Icon";
-import { usePortalContainer } from "./PortalContainer";
+import { usePopupHost } from "./Select";
 
 export interface AutocompleteSuggestion {
   value: string;
@@ -29,19 +37,26 @@ export function TextAutocomplete({
   onCommit: (value: string) => boolean;
 }) {
   const [draft, setDraft] = useDraft(value);
-  const portalContainer = usePortalContainer();
+  const [open, setOpen] = useState(false);
+  const [host, follow] = usePopupHost();
+
+  const show = (next: boolean): void => {
+    follow(next);
+    setOpen(next);
+  };
 
   const commit = (candidate: string): void => {
     setDraft(commitText(candidate, value, onCommit));
   };
 
   return (
-    <Primitive.Root
-      items={suggestions}
+    <Autocomplete
       value={draft}
-      itemToStringValue={(suggestion) => suggestion.value}
-      mode="none"
-      openOnInputClick
+      filter={false}
+      container={host}
+      open={open}
+      onOpenChange={show}
+      onSubmit={commit}
       onValueChange={(next, details) => {
         setDraft(next);
         if (details.reason === "item-press") {
@@ -49,51 +64,52 @@ export function TextAutocomplete({
         }
       }}
     >
-      <Primitive.InputGroup className={`relative min-w-0 ${className ?? ""}`}>
-        <Primitive.Input
+      <div className={`relative min-w-0 ${className ?? ""}`}>
+        <AutocompleteInput
           data-hotkeys="off"
           aria-label={label}
           inputMode={inputMode}
           placeholder={placeholder}
           className={`${FIELD} w-full pr-7`}
+          onClick={() => show(true)}
           onBlur={(event) => commit(event.currentTarget.value)}
         />
-        <Primitive.Trigger
+        <AutocompleteTrigger
           data-hotkeys="off"
           aria-label={`Show ${label.toLowerCase()} suggestions`}
           className="absolute inset-y-0 right-0 flex w-7 cursor-pointer items-center justify-center text-ink-faint hover:text-ink"
         >
           <Icon glyph={ChevronDown} size={12} />
-        </Primitive.Trigger>
-      </Primitive.InputGroup>
-      <Primitive.Portal container={portalContainer} className="contents">
-        <Primitive.Positioner className="z-30" side="bottom" align="start" sideOffset={4}>
-          <Primitive.Popup
-            data-hotkeys="off"
-            className={`${SURFACE} max-w-[calc(100vw-1rem)] min-w-[var(--anchor-width)]`}
-          >
-            <Primitive.Empty className="text-xs text-ink-dim">
-              <span className="block px-2 py-1.5">
-                No detected match. A custom value is still accepted.
-              </span>
-            </Primitive.Empty>
-            <Primitive.List className="flex max-h-[var(--available-height)] flex-col overflow-y-auto p-0.5">
-              {(suggestion: AutocompleteSuggestion) => suggestionItem(suggestion, value)}
-            </Primitive.List>
-          </Primitive.Popup>
-        </Primitive.Positioner>
-      </Primitive.Portal>
-    </Primitive.Root>
+        </AutocompleteTrigger>
+      </div>
+      <AutocompleteContent
+        data-hotkeys="off"
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        className={`${SURFACE} flex max-h-(--available-height) max-w-[calc(100vw-1rem)] min-w-(--anchor-width) flex-col`}
+      >
+        <AutocompleteEmpty className="text-xs text-ink-dim empty:hidden">
+          <span className="block px-2 py-1.5">
+            No detected match. A custom value is still accepted.
+          </span>
+        </AutocompleteEmpty>
+        <AutocompleteList className="flex min-h-0 flex-col overflow-y-auto p-0.5">
+          {suggestions.map((suggestion) => suggestionItem(suggestion, value))}
+        </AutocompleteList>
+      </AutocompleteContent>
+    </Autocomplete>
   );
 }
 
 export function suggestionItem(suggestion: AutocompleteSuggestion, chosen: string): ReactElement {
   return (
-    <Primitive.Item
+    <AutocompleteItem
       key={suggestion.value}
-      value={suggestion}
+      value={suggestion.value}
+      label={suggestion.value}
       className={(state) =>
-        "flex cursor-default flex-col items-start rounded-control px-2 py-1 text-xs " +
+        "flex shrink-0 cursor-default flex-col items-start rounded-control px-2 py-1 text-xs " +
         "leading-tight " +
         (suggestion.value === chosen
           ? "bg-accent/15 text-accent"
@@ -104,7 +120,7 @@ export function suggestionItem(suggestion: AutocompleteSuggestion, chosen: strin
     >
       <span className="font-mono">{suggestion.value}</span>
       {suggestion.detail !== undefined && <span className="opacity-60">{suggestion.detail}</span>}
-    </Primitive.Item>
+    </AutocompleteItem>
   );
 }
 

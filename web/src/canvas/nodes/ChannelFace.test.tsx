@@ -55,7 +55,7 @@ function channel(rejected: number, skipped = 0): ChannelInfo {
   };
 }
 
-function face(rejected: number, skipped = 0, descriptor = DESCRIPTOR): string {
+function face(rejected: number, skipped = 0, descriptor = DESCRIPTOR, inspected = false): string {
   const set: DeviceSet = {
     id: 1,
     device: { driver: "virtual", key: "band", label: "Test band" },
@@ -79,14 +79,39 @@ function face(rejected: number, skipped = 0, descriptor = DESCRIPTOR): string {
     channels: new Map([["ble", channel(rejected, skipped)]]),
     owners: new Map([["ble", "radio"]]),
     channelTypes: [descriptor],
+    inspected,
   });
 }
 
 describe("ChannelFace", () => {
-  it("draws the decoder's settings from its descriptor", () => {
-    const html = face(0);
+  it("names itself a decoder in the header", () => {
+    expect(face(0)).toContain("Decoder");
+  });
+
+  it("draws the decoder's settings from its descriptor in the inspector", () => {
+    expect(face(0)).not.toContain("One channel");
+    const html = face(0, 0, DESCRIPTOR, true);
     expect(html).toContain("Link");
     expect(html).toContain("One channel");
+  });
+
+  it("puts audio processing at the end of an audio decoder's settings", () => {
+    expect(face(0, 0, DESCRIPTOR, true)).not.toContain("Auto notch");
+    const html = face(0, 0, { ...DESCRIPTOR, has_audio: true }, true);
+    expect(html.indexOf("Auto notch")).toBeGreaterThan(html.indexOf("One channel"));
+  });
+
+  it("marks the header while audio processing is on", () => {
+    const fx = placed("ble", {
+      kind: "channel",
+      data: { channel_type: "ble", audio: { auto_notch: true } },
+    });
+    const html = renderFace(ChannelFace, fx, {
+      graph: { ...GRAPH, nodes: [RADIO, fx] },
+      channelTypes: [DESCRIPTOR],
+    });
+    expect(html).toContain('title="Audio processing on"');
+    expect(face(0)).not.toContain('title="Audio processing on"');
   });
 
   it("shows the readouts the decoder publishes in its status", () => {
@@ -138,7 +163,7 @@ describe("ChannelFace", () => {
         ble: { readouts: [{ key: "mode", label: "Mode", value: { type: "text", value: "TM1" } }] },
       },
     });
-    expect(face(0, 0, auto)).toContain("Auto TM1");
+    expect(face(0, 0, auto, true)).toContain("Auto TM1");
   });
 
   it("shows packets that synced but failed their check", () => {
@@ -172,6 +197,17 @@ describe("ChannelFace", () => {
       byNode: { sat: { node: "sat", name: "NOAA 19", driving: ["ble"], visible: true } },
     });
     expect(face(0)).not.toContain("NOAA 19");
+  });
+
+  it("keeps the signal meter while the decoder is idle", () => {
+    const html = renderFace(ChannelFace, PROBE, {
+      graph: { nodes: [PROBE], edges: [] },
+      channels: new Map([["ble", channel(0)]]),
+      channelTypes: [DESCRIPTOR],
+      resolved: null,
+    });
+    expect(html).toContain('aria-label="Tuned frequency"');
+    expect(html).toContain(">Signal<");
   });
 });
 

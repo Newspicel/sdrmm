@@ -37,10 +37,13 @@ pub(crate) fn sync(engine: &Engine, resolved: &ResolvedHub) {
 fn apply(engine: &Engine, graph: &PatchGraph) {
     let mut present = HashSet::new();
     for node in &graph.nodes {
-        let NodeBody::AudioFx(fx) = &node.body else {
+        let NodeBody::Channel(channel) = &node.body else {
             continue;
         };
-        match engine.set_audio_fx(&node.id, fx.settings.clone()) {
+        if !channel.audio.is_active() {
+            continue;
+        }
+        match engine.set_audio_fx(&node.id, channel.audio.clone()) {
             Ok(()) => {
                 present.insert(node.id.clone());
             }
@@ -52,14 +55,21 @@ fn apply(engine: &Engine, graph: &PatchGraph) {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{AudioFxNode, AudioRoute, PatchNode, Position};
+    use sdrmm_wire::{AudioProcessing, AudioRoute, ChannelNode, PatchNode, Position};
 
     use super::*;
 
     fn fx(id: &str) -> PatchNode {
         PatchNode {
             id: id.to_owned(),
-            body: NodeBody::AudioFx(AudioFxNode::default()),
+            body: NodeBody::Channel(ChannelNode {
+                channel_type: "nfm".to_owned(),
+                tuning_locked: false,
+                audio: AudioProcessing {
+                    auto_notch: true,
+                    ..AudioProcessing::default()
+                },
+            }),
             position: Position { x: 0.0, y: 0.0 },
             size: None,
             label: None,
@@ -67,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn only_the_fx_nodes_in_the_patch_can_be_routed_through() {
+    fn only_decoders_with_audio_on_can_be_routed_through() {
         let engine = Engine::new(None);
         apply(
             &engine,
@@ -90,7 +100,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_fx_node_saved_on_the_canvas_is_live_without_a_poll() {
+    async fn decoder_audio_saved_on_the_canvas_is_live_without_a_poll() {
         let (_app, state) = crate::tests::test_router_with_state();
         let workspace = state
             .store
@@ -125,7 +135,7 @@ mod tests {
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
-                "the FX node never went live: {refused}"
+                "the decoder's audio chain never went live: {refused}"
             );
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }

@@ -327,6 +327,7 @@ mod tests {
                     NodeBody::Channel(ChannelNode {
                         channel_type: "sstv".to_owned(),
                         tuning_locked: false,
+                        audio: Default::default(),
                     }),
                 ),
                 node("screen", NodeBody::default_for(NodeKind::Video)),

@@ -719,18 +719,11 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [zvariant_derive](https://github.com/z-galaxy/zbus/) | 5.15.1 | MIT |
 | [zvariant_utils](https://github.com/z-galaxy/zbus/) | 4.2.0 | MIT |
 
-## Web packages (69)
+## Web packages (63)
 
 | Component | Version | License |
 | --- | --- | --- |
-| [@babel/runtime](https://babel.dev/docs/en/next/babel-runtime) | 8.1.0 | MIT |
-| [@base-ui/react](https://base-ui.com) | 1.9.0 | MIT |
-| [@base-ui/utils](https://github.com/mui/base-ui#readme) | 0.5.0 | MIT |
 | [@eshaz/web-worker](https://github.com/eshaz/web-worker) | 1.2.2 | Apache-2.0 |
-| [@floating-ui/core](https://floating-ui.com) | 1.8.0 | MIT |
-| [@floating-ui/dom](https://floating-ui.com) | 1.8.0 | MIT |
-| [@floating-ui/react-dom](https://floating-ui.com/docs/react-dom) | 2.1.9 | MIT |
-| [@floating-ui/utils](https://floating-ui.com) | 0.2.12 | MIT |
 | [@fontsource-variable/jetbrains-mono](https://fontsource.org/fonts/jetbrains-mono) | 5.3.0 | OFL-1.1 |
 | [@mapbox/jsonlint-lines-primitives](https://github.com/mapbox/jsonlint#readme) | 2.0.3 | MIT |
 | [@mapbox/point-geometry](https://github.com/mapbox/point-geometry) | 1.1.0 | ISC |
@@ -751,6 +744,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [@types/d3-transition](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-transition) | 3.0.9 | MIT |
 | [@types/d3-zoom](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-zoom) | 3.0.9 | MIT |
 | [@types/geojson](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/geojson) | 7946.0.16 | MIT |
+| [@ui-sdk/core](https://ui-sdk.dev) | 0.1.0-beta.5 | Apache-2.0 |
+| [@ui-sdk/react](https://ui-sdk.dev) | 0.1.0-beta.5 | Apache-2.0 |
 | [@wasm-audio-decoders/common](https://github.com/eshaz/wasm-audio-decoders/tree/master/src/common) | 9.0.7 | MIT |
 | [@xyflow/react](https://reactflow.dev) | 12.12.1 | MIT |
 | [@xyflow/system](https://github.com/xyflow/xyflow#readme) | 0.0.84 | MIT |
@@ -783,7 +778,6 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [react](https://react.dev/) | 19.3.1 | MIT |
 | [react-dom](https://react.dev/) | 19.3.1 | MIT |
 | [require-from-string](https://github.com/floatdrop/require-from-string#readme) | 2.0.2 | MIT |
-| [reselect](https://github.com/reduxjs/reselect#readme) | 5.3.0 | MIT |
 | [resolve-protobuf-schema](https://github.com/mafintosh/resolve-protobuf-schema) | 2.1.0 | MIT |
 | [scheduler](https://react.dev/) | 0.28.0 | MIT |
 | [simple-yenc](https://github.com/eshaz/simple-yenc#readme) | 1.0.4 | MIT |
@@ -793,21 +787,35 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [use-sync-external-store](https://github.com/react/react#readme) | 1.7.0 | MIT |
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7, 5.1.0 | MIT |
 
-## Hardware libraries (13)
+## Hardware libraries (27)
 
 | Component | Version | License |
 | --- | --- | --- |
 | [codec2 FDMDV modem](https://github.com/drowe67/codec2) | - | LGPL-2.1-only |
 | [dmrconfig](https://github.com/OpenRTX/dmrconfig) | - | BSD-3-Clause |
 | [DPDFNet](https://github.com/ceva-ip/DPDFNet) | - | Apache-2.0 |
+| [dump978 (UAT frame layout)](https://github.com/mutability/dump978) | - | GPL-2.0-or-later |
 | [FFmpeg 9.0.2](https://ffmpeg.org/) | - | LGPL-2.1-or-later |
+| [fisb-decode (FIS-B text records)](https://github.com/rand-projects/fisb-decode) | - | BSD-2-Clause-Patent |
 | [Fraunhofer FDK AAC 2.0.3](https://github.com/mstorsjo/fdk-aac) | - | FDK-AAC |
+| [GOES-19 HRIT recording (Meti's sat-archive, received by Patrick Cunningham)](https://sat-archive.metislair.com/) | - | CC-BY-SA-4.0 |
+| [GopherTrunk P25 Phase 2 tables and captures](https://github.com/MattCheramie/GopherTrunk) | - | Apache-2.0 |
 | [hackrf-nusb 0.3.0](https://github.com/bastibl/hackrf-nusb) | - | MIT OR Apache-2.0 |
 | [hackrf.h (libhackrf API)](https://github.com/greatscottgadgets/hackrf) | - | BSD-3-Clause |
+| [horusdemodlib Horus Binary modem](https://github.com/projecthorus/horusdemodlib) | - | LGPL-2.1-only |
+| [JS8Call (JS8 LDPC tables, CRC and message layer)](https://github.com/js8call/js8call) | - | GPL-3.0-or-later |
+| [libaec (CCSDS 121.0 Rice decoding)](https://gitlab.dkrz.de/k202009/libaec) | - | BSD-2-Clause |
 | [libairspy](https://github.com/airspy/airspyone_host) | - | BSD-3-Clause |
 | [libairspyhf](https://github.com/airspy/airspyhf) | - | BSD-3-Clause |
 | [mbelib](https://github.com/szechyjs/mbelib) | - | ISC |
+| [Meteor HRPT recording (Meti's sat-archive, received by Seler1500)](https://sat-archive.metislair.com/) | - | CC-BY-SA-4.0 |
+| [MetOp AHRPT CADUs (Meti's sat-archive, received by Meti)](https://sat-archive.metislair.com/) | - | CC-BY-SA-4.0 |
 | [NAVAREA limits (United States Coast Guard)](https://www.arcgis.com/home/item.html?id=161e115920164289af6d70130b3e8a1f) | - | LicenseRef-USCG-public-use |
+| [nrsc5 (HD Radio receiver and sample capture)](https://github.com/theori-io/nrsc5) | - | GPL-3.0-or-later |
+| [SDRTrunk LTR check table](https://github.com/DSheirer/sdrtrunk) | - | GPL-3.0-or-later |
 | [SoapySDR](https://github.com/pothosware/SoapySDR) | - | BSL-1.0 |
+| [SSDV packet format and tables (Philip Heron)](https://codeberg.org/fsphil/ssdv) | - | GPL-3.0-or-later |
+| [Wenet LDPC code and scrambler (Project Horus)](https://github.com/projecthorus/wenet) | - | GPL-3.0-or-later |
+| [WSJT-X (JT65, JT9, MSK144, Q65 and FST4 decoders, sample recordings)](https://github.com/WSJTX/wsjtx) | - | GPL-3.0-only |
 | [xng](https://github.com/airframesio/xng) | - | MIT OR Apache-2.0 |
 

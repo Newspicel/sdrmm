@@ -38,6 +38,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "ERMES pager".to_owned(),
     summary: "ERMES pager messages".to_owned(),
     family: DecoderFamily::PAGING,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 12_500.0,
     input_rate_hz: RATE,
     has_audio: false,

@@ -174,9 +174,11 @@ export function Canvas() {
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col"
-      onPointerMove={(event) =>
-        publish({ at: screenToFlowPosition({ x: event.clientX, y: event.clientY }) })
-      }
+      onPointerMove={(event) => {
+        if (event.target instanceof Element && event.currentTarget.contains(event.target)) {
+          publish({ at: screenToFlowPosition({ x: event.clientX, y: event.clientY }) });
+        }
+      }}
       onPointerLeave={() => publish({ at: null })}
       onDoubleClick={(event) => {
         if (
@@ -208,9 +210,13 @@ export function Canvas() {
         isValidConnection={isValidConnection}
         onPaneClick={() => {
           workspace.select(null);
+          workspace.inspect(null);
           setMenu(null);
         }}
-        onNodeClick={() => setMenu(null)}
+        onNodeClick={(event, node) => {
+          setMenu(null);
+          workspace.inspect(addsToSelection(event) ? null : node.id);
+        }}
         onMoveStart={(event) => {
           if (event !== null) {
             window.dispatchEvent(new Event(CANVAS_MOVED));
@@ -248,6 +254,10 @@ export function Canvas() {
       )}
     </div>
   );
+}
+
+function addsToSelection(event: React.MouseEvent): boolean {
+  return event.shiftKey || event.metaKey || event.ctrlKey;
 }
 
 interface Menu {

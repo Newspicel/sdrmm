@@ -139,8 +139,10 @@ describe("array labels", () => {
   it("titles the header by lanes, failure, then sync", () => {
     expect(arraySubtitle(undefined, 0)).toBe(NO_LANES);
     expect(arraySubtitle(undefined, 2)).toBe("idle");
-    const failed = arrayStatus("north", { failure: { kind: "unwired" } });
+    const failed = arrayStatus("north", { failure: { kind: "device_down", lane: 0 } });
     expect(arraySubtitle(failed, 3)).toBe("failed");
+    const unwired = arrayStatus("north", { failure: { kind: "lane_gap", lane: 1 } });
+    expect(arraySubtitle(unwired, 3)).toBe("locked");
     expect(arraySubtitle(arrayStatus("north", { sync: "drifting" }), 3)).toBe("drifting");
     expect(failureTitle({ kind: "stopped", message: "USB gone" })).toBe("USB gone");
     expect(failureTitle({ kind: "lane_gap", lane: 1 })).toBe("Lane 2 unwired");

@@ -191,6 +191,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         name: "LoRa".to_owned(),
         summary: "LoRa, LoRaWAN, Meshtastic and MeshCore".to_owned(),
         family: DecoderFamily::UTILITY,
+        verification: sdrmm_wire::Verification::OnAir,
         bandwidth_hz: bandwidth,
         input_rate_hz: bandwidth * OVERSAMPLING,
         has_audio: false,

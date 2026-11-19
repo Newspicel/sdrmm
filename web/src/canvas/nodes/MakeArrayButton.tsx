@@ -1,5 +1,5 @@
 import { Button } from "../../components/BaseControls";
-import { BTN_QUIET } from "../../components/controls";
+import { FACE_BTN } from "../../components/controls";
 import { resolvedNode } from "../../lib/resolved";
 import { pushToast } from "../../lib/toasts";
 import { useWorkspaceContext } from "../context";
@@ -33,7 +33,7 @@ export function MakeArrayButton({ node }: { node: string }) {
   const ready = offer.offer === "ready";
   const title = ready ? MAKE_ARRAY_TITLE : offer.reason;
   const button = (
-    <Button type="button" className={BTN_QUIET} title={title} disabled={!ready} onClick={make}>
+    <Button type="button" className={FACE_BTN} title={title} disabled={!ready} onClick={make}>
       Make array
     </Button>
   );

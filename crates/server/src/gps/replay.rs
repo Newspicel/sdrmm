@@ -9,13 +9,13 @@ use sdrmm_recorder::RecordedTrack;
 use sdrmm_wire::{NodeBody, PlaybackStatus, PositionFix, recording_stem_valid};
 use tokio::sync::watch;
 
-use super::{GpsHub, RouteState, limit_error};
+use super::{GpsHub, PositionState, RouteState, limit_error};
 use crate::{AppState, resolved::Resolved};
 
 const REPLAY_EVERY: Duration = Duration::from_millis(200);
-const NO_POSITIONS: &str = "no positions recorded";
-const NONE_HERE: &str = "no position recorded here";
-const NOT_A_RECORDING: &str = "not a recording name";
+const NO_POSITIONS: &str = "No positions recorded";
+const NONE_HERE: &str = "No position recorded here";
+const NOT_A_RECORDING: &str = "Not a recording name";
 
 /// A recording on a Device node whose position output is wired, played back in step with its IQ.
 pub(super) struct Replay {
@@ -83,12 +83,12 @@ impl Replay {
 
 /// Reads only a stem inside `dir`: the key comes from a saved graph and may name any path.
 fn read_track(dir: Option<&Path>, stem: &str) -> Result<RecordedTrack, String> {
-    let dir = dir.ok_or_else(|| "recording disabled".to_owned())?;
+    let dir = dir.ok_or_else(|| "Recording disabled".to_owned())?;
     if !recording_stem_valid(stem) {
         return Err(NOT_A_RECORDING.to_owned());
     }
     RecordedTrack::read(&dir.join(stem))
-        .map_err(|error| limit_error(format!("recorded positions: {error}")))
+        .map_err(|error| limit_error(format!("Recorded positions: {error}")))
 }
 
 fn unreadable(track: &RecordedTrack) -> Option<String> {
@@ -172,7 +172,7 @@ impl GpsHub {
             })
             .collect();
         for (node, fix, error) in due {
-            self.publish_routed(route.clone(), &node, fix, error);
+            self.publish_routed(route.clone(), &node, PositionState::of(fix, error));
         }
     }
 }
@@ -192,6 +192,6 @@ mod tests {
             );
         }
         let missing = read_track(Some(dir.path()), "absent").expect_err("no such recording");
-        assert!(missing.starts_with("recorded positions"), "{missing}");
+        assert!(missing.starts_with("Recorded positions"), "{missing}");
     }
 }

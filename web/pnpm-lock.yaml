@@ -171,15 +171,18 @@ importers:
 
   .:
     dependencies:
-      '@base-ui/react':
-        specifier: ^1.9.0
-        version: 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@fontsource-variable/jetbrains-mono':
         specifier: 5.3.0
         version: 5.3.0
       '@tanstack/react-query':
         specifier: 5.107.1
         version: 5.107.1(@types/react@19.3.0)(react@19.3.1)
+      '@ui-sdk/core':
+        specifier: 0.1.0-beta.5
+        version: 0.1.0-beta.5
+      '@ui-sdk/react':
+        specifier: 0.1.0-beta.5
+        version: 0.1.0-beta.5(@types/react@19.3.0)(@ui-sdk/core@0.1.0-beta.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@xyflow/react':
         specifier: ^12.12.1
         version: 12.12.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -339,33 +342,6 @@ packages:
     resolution: {integrity: sha512-8V8aSTDx012YPmDQF30vrokyxVFdRAU2YBS2VzrnfLAGkP8floVnjckwgFcD0Jrvf6GWMSRdCrYVsk3tyMwZRg==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
-  '@base-ui/react@1.9.0':
-    resolution: {integrity: sha512-S8CSYosASBKtpL8SWUfS78rFElfLijiCgA7oHOK22jCJ95FULsYyKwBNFOgudt0RA+/7yNc7F81bOvQnRgbBiQ==}
-    engines: {node: '>=14.0.0'}
-    peerDependencies:
-      '@date-fns/tz': ^1.2.0
-      '@types/react': ^17 || ^18 || ^19
-      date-fns: ^4.0.0
-      react: ^17 || ^18 || ^19
-      react-dom: ^17 || ^18 || ^19
-    peerDependenciesMeta:
-      '@date-fns/tz':
-        optional: true
-      '@types/react':
-        optional: true
-      date-fns:
-        optional: true
-
-  '@base-ui/utils@0.5.0':
-    resolution: {integrity: sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A==}
-    peerDependencies:
-      '@types/react': ^17 || ^18 || ^19
-      react: ^17 || ^18 || ^19
-      react-dom: ^17 || ^18 || ^19
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-
   '@biomejs/biome@2.6.6':
     resolution: {integrity: sha512-NCgVJRyrU1+hsW1ILNaRqNAb9fRL4n49bwyef+wjVJQ488/bXbp0BfnNqTTExkiNQT3ugkgYKR1vK8NxsjlNSQ==}
     engines: {node: '>=14.21.3'}
@@ -437,21 +413,6 @@ packages:
 
   '@eshaz/web-worker@1.2.2':
     resolution: {integrity: sha512-WxXiHFmD9u/owrzempiDlBB1ZYqiLnm9s6aPc8AlFQalq2tKmqdmMr9GXOupDgzXtqnBipj8Un0gkIm7Sjf8mw==}
-
-  '@floating-ui/core@1.8.0':
-    resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
-
-  '@floating-ui/dom@1.8.0':
-    resolution: {integrity: sha512-yXSrzeHZBTZadLOlfyhCkJHNeLJnHRnRInwdZ40L7ZiaAtrBwoYlsDrX3v5zB1Utk7CLfzcOVnVVWoXEky7Ceg==}
-
-  '@floating-ui/react-dom@2.1.9':
-    resolution: {integrity: sha512-JDjEFGCpImxDCA7JJKviA0M9+RtmJdj0m/NVU5IMgBK+AmZouAQQ7/+2GLH0GXXY0YMw9oXPB8hKdbPYg5QLYg==}
-    peerDependencies:
-      react: '>=16.8.0'
-      react-dom: '>=16.8.0'
-
-  '@floating-ui/utils@0.2.12':
-    resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
   '@fontsource-variable/jetbrains-mono@5.3.0':
     resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
@@ -1064,6 +1025,20 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@ui-sdk/core@0.1.0-beta.5':
+    resolution: {integrity: sha512-dmunrxWrZ+vwldKJ6THQNYyyfbLFY6K82hBvIZSnuGwpEQmXKmM0iuANgGXtaqw8unSB2p9E5s3y7zfE9rgP6Q==}
+
+  '@ui-sdk/react@0.1.0-beta.5':
+    resolution: {integrity: sha512-Zfvl94ulACX511lQKQDnK7wVjhYUYsR5LLnCZ800NzQ3983TxZasHxXyC+KYNlvppkYfpELPlAbVslsSIGQ9/A==}
+    peerDependencies:
+      '@types/react': '>=19.2.10'
+      '@ui-sdk/core': ^0.1.0-beta.5
+      react: '>=19'
+      react-dom: '>=19'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
   '@vitejs/plugin-react@6.2.1':
     resolution: {integrity: sha512-9KyWCij3r0+qLG3Q62vBmv0VyevmYibAtxaCIVK9o0k6CXgaajZRIe8tpfchQcdZArJ5b/7OrIz4W3b2uxVRDA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1459,9 +1434,6 @@ packages:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
     engines: {node: '>=0.10.0'}
 
-  reselect@5.3.0:
-    resolution: {integrity: sha512-XGoLeRAVzUTcJ1qkxPQhDJyIZ5d6zzZD9nT7AEZOaaU9UbWclhycElmhO+VD5bFeLuzhPBaOV2oXC8uG35ZSpg==}
-
   resolve-protobuf-schema@2.1.0:
     resolution: {integrity: sha512-kI5ffTiZWmJaS/huM8wZfEMer1eRd7oJQhDuxeCLe3t7N7mX3z94CN0xPxBQxFYQTSNz9T0i+v6inKqSdK8xrQ==}
 
@@ -1723,7 +1695,8 @@ snapshots:
     dependencies:
       '@babel/types': 8.1.0
 
-  '@babel/runtime@8.1.0': {}
+  '@babel/runtime@8.1.0':
+    optional: true
 
   '@babel/template@8.0.0':
     dependencies:
@@ -1750,29 +1723,6 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 8.0.8
       '@babel/helper-validator-identifier': 8.0.6
-
-  '@base-ui/react@1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@babel/runtime': 8.1.0
-      '@base-ui/utils': 0.5.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@floating-ui/react-dom': 2.1.9(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@floating-ui/utils': 0.2.12
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-      use-sync-external-store: 1.7.0(react@19.3.1)
-    optionalDependencies:
-      '@types/react': 19.3.0
-
-  '@base-ui/utils@0.5.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@babel/runtime': 8.1.0
-      '@floating-ui/utils': 0.2.12
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-      reselect: 5.3.0
-      use-sync-external-store: 1.7.0(react@19.3.1)
-    optionalDependencies:
-      '@types/react': 19.3.0
 
   '@biomejs/biome@2.6.6':
     optionalDependencies:
@@ -1818,23 +1768,6 @@ snapshots:
     optional: true
 
   '@eshaz/web-worker@1.2.2': {}
-
-  '@floating-ui/core@1.8.0':
-    dependencies:
-      '@floating-ui/utils': 0.2.12
-
-  '@floating-ui/dom@1.8.0':
-    dependencies:
-      '@floating-ui/core': 1.8.0
-      '@floating-ui/utils': 0.2.12
-
-  '@floating-ui/react-dom@2.1.9(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
-    dependencies:
-      '@floating-ui/dom': 1.8.0
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-
-  '@floating-ui/utils@0.2.12': {}
 
   '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
@@ -2241,6 +2174,16 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
+  '@ui-sdk/core@0.1.0-beta.5': {}
+
+  '@ui-sdk/react@0.1.0-beta.5(@types/react@19.3.0)(@ui-sdk/core@0.1.0-beta.5)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@ui-sdk/core': 0.1.0-beta.5
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    optionalDependencies:
+      '@types/react': 19.3.0
+
   '@vitejs/plugin-react@6.2.1(@rolldown/plugin-babel@0.3.0(@babel/core@8.1.0)(@babel/runtime@8.1.0)(rolldown@1.2.16)(vite@8.3.6(jiti@2.7.0)))(babel-plugin-react-compiler@1.0.0)(vite@8.3.6(jiti@2.7.0))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
@@ -2576,8 +2519,6 @@ snapshots:
   react@19.3.1: {}
 
   require-from-string@2.0.2: {}
-
-  reselect@5.3.0: {}
 
   resolve-protobuf-schema@2.1.0:
     dependencies:

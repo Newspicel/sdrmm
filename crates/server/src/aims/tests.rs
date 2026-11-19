@@ -102,6 +102,7 @@ fn a_sonde_aloft_to_the_north_is_pointed_at_up_and_north() {
     assert!(sky.look.range_km > 20.0 && sky.look.range_km < 25.0);
     assert_eq!(status.entity.as_deref(), Some("S1"));
     assert!(status.error.is_none());
+    assert!(status.waiting.is_none());
 }
 
 #[test]
@@ -119,29 +120,30 @@ fn a_target_without_altitude_stands_as_high_as_the_antenna() {
 }
 
 #[test]
-fn each_missing_piece_says_what_it_waits_for() {
+fn each_missing_piece_is_a_wait_not_a_fault() {
     let now = Instant::now();
     let target = target_of(&AimParams::default(), &sonde("S1", None), now);
-    let error = |(status, sky): (AimStatus, Option<SkyTrack>)| {
+    let waiting = |(status, sky): (AimStatus, Option<SkyTrack>)| {
         assert!(sky.is_none());
-        status.error
+        assert!(status.error.is_none());
+        status.waiting
     };
     assert_eq!(
-        error(aim(
+        waiting(aim(
             &wiring("", None),
             Some(&station()),
             target.as_ref(),
             now
         ))
         .as_deref(),
-        Some(NO_POSITION)
+        Some(WIRE_A_POSITION)
     );
     assert_eq!(
-        error(aim(&wiring("", Some("gps")), None, target.as_ref(), now)).as_deref(),
-        Some(NO_FIX)
+        waiting(aim(&wiring("", Some("gps")), None, target.as_ref(), now)).as_deref(),
+        Some(WAITING_FOR_FIX)
     );
     assert_eq!(
-        error(aim(&wiring("", Some("gps")), Some(&station()), None, now)).as_deref(),
+        waiting(aim(&wiring("", Some("gps")), Some(&station()), None, now)).as_deref(),
         Some(NO_TARGET)
     );
 }

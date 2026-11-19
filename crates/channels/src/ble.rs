@@ -32,6 +32,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "BLE advertisements".to_owned(),
     summary: "Bluetooth LE devices, beacons and trackers".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: BleLink::default().bandwidth_hz(),
     input_rate_hz: BleLink::default().input_rate_hz(),
     has_audio: false,

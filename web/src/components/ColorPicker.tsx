@@ -1,4 +1,4 @@
-import { Slider } from "@base-ui/react/slider";
+import { Slider, SliderControl, SliderThumb, SliderTrack } from "@ui-sdk/react/slider";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -142,30 +142,27 @@ function HueSlider({
   onChange: (hue: number) => void;
 }) {
   return (
-    <Slider.Root
+    <Slider
       data-hotkeys="off"
-      thumbAlignment="edge"
       className="flex w-full"
       value={hue}
       min={0}
       max={359}
       step={1}
-      onValueChange={(next) => {
-        if (typeof next === "number") {
-          onChange(next);
-        }
-      }}
+      onValueChange={(next) => onChange(next)}
     >
-      <Slider.Control className="flex h-5 w-full cursor-pointer touch-none items-center">
-        <Slider.Track className="h-2.5 w-full rounded-full" style={{ background: HUE_TRACK }}>
-          <Slider.Thumb
-            aria-label={label}
-            className="size-3.5 rounded-full border-2 border-white shadow-raised has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-offset-2"
-            style={{ background: `hsl(${hue} 100% 50%)` }}
-          />
-        </Slider.Track>
-      </Slider.Control>
-    </Slider.Root>
+      <SliderControl className="flex h-5 w-full cursor-pointer touch-none items-center">
+        <div className="h-2.5 w-full rounded-full" style={{ background: HUE_TRACK }}>
+          <SliderTrack className="mx-1.75 h-full">
+            <SliderThumb
+              aria-label={label}
+              className="size-3.5 rounded-full border-2 border-white shadow-raised has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-offset-2"
+              style={{ background: `hsl(${hue} 100% 50%)` }}
+            />
+          </SliderTrack>
+        </div>
+      </SliderControl>
+    </Slider>
   );
 }
 

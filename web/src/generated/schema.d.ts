@@ -1846,6 +1846,8 @@ export interface components {
             look?: components["schemas"]["SatelliteLook"] | null;
             node: string;
             readouts?: components["schemas"]["Field"][];
+            /** @description What the node waits for, never a fault: a wire, a setting or data still to come. */
+            waiting?: string | null;
         };
         AntennaDesign: {
             /** @enum {string} */
@@ -2396,9 +2398,6 @@ export interface components {
             /** Format: double */
             low_hz?: number;
         };
-        AudioFxNode: {
-            settings?: components["schemas"]["AudioProcessing"];
-        };
         AudioProcessing: {
             agc?: components["schemas"]["AudioAgcMode"];
             auto_notch?: boolean;
@@ -2773,6 +2772,7 @@ export interface components {
             trial?: components["schemas"]["SignalTrial"] | null;
             trunking?: components["schemas"]["TrunkSpec"] | null;
             type_id: string;
+            verification?: components["schemas"]["Verification"];
         };
         /**
          * @description The few facts every channel face shows in one footer, whatever the decoder. Each is unset
@@ -2838,6 +2838,8 @@ export interface components {
             mode: "dmr";
         });
         ChannelNode: {
+            /** @description Filters, denoise and AGC on the decoder's audio, for everything wired to it. */
+            audio?: components["schemas"]["AudioProcessing"];
             channel_type: string;
             tuning_locked?: boolean;
         };
@@ -3470,6 +3472,7 @@ export interface components {
         DeviceNode: {
             device?: components["schemas"]["DeviceRef"] | null;
             locked_streams?: number[];
+            radio_use?: components["schemas"]["RadioUse"];
             split_tuning?: boolean;
             stopped?: boolean;
         };
@@ -3493,6 +3496,7 @@ export interface components {
             serial?: string | null;
         };
         DeviceSet: {
+            activity?: components["schemas"]["RadioActivity"];
             agc_gains?: components["schemas"]["AgcGain"][];
             capabilities: components["schemas"]["Capabilities"];
             channels: components["schemas"]["ChannelInfo"][];
@@ -3512,6 +3516,8 @@ export interface components {
             overruns?: number;
             playback?: components["schemas"]["PlaybackStatus"] | null;
             pre_roll?: components["schemas"]["PreRollStatus"] | null;
+            /** @description What the radio is used for, narrowed to what it can do. */
+            radio_use?: components["schemas"]["RadioUse"];
             recording?: components["schemas"]["RecordingStatus"] | null;
             refused?: components["schemas"]["SettingsRefused"] | null;
             /** @description One scan per decoder that is being driven. */
@@ -3519,6 +3525,8 @@ export interface components {
             settings: components["schemas"]["DeviceSettings"];
             status: components["schemas"]["DeviceSetStatus"];
             transmit?: components["schemas"]["TransmitStatus"] | null;
+            /** @description The uses its duplex offers. */
+            uses?: components["schemas"]["RadioUse"][];
             virtual_lanes?: components["schemas"]["VirtualLane"][];
         };
         /** @enum {string} */
@@ -3951,6 +3959,11 @@ export interface components {
             /** Format: int32 */
             width: number;
         };
+        /** @description A decoder group and the heading it shows under. */
+        FamilyEntry: {
+            id: components["schemas"]["DecoderFamily"];
+            title: string;
+        };
         Feed: {
             drives?: components["schemas"]["ControlVerb"] | null;
             payload: components["schemas"]["Payload"];
@@ -3978,6 +3991,8 @@ export interface components {
             frames: number;
             listening: boolean;
             node: string;
+            /** @description What the node waits for, never a fault: a wire, a setting or data still to come. */
+            waiting?: string | null;
         };
         /**
          * @description One named value of a presentation. `key` stays fixed while `label` may change or be
@@ -4965,9 +4980,6 @@ export interface components {
             /** @enum {string} */
             kind: "scope";
         } | {
-            /** @enum {string} */
-            kind: "baseband_scope";
-        } | {
             data: components["schemas"]["SpeakerNode"];
             /** @enum {string} */
             kind: "speaker";
@@ -5001,10 +5013,6 @@ export interface components {
             data: components["schemas"]["EventFilterNode"];
             /** @enum {string} */
             kind: "event_filter";
-        } | {
-            data: components["schemas"]["AudioFxNode"];
-            /** @enum {string} */
-            kind: "audio_fx";
         } | {
             data: components["schemas"]["EventOutputNode"];
             /** @enum {string} */
@@ -5090,7 +5098,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "encoder" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "baseband_scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "audio_fx" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -5259,6 +5267,8 @@ export interface components {
         };
         PatchCatalog: {
             event_kinds: components["schemas"]["EventKindEntry"][];
+            /** @description Decoder groups in palette order, built in first. */
+            families?: components["schemas"]["FamilyEntry"][];
             feeds?: components["schemas"]["FeedEntry"][];
             nodes: components["schemas"]["NodeTypeInfo"][];
             port_types: components["schemas"]["PortTypeInfo"][];
@@ -5492,6 +5502,8 @@ export interface components {
             /** Format: int32 */
             stream?: number | null;
             takes?: string | null;
+            /** @description The radio uses a Device offers this port in. Empty: every use. */
+            uses?: components["schemas"]["RadioUse"][];
         };
         /** @enum {string} */
         PortType: "iq" | "baseband" | "audio" | "events" | "video" | "control" | "position" | "array" | "bearing" | "transmit";
@@ -5874,6 +5886,11 @@ export interface components {
             surface: boolean;
             transmitter?: components["schemas"]["PositionLink"] | null;
         };
+        /**
+         * @description What a radio does right now, for its node's header.
+         * @enum {string}
+         */
+        RadioActivity: "idle" | "receiving" | "sending" | "receive_paused";
         RadioFeatures: {
             dcs_tones: boolean;
             dual_zone_lists: boolean;
@@ -5947,6 +5964,12 @@ export interface components {
         RadioModelsResponse: {
             models: components["schemas"]["RadioModelDescriptor"][];
         };
+        /**
+         * @description What the operator uses a radio for. Receive keeps a transmitter off it; Send runs no
+         *     receive stream, so a half-duplex radio never has to stop listening for a burst.
+         * @enum {string}
+         */
+        RadioUse: "receive" | "send" | "both";
         Range: {
             /** Format: double */
             max: number;
@@ -6126,6 +6149,9 @@ export interface components {
             device: string;
             /** @enum {string} */
             type: "winegard";
+        } | {
+            /** @enum {string} */
+            type: "virtual";
         };
         /** @enum {string} */
         RotatorMode: "track" | "manual" | "park" | "stop";
@@ -6153,6 +6179,8 @@ export interface components {
             node: string;
             position?: components["schemas"]["SkyPoint"] | null;
             target?: components["schemas"]["SkyPoint"] | null;
+            /** @description What the node waits for, never a fault: a wire, a setting or data still to come. */
+            waiting?: string | null;
         };
         Runs: {
             reason: components["schemas"]["UnboundReason"];
@@ -6248,6 +6276,8 @@ export interface components {
             /** Format: double */
             uplink_hz?: number | null;
             visible?: boolean;
+            /** @description What the node waits for, never a fault: a wire, a setting or data still to come. */
+            waiting?: string | null;
         };
         SavedRadio: {
             device_id: string;
@@ -6574,6 +6604,8 @@ export interface components {
                 error?: string | null;
                 fix?: components["schemas"]["PositionFix"] | null;
                 node: string;
+                /** @description What the node waits for, never a fault: a wire, a setting or data still to come. */
+                waiting?: string | null;
             };
             /** @enum {string} */
             type: "PositionChanged";
@@ -6890,6 +6922,8 @@ export interface components {
              */
             rows: number;
             running: boolean;
+            /** @description What the node waits for, never a fault: a wire, a setting or data still to come. */
+            waiting?: string | null;
         };
         SortKey: {
             descending?: boolean;
@@ -7391,6 +7425,16 @@ export interface components {
              */
             probe_km: number;
         };
+        /**
+         * @description Channel numbers counted up from a base frequency, as a site's channel plan numbers them:
+         *     channel N transmits on `base_hz + N * spacing_hz`.
+         */
+        TrunkBand: {
+            /** Format: int64 */
+            base_hz: number;
+            /** Format: int64 */
+            spacing_hz: number;
+        };
         TrunkChannel: {
             /** Format: int32 */
             confidence: number;
@@ -7451,6 +7495,7 @@ export interface components {
          */
         TrunkKind: "grants" | "distributed";
         TrunkNode: {
+            band?: components["schemas"]["TrunkBand"] | null;
             channel_map?: components["schemas"]["TrunkChannelEntry"][];
             /** Format: int64 */
             control_hz?: number | null;
@@ -7580,7 +7625,7 @@ export interface components {
         /** @enum {string} */
         Tuning: "auto" | "manual";
         /** @enum {string} */
-        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped" | "waiting";
+        UnboundReason: "not_wired" | "no_radio" | "radio_absent" | "radio_closed" | "not_placed" | "not_running" | "stopped" | "waiting" | "send_only";
         /** @enum {string} */
         Unit: "none" | "hz" | "db" | "dbfs" | "degrees" | "feet" | "metres" | "kilometres" | "knots" | "metres_per_second" | "feet_per_minute" | "celsius" | "percent" | "hectopascal" | "seconds" | "baud" | "millimetres" | "volts" | "db_hz" | "kilometres_per_hour" | "watts_per_square_metre" | "chips" | "wpm" | "dbm" | "psi" | "lux" | "kelvin";
         UpdateNanoVnaMeasurementRequest: {
@@ -7599,6 +7644,14 @@ export interface components {
             /** Format: int32 */
             vid: number;
         };
+        /**
+         * @description How far a decoder is proven. The catalogs in the docs and on the site are built from it.
+         *
+         *     A decoder that does not say, such as a plugin built before the field, is `Unverified`: no
+         *     claim is made for it.
+         * @enum {string}
+         */
+        Verification: "on_air" | "reference_fixture" | "own_modulator" | "experimental" | "unverified";
         /** @description A widget on a processor face. */
         ViewSpec: {
             /** @enum {string} */

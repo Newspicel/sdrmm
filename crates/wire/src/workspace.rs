@@ -612,6 +612,7 @@ mod tests {
                     NodeBody::Channel(ChannelNode {
                         channel_type: "am".to_owned(),
                         tuning_locked: false,
+                        audio: Default::default(),
                     }),
                 ),
                 node("spk", NodeBody::Speaker(crate::SpeakerNode::default())),
@@ -840,6 +841,7 @@ mod tests {
                 locked_streams: Vec::new(),
                 split_tuning: false,
                 stopped: false,
+                radio_use: crate::RadioUse::Receive,
                 waiting: false,
             })
         );
@@ -861,6 +863,7 @@ mod tests {
             locked_streams: vec![0],
             split_tuning: false,
             stopped: false,
+            radio_use: crate::RadioUse::Receive,
             waiting: false,
         });
         let mut snap = WorkspaceSnapshot::starter();
@@ -872,6 +875,7 @@ mod tests {
                 locked_streams: vec![0],
                 split_tuning: false,
                 stopped: false,
+                radio_use: crate::RadioUse::Receive,
                 waiting: false,
             })
         );

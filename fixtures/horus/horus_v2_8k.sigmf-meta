@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 8000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "horusdemodlib samples/horus_v2_100bd.raw",
+    "core:description": "Horus Binary v2, synthetic USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-19T15:12:30.136898Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "samples/horus_v2_100bd.raw (s16 SHA-256 78e143891d9705d563181140ca0a622108d1066745d1912ece2fc5c1ef284dda) from horusdemodlib (LGPL-2.1, github.com/projecthorus/horusdemodlib at 8cc43de5), wrapped as WAV, 8 kHz audio as I, zero Q; source SHA-256 06493fb0c7570dad2a81133b1783b9a7e78ae2db4251211356e1ca76b0fa612a; samples 152000..196000 at 8000 Hz",
+      "core:sample_count": 44000,
+      "core:sample_start": 0
+    }
+  ]
+}

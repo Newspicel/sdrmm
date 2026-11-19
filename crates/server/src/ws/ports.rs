@@ -1,7 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 
 use sdrmm_wire::{
-    AudioRoute, ChannelAddr, Feed, PortType, ResolvedPatch, ServerEvent, StreamKind, StreamParams,
+    AudioRoute, ChannelAddr, Feed, PatchGraph, PortType, ResolvedPatch, ServerEvent, StreamKind,
+    StreamParams,
 };
 use tokio::task::JoinHandle;
 
@@ -150,10 +151,19 @@ fn stream_started(
     }
 }
 
-pub(super) fn wanted(patch: &ResolvedPatch, node: &str, port: &str) -> Result<Vec<Wanted>, String> {
+pub(super) fn wanted(
+    patch: &ResolvedPatch,
+    graph: &PatchGraph,
+    node: &str,
+    port: &str,
+) -> Result<Vec<Wanted>, String> {
     let found = patch.node(node).ok_or(NO_NODE)?;
     if let Some(input) = found.input(port) {
-        let wanted: Vec<Wanted> = input.feeds.iter().flat_map(of_feed).collect();
+        let wanted: Vec<Wanted> = input
+            .feeds
+            .iter()
+            .flat_map(|feed| of_feed(feed, graph))
+            .collect();
         if wanted.is_empty() {
             let reason = if input.feeds.is_empty() {
                 NOT_WIRED
@@ -165,14 +175,14 @@ pub(super) fn wanted(patch: &ResolvedPatch, node: &str, port: &str) -> Result<Ve
         return Ok(wanted);
     }
     let output = found.output(port).ok_or(NO_PORT)?;
-    let own = own_output(patch, node, port, output.spec.port_type);
+    let own = own_output(patch, graph, node, port, output.spec.port_type);
     if own.is_empty() {
         return Err(NOT_RUNNING.to_owned());
     }
     Ok(own)
 }
 
-fn of_feed(feed: &Feed) -> Vec<Wanted> {
+fn of_feed(feed: &Feed, graph: &PatchGraph) -> Vec<Wanted> {
     let Some(tap) = &feed.tap else {
         return Vec::new();
     };
@@ -191,23 +201,27 @@ fn of_feed(feed: &Feed) -> Vec<Wanted> {
         .zip(tap.channels())
         .flat_map(|(index, addr)| {
             let from = upstream(index);
-            channel_streams(feed.payload.port_type(), addr, &feed.via)
-                .into_iter()
-                .map(move |tapped| Wanted {
-                    tapped,
-                    from: from.clone(),
-                })
+            channel_streams(
+                feed.payload.port_type(),
+                addr,
+                &graph.audio_fx(&feed.source),
+            )
+            .into_iter()
+            .map(move |tapped| Wanted {
+                tapped,
+                from: from.clone(),
+            })
         })
         .collect()
 }
 
-fn channel_streams(port_type: PortType, addr: ChannelAddr, via: &[String]) -> Vec<Tapped> {
+fn channel_streams(port_type: PortType, addr: ChannelAddr, fx: &[String]) -> Vec<Tapped> {
     match port_type {
         PortType::Audio => {
             let route = AudioRoute {
                 device_set: addr.device_set,
                 channel: addr.channel,
-                fx: via.to_vec(),
+                fx: fx.to_vec(),
             };
             vec![Tapped::Audio(route.clone()), Tapped::AudioSpectrum(route)]
         }
@@ -221,7 +235,13 @@ fn channel_streams(port_type: PortType, addr: ChannelAddr, via: &[String]) -> Ve
     }
 }
 
-fn own_output(patch: &ResolvedPatch, node: &str, port: &str, port_type: PortType) -> Vec<Wanted> {
+fn own_output(
+    patch: &ResolvedPatch,
+    graph: &PatchGraph,
+    node: &str,
+    port: &str,
+    port_type: PortType,
+) -> Vec<Wanted> {
     let tapped = match port_type {
         PortType::Iq => patch.device_set(node).map(|device_set| {
             vec![Tapped::Spectrum {
@@ -235,7 +255,7 @@ fn own_output(patch: &ResolvedPatch, node: &str, port: &str, port_type: PortType
         }),
         _ => patch
             .channel(node)
-            .map(|addr| channel_streams(port_type, addr, &[])),
+            .map(|addr| channel_streams(port_type, addr, &graph.audio_fx(node))),
     };
     tapped
         .unwrap_or_default()
@@ -331,7 +351,7 @@ impl Session {
     async fn sync_port(&mut self, node: &str, port: &str) {
         let key = (node.to_owned(), port.to_owned());
         let resolved = self.state.resolved.current();
-        let wanted = wanted(&resolved.patch, node, port);
+        let wanted = wanted(&resolved.patch, &resolved.graph, node, port);
         let Some(sub) = self.ports.subs.get_mut(&key) else {
             return;
         };

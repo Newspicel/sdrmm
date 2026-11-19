@@ -47,6 +47,17 @@ export function passLine(pass: SatellitePass | null | undefined, nowS: number): 
   return "always up";
 }
 
+/** When the next pass starts, or ends while one is up: the part of `passLine` a face has room for. */
+export function passWhen(pass: SatellitePass | null | undefined, nowS: number): string {
+  if (pass == null) {
+    return "none in 48 h";
+  }
+  if (pass.aos != null && pass.aos > nowS) {
+    return `in ${formatSpan(pass.aos - nowS)}`;
+  }
+  return pass.los == null ? "always up" : `sets in ${formatSpan(pass.los - nowS)}`;
+}
+
 export function pastedElements(text: string): string | null {
   const lines = text
     .split(/\r?\n/)

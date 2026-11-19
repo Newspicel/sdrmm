@@ -1,0 +1,25 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2661600.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "Seler1500 L-band station",
+    "core:description": "Meteor-M N2-4 HRPT off air on 1700 MHz, Meti's sat-archive, received by Seler1500",
+    "core:license": "https://creativecommons.org/licenses/by-sa/4.0/"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1700000000.0,
+      "core:datetime": "2026-03-06T05:21:58Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Meti's sat-archive (sat-archive.metislair.com, CC BY-SA 4.0), receiver Seler1500: L-band/Meteor-M/Meteor-M2-4/2026-03-06_05-19_meteor-hrpt_Seler1500/2026-03-06_05-19-03_3000000SPS_1700000000Hz_pass2_(northwest).cs8.zst, 0.75 s from 175.0 s, resampled from 3 MS/s cs8 with cargo xtask excerpt, scaled 1:1 to ci16_le",
+      "core:sample_count": 1996201,
+      "core:sample_start": 0
+    }
+  ]
+}

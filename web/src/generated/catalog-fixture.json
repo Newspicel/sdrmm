@@ -9,7 +9,7 @@
         "role": "opens_radio"
       },
       "face": {
-        "width": 420,
+        "width": 320,
         "dial": true
       },
       "ports": [
@@ -24,7 +24,11 @@
             ]
           },
           "multi": "many",
-          "repeat": "per_rx_stream"
+          "repeat": "per_rx_stream",
+          "uses": [
+            "receive",
+            "both"
+          ]
         },
         {
           "name": "control",
@@ -48,7 +52,11 @@
             "type": "transmit"
           },
           "multi": "one",
-          "note": "The transmitter this radio sends"
+          "note": "The transmitter this radio sends",
+          "uses": [
+            "send",
+            "both"
+          ]
         }
       ],
       "default_body": {
@@ -169,7 +177,7 @@
         "role": "plain"
       },
       "face": {
-        "width": 440,
+        "width": 320,
         "dial": true
       },
       "ports": [
@@ -253,15 +261,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -269,15 +287,21 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "nav",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radar_sites",
               "radio_clock",
@@ -299,6 +323,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -364,38 +390,6 @@
       }
     },
     {
-      "kind": "baseband_scope",
-      "name": "Baseband scope",
-      "category": "output",
-      "summary": "Constellation and eye of one channel",
-      "role": {
-        "role": "plain"
-      },
-      "face": {
-        "width": 420,
-        "height": 340,
-        "min": {
-          "width": 320,
-          "height": 200
-        },
-        "dial": false
-      },
-      "ports": [
-        {
-          "name": "baseband",
-          "port_type": "baseband",
-          "direction": "in",
-          "payload": {
-            "type": "baseband"
-          },
-          "multi": "one"
-        }
-      ],
-      "default_body": {
-        "kind": "baseband_scope"
-      }
-    },
-    {
       "kind": "speaker",
       "name": "Speaker",
       "category": "output",
@@ -458,7 +452,9 @@
               "df_fix",
               "dsc",
               "dv",
+              "gnss_fix",
               "hfdl",
+              "horus",
               "inmarsat_aero",
               "inmarsat_stdc",
               "iridium",
@@ -471,7 +467,8 @@
               "sarsat",
               "satellite",
               "vdl2",
-              "vor"
+              "vor",
+              "wenet"
             ]
           },
           "multi": "many",
@@ -566,8 +563,15 @@
           "payload": {
             "type": "events",
             "kinds": [
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "js8",
+              "jt65",
+              "jt9",
+              "msk144",
+              "q65",
               "wspr"
             ]
           },
@@ -638,15 +642,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -654,15 +668,21 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "nav",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radar_sites",
               "radio_clock",
@@ -684,6 +704,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -736,15 +758,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -752,14 +784,20 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radio_clock",
               "radiosonde",
@@ -779,6 +817,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -789,7 +829,7 @@
             "history",
             "clips"
           ],
-          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
       "default_body": {
@@ -847,15 +887,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -863,15 +913,21 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "nav",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radar_sites",
               "radio_clock",
@@ -893,6 +949,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -1015,15 +1073,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -1031,15 +1099,21 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "nav",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radar_sites",
               "radio_clock",
@@ -1061,6 +1135,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -1091,15 +1167,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -1107,15 +1193,21 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "nav",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radar_sites",
               "radio_clock",
@@ -1137,6 +1229,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -1154,71 +1248,6 @@
           "talkgroups": [],
           "radios": [],
           "min_duration_ms": 0
-        }
-      }
-    },
-    {
-      "kind": "audio_fx",
-      "name": "Audio FX",
-      "category": "tool",
-      "summary": "Filters, denoise and AGC",
-      "role": {
-        "role": "pass",
-        "of": "audio"
-      },
-      "face": {
-        "width": 400,
-        "dial": false
-      },
-      "ports": [
-        {
-          "name": "audio",
-          "port_type": "audio",
-          "direction": "in",
-          "payload": {
-            "type": "audio"
-          },
-          "multi": "many"
-        },
-        {
-          "name": "audio",
-          "port_type": "audio",
-          "direction": "out",
-          "payload": {
-            "type": "audio"
-          },
-          "multi": "many"
-        }
-      ],
-      "default_body": {
-        "kind": "audio_fx",
-        "data": {
-          "settings": {
-            "click_removal": {
-              "enabled": false,
-              "threshold": 6.0
-            },
-            "filter": {
-              "enabled": false,
-              "low_hz": 300.0,
-              "high_hz": 3000.0
-            },
-            "notches": [],
-            "peak": {
-              "enabled": false,
-              "freq_hz": 700.0,
-              "width_hz": 100.0,
-              "gain_db": 12.0
-            },
-            "auto_notch": false,
-            "denoise": {
-              "enabled": false,
-              "mode": "spectral",
-              "model": "dpdfnet2_8khz",
-              "strength": 0.5
-            },
-            "agc": "off"
-          }
         }
       }
     },
@@ -1257,15 +1286,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -1273,14 +1312,20 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radio_clock",
               "radiosonde",
@@ -1300,13 +1345,15 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
             ]
           },
           "multi": "many",
-          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
       "default_body": {
@@ -1586,15 +1633,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -1602,14 +1659,20 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radio_clock",
               "radiosonde",
@@ -1629,6 +1692,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -1638,7 +1703,7 @@
           "keeps": [
             "history"
           ],
-          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+          "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
         }
       ],
       "default_body": {
@@ -1827,7 +1892,7 @@
         "role": "plain"
       },
       "face": {
-        "width": 420,
+        "width": 320,
         "dial": true
       },
       "ports": [
@@ -1955,7 +2020,9 @@
               "df_fix",
               "dsc",
               "dv",
+              "gnss_fix",
               "hfdl",
+              "horus",
               "inmarsat_aero",
               "inmarsat_stdc",
               "iridium",
@@ -1968,7 +2035,8 @@
               "sarsat",
               "satellite",
               "vdl2",
-              "vor"
+              "vor",
+              "wenet"
             ]
           },
           "multi": "many",
@@ -2227,15 +2295,25 @@
               "df",
               "df_fix",
               "dsc",
+              "dtmf",
               "dv",
               "eot",
               "ermes",
+              "fisb",
+              "fleetsync",
               "flex",
+              "fst4",
+              "fst4w",
               "ft4",
               "ft8",
+              "gk2a_lrit",
               "gnss",
+              "gnss_fix",
+              "goes_hrit",
               "gsm",
               "hfdl",
+              "horus",
+              "hrpt",
               "ident",
               "ils",
               "inmarsat_aero",
@@ -2243,15 +2321,21 @@
               "iridium",
               "ism",
               "ism_survey",
+              "js8",
+              "jt65",
+              "jt9",
               "lora",
               "lrpt",
+              "mdc1200",
               "morse",
+              "msk144",
               "nav",
               "navtex",
               "noise_figure",
               "per",
               "pocsag",
               "psk",
+              "q65",
               "radar",
               "radar_sites",
               "radio_clock",
@@ -2273,6 +2357,8 @@
               "vdl2",
               "vor",
               "wefax",
+              "wenet",
+              "wenet_image",
               "wifi_occupancy",
               "wmbus",
               "wspr"
@@ -2579,8 +2665,8 @@
         "role": "plain"
       },
       "face": {
-        "width": 280,
-        "dial": false
+        "width": 320,
+        "dial": true
       },
       "ports": [
         {
@@ -2620,8 +2706,8 @@
         "role": "plain"
       },
       "face": {
-        "width": 360,
-        "dial": false
+        "width": 320,
+        "dial": true
       },
       "ports": [
         {
@@ -3154,6 +3240,19 @@
       "verifies": true
     },
     {
+      "kind": "dtmf",
+      "name": "DTMF",
+      "noun": "DTMF",
+      "caps": [
+        "log"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true
+    },
+    {
       "kind": "dv",
       "name": "Digital voice",
       "noun": "Radios",
@@ -3202,12 +3301,85 @@
       "verifies": true
     },
     {
+      "kind": "fisb",
+      "name": "FIS-B",
+      "noun": "Reports",
+      "caps": [
+        "log",
+        "text"
+      ],
+      "hue": "amber",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "table",
+          "columns": [
+            "product",
+            "location",
+            "issued",
+            "text"
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "fleetsync",
+      "name": "FleetSync",
+      "noun": "Radios",
+      "caps": [
+        "log",
+        "station",
+        "text"
+      ],
+      "hue": "teal",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
       "kind": "flex",
       "name": "FLEX",
       "noun": "Pagers",
       "caps": [
         "log",
         "station"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "fst4",
+      "name": "FST4",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "fst4w",
+      "name": "FST4W",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
       ],
       "hue": "muted",
       "lifetime": {
@@ -3249,6 +3421,25 @@
       "verifies": true
     },
     {
+      "kind": "gk2a_lrit",
+      "name": "GK-2A LRIT",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
+    },
+    {
       "kind": "gnss",
       "name": "GNSS lab",
       "noun": "Satellites",
@@ -3262,6 +3453,42 @@
         "ttl_s": 300
       },
       "verifies": true
+    },
+    {
+      "kind": "gnss_fix",
+      "name": "GNSS fix",
+      "noun": "Fixes",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "fix",
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "goes_hrit",
+      "name": "GOES HRIT",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
     },
     {
       "kind": "gsm",
@@ -3314,6 +3541,42 @@
         "ttl_s": 300
       },
       "verifies": true
+    },
+    {
+      "kind": "horus",
+      "name": "Horus",
+      "noun": "Balloons",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "balloon",
+      "hue": "orange",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "hrpt",
+      "name": "HRPT",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
     },
     {
       "kind": "ident",
@@ -3437,6 +3700,54 @@
       ]
     },
     {
+      "kind": "js8",
+      "name": "JS8",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "jt65",
+      "name": "JT65",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "jt9",
+      "name": "JT9",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
       "kind": "lora",
       "name": "LoRa",
       "noun": "Nodes",
@@ -3486,6 +3797,21 @@
       ]
     },
     {
+      "kind": "mdc1200",
+      "name": "MDC-1200",
+      "noun": "Radios",
+      "caps": [
+        "log",
+        "station"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
       "kind": "morse",
       "name": "Morse",
       "noun": "Morse",
@@ -3498,6 +3824,22 @@
         "type": "instant"
       },
       "verifies": false
+    },
+    {
+      "kind": "msk144",
+      "name": "MSK144",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
     },
     {
       "kind": "nav",
@@ -3608,6 +3950,22 @@
         "type": "instant"
       },
       "verifies": false
+    },
+    {
+      "kind": "q65",
+      "name": "Q65",
+      "noun": "Stations",
+      "caps": [
+        "log",
+        "station",
+        "spot"
+      ],
+      "hue": "muted",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
     },
     {
       "kind": "radar",
@@ -3996,6 +4354,42 @@
     {
       "kind": "wefax",
       "name": "WEFAX",
+      "noun": "Pictures",
+      "caps": [
+        "log",
+        "picture"
+      ],
+      "hue": "orange",
+      "lifetime": {
+        "type": "instant"
+      },
+      "verifies": true,
+      "views": [
+        {
+          "type": "picture"
+        }
+      ]
+    },
+    {
+      "kind": "wenet",
+      "name": "Wenet",
+      "noun": "Balloons",
+      "caps": [
+        "log",
+        "station",
+        "geo"
+      ],
+      "symbol": "balloon",
+      "hue": "orange",
+      "lifetime": {
+        "type": "sighting",
+        "ttl_s": 300
+      },
+      "verifies": true
+    },
+    {
+      "kind": "wenet_image",
+      "name": "Wenet pictures",
       "noun": "Pictures",
       "caps": [
         "log",
@@ -6965,6 +7359,48 @@
           "note": "Track events"
         }
       ]
+    }
+  ],
+  "families": [
+    {
+      "id": "analog_voice",
+      "title": "Analog voice"
+    },
+    {
+      "id": "digital_voice",
+      "title": "Digital voice"
+    },
+    {
+      "id": "aviation",
+      "title": "Aviation"
+    },
+    {
+      "id": "marine",
+      "title": "Marine"
+    },
+    {
+      "id": "amateur",
+      "title": "Amateur and HF"
+    },
+    {
+      "id": "paging",
+      "title": "Paging and telemetry"
+    },
+    {
+      "id": "video",
+      "title": "Pictures and video"
+    },
+    {
+      "id": "broadcast",
+      "title": "Broadcast digital"
+    },
+    {
+      "id": "weather",
+      "title": "Weather and satellites"
+    },
+    {
+      "id": "utility",
+      "title": "Utility"
     }
   ]
 }

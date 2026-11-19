@@ -4,11 +4,10 @@ import { Unit } from "../../components/Unit";
 import { useDebouncedCommit } from "../../components/useDebouncedCommit";
 import { ARRAY_LIMITS } from "../../lib/limits";
 import type { ArrayStatus } from "../../lib/types";
+import { Inspect, InspectSection } from "../inspector";
 import { useArrayGain } from "./ArraySettings";
 import { type ArrayLaneRow, laneQualityPercent, laneTitle } from "./arrayNode";
 import { FaceEmpty } from "./NodeShell";
-
-export const NO_LANES_HINT = "Wire radio lanes in";
 
 const GAIN_DB = ARRAY_LIMITS.gain_db;
 
@@ -22,11 +21,15 @@ export function ArrayLanes({
   status: ArrayStatus | undefined;
 }) {
   if (rows.length === 0) {
-    return <FaceEmpty hint={NO_LANES_HINT} />;
+    return <FaceEmpty />;
   }
   return (
     <div className="flex flex-col gap-px border-t border-line p-2">
-      <GainRow node={node} status={status} />
+      <Inspect node={node}>
+        <InspectSection label="Gain">
+          <GainRow node={node} status={status} />
+        </InspectSection>
+      </Inspect>
       <div role="list" aria-label="Lanes" className="flex flex-col gap-px">
         {rows.map((row) => (
           <LaneRow key={row.port} row={row} />

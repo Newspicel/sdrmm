@@ -1,0 +1,25 @@
+{
+  "global": {
+    "core:datatype": "ci16_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 1854000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "Patrick Cunningham GOES-19 station",
+    "core:description": "GOES-19 HRIT off air on 1694.1 MHz, Meti's sat-archive, received by Patrick Cunningham",
+    "core:license": "https://creativecommons.org/licenses/by-sa/4.0/"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1694100000.0,
+      "core:datetime": "2025-06-26T22:32:05.750Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "Meti's sat-archive (sat-archive.metislair.com, CC BY-SA 4.0), receiver Patrick Cunningham: L-band/GOES-R/HRIT/GOES-19/2025-06-26_22-31_goes-r-hrit_Patrick-Cunningham/2025-06-26_22-31-51_3000000SPS_1694100000Hz.cs8.zst; source SHA-256 280b88db54759876d915e0f6ef2489f702c241a7b55375660683c7acf4838dcd; samples 44250000..48000000 at 3000000 Hz, 1.25 s from 14.75 s, resampled from 3 MS/s cs8 with cargo xtask excerpt, scaled 1:1 to ci16_le",
+      "core:sample_count": 2317500,
+      "core:sample_start": 0
+    }
+  ]
+}

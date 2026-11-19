@@ -1,8 +1,8 @@
-import { Popover } from "@base-ui/react/popover";
+import { createPopoverController, Popover, PopoverContent } from "@ui-sdk/react/popover";
 import { useReactFlow } from "@xyflow/react";
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { SURFACE } from "../components/controls";
-import { usePortalContainer } from "../components/PortalContainer";
+import { usePopupHost } from "../components/Select";
 import { NodePalette } from "./NodePalette";
 import { useAddNode } from "./useAddNode";
 
@@ -11,42 +11,49 @@ export interface ScreenPoint {
   y: number;
 }
 
+/**
+ * Opens from code after mount rather than rendering open: a popover rendered open leaves focus
+ * alone, and the palette's search field should take it.
+ */
+function useOpenOnMount() {
+  const [controller] = useState(() => createPopoverController());
+  useEffect(() => {
+    controller.setOpen(true);
+  }, [controller]);
+  return controller;
+}
+
 export function CanvasPalette({ at, onClose }: { at: ScreenPoint; onClose: () => void }) {
   const add = useAddNode();
   const { screenToFlowPosition } = useReactFlow();
-  const portalContainer = usePortalContainer();
-  const anchor = useMemo(
-    () => ({ getBoundingClientRect: () => new DOMRect(at.x, at.y, 0, 0) }),
-    [at.x, at.y],
-  );
+  const controller = useOpenOnMount();
+  const [host, follow] = usePopupHost();
 
   return (
-    <Popover.Root
-      open
+    <Popover
+      controller={controller}
+      container={host}
       onOpenChange={(open) => {
+        follow(open);
         if (!open) {
           onClose();
         }
       }}
     >
-      <Popover.Portal container={portalContainer} className="contents">
-        <Popover.Positioner
-          className="z-40"
-          anchor={anchor}
-          side="bottom"
-          align="start"
-          collisionPadding={8}
-        >
-          <Popover.Popup className={`${SURFACE} w-[44rem] max-w-[calc(100vw-1rem)]`}>
-            <NodePalette
-              onAdd={(kind, channelType) => {
-                add(kind, channelType, screenToFlowPosition(at));
-                onClose();
-              }}
-            />
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+      <PopoverContent
+        anchor={at}
+        side="bottom"
+        align="start"
+        collisionPadding={8}
+        className={`${SURFACE} w-[44rem] data-ending-style:hidden max-w-[calc(100vw-1rem)]`}
+      >
+        <NodePalette
+          onAdd={(kind, channelType) => {
+            add(kind, channelType, screenToFlowPosition(at));
+            onClose();
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -2,7 +2,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Form, Input } from "../../components/BaseControls";
 import { BTN, BTN_QUIET_DANGER, FIELD } from "../../components/controls";
-import { ChipField, Chips, ChoiceChip, NumberChip, SettingChip } from "../../components/face/Chips";
+import {
+  ChipField,
+  Chips,
+  ChoiceChip,
+  NumberChip,
+  ReadoutChip,
+  SettingChip,
+} from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
@@ -21,8 +28,10 @@ import type {
 } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { nmeaSuggestion, serialDetail, validHostPort } from "./gpsSource";
-import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
+import { FaceBody, FaceEmpty, FaceStanding, NodeShell } from "./NodeShell";
+import { NO_WANTS, useUnwired, type Want } from "./needs";
 import {
   AZIMUTH_RANGES,
   aimLabel,
@@ -35,6 +44,7 @@ import {
   ROTATOR_MODES,
   rotctldLink,
   serialLink,
+  VIRTUAL_LINK,
   winegardLink,
   withRange,
 } from "./rotator";
@@ -50,6 +60,7 @@ const LINK_LABELS: Record<LinkTab, { label: string; title: string }> = {
     title: "A Winegard Trav'ler motor console on a serial port",
   },
   rotctld: { label: "rotctld", title: "A Hamlib rotctld daemon" },
+  virtual: { label: "Virtual", title: "A simulated mount, no hardware" },
 };
 
 const LINK_TABS = (Object.keys(LINK_LABELS) as LinkTab[]).map((value) => ({
@@ -81,11 +92,17 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
     }));
   const data = node.data;
   const link = data.link ?? null;
+  const unwired = useUnwired(node.id, (data.mode ?? "track") === "track" ? WANTS_TARGET : NO_WANTS);
   if (link === null) {
     return (
       <NodeShell node={node} title="Rotator" category="output">
+        <Inspect node={node.id}>
+          <InspectSection label="Link">
+            <LinkChoices onPick={(picked) => edit({ link: picked })} />
+          </InspectSection>
+        </Inspect>
         <FaceBody>
-          <LinkChoices onPick={(picked) => edit({ link: picked })} />
+          <FaceEmpty hint="No link" />
         </FaceBody>
       </NodeShell>
     );
@@ -94,8 +111,8 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
   const mode = data.mode ?? "track";
   return (
     <NodeShell node={node} title="Rotator" category="output" subtitle={trackLine(status)}>
-      <FaceBody>
-        <div className="p-2">
+      <Inspect node={node.id}>
+        <InspectSection label="Mode">
           <Segmented
             label="Rotator mode"
             value={mode}
@@ -103,30 +120,44 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
             onChange={(next) => edit({ mode: next })}
             fill
           />
-        </div>
+          {(mode === "manual" || mode === "park") && (
+            <Chips inset="none">
+              <AimChips data={data} mode={mode} onEdit={edit} />
+            </Chips>
+          )}
+        </InspectSection>
+        <InspectSection label="Link">
+          <Chips inset="none">
+            <LinkChips link={link} onChange={(next) => edit({ link: next })} />
+          </Chips>
+          <Button
+            type="button"
+            className={`${BTN_QUIET_DANGER} self-start`}
+            onClick={() => edit({ link: null })}
+          >
+            Forget link
+          </Button>
+        </InspectSection>
+        <InspectSection label="Mount">
+          <Chips inset="none">
+            <MountChips data={data} onEdit={edit} />
+          </Chips>
+        </InspectSection>
+      </Inspect>
+      <FaceBody>
         <Readouts>
           <Readout label="Pointing">{aimLabel(status?.position, axes)}</Readout>
           <Readout label="Target" title="Where the satellite is, or where it rises next">
             {aimLabel(status?.target, axes)}
           </Readout>
         </Readouts>
-        <Chips>
-          {(mode === "manual" || mode === "park") && (
-            <AimChips data={data} mode={mode} onEdit={edit} />
-          )}
-          <LinkChips link={link} onChange={(next) => edit({ link: next })} />
-          <MountChips data={data} onEdit={edit} />
-        </Chips>
-        {status?.error != null && <FaceFault message={status.error} />}
+        <FaceStanding unwired={unwired} error={status?.error} waiting={status?.waiting} />
       </FaceBody>
-      <FaceFooter>
-        <Button type="button" className={BTN_QUIET_DANGER} onClick={() => edit({ link: null })}>
-          Forget link
-        </Button>
-      </FaceFooter>
     </NodeShell>
   );
 }
+
+const WANTS_TARGET: readonly Want[] = [{ port: "control" }];
 
 function trackLine(status: RotatorStatus | null): string | undefined {
   if (status?.awaiting_pass === true) {
@@ -236,15 +267,28 @@ const FLIP_OPTIONS = [
 function LinkChoices({ onPick }: { onPick: Pick }) {
   const [tab, setTab] = useState<LinkTab>("gs232");
   return (
-    <div className="flex flex-col gap-2 p-2">
+    <div className="flex flex-col gap-2">
       <Segmented label="Rotator link" value={tab} options={LINK_TABS} onChange={setTab} fill />
-      {tab === "rotctld" ? (
-        <RotctldForm onPick={onPick} />
-      ) : (
-        <SerialChoices onPick={onPick} make={tab === "winegard" ? winegardLink : serialLink} />
-      )}
+      <LinkForm tab={tab} onPick={onPick} />
     </div>
   );
+}
+
+function LinkForm({ tab, onPick }: { tab: LinkTab; onPick: Pick }) {
+  switch (tab) {
+    case "rotctld":
+      return <RotctldForm onPick={onPick} />;
+    case "virtual":
+      return (
+        <Button type="button" className={`${BTN} self-start`} onClick={() => onPick(VIRTUAL_LINK)}>
+          Connect
+        </Button>
+      );
+    default:
+      return (
+        <SerialChoices onPick={onPick} make={tab === "winegard" ? winegardLink : serialLink} />
+      );
+  }
 }
 
 function SerialChoices({ onPick, make }: { onPick: Pick; make: (device: string) => RotatorLink }) {
@@ -310,6 +354,9 @@ function RotctldForm({ onPick }: { onPick: Pick }) {
 }
 
 function LinkChips({ link, onChange }: { link: RotatorLink; onChange: Pick }) {
+  if (link.type === "virtual") {
+    return <ReadoutChip label="Link" value="Virtual" title={LINK_LABELS.virtual.title} />;
+  }
   if (link.type === "rotctld") {
     return (
       <TextChip

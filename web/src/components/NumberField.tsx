@@ -1,5 +1,5 @@
-import { NumberField as Primitive } from "@base-ui/react/number-field";
-import { useState } from "react";
+import { NumberInput, NumberInputControl } from "@ui-sdk/react/number-input";
+import { type KeyboardEvent, useState } from "react";
 import { CONTROL_W, FIELD } from "./controls";
 import { fractionDigits } from "./format";
 import { InFieldUnit, unitPadding } from "./Unit";
@@ -118,19 +118,21 @@ function Field({
   onCommit: (value: number | null) => void;
   onRevert: () => void;
 }) {
+  const shown = digits ?? fractionDigits(step);
   return (
-    <Primitive.Root
+    <NumberInput
       className={`relative ${className ?? CONTROL_W}`}
       value={value}
       min={min}
       max={max}
-      step={step}
+      step={10 ** -shown}
+      largeStep={LARGE_STEP}
       disabled={disabled}
-      onValueChange={onDraft}
-      onValueCommitted={onCommit}
-      format={{ useGrouping: false, maximumFractionDigits: digits ?? fractionDigits(step) }}
+      onValueChange={(next) => onDraft(next)}
+      onValueCommit={(next) => onCommit(next)}
+      format={{ useGrouping: false, maximumFractionDigits: shown }}
     >
-      <Primitive.Input
+      <NumberInputControl
         aria-label={label}
         aria-invalid={invalid}
         placeholder={placeholder}
@@ -140,14 +142,48 @@ function Field({
           if (event.key === "Escape") {
             onRevert();
           }
-          if (event.key === "Enter") {
-            onCommit(value);
+          const amount = arrowStep(event, step);
+          if (amount !== null) {
+            event.preventDefault();
+            const next = stepped(value, amount, { min, max, digits: shown });
+            onDraft(next);
+            onCommit(next);
           }
         }}
       />
       {unit !== undefined && <InFieldUnit symbol={unit} />}
-    </Primitive.Root>
+    </NumberInput>
   );
+}
+
+const LARGE_STEP = 10;
+const SMALL_STEP = 0.1;
+const ARROWS: Record<string, number> = { ArrowUp: 1, ArrowDown: -1 };
+
+/**
+ * The input's own grid is the shown precision, so typed values keep every digit shown;
+ * arrows step by the field's `step` here instead.
+ */
+export function arrowStep(
+  event: Pick<KeyboardEvent, "key" | "shiftKey" | "altKey">,
+  step: number | undefined,
+): number | null {
+  const direction = ARROWS[event.key];
+  if (direction === undefined) {
+    return null;
+  }
+  const size = event.shiftKey ? LARGE_STEP : event.altKey ? SMALL_STEP : (step ?? 1);
+  return direction * size;
+}
+
+export function stepped(
+  value: number | null,
+  amount: number,
+  { min, max, digits }: { min?: number; max?: number; digits: number },
+): number {
+  const next = (value ?? 0) + amount;
+  const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, next));
+  return Number(clamped.toFixed(digits));
 }
 
 function useDraft(value: number | null): [number | null, (next: number | null) => void] {

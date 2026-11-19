@@ -1,5 +1,5 @@
 import { Button } from "../../components/BaseControls";
-import { BTN, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
+import { FACE_BTN_DANGER, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount } from "../../components/format";
 import { useFusionClear, useFusionSeed, useFusionStore } from "../../lib/fusion";
@@ -11,7 +11,6 @@ import { NodeForm, StatusGrid } from "./NodeForm";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import {
   fusionSources,
-  NO_SOURCES,
   stationAge,
   stationAlign,
   stationBearing,
@@ -48,7 +47,7 @@ export function TriangulationFace({ node }: { node: PatchNode }) {
           estimate={fusion?.estimate ?? null}
           emitters={fusion?.emitters ?? []}
           stations={stations}
-          hint={sources === 0 ? NO_SOURCES : null}
+          hint={null}
         />
         <NodeForm node={node} />
         <StatusGrid readouts={readouts} columns={1} />
@@ -57,7 +56,7 @@ export function TriangulationFace({ node }: { node: PatchNode }) {
       <FaceFooter>
         <FusionStats fusion={fusion} />
         <Button
-          className={BTN}
+          className={FACE_BTN_DANGER}
           type="button"
           title="Throw away every bearing and start again"
           disabled={pending}

@@ -295,7 +295,7 @@ impl Engine {
     }
 
     fn hard_errors(&self, spectra: &super::Spectra, payload: u128) -> u32 {
-        let codeword = super::ldpc::encode(payload ^ self.protocol.scramble);
+        let codeword = self.protocol.code.encode(payload ^ self.protocol.scramble);
         let (llr, _) = self.llrs(spectra, 1, &self.combos[0]);
         llr.iter()
             .zip(codeword)

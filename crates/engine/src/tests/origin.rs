@@ -19,6 +19,7 @@ fn system(node: &str) -> trunking::TrunkSystem {
         protocol: sdrmm_wire::AUTO_TRUNK_PROTOCOL.to_owned(),
         discovery: Default::default(),
         channel_map: Vec::new(),
+        band: None,
         learned: Vec::new(),
         talkgroups: Default::default(),
         keys: Vec::new(),

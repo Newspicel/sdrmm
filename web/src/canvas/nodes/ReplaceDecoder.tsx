@@ -23,7 +23,11 @@ export function ReplaceDecoder({ node, onClose }: { node: PatchNode; onClose: ()
       note={`${descriptor?.name ?? typeId.toUpperCase()}${
         settings === null ? "" : `: ${formatHz(channelFrequencyHz(settings))}`
       }`}
-      groups={decoderReplacements(workspace.context.channelTypes, typeId)}
+      groups={decoderReplacements(
+        workspace.context.catalog.families ?? [],
+        workspace.context.channelTypes,
+        typeId,
+      )}
       onChannel={(channelType) => {
         retypeNode(node.id, channelType).catch(toastError);
         onClose();

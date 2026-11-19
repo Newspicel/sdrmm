@@ -50,14 +50,8 @@ export function HuntSweep({
         dim={!on}
       />
       <Readouts ruled={false}>
-        <Readout label="Heading">
-          {heading === null ? (
-            <span className="text-danger" title="Wire a phone GPS">
-              None
-            </span>
-          ) : (
-            degreesLabel(heading)
-          )}
+        <Readout label="Heading" title={heading === null ? SWEEP_TEXT.no_heading.title : undefined}>
+          {degreesLabel(heading)}
         </Readout>
         <Readout label="Peak">{degreesLabel(sweep?.peak_deg)}</Readout>
         <Readout label="Covered">{sweep === null ? "-" : coveredLabel(sweep)}</Readout>

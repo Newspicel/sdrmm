@@ -2,8 +2,6 @@ import type { FusionGridFrame } from "../../lib/frame";
 import { feedSources } from "../../lib/resolved";
 import type { DfStation, ResolvedPatch } from "../../lib/types";
 
-export const NO_SOURCES = "Wire direction finders in";
-
 export interface Box {
   w: number;
   h: number;

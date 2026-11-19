@@ -30,9 +30,9 @@ pub const POSE_KEEPALIVE_MS: u64 = 1_000;
 pub const POSE_SILENT_AFTER_MS: u64 = 5_000;
 pub const POSE_BURST: u32 = 16;
 pub const POSE_RATE_HZ: u32 = 20;
-pub const PHONE_OFFLINE: &str = "phone offline";
-pub const PHONE_SILENT: &str = "phone silent";
-pub const PHONE_NOT_PAIRED: &str = "phone not paired";
+pub const PHONE_OFFLINE: &str = "Phone offline";
+pub const PHONE_SILENT: &str = "Phone silent";
+pub const PHONE_NOT_PAIRED: &str = "Phone not paired";
 pub const PHONE_PORT_IN_USE: &str = "port in use";
 pub const PHONE_TEXTS: [(&str, &str); 4] = [
     ("offline", PHONE_OFFLINE),

@@ -1,12 +1,16 @@
+import { Chips, ToggleChip } from "../../components/face/Chips";
 import { HuntPanel } from "../../components/HuntPanel";
 import { sweptBy } from "../../lib/resolved";
 import type { PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { hasFeed } from "../lanes";
 import { huntSweepOf } from "../newNode";
 import { controlledOf } from "../workspaceDevice";
+import { HuntSweepChips } from "./HuntSweep";
 import { NodeShell } from "./NodeShell";
+import { SWEEP_WANTS, useUnwired } from "./needs";
 
 export function HuntFace({ node }: { node: PatchNode }) {
   if (node.kind !== "hunt") {
@@ -19,6 +23,7 @@ function HuntNodeFace({ node }: { node: PatchNodeOf<"hunt"> }) {
   const workspace = useWorkspaceContext();
   const decoder = controlledOf(workspace, node.id);
   const sweep = huntSweepOf(node, workspace.context.catalog);
+  const unwired = useUnwired(node.id, SWEEP_WANTS);
   const scanning = decoder !== null && sweptBy(workspace.resolved, decoder.node, node.id);
   const remember = (data: Partial<PatchNodeOf<"hunt">["data"]>): void => {
     workspace.edit((snapshot) => ({
@@ -28,22 +33,39 @@ function HuntNodeFace({ node }: { node: PatchNodeOf<"hunt"> }) {
       ),
     }));
   };
+  const clicks = node.data.clicks ?? true;
+  const positionWired = hasFeed(workspace.resolved, node.id, "position");
   return (
     <NodeShell node={node} title="Signal hunt" category="tool">
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <ToggleChip
+              label="Clicks"
+              title="Geiger clicks"
+              on={clicks}
+              onChange={(next) => remember({ clicks: next })}
+            />
+          </Chips>
+        </InspectSection>
+        {positionWired && sweep !== null && (
+          <InspectSection label="Sweep">
+            <Chips inset="none">
+              <HuntSweepChips
+                params={sweep}
+                edit={(next) => remember({ sweep: { ...sweep, ...next } })}
+              />
+            </Chips>
+          </InspectSection>
+        )}
+      </Inspect>
       <HuntPanel
         node={node.id}
         target={decoder}
-        clicks={node.data.clicks ?? true}
-        onClicks={(clicks) => remember({ clicks })}
-        hint="Wire this node's control out to a decoder"
+        clicks={clicks}
+        unwired={unwired}
         scanning={scanning}
-        positionWired={hasFeed(workspace.resolved, node.id, "position")}
-        sweep={sweep}
-        onSweep={(next) => {
-          if (sweep !== null) {
-            remember({ sweep: { ...sweep, ...next } });
-          }
-        }}
+        positionWired={positionWired}
       />
     </NodeShell>
   );

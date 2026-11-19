@@ -17,7 +17,8 @@ export function TextField({
   placeholder?: string;
   maxLength?: number;
   className?: string;
-  onCommit: (value: string) => void;
+  /** Returns false to refuse the value, which puts the stored one back in the field. */
+  onCommit: (value: string) => boolean | void;
 }) {
   const [draft, setDraft] = useState(value);
   const [shown, setShown] = useState(value);
@@ -27,10 +28,7 @@ export function TextField({
   }
   const commit = () => {
     const next = draft.trim();
-    setDraft(next);
-    if (next !== value) {
-      onCommit(next);
-    }
+    setDraft(next !== value && onCommit(next) === false ? value : next);
   };
   return (
     <Input

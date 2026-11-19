@@ -1,7 +1,10 @@
 use num_complex::Complex;
 use sdrmm_modem::synth::{AUDIO_HZ, Render, Rendered, Signal, resample};
 
-use crate::weak_signal::{FT4, FT8, ftx_waveform, pack_ftx, wspr_waveform};
+use crate::weak_signal::{
+    FT4, FT8, Fst4Params, Fst4wParams, Q65Params, fst4_waveform, ftx_waveform, msk144_waveform,
+    pack_ftx, q65_waveform, wspr_waveform,
+};
 use sdrmm_modem::synth::{Need, SynthError};
 
 const RATE: usize = 12_000;
@@ -42,6 +45,101 @@ pub fn wspr_slot(
     let audio =
         wspr_waveform(&format!("{call} {grid} {power_dbm}"), audio_hz).need("WSPR message")?;
     Ok(slot(&audio, 120 * RATE, RATE))
+}
+
+/// A 1.4 s MSK144 ping of `text` in 3 s of silence.
+pub fn msk144_ping(text: &str, audio_hz: f32) -> Result<Vec<Complex<f32>>, SynthError> {
+    let payload = pack_ftx(text).need("MSK144 message")?;
+    let audio = msk144_waveform(payload, f64::from(audio_hz), 20).need("MSK144 message")?;
+    Ok(slot(&audio, 3 * RATE, RATE / 2))
+}
+
+/// A Q65-60A period sending `CQ call grid`.
+pub fn q65_slot(call: &str, grid: &str, audio_hz: f32) -> Result<Vec<Complex<f32>>, SynthError> {
+    let payload = pack_ftx(&format!("CQ {call} {grid}")).need("Q65 message")?;
+    let setup = Q65Params::default().setup();
+    Ok(slot(
+        &q65_waveform(setup, payload, f64::from(audio_hz)),
+        setup.period_s as usize * RATE,
+        RATE,
+    ))
+}
+
+pub(crate) static Q65_SIGNALS: &[Signal] = &[Signal {
+    id: "q65",
+    label: "Q65",
+    rate_hz: AUDIO_HZ,
+    render: Render::Fallible(q65),
+}];
+
+fn q65() -> Rendered {
+    Ok(resample(
+        &q65_slot("W1AW", "FN42", 1_500.0)?,
+        12_000.0,
+        AUDIO_HZ,
+    ))
+}
+
+/// An FST4-60 period sending `CQ call grid`.
+pub fn fst4_slot(call: &str, grid: &str, audio_hz: f32) -> Result<Vec<Complex<f32>>, SynthError> {
+    let setup = Fst4Params::default().setup();
+    let audio = fst4_waveform(setup, &format!("CQ {call} {grid}"), f64::from(audio_hz))
+        .need("FST4 message")?;
+    Ok(slot(&audio, setup.period_s as usize * RATE, RATE))
+}
+
+/// An FST4W-120 period sending the beacon `call grid dbm`.
+pub fn fst4w_slot(
+    call: &str,
+    grid: &str,
+    dbm: i32,
+    audio_hz: f32,
+) -> Result<Vec<Complex<f32>>, SynthError> {
+    let setup = Fst4wParams::default().setup();
+    let audio = fst4_waveform(setup, &format!("{call} {grid} {dbm}"), f64::from(audio_hz))
+        .need("FST4W beacon")?;
+    Ok(slot(&audio, setup.period_s as usize * RATE, RATE))
+}
+
+pub(crate) static FST4_SIGNALS: &[Signal] = &[Signal {
+    id: "fst4",
+    label: "FST4",
+    rate_hz: AUDIO_HZ,
+    render: Render::Fallible(fst4),
+}];
+
+fn fst4() -> Rendered {
+    Ok(resample(
+        &fst4_slot("W1AW", "FN42", 1_500.0)?,
+        12_000.0,
+        AUDIO_HZ,
+    ))
+}
+
+pub(crate) static MSK144_SIGNALS: &[Signal] = &[Signal {
+    id: "msk144",
+    label: "MSK144",
+    rate_hz: AUDIO_HZ,
+    render: Render::Fallible(msk144),
+}];
+
+fn msk144() -> Rendered {
+    Ok(resample(
+        &msk144_ping("CQ W1AW FN42", 1_500.0)?,
+        12_000.0,
+        AUDIO_HZ,
+    ))
+}
+
+pub fn jt65_slot(call: &str, grid: &str, audio_hz: f32) -> Result<Vec<Complex<f32>>, SynthError> {
+    let audio =
+        super::jt65::waveform(&format!("CQ {call} {grid}"), audio_hz).need("JT65 message")?;
+    Ok(slot(&audio, 60 * RATE, RATE))
+}
+
+pub fn jt9_slot(call: &str, grid: &str, audio_hz: f32) -> Result<Vec<Complex<f32>>, SynthError> {
+    let audio = super::jt9::waveform(&format!("CQ {call} {grid}"), audio_hz).need("JT9 message")?;
+    Ok(slot(&audio, 60 * RATE, RATE))
 }
 
 pub(crate) static FT8_SIGNALS: &[Signal] = &[Signal {

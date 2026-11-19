@@ -1,6 +1,6 @@
 {
   "name": "5ef2a4ef6148a4b8",
-  "test": "stopping a radio > offers Stop on an open radio and says what it keeps",
+  "test": "stopping a radio > leaves the radio's settings to the inspector",
   "graph": {
     "nodes": [
       {

@@ -201,6 +201,29 @@ mod tests {
         assert_eq!(out, bits);
     }
 
+    fn tail_biting(code: &ConvCode, bits: &[bool]) -> Vec<bool> {
+        let mut primed = bits[bits.len() - 6..].to_vec();
+        primed.extend_from_slice(bits);
+        let mut coded = Vec::new();
+        code.encode(&primed, &mut coded);
+        coded.split_off(6 * code.outputs())
+    }
+
+    #[test]
+    fn a_tail_biting_block_decodes_from_its_own_wrap() {
+        let code = ConvCode::new(&[0o133, 0o171, 0o165]);
+        for (len, seed) in [(80, 3), (1_000, 5)] {
+            let bits = message(len, seed);
+            let mut received = softs(&tail_biting(&code, &bits));
+            for position in (5..received.len()).step_by(17) {
+                received[position] = -received[position];
+            }
+            let mut out = Vec::new();
+            ViterbiK7::new(code.clone()).decode_tail_biting(&received, 32, &mut out);
+            assert_eq!(out, bits, "{len} bits");
+        }
+    }
+
     #[test]
     fn depuncturing_marks_the_dropped_positions_as_erasures() {
         let pattern = [true, false];

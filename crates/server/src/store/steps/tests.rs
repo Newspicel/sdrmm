@@ -805,3 +805,143 @@ fn splitting_a_bank_twice_equals_once() {
     assert!(banks::split_kraken_banks(&mut again).is_empty());
     assert_eq!(again, snapshot);
 }
+
+fn scoped() -> Value {
+    let mut scope = at("eye", "baseband_scope", Value::Null);
+    scope["label"] = json!("Pager eye");
+    with_wires(
+        json!([
+            at("dev", "device", json!({})),
+            decoder("pager", "pocsag"),
+            scope
+        ]),
+        json!([
+            wire(("dev", "iq"), ("pager", "iq")),
+            wire(("pager", "baseband"), ("eye", "baseband")),
+        ]),
+    )
+}
+
+fn scope_dropped() -> WorkspaceNoticeKind {
+    WorkspaceNoticeKind::DroppedNodes {
+        nodes: vec![sdrmm_wire::DroppedNode {
+            id: "eye".to_owned(),
+            kind: "baseband_scope".to_owned(),
+            label: Some("Pager eye".to_owned()),
+        }],
+    }
+}
+
+fn plant(snapshot: &Value) -> (tempfile::NamedTempFile, i64) {
+    let file = tempfile::NamedTempFile::new().expect("temp db");
+    let store = Store::open(Some(file.path())).expect("open");
+    let id = store
+        .active_workspace_id()
+        .expect("active")
+        .expect("seeded");
+    store
+        .lock()
+        .execute(
+            "UPDATE workspaces SET snapshot = ?2 WHERE id = ?1",
+            params![id, snapshot.to_string()],
+        )
+        .expect("plant the old workspace");
+    (file, id)
+}
+
+#[test]
+fn a_stored_baseband_scope_loads_without_it_its_wires_or_a_second_notice() {
+    let (file, id) = plant(&scoped());
+    let store = Store::open(Some(file.path())).expect("reopen");
+    let detail = store.workspace(id).expect("opens");
+    let graph = &detail.snapshot.graph;
+    assert!(graph.node("eye").is_none());
+    assert!(graph.edges.iter().all(|edge| edge.to.node != "eye"));
+    assert_eq!(graph.edges.len(), 1);
+    let notices: Vec<&WorkspaceNoticeKind> =
+        detail.notices.iter().map(|notice| &notice.notice).collect();
+    assert_eq!(notices, vec![&scope_dropped()]);
+    drop(store);
+    let again = Store::open(Some(file.path())).expect("reopen again");
+    assert_eq!(again.workspace(id).expect("opens").notices.len(), 1);
+}
+
+#[test]
+fn an_import_names_the_baseband_scope_it_dropped() {
+    for version in [1, sdrmm_wire::WORKSPACE_EXPORT_VERSION] {
+        let mut export = json!({ "version": version, "name": "Old", "snapshot": scoped() });
+        let notices = upgrade_import(&mut export);
+        assert!(notices.contains(&scope_dropped()), "{notices:?}");
+        assert_eq!(edge_count(&export["snapshot"]), 1);
+        let loaded = parse_workspace_snapshot(&export["snapshot"].to_string()).expect("loads");
+        assert!(loaded.graph.node("eye").is_none());
+    }
+}
+
+#[test]
+fn dropping_baseband_scopes_twice_equals_once() {
+    let (snapshot, notices) = twice_equals_once(scoped());
+    assert_eq!(notices, vec![scope_dropped()]);
+    assert_eq!(edge_count(&snapshot), 1);
+}
+
+#[test]
+fn an_audio_fx_node_hands_its_chain_to_the_decoder_it_hears() {
+    let old = with_wires(
+        json!([
+            decoder("ch", "nfm"),
+            at(
+                "fx",
+                "audio_fx",
+                json!({ "settings": { "auto_notch": true } })
+            ),
+            at("spk", "speaker", json!({})),
+            at("rec", "audio_recorder", json!({})),
+        ]),
+        json!([
+            wire(("ch", "audio"), ("fx", "audio")),
+            wire(("fx", "audio"), ("spk", "audio")),
+            wire(("fx", "audio"), ("rec", "audio")),
+        ]),
+    );
+    let (snapshot, notices) = twice_equals_once(old);
+    assert!(notices.is_empty());
+    let nodes = snapshot["graph"]["nodes"].as_array().expect("nodes");
+    assert_eq!(nodes.len(), 3);
+    assert_eq!(nodes[0]["data"]["audio"], json!({ "auto_notch": true }));
+    assert_eq!(
+        snapshot["graph"]["edges"],
+        json!([
+            wire(("ch", "audio"), ("spk", "audio")),
+            wire(("ch", "audio"), ("rec", "audio")),
+        ])
+    );
+}
+
+#[test]
+fn an_audio_fx_chain_with_nowhere_to_go_is_dropped_and_said() {
+    let old = with_wires(
+        json!([
+            at(
+                "fx",
+                "audio_fx",
+                json!({ "settings": { "auto_notch": true } })
+            ),
+            at("spk", "speaker", json!({})),
+        ]),
+        json!([wire(("fx", "audio"), ("spk", "audio"))]),
+    );
+    let (snapshot, notices) = twice_equals_once(old);
+    assert_eq!(snapshot["graph"]["nodes"].as_array().map(Vec::len), Some(1));
+    assert_eq!(snapshot["graph"]["edges"], json!([]));
+    assert_eq!(
+        notices,
+        vec![WorkspaceNoticeKind::DroppedNodes {
+            nodes: vec![sdrmm_wire::DroppedNode {
+                id: "fx".to_owned(),
+                kind: "audio_fx".to_owned(),
+                label: None,
+            }],
+        }]
+    );
+}

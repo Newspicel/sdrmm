@@ -1,5 +1,5 @@
 import { Handle, NodeResizer, Position, useStoreApi } from "@xyflow/react";
-import { CircleAlert, Maximize2, Minimize2, Pin, X } from "lucide-react";
+import { CircleAlert, Maximize2, Minimize2, Pin, SlidersHorizontal, X } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -10,9 +10,11 @@ import {
   useLayoutEffect,
   useRef,
 } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "../../components/BaseControls";
 import { ICON_BTN_SM } from "../../components/controls";
 import { FaceAlert } from "../../components/FaceAlert";
+import { FaceFault } from "../../components/face/Fault";
 import { Icon } from "../../components/Icon";
 import { PortalContainerProvider } from "../../components/PortalContainer";
 import { activityText, idlePort, usePortActivity } from "../../lib/activity";
@@ -36,16 +38,37 @@ import {
   portLabel,
   unpin,
 } from "../graph";
+import { Inspect } from "../inspector";
 import { dropNodes } from "../remove";
 import { movesCanvas, wheelStaysOnFace } from "../wheel";
 import { NodeName } from "./NodeName";
 import type { Anchors } from "./portAnchor";
 import { type AnchorSlot, useContentHeight, useFaceLayout } from "./useFaceLayout";
 
-const Surface = createContext<"canvas" | "rack">("rack");
+const Surface = createContext<"canvas" | "rack" | "panel">("rack");
 
 export function CanvasSurface({ children }: { children: ReactNode }) {
   return <Surface value="canvas">{children}</Surface>;
+}
+
+const PanelFoot = createContext<HTMLElement | null>(null);
+
+/**
+ * A face drawn bare in the inspector, without its frame, header or ports. Its footer actions
+ * go to `foot`, below the settings.
+ */
+export function PanelSurface({
+  foot,
+  children,
+}: {
+  foot: HTMLElement | null;
+  children: ReactNode;
+}) {
+  return (
+    <Surface value="panel">
+      <PanelFoot value={foot}>{children}</PanelFoot>
+    </Surface>
+  );
 }
 
 const Active = createContext(true);
@@ -91,7 +114,26 @@ const CATEGORY_STRIP: Record<NodeCategory, string> = {
   output: "bg-cat-output shadow-[0_0_8px_var(--color-cat-output)]",
 };
 
-const LIVE_STRIP = "bg-ok shadow-[0_0_10px_2px_var(--color-ok)]";
+/** What a live node is doing, lit on its header dot: the one place a node's state changes colour. */
+export interface LiveSignal {
+  tone: "ok" | "warn" | "danger";
+  label: string;
+}
+
+const PASSING: LiveSignal = { tone: "ok", label: "Passing audio" };
+
+const LIVE_STRIP: Record<LiveSignal["tone"], string> = {
+  ok: "bg-ok shadow-[0_0_10px_2px_var(--color-ok)]",
+  warn: "bg-warn shadow-[0_0_10px_2px_var(--color-warn)]",
+  danger: "bg-danger shadow-[0_0_10px_2px_var(--color-danger)]",
+};
+
+function liveSignal(live: boolean | LiveSignal | undefined): LiveSignal | null {
+  if (live === true) {
+    return PASSING;
+  }
+  return live === false || live === undefined ? null : live;
+}
 
 const CATEGORY_TINT: Record<NodeCategory, string> = {
   source: "bg-cat-source/15",
@@ -100,8 +142,6 @@ const CATEGORY_TINT: Record<NodeCategory, string> = {
   tool: "bg-cat-tool/15",
   output: "bg-cat-output/15",
 };
-
-const LIVE_TINT = "bg-ok/25";
 
 const CATEGORY_RULE: Record<NodeCategory, string> = {
   source: "shadow-[inset_0_2px_0_var(--color-cat-source)]",
@@ -152,13 +192,30 @@ export interface NodeShellProps {
   subtitle?: ReactNode;
   badge?: ReactNode;
   actions?: ReactNode;
-  live?: boolean;
+  live?: boolean | LiveSignal;
   width?: number;
   rowPorts?: readonly string[];
   children: ReactNode;
 }
 
-export function NodeShell({
+export function NodeShell(props: NodeShellProps) {
+  return useContext(Surface) === "panel" ? (
+    <BareShell>{props.children}</BareShell>
+  ) : (
+    <FramedShell {...props} />
+  );
+}
+
+function BareShell({ children }: { children: ReactNode }) {
+  const container = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={container} className="flex min-h-0 flex-1 flex-col">
+      <PortalContainerProvider container={container}>{children}</PortalContainerProvider>
+    </div>
+  );
+}
+
+function FramedShell({
   node,
   title,
   category,
@@ -172,6 +229,7 @@ export function NodeShell({
 }: NodeShellProps) {
   const workspace = useWorkspaceContext();
   const surface = useContext(Surface);
+  const signal = liveSignal(live);
   const remove = useRemoveNode(node);
   const ports = surface === "canvas" ? nodePorts(workspace.context, node) : [];
   const pinned = isPinned(workspace.rack, node.id);
@@ -183,6 +241,7 @@ export function NodeShell({
     wheelClaim.current = claim;
   }, []);
   const full = workspace.expanded === node.id;
+  const inspected = workspace.inspected === node.id;
   const { container: portalContainer, anchors, slot: anchorSlot } = useFaceLayout();
   useWheelRouting(portalContainer, wheelClaim);
   useHandleRefresh(node.id, ports, anchors, portalContainer, surface === "canvas");
@@ -205,19 +264,28 @@ export function NodeShell({
             handleClassName="!size-2 !rounded-inset !border-accent !bg-panel"
           />
         )}
+        <Inspect node={node.id} slot="head">
+          <PanelHead
+            name={node.label ?? title}
+            category={category}
+            live={live}
+            badge={badge}
+            subtitle={subtitle}
+          />
+        </Inspect>
         <header
           className={`flex h-6.5 shrink-0 items-center gap-2 rounded-t-control border-b border-line pr-1 pl-2 transition-colors duration-150 ${
-            live ? LIVE_TINT : CATEGORY_TINT[category]
+            CATEGORY_TINT[category]
           } ${selected ? SELECTED_RULE : CATEGORY_RULE[category]} ${
             surface === "canvas" ? "node-drag cursor-grab active:cursor-grabbing" : ""
           }`}
         >
-          {live ? (
+          {signal !== null ? (
             <span
               role="img"
-              aria-label="Passing audio"
-              title="Audio is passing the squelch"
-              className={`size-[7px] shrink-0 rounded-full ${LIVE_STRIP}`}
+              aria-label={signal.label}
+              title={signal.label}
+              className={`size-[7px] shrink-0 rounded-full ${LIVE_STRIP[signal.tone]}`}
             />
           ) : (
             <span
@@ -234,12 +302,26 @@ export function NodeShell({
             <FaceAlert node={node.id} />
           </span>
           {subtitle !== undefined && (
-            <span className="ml-auto truncate font-mono text-2xs text-ink-dim">{subtitle}</span>
+            <span className="flex min-w-0 grow basis-0 flex-wrap items-center justify-end self-stretch overflow-hidden font-mono text-2xs whitespace-nowrap text-ink-dim">
+              <span aria-hidden className="h-full w-0" />
+              {subtitle}
+            </span>
           )}
           <span
             className={`nodrag flex cursor-auto items-center gap-0.5 ${subtitle === undefined ? "ml-auto" : ""}`}
+            onClick={(event) => event.stopPropagation()}
           >
             {actions}
+            <Button
+              type="button"
+              aria-label={inspected ? "Close inspector" : "Inspect"}
+              aria-pressed={inspected}
+              title="Settings and status"
+              className={`${ICON_BTN_SM} ${inspected ? "bg-accent/15 text-accent" : "text-ink-faint"}`}
+              onClick={() => workspace.inspect(inspected ? null : node.id)}
+            >
+              <Icon glyph={SlidersHorizontal} size={12} />
+            </Button>
             <Button
               type="button"
               aria-label={full ? "Leave full screen" : "Show full screen"}
@@ -304,6 +386,39 @@ export function NodeShell({
         ))}
       </PortalContainerProvider>
     </div>
+  );
+}
+
+function PanelHead({
+  name,
+  category,
+  live,
+  badge,
+  subtitle,
+}: {
+  name: string;
+  category: NodeCategory;
+  live: boolean | LiveSignal;
+  badge: ReactNode;
+  subtitle: ReactNode;
+}) {
+  const signal = liveSignal(live);
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span
+        aria-hidden
+        className={`size-2 shrink-0 rounded-full ${signal === null ? CATEGORY_STRIP[category] : LIVE_STRIP[signal.tone]}`}
+      />
+      <span className="truncate font-semibold text-sm text-ink">{name}</span>
+      {badge !== undefined && (
+        <span className="shrink-0 font-mono text-2xs text-ink-dim">{badge}</span>
+      )}
+      {subtitle !== undefined && (
+        <span className="ml-auto min-w-0 shrink-[4] truncate font-mono text-2xs text-ink-dim">
+          {subtitle}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -484,7 +599,45 @@ export function FaceEmpty({ hint }: { hint?: string }) {
   );
 }
 
+/**
+ * Why a node idles: a server fault, then what the server waits for. Only the fault is red.
+ * An unwired node says nothing; its empty port already shows why.
+ */
+export function FaceStanding({
+  unwired,
+  error,
+  waiting,
+}: {
+  unwired: boolean;
+  error?: string | null;
+  waiting?: string | null;
+}) {
+  if (unwired) {
+    return null;
+  }
+  if (error != null) {
+    return <FaceFault message={error} />;
+  }
+  return waiting == null ? null : <FaceEmpty hint={waiting} />;
+}
+
 export function FaceFooter({ children }: { children: ReactNode }) {
+  const panel = useContext(Surface) === "panel";
+  const foot = useContext(PanelFoot);
+  if (panel) {
+    return foot === null
+      ? null
+      : createPortal(
+          <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-2.5 empty:hidden">
+            {children}
+          </div>,
+          foot,
+        );
+  }
+  return <FramedFooter>{children}</FramedFooter>;
+}
+
+function FramedFooter({ children }: { children: ReactNode }) {
   const inner = useRef<HTMLDivElement>(null);
   const height = useContentHeight(inner);
   return (

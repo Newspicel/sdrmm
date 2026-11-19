@@ -23,7 +23,7 @@ function recorder(recording: boolean, pre_roll_s = 0) {
   return placed("rec", { kind: "recorder", data: { recording, pre_roll_s } });
 }
 
-function render(wired: boolean, recording: RecordingStatus | null): string {
+function render(wired: boolean, recording: RecordingStatus | null, inspected = false): string {
   const node = recorder(recording !== null);
   const device = placed("dev", {
     kind: "device",
@@ -36,7 +36,7 @@ function render(wired: boolean, recording: RecordingStatus | null): string {
   const devices = new Map<string, DeviceSet>([
     ["dev", deviceSet({ device: RADIO, settings: { sample_rate: 8e6 }, recording })],
   ]);
-  return renderFace(RecorderFace, node, { graph, devices });
+  return renderFace(RecorderFace, node, { graph, devices, inspected });
 }
 
 function rows(html: string): string[] {
@@ -51,7 +51,9 @@ describe("RecorderFace", () => {
   });
 
   it("offers Record only once a device's IQ is wired in", () => {
-    expect(render(false, null)).toMatch(/<[^>]*disabled=""[^>]*title="Wire a device&#x27;s IQ in"/);
+    expect(render(false, null)).toMatch(
+      /<button(?=[^>]*disabled="")[^>]*title="Wire a device&#x27;s IQ in"/,
+    );
     expect(render(true, null)).not.toContain('disabled=""');
   });
 
@@ -60,6 +62,11 @@ describe("RecorderFace", () => {
     expect(html).toContain(">rec_0_20261009T114426Z<");
     expect(html).toContain(">167.3 MB<");
     expect(html).toContain(">Stop<");
+  });
+
+  it("sets pre-roll in the inspector, not on the face", () => {
+    expect(render(true, null)).not.toContain("Pre-roll");
+    expect(render(true, null, true)).toContain("Pre-roll");
   });
 
   it("shows only the take its own node started", () => {

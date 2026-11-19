@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2048000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "NSL Stereo",
+    "core:description": "GPS L1 open sky, FGI OSNMA clean dataset"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1575420000.0,
+      "core:datetime": "2026-11-19T14:57:53.542323Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "FGI OSNMA datasets, doi:10.23729/9559efea-22fc-48ac-8de4-c4d1cba367be, CC BY 4.0; source SHA-256 aceec9587a4829870072a676fbd2a039c7d2ddb300e0815a2cb74dc2d0987e4a; samples 0..31200000 at 26000000 Hz",
+      "core:sample_count": 2457600,
+      "core:sample_start": 0
+    }
+  ]
+}

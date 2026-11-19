@@ -18,7 +18,7 @@ use std::{
 use prospect::Prospector;
 use sdrmm_decoder::{TrunkGrant, Trunking};
 use sdrmm_wire::{
-    AUTO_TRUNK_PROTOCOL, ChannelParams, DecodedRecord, DvFrame, DvFrameKind, StateScope,
+    AUTO_TRUNK_PROTOCOL, ChannelParams, DecodedRecord, DvFrame, DvFrameKind, StateScope, TrunkBand,
     TrunkCallSettings, TrunkChannelEntry, TrunkDiscovery, TrunkKind, TrunkScheme, TrunkSite,
     TrunkSpec, TrunkSystemStatus, TrunkTalkgroups, VoiceKey,
 };
@@ -56,6 +56,7 @@ pub struct TrunkSystem {
     pub protocol: String,
     pub discovery: TrunkDiscovery,
     pub channel_map: Vec<TrunkChannelEntry>,
+    pub band: Option<TrunkBand>,
     pub learned: Vec<TrunkChannelEntry>,
     pub radio: Option<TrunkRadio>,
     pub talkgroups: TrunkTalkgroups,
@@ -460,9 +461,10 @@ impl Follower {
             .retain(|node, _| nodes.contains(&node.as_str()));
         for system in &self.systems {
             if let Some(prospector) = self.prospectors.get_mut(&system.node) {
-                prospector.configure(&system.discovery, &system.channel_map);
+                prospector.configure(&system.discovery, &system.channel_map, system.band);
             } else {
-                let mut prospector = Prospector::new(&system.discovery, &system.channel_map);
+                let mut prospector =
+                    Prospector::new(&system.discovery, &system.channel_map, system.band);
                 prospector.adopt(&system.learned);
                 self.prospectors.insert(system.node.clone(), prospector);
             }

@@ -6,11 +6,9 @@ mod model;
 pub mod synth;
 pub use model::*;
 mod demod;
-mod frame;
 pub(crate) mod image;
 pub(crate) mod jpeg;
 pub(crate) mod link;
-mod packet;
 pub(crate) fn lrpt_decoder() -> Native<LrptParams> {
     let decoder = Native::new::<LrptChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
@@ -42,17 +40,16 @@ mod tests;
 use std::sync::LazyLock;
 
 use demod::Demod;
-use frame::{Deframer, FrameOutcome};
-use image::{IDLE_APID, Imagery, Placement};
+use image::{Imagery, Placement};
 use num_complex::Complex;
-use packet::Depacketizer;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use link::PacketHeader;
+use link::{IDLE_APID, PacketHeader};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, DecodedImage, NativeChannel,
     check_input_rate,
 };
+use sdrmm_modem::ccsds::{Deframer, Depacketizer, FrameOutcome};
 
 pub(crate) const INPUT_RATE_HZ: f64 = 288_000.0;
 const FILTER_TAPS: usize = 127;
@@ -66,6 +63,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Meteor LRPT".to_owned(),
     summary: "Meteor-M weather satellite pictures".to_owned(),
     family: DecoderFamily::WEATHER,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 140_000.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,
@@ -134,10 +132,10 @@ impl Picture {
     }
 
     fn place(&mut self, packet: &[u8], now: u64, mode: LrptMode, out: &mut ChannelOutputs) {
-        let header = PacketHeader::parse(packet);
-        if header.apid == IDLE_APID {
+        let Some(header) = PacketHeader::parse(packet).filter(|header| header.apid != IDLE_APID)
+        else {
             return;
-        }
+        };
         let was_empty = self.imagery.is_empty();
         if self.imagery.place(packet, header.apid, header.sequence) == Placement::Full {
             self.finish(mode, true, out);
@@ -198,6 +196,8 @@ pub struct LrptChannel {
     soft: Vec<i16>,
     samples: u64,
     closing: bool,
+    /// Frames Reed-Solomon could not repair, over the channel's life.
+    frames_failed: u32,
 }
 
 impl LrptChannel {
@@ -212,6 +212,7 @@ impl LrptChannel {
         let picture = &mut self.picture;
         picture.stats.count(outcome);
         if outcome.failed {
+            self.frames_failed = self.frames_failed.saturating_add(1);
             self.depacketizer.reset();
             return;
         }
@@ -255,12 +256,13 @@ impl NativeChannel for LrptChannel {
         Ok(Self {
             mode,
             demod: Demod::new(mode, INPUT_RATE_HZ),
-            deframer: Deframer::new(),
-            depacketizer: Depacketizer::new(),
+            deframer: link::deframer(),
+            depacketizer: link::depacketizer(),
             picture: Picture::new(),
             soft: Vec::with_capacity(2 * CHUNK),
             samples: 0,
             closing: false,
+            frames_failed: 0,
         })
     }
 }
@@ -278,6 +280,11 @@ impl Channel for LrptChannel {
 
     fn retuned(&mut self) {
         self.restart();
+    }
+
+    fn rejected(&self) -> u32 {
+        self.frames_failed
+            .saturating_add(self.depacketizer.dropped())
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {

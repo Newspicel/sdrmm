@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { formatMhz } from "../src/components/format";
 import type { DecoderLogResponse, StateSnapshot, WorkspaceSnapshot } from "../src/lib/types";
-import { nodeUrl, radioNodeOf } from "./canvas";
+import { activate, nodeUrl, radioNodeOf } from "./canvas";
 
 test("monitors IQ through one node and exports transmission audio", async ({ page }) => {
   test.setTimeout(60000);
@@ -66,12 +66,11 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await expect(monitor.locator(".react-flow__handle")).toHaveCount(2);
     await expect(monitor.locator("li")).toHaveCount(0);
     await expect(monitor).not.toContainText(/\d+ (active|recent)/);
-    const confidenceInfo =
-      "Minimum confidence. Signals identified below it are ignored; 0 accepts all";
-    const confidenceChip = monitor.getByRole("button", { name: confidenceInfo });
-    await expect(confidenceChip).toContainText("70");
-    await confidenceChip.click();
-    const confidence = monitor.getByRole("textbox", { name: confidenceInfo });
+    const inspector = page.getByRole("complementary", { name: "Inspector" });
+    const confidence = inspector.getByRole("textbox", {
+      name: "Minimum confidence. Signals identified below it are ignored; 0 accepts all",
+    });
+    await activate(monitor);
     await expect(confidence).toHaveValue("70");
     await confidence.click();
     await confidence.press("ControlOrMeta+A");
@@ -89,11 +88,11 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
       })
       .toBeCloseTo(0.8);
     await page.reload();
-    await expect(confidenceChip).toContainText("80");
-    const protocols = monitor.getByRole("button", { name: "Protocols to decode" });
-    await expect(protocols).toContainText("All protocols");
-    await protocols.click();
-    const analog = page.getByRole("button", { name: "Analog voice", exact: true });
+    await activate(monitor);
+    await expect(confidence).toHaveValue("80");
+    const all = inspector.getByRole("button", { name: "All", exact: true });
+    await expect(all).toHaveAttribute("aria-pressed", "true");
+    const analog = inspector.getByRole("button", { name: "Analog voice", exact: true });
     await analog.click();
     await expect(analog).toHaveAttribute("aria-pressed", "true");
     await expect
@@ -107,17 +106,14 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
         return [data.disabled_protocols?.includes("dmr"), data.report_unidentified];
       })
       .toEqual([true, false]);
-    await page.getByRole("button", { name: "All", exact: true }).click();
-    await page.mouse.move(40, 600);
-    await page.mouse.wheel(0, 40);
-    await expect(analog).toBeHidden();
-    await expect(protocols).toContainText("All protocols");
-    await monitor.getByText("Spectrum monitor", { exact: true }).click();
-    await confidenceChip.click();
+    await all.click();
+    await expect(all).toHaveAttribute("aria-pressed", "true");
     await confidence.click();
     await confidence.press("ControlOrMeta+A");
     await confidence.pressSequentially("0");
     await confidence.press("Enter");
+    await inspector.getByRole("button", { name: "Close inspector" }).click();
+    await expect(analog).toBeHidden();
     await expect(log).toContainText("Transmission", { timeout: 15000 });
     const state: StateSnapshot = await page.request
       .get("/api/state")

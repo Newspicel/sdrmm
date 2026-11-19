@@ -1,6 +1,7 @@
 import { type APIRequestContext, expect, type Locator, type Page, test } from "@playwright/test";
 import type { ArrayStatus, DeviceRef, WorkspaceSnapshot } from "../src/lib/types";
 import {
+  activate,
   addNode,
   deleteWire,
   deviceSetOf,
@@ -188,10 +189,12 @@ test("crosses bearings from two places and clears them", async ({ page }) => {
     })
     .toBeGreaterThanOrEqual(6);
 
-  await face(page, "site").getByRole("button", { name: "Longitude" }).click();
-  const longitude = face(page, "site").getByRole("textbox", { name: "Longitude" });
+  await activate(face(page, "site"));
+  const inspector = page.getByRole("complementary", { name: "Inspector" });
+  const longitude = inspector.getByRole("textbox", { name: "Longitude" });
   await longitude.fill("13.1");
   await longitude.press("Enter");
+  await inspector.getByRole("button", { name: "Close inspector" }).click();
   await setExtra(page.request, deviceSet, BEARING, SECOND_DEG);
   await expect.poll(() => estimateError(tri), { timeout: SETTLE_MS }).toBeLessThan(0.01);
 

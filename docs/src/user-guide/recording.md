@@ -56,7 +56,7 @@ rate is locked while a pre-roll is held. Retuning starts a new segment in the sa
 smaller than full Device IQ and can be played back like any other recording. Changing the mode or
 the Device rate starts a new file. Removing the channel ends it.
 
-**Audio recorder** keeps what reaches it, after squelch and any Audio FX it is wired behind.
+**Audio recorder** keeps what reaches it, after squelch and the decoder's audio processing.
 Closed squelch writes silence so timing stays intact; **Skip silence** pauses instead. Mode and
 rate changes do not stop it. The file stays playable if the server stops mid-recording.
 

@@ -11,6 +11,7 @@ export interface PositionSample extends PositionFix {
 export interface PositionState {
   fix: PositionFix | null;
   error: string | null;
+  waiting: string | null;
   history: readonly PositionSample[];
 }
 
@@ -31,6 +32,7 @@ export const usePositionStore = create<PositionStore>((set) => ({
       const previous = state.sources[event.data.node] ?? {
         fix: null,
         error: null,
+        waiting: null,
         history: [],
       };
       const fix = event.data.fix ?? null;
@@ -41,7 +43,12 @@ export const usePositionStore = create<PositionStore>((set) => ({
       return {
         sources: {
           ...state.sources,
-          [event.data.node]: { fix, error: event.data.error ?? null, history },
+          [event.data.node]: {
+            fix,
+            error: event.data.error ?? null,
+            waiting: event.data.waiting ?? null,
+            history,
+          },
         },
       };
     });

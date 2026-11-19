@@ -454,6 +454,7 @@ fn device_reported_gaps_reach_the_drop_badge_without_ring_overflow() {
                 capabilities: empty_capabilities(),
                 settings: mock_settings(),
             })),
+            sdrmm_wire::RadioUse::Receive,
         )
         .expect("start gapped radio");
     assert_eq!(engine.snapshot().device_sets[0].overruns, 123);

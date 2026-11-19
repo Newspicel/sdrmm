@@ -120,6 +120,7 @@ fn patch(channels: &[Channel]) -> PatchGraph {
             NodeBody::Channel(ChannelNode {
                 channel_type: channel.settings.params.type_id().to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
             COLUMN,
             y,

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "GopherTrunk scanner voice recording",
+    "core:description": "MDC-1200 end-of-transmission PTT ID from unit 0x1777, 447.100 MHz, ADC-clipped"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 447100000.0,
+      "core:datetime": "2026-11-19T14:56:00.897135Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "https://github.com/MattCheramie/GopherTrunk/blob/5454622771dc5377f48244e4a94c6009a18445ec/internal/radio/mdc1200/afsk/testdata/mdc1200_unit1777_pttid_end_48k.cs16 (Apache-2.0); source SHA-256 92eedb439187244d6cee786ce518fde6d2df481cec3070e1e96f8e2bd99d7691; samples 0..33600 at 48000 Hz",
+      "core:sample_count": 33600,
+      "core:sample_start": 0
+    }
+  ]
+}

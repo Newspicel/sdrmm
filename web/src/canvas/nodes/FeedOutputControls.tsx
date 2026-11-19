@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
 import { FaceFault } from "../../components/face/Fault";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount } from "../../components/format";
@@ -18,11 +18,14 @@ export function feedState(
   if (current?.error) {
     return undefined;
   }
+  if (current?.waiting) {
+    return current.waiting;
+  }
   if (current?.listening) {
     return "Listening";
   }
   if (!connected) {
-    return "Wire events in";
+    return undefined;
   }
   return enabled ? "Opening server" : "Server closed";
 }
@@ -69,7 +72,7 @@ export function FeedOutputControls({
         )}
         <Button
           type="button"
-          className={enabled ? BTN_DANGER : BTN_PRIMARY}
+          className={enabled ? FACE_BTN_DANGER : FACE_BTN}
           disabled={!enabled && (!connected || target.address.trim() === "")}
           onClick={() => {
             setStatus(null);

@@ -1,10 +1,8 @@
 use rusqlite::{Connection, OptionalExtension, params};
-use sdrmm_wire::{AudioAgcMode, AudioProcessing, MAX_EDGES, MAX_NODES};
+use sdrmm_wire::{AudioAgcMode, AudioProcessing};
 use serde_json::{Value, json};
 
-use super::{StoreError, edge_end};
-
-const FX_OFFSET_X: f64 = 420.0;
+use super::StoreError;
 
 struct Lifted {
     node: String,
@@ -33,7 +31,7 @@ pub(super) fn lift_audio_chains(conn: &Connection) -> Result<(), StoreError> {
         if let Some(snapshot_json) = snapshot_json {
             let mut snapshot: Value = serde_json::from_str(&snapshot_json)?;
             for chain in lifted.into_iter().flatten() {
-                insert_fx(&mut snapshot, &chain);
+                give_to_decoder(&mut snapshot, &chain);
             }
             let nodes = snapshot["graph"]["nodes"].as_array().map_or(0, Vec::len);
             tx.execute(
@@ -81,14 +79,14 @@ fn take_chains(state: &mut Value) -> Option<Vec<Lifted>> {
         let Ok(chain) = crate::json::from_value::<AudioProcessing>(&audio) else {
             continue;
         };
-        if worth_a_node(&chain, type_id) {
+        if worth_keeping(&chain, type_id) {
             lifted.push(Lifted { node, chain });
         }
     }
     touched.then_some(lifted)
 }
 
-fn worth_a_node(chain: &AudioProcessing, type_id: &str) -> bool {
+fn worth_keeping(chain: &AudioProcessing, type_id: &str) -> bool {
     let levelled_by_its_demod = chain.agc == AudioAgcMode::Medium
         && sdrmm_decoder::descriptor(type_id).is_some_and(|descriptor| descriptor.levels_audio);
     let rest = AudioProcessing {
@@ -102,68 +100,19 @@ fn worth_a_node(chain: &AudioProcessing, type_id: &str) -> bool {
     rest.is_active() && rest.validate().is_ok()
 }
 
-fn insert_fx(snapshot: &mut Value, lifted: &Lifted) {
-    let Some(graph) = snapshot.get_mut("graph") else {
+/// Puts the chain on the decoder node the channel belonged to.
+fn give_to_decoder(snapshot: &mut Value, lifted: &Lifted) {
+    let Some(node) = snapshot["graph"]["nodes"].as_array_mut().and_then(|nodes| {
+        nodes
+            .iter_mut()
+            .find(|node| node.get("id").and_then(Value::as_str) == Some(&lifted.node))
+    }) else {
         return;
     };
-    let node_count = graph["nodes"].as_array().map_or(0, Vec::len);
-    let edge_count = graph["edges"].as_array().map_or(0, Vec::len);
-    if node_count >= MAX_NODES || edge_count >= MAX_EDGES {
-        tracing::warn!(node = %lifted.node, "no room to lift a channel's audio chain into an audio FX node");
-        return;
+    if !node["data"].is_object() {
+        node["data"] = json!({});
     }
-    let Some(channel) = graph["nodes"]
-        .as_array()
-        .and_then(|nodes| {
-            nodes
-                .iter()
-                .find(|node| node.get("id").and_then(Value::as_str) == Some(&lifted.node))
-        })
-        .cloned()
-    else {
-        return;
-    };
-    let id = free_id(graph, &format!("audio_fx:{}", lifted.node));
-    let x = channel["position"]["x"].as_f64().unwrap_or_default() + FX_OFFSET_X;
-    let y = channel["position"]["y"].as_f64().unwrap_or_default();
-    let Some(nodes) = graph["nodes"].as_array_mut() else {
-        return;
-    };
-    nodes.push(json!({
-        "id": id,
-        "kind": "audio_fx",
-        "data": { "settings": lifted.chain },
-        "position": { "x": x, "y": y },
-    }));
-    let Some(edges) = graph["edges"].as_array_mut() else {
-        return;
-    };
-    for edge in edges.iter_mut() {
-        if edge_end(edge, "from") == Some((lifted.node.as_str(), "audio")) {
-            edge["from"]["node"] = json!(id);
-        }
-    }
-    edges.push(json!({
-        "from": { "node": lifted.node, "port": "audio" },
-        "to": { "node": id, "port": "audio" },
-    }));
-}
-
-fn free_id(graph: &Value, wanted: &str) -> String {
-    let taken = |id: &str| {
-        graph["nodes"].as_array().is_some_and(|nodes| {
-            nodes
-                .iter()
-                .any(|node| node.get("id").and_then(Value::as_str) == Some(id))
-        })
-    };
-    let mut id = wanted.to_owned();
-    let mut n = 2;
-    while taken(&id) {
-        id = format!("{wanted}:{n}");
-        n += 1;
-    }
-    id
+    node["data"]["audio"] = json!(lifted.chain);
 }
 
 #[cfg(test)]
@@ -241,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn a_channel_chain_becomes_an_audio_fx_node_on_its_audio_wires() {
+    fn a_channel_chain_moves_onto_its_decoder_node() {
         let conn = store_with(
             &graph(),
             &state(
@@ -255,41 +204,25 @@ mod tests {
             .graph
             .validate()
             .expect("the lifted graph is valid");
-        let fx = snapshot
-            .graph
-            .nodes
-            .iter()
-            .find(|node| node.id == "audio_fx:ch")
-            .expect("an audio FX node");
-        let NodeBody::AudioFx(body) = &fx.body else {
-            panic!("wrong kind {:?}", fx.body);
+        let NodeBody::Channel(decoder) = &snapshot.graph.nodes[0].body else {
+            panic!("wrong kind {:?}", snapshot.graph.nodes[0].body);
         };
-        assert!(body.settings.auto_notch);
-        let from_fx: Vec<_> = snapshot
-            .graph
-            .edges
-            .iter()
-            .filter(|edge| edge.from.node == "audio_fx:ch")
-            .map(|edge| edge.to.node.as_str())
-            .collect();
-        assert_eq!(from_fx, ["spk", "rec"]);
-        assert!(
-            snapshot
-                .graph
-                .edges
-                .iter()
-                .any(|edge| edge.from.node == "ch" && edge.to.node == "audio_fx:ch")
-        );
+        assert!(decoder.audio.auto_notch);
+        assert_eq!(snapshot.graph.nodes.len(), 3);
+        assert_eq!(snapshot.graph.edges.len(), 2);
         assert!(state.channels[0].settings.blanker.enabled);
         assert!(raw["channels"][0]["settings"].get("audio").is_none());
     }
 
     #[test]
-    fn the_old_am_default_adds_no_node() {
+    fn the_old_am_default_adds_nothing() {
         let conn = store_with(&graph(), &state("am", &json!({"agc": "medium"})));
         lift_audio_chains(&conn).expect("lift");
         let (snapshot, _, raw) = read(&conn);
-        assert_eq!(snapshot.graph.nodes.len(), 3);
+        let NodeBody::Channel(decoder) = &snapshot.graph.nodes[0].body else {
+            panic!("wrong kind {:?}", snapshot.graph.nodes[0].body);
+        };
+        assert!(decoder.audio.is_off());
         assert!(raw["channels"][0]["settings"].get("audio").is_none());
     }
 

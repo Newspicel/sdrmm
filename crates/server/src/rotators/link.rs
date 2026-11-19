@@ -1,12 +1,12 @@
 use std::{
     io::BufReader,
     net::{TcpStream, ToSocketAddrs},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use sdrmm_wire::{RotatorAxes, RotatorLink, SkyPoint};
 
-use super::{gs232::Gs232, rotctld::Rotctld, winegard::Winegard};
+use super::{gs232::Gs232, rotctld::Rotctld, virtual_mount::VirtualMount, winegard::Winegard};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(2);
@@ -23,11 +23,11 @@ pub(super) enum LinkError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Serial(#[from] sdrmm_serial::Error),
-    #[error("rotator refused, code {0}")]
+    #[error("Rotator refused, code {0}")]
     Refused(i32),
-    #[error("unreadable reply \"{0}\"")]
+    #[error("Unreadable reply \"{0}\"")]
     Garbled(String),
-    #[error("rotator ignored \"{0}\"")]
+    #[error("Rotator ignored \"{0}\"")]
     Ignored(String),
     #[error("{0} resolves to nothing")]
     Unresolved(String),
@@ -59,5 +59,6 @@ pub(super) fn open(link: &RotatorLink, axes: RotatorAxes) -> Result<Box<dyn Link
             let reader = BufReader::new(stream.try_clone()?);
             Ok(Box::new(Rotctld::new(reader, stream)))
         }
+        RotatorLink::Virtual => Ok(Box::new(VirtualMount::new(axes, Instant::now()))),
     }
 }

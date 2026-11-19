@@ -255,7 +255,6 @@ export interface Input {
   source: string;
   deviceSet: number;
   channel: ChannelInfo;
-  fx: string[];
 }
 
 function feedSource(feed: Feed, index: number): string {
@@ -279,7 +278,6 @@ export function inputsOf(
               source: feedSource(feed, index),
               deviceSet: addr.device_set,
               channel,
-              fx: feed.via ?? [],
             },
           ];
     }),

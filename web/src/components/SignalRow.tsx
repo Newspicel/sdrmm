@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { audioPassing, formatLevel, gateDb, levelUnit } from "../lib/levels";
+import { audioPassing, formatLevel, gateDb, LEVEL_FLOOR_DB, levelUnit } from "../lib/levels";
 import type { ChannelLevel, Squelch } from "../lib/types";
 import { AutoToggle } from "./AgcAuto";
 import {
@@ -12,6 +12,7 @@ import {
   squelchMode,
 } from "./channelSettings";
 import { MeterBar, MeterRow, MeterSlider } from "./face/Meter";
+import { settingMark } from "./Unused";
 import { useDebouncedCommit } from "./useDebouncedCommit";
 
 const FLOOR = SQUELCH_RANGE_DB.min;
@@ -36,6 +37,16 @@ function LevelBar({ level }: { level: ChannelLevel | undefined }) {
   );
 }
 
+/** No signal reads as the floor of the scale, dimmed, never as a dash. */
+function Level({ db, closed = false }: { db: number | undefined; closed?: boolean }) {
+  const quiet = formatLevel(db) === "-";
+  return (
+    <span className={quiet || closed ? "text-ink-faint" : ""}>
+      {quiet ? `${LEVEL_FLOOR_DB} dB` : formatLevel(db)}
+    </span>
+  );
+}
+
 export function SignalRow({
   level,
   squelch,
@@ -45,29 +56,27 @@ export function SignalRow({
   squelch?: Squelch;
   onSquelch?: (squelch: Squelch) => void;
 }) {
-  const readout = formatLevel(level?.level_db);
   if (onSquelch === undefined) {
     return (
       <MeterRow
         label="Signal"
         title="Signal in the channel, in dB below full scale"
         meter={<LevelBar level={level} />}
-        readout={readout}
+        readout={<Level db={level?.level_db} />}
+        solo
       />
     );
   }
-  return <SquelchRow level={level} squelch={squelch} readout={readout} onSquelch={onSquelch} />;
+  return <SquelchRow level={level} squelch={squelch} onSquelch={onSquelch} />;
 }
 
 function SquelchRow({
   level,
   squelch,
-  readout,
   onSquelch,
 }: {
   level: ChannelLevel | undefined;
   squelch: Squelch | undefined;
-  readout: string;
   onSquelch: (squelch: Squelch) => void;
 }) {
   const mode = squelchMode(squelch);
@@ -103,21 +112,23 @@ function SquelchRow({
           }}
         />
       }
-      readout={<span className={open ? "" : "text-ink-faint"}>{readout}</span>}
+      readout={<Level db={level?.level_db} closed={!open} />}
       trailing={
-        <AutoToggle
-          label="Automatic squelch"
-          pressed={mode === "auto"}
-          title={
-            mode === "auto"
-              ? `Opens ${marginDb} dB above the noise floor`
-              : "Open a margin above the measured noise floor"
-          }
-          onChange={(on) => {
-            slider.cancel();
-            onSquelch(squelchAt(on ? "auto" : "manual", held()));
-          }}
-        />
+        <span {...settingMark("squelch")} className="inline-flex justify-self-end rounded-control">
+          <AutoToggle
+            label="Automatic squelch"
+            pressed={mode === "auto"}
+            title={
+              mode === "auto"
+                ? `Opens ${marginDb} dB above the noise floor`
+                : "Open a margin above the measured noise floor"
+            }
+            onChange={(on) => {
+              slider.cancel();
+              onSquelch(squelchAt(on ? "auto" : "manual", held()));
+            }}
+          />
+        </span>
       }
     />
   );

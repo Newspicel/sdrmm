@@ -22,9 +22,10 @@ import type { PatchNode, PositionFix, PositionSource } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { GpsChoices } from "./GpsChoices";
 import { nmeaSuggestion, validHostPort } from "./gpsSource";
-import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
+import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 
 type Source<T extends PositionSource["type"]> = Extract<PositionSource, { type: T }>;
 
@@ -52,10 +53,13 @@ export function GpsFace({ node }: { node: PatchNode }) {
   if (source === null) {
     return (
       <NodeShell node={node} title="GPS position" category="source">
-        <FaceBody>
-          <div className="flex flex-col gap-2 p-2">
+        <Inspect node={node.id}>
+          <InspectSection label="Source">
             <GpsChoices onChoose={setSource} />
-          </div>
+          </InspectSection>
+        </Inspect>
+        <FaceBody>
+          <FaceEmpty hint="No source" />
         </FaceBody>
       </NodeShell>
     );
@@ -71,27 +75,33 @@ export function GpsFace({ node }: { node: PatchNode }) {
         ) : undefined
       }
     >
+      <Inspect node={node.id}>
+        <InspectSection label="Source">
+          <Chips inset="none">
+            <SourceChips source={source} onChange={setSource} />
+          </Chips>
+          <Button
+            type="button"
+            className={`${BTN_QUIET_DANGER} self-start`}
+            title="Free this node so you can pick a different source"
+            onClick={() => setSource(null)}
+          >
+            Forget source
+          </Button>
+        </InspectSection>
+      </Inspect>
       <FaceBody>
-        {fix !== null && <FixReadout fix={fix} phone={source.type === "phone"} />}
-        <Chips>
-          <SourceChips source={source} onChange={setSource} />
-        </Chips>
+        {fix === null ? (
+          <FaceEmpty hint={state?.waiting ?? "No fix"} />
+        ) : (
+          <FixReadout fix={fix} phone={source.type === "phone"} />
+        )}
         {source.type === "phone" && <PhoneListFault />}
         {source.type === "nmea" && <SerialListFault />}
         {fix === null && error !== null && !shownAsStanding(source, error) && (
           <FaceFault message={error} />
         )}
       </FaceBody>
-      <FaceFooter>
-        <Button
-          type="button"
-          className={BTN_QUIET_DANGER}
-          title="Free this node so you can pick a different source"
-          onClick={() => setSource(null)}
-        >
-          Forget source
-        </Button>
-      </FaceFooter>
     </NodeShell>
   );
 }
@@ -182,9 +192,10 @@ function SourceChips({ source, onChange }: { source: PositionSource; onChange: C
           title="Host and port of the gpsd daemon"
           value={source.address}
           onCommit={(address) => {
-            if (validHostPort(address)) {
-              onChange({ type: "gpsd", address });
+            if (!validHostPort(address)) {
+              return false;
             }
+            onChange({ type: "gpsd", address });
           }}
         />
       );

@@ -1,32 +1,4 @@
-import { Settings2 } from "lucide-react";
-import type { ReactNode } from "react";
 import { Button } from "./BaseControls";
-import { plotButton } from "./controls";
-import { Icon } from "./Icon";
-import { Popover } from "./Popover";
-import { SettingsPanel } from "./SettingsPanel";
-
-export function PlotSettings({
-  title,
-  changed,
-  children,
-}: {
-  title: string;
-  changed: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Popover
-      label={<Icon glyph={Settings2} size={12} />}
-      title={title}
-      triggerClass={plotButton(changed)}
-      width="w-76"
-      padded={false}
-    >
-      {() => <SettingsPanel>{children}</SettingsPanel>}
-    </Popover>
-  );
-}
 
 export function Swatch({
   name,

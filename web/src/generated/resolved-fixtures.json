@@ -61,7 +61,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -81,7 +85,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -101,7 +109,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -116,16 +128,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -149,7 +151,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -164,16 +170,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -398,15 +394,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -414,14 +420,20 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radio_clock",
                   "radiosonde",
@@ -441,6 +453,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -448,7 +462,198 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "02ee0bc98738f8eb": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "radio",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "tx",
+            "port": "transmit"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "radio",
+            "port": "transmit"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "iq",
+                  "sink": "scope"
+                }
+              ],
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "transmit"
+                  },
+                  "port": "transmit",
+                  "source": "tx"
+                }
+              ],
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit",
+              "uses": [
+                "send",
+                "both"
+              ]
+            }
+          ],
+          "runs": {
+            "reason": "radio_absent",
+            "runs": "unbound"
+          }
+        },
+        {
+          "id": "scope",
+          "kind": "scope",
+          "label": "Scope",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "radio",
+                  "stream": 0
+                }
+              ],
+              "multi": "one",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "tx",
+          "kind": "transmit",
+          "label": "Transmitter",
+          "ports": [
+            {
+              "direction": "in",
+              "group": "source",
+              "multi": "one",
+              "name": "iq",
+              "note": "A lane to send as it is",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "group": "source",
+              "multi": "one",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "transmit",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit",
+              "reaches": [
+                {
+                  "port": "transmit",
+                  "sink": "radio"
+                }
+              ]
             }
           ],
           "runs": {
@@ -480,7 +685,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -495,16 +704,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -555,7 +754,11 @@
                   "sink": "ble"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -570,16 +773,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -672,6 +865,198 @@
       "revision": 0
     }
   },
+  "05774a598a1a87d8": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "mod",
+            "port": "baseband"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tx",
+            "port": "baseband"
+          }
+        },
+        {
+          "from": {
+            "node": "tx",
+            "port": "transmit"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "radio",
+            "port": "transmit"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "transmit"
+                  },
+                  "port": "transmit",
+                  "source": "tx"
+                }
+              ],
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit",
+              "uses": [
+                "send",
+                "both"
+              ]
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "mod",
+          "kind": "encoder",
+          "label": "Encoder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "audio",
+              "note": "Voice for an analog mode",
+              "payload": {
+                "type": "audio"
+              },
+              "port_type": "audio"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband",
+              "reaches": [
+                {
+                  "port": "baseband",
+                  "sink": "tx"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "tx",
+          "kind": "transmit",
+          "label": "Transmitter",
+          "ports": [
+            {
+              "direction": "in",
+              "group": "source",
+              "multi": "one",
+              "name": "iq",
+              "note": "A lane to send as it is",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "baseband"
+                  },
+                  "port": "baseband",
+                  "source": "mod"
+                }
+              ],
+              "group": "source",
+              "multi": "one",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "transmit",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit",
+              "reaches": [
+                {
+                  "port": "transmit",
+                  "sink": "radio"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "0b8195f67a796cf5": {
     "patch": {
       "edges": [
@@ -723,7 +1108,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -736,7 +1125,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -756,7 +1149,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -771,16 +1168,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -804,7 +1191,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -819,16 +1210,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1050,15 +1431,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -1066,15 +1457,21 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "nav",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radar_sites",
                   "radio_clock",
@@ -1096,6 +1493,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -1159,7 +1558,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -1172,7 +1575,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -1185,7 +1592,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -1198,7 +1609,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -1211,7 +1626,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -1226,16 +1645,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1259,7 +1668,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -1274,16 +1687,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -1438,402 +1841,6 @@
       "revision": 0
     }
   },
-  "1b1a206ba900f4a5": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq2"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane2"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq3"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane3"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq4"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane4"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq5"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane5"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "rec",
-          "kind": "device",
-          "label": "Device",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "arr",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane2",
-                  "sink": "arr",
-                  "stream": 1
-                }
-              ],
-              "stream": 1
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq3",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane3",
-                  "sink": "arr",
-                  "stream": 2
-                }
-              ],
-              "stream": 2
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq4",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane4",
-                  "sink": "arr",
-                  "stream": 3
-                }
-              ],
-              "stream": 3
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq5",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane5",
-                  "sink": "arr",
-                  "stream": 4
-                }
-              ],
-              "stream": 4
-            },
-            {
-              "direction": "in",
-              "multi": "many",
-              "name": "control",
-              "note": "Opens the radio only while a schedule or satellite says so",
-              "payload": {
-                "type": "control",
-                "verbs": [
-                  "run"
-                ]
-              },
-              "port_type": "control",
-              "takes": "running"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "position",
-              "note": "Recorded position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            }
-          ],
-          "runs": {
-            "reason": "radio_absent",
-            "runs": "unbound"
-          }
-        },
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "rec",
-                  "stream": 0
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq2",
-                  "source": "rec",
-                  "stream": 1
-                }
-              ],
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq3",
-                  "source": "rec",
-                  "stream": 2
-                }
-              ],
-              "multi": "one",
-              "name": "lane3",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq4",
-                  "source": "rec",
-                  "stream": 3
-                }
-              ],
-              "multi": "one",
-              "name": "lane4",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 3,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq5",
-                  "source": "rec",
-                  "stream": 4
-                }
-              ],
-              "multi": "one",
-              "name": "lane5",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 4,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane6",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 5,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "1dc22709b3cf2f0f": {
     "patch": {
       "edges": [
@@ -1873,7 +1880,11 @@
                   "sink": "ble"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -1888,16 +1899,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -2114,6 +2115,198 @@
       "revision": 0
     }
   },
+  "22a73604afd3f0aa": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "mod",
+            "port": "baseband"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tx",
+            "port": "baseband"
+          }
+        },
+        {
+          "from": {
+            "node": "tx",
+            "port": "transmit"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "radio",
+            "port": "transmit"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "transmit"
+                  },
+                  "port": "transmit",
+                  "source": "tx"
+                }
+              ],
+              "multi": "one",
+              "name": "transmit",
+              "note": "The transmitter this radio sends",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit",
+              "uses": [
+                "send",
+                "both"
+              ]
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "mod",
+          "kind": "encoder",
+          "label": "Encoder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "audio",
+              "note": "Voice for an analog mode",
+              "payload": {
+                "type": "audio"
+              },
+              "port_type": "audio"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband",
+              "reaches": [
+                {
+                  "port": "baseband",
+                  "sink": "tx"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "tx",
+          "kind": "transmit",
+          "label": "Transmitter",
+          "ports": [
+            {
+              "direction": "in",
+              "group": "source",
+              "multi": "one",
+              "name": "iq",
+              "note": "A lane to send as it is",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "baseband"
+                  },
+                  "port": "baseband",
+                  "source": "mod"
+                }
+              ],
+              "group": "source",
+              "multi": "one",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "transmit",
+              "payload": {
+                "type": "transmit"
+              },
+              "port_type": "transmit",
+              "reaches": [
+                {
+                  "port": "transmit",
+                  "sink": "radio"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "276ee52f1e2d90b8": {
     "patch": {
       "edges": [],
@@ -2139,7 +2332,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2152,7 +2349,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2165,7 +2366,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2178,7 +2383,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2191,7 +2400,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -2206,16 +2419,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -2332,15 +2535,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -2348,14 +2561,20 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radio_clock",
                   "radiosonde",
@@ -2375,6 +2594,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -2382,7 +2603,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
             }
           ],
           "runs": {
@@ -2414,7 +2635,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -2450,69 +2675,13 @@
       "revision": 0
     }
   },
-  "3321c99dfe3c3f4b": {
+  "3b3111869a8504a1": {
     "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq2"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane2"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq3"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane3"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq4"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane4"
-          }
-        },
-        {
-          "from": {
-            "node": "rec",
-            "port": "iq5"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "arr",
-            "port": "lane5"
-          }
-        }
-      ],
+      "edges": [],
       "epoch": 0,
       "nodes": [
         {
-          "id": "rec",
+          "id": "radio",
           "kind": "device",
           "label": "Device",
           "ports": [
@@ -2527,94 +2696,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane",
-                  "sink": "arr",
-                  "stream": 0
-                }
-              ],
-              "stream": 0
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq2",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane2",
-                  "sink": "arr",
-                  "stream": 1
-                }
-              ],
-              "stream": 1
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq3",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane3",
-                  "sink": "arr",
-                  "stream": 2
-                }
-              ],
-              "stream": 2
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq4",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane4",
-                  "sink": "arr",
-                  "stream": 3
-                }
-              ],
-              "stream": 3
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "iq5",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "reaches": [
-                {
-                  "port": "lane5",
-                  "sink": "arr",
-                  "stream": 4
-                }
-              ],
-              "stream": 4
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -2629,242 +2715,11 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "position",
-              "note": "Recorded position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
             }
           ],
           "runs": {
-            "device_set": 7,
+            "device_set": 1,
             "runs": "radio"
-          }
-        },
-        {
-          "id": "arr",
-          "kind": "array",
-          "label": "Array",
-          "ports": [
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq",
-                  "source": "rec",
-                  "stream": 0,
-                  "tap": {
-                    "device_set": 7,
-                    "stream": 0,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "lane",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 0,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq2",
-                  "source": "rec",
-                  "stream": 1,
-                  "tap": {
-                    "device_set": 7,
-                    "stream": 1,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "lane2",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 1,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq3",
-                  "source": "rec",
-                  "stream": 2,
-                  "tap": {
-                    "device_set": 7,
-                    "stream": 2,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "lane3",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 2,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq4",
-                  "source": "rec",
-                  "stream": 3,
-                  "tap": {
-                    "device_set": 7,
-                    "stream": 3,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "lane4",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 3,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "feeds": [
-                {
-                  "payload": {
-                    "origins": [
-                      "radio"
-                    ],
-                    "type": "iq"
-                  },
-                  "port": "iq5",
-                  "source": "rec",
-                  "stream": 4,
-                  "tap": {
-                    "device_set": 7,
-                    "stream": 4,
-                    "tap": "lane"
-                  }
-                }
-              ],
-              "multi": "one",
-              "name": "lane5",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 4,
-              "takes": "a radio lane"
-            },
-            {
-              "coherent": true,
-              "direction": "in",
-              "exclusive": true,
-              "multi": "one",
-              "name": "lane6",
-              "note": "One radio lane per antenna, in antenna order",
-              "payload": {
-                "origins": [
-                  "radio"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq",
-              "stream": 5,
-              "takes": "a radio lane"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Array place and heading",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
           }
         }
       ],
@@ -2933,7 +2788,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2953,7 +2812,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2973,7 +2836,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2986,7 +2853,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -2999,7 +2870,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -3014,16 +2889,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3047,7 +2912,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -3062,16 +2931,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3296,7 +3155,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3316,7 +3179,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3336,7 +3203,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -3351,16 +3222,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3384,7 +3245,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -3399,16 +3264,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3617,7 +3472,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3630,7 +3489,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3643,7 +3506,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3656,7 +3523,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3669,7 +3540,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -3684,16 +3559,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -3974,7 +3839,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -3994,7 +3863,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4014,7 +3887,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4034,7 +3911,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4054,7 +3935,11 @@
                   "stream": 4
                 }
               ],
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -4069,16 +3954,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4102,7 +3977,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -4117,16 +3996,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4398,7 +4267,11 @@
                   "sink": "ble"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -4413,16 +4286,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4536,7 +4399,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -4551,16 +4418,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4656,7 +4513,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4676,7 +4537,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4696,7 +4561,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4716,7 +4585,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -4729,7 +4602,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -4744,16 +4621,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -4784,7 +4651,11 @@
                   "stream": 4
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -4799,16 +4670,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5072,15 +4933,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -5088,14 +4959,20 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radio_clock",
                   "radiosonde",
@@ -5115,6 +4992,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -5122,7 +5001,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
             }
           ],
           "runs": {
@@ -5251,7 +5130,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -5264,7 +5147,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -5284,7 +5171,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -5299,16 +5190,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5339,7 +5220,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -5354,16 +5239,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5636,7 +5511,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -5656,7 +5535,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -5676,7 +5559,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -5691,16 +5578,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5724,7 +5601,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -5739,16 +5620,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -5911,6 +5782,473 @@
       "revision": 0
     }
   },
+  "80bed7c075e0275c": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "8388261d6e9dcae0": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq2"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane2"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq3"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane3"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq4"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane4"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq5"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane5"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "rec",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane",
+                  "sink": "arr",
+                  "stream": 0
+                }
+              ],
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq2",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane2",
+                  "sink": "arr",
+                  "stream": 1
+                }
+              ],
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq3",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane3",
+                  "sink": "arr",
+                  "stream": 2
+                }
+              ],
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq4",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane4",
+                  "sink": "arr",
+                  "stream": 3
+                }
+              ],
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq5",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane5",
+                  "sink": "arr",
+                  "stream": 4
+                }
+              ],
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            }
+          ],
+          "runs": {
+            "reason": "radio_absent",
+            "runs": "unbound"
+          }
+        },
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "rec",
+                  "stream": 0
+                }
+              ],
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq2",
+                  "source": "rec",
+                  "stream": 1
+                }
+              ],
+              "multi": "one",
+              "name": "lane2",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 1,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq3",
+                  "source": "rec",
+                  "stream": 2
+                }
+              ],
+              "multi": "one",
+              "name": "lane3",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 2,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq4",
+                  "source": "rec",
+                  "stream": 3
+                }
+              ],
+              "multi": "one",
+              "name": "lane4",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 3,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq5",
+                  "source": "rec",
+                  "stream": 4
+                }
+              ],
+              "multi": "one",
+              "name": "lane5",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 4,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane6",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 5,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "854ddadf53cd6bb9": {
     "patch": {
       "edges": [
@@ -5950,7 +6288,11 @@
                   "sink": "rec"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -5965,16 +6307,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6173,7 +6505,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -6188,16 +6524,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6296,7 +6622,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6309,7 +6639,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6322,7 +6656,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6335,7 +6673,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6348,7 +6690,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -6363,16 +6709,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6396,7 +6732,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -6411,16 +6751,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -6694,7 +7024,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6714,7 +7048,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6734,7 +7072,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6754,7 +7096,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -6774,7 +7120,11 @@
                   "stream": 4
                 }
               ],
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -6789,16 +7139,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7031,6 +7371,151 @@
       "revision": 0
     }
   },
+  "99ef7a96d48cf939": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "radio",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "ble",
+            "port": "iq"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "iq",
+                  "sink": "ble"
+                }
+              ],
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            }
+          ],
+          "runs": {
+            "reason": "radio_absent",
+            "runs": "unbound"
+          }
+        },
+        {
+          "id": "ble",
+          "kind": "channel",
+          "label": "Channel",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "radio",
+                  "stream": 0
+                }
+              ],
+              "multi": "many_lanes",
+              "name": "iq",
+              "note": "every radio that may carry this decoder; it runs on the one that hears it",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "control",
+              "note": "a scanner, signal hunt or satellite drives this decoder; its radio follows",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "tune",
+                  "doppler",
+                  "sweep"
+                ]
+              },
+              "port_type": "control"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Decoded messages and calls. Analog calls need squelch",
+              "payload": {
+                "kinds": [
+                  "ble"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            }
+          ],
+          "runs": {
+            "reason": "radio_absent",
+            "runs": "unbound"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "9b2f04c11db32a95": {
     "patch": {
       "edges": [
@@ -7070,7 +7555,11 @@
                   "sink": "rec"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -7085,16 +7574,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7165,6 +7644,162 @@
           ],
           "runs": {
             "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "9cc1d63ba0e289a2": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "radio",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "voice",
+            "port": "iq"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "radio",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "iq",
+                  "sink": "voice"
+                }
+              ],
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            }
+          ],
+          "runs": {
+            "device_set": 1,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "voice",
+          "kind": "channel",
+          "label": "Channel",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "radio",
+                  "stream": 0
+                }
+              ],
+              "multi": "many_lanes",
+              "name": "iq",
+              "note": "every radio that may carry this decoder; it runs on the one that hears it",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "control",
+              "note": "a scanner, signal hunt or satellite drives this decoder; its radio follows",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "tune",
+                  "doppler",
+                  "sweep"
+                ]
+              },
+              "port_type": "control"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "baseband",
+              "payload": {
+                "type": "baseband"
+              },
+              "port_type": "baseband"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "audio",
+              "payload": {
+                "type": "audio"
+              },
+              "port_type": "audio"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Decoded messages and calls. Analog calls need squelch",
+              "payload": {
+                "kinds": [
+                  "call",
+                  "scrambler",
+                  "tone"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            }
+          ],
+          "runs": {
+            "reason": "send_only",
+            "runs": "unbound"
           }
         }
       ],
@@ -7523,7 +8158,11 @@
                   "sink": "rec"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -7538,16 +8177,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7643,8 +8272,15 @@
               "name": "events",
               "payload": {
                 "kinds": [
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "msk144",
+                  "q65",
                   "wspr"
                 ],
                 "type": "events"
@@ -7754,7 +8390,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -7774,7 +8414,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -7794,7 +8438,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -7814,7 +8462,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -7834,7 +8486,11 @@
                   "stream": 4
                 }
               ],
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -7849,16 +8505,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -7882,7 +8528,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -7897,16 +8547,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -8479,7 +9119,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -8499,7 +9143,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -8514,16 +9162,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -8581,7 +9219,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -8594,7 +9236,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -8607,7 +9253,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -8620,7 +9270,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -8633,7 +9287,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -8878,15 +9536,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -8894,15 +9562,21 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "nav",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radar_sites",
                   "radio_clock",
@@ -8924,6 +9598,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -9386,7 +10062,11 @@
                   "sink": "nfm"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -9401,16 +10081,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -9612,15 +10282,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -9628,14 +10308,20 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radio_clock",
                   "radiosonde",
@@ -9655,6 +10341,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -9662,7 +10350,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
             }
           ],
           "runs": {
@@ -9746,7 +10434,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -9766,7 +10458,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -9786,7 +10482,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -9806,7 +10506,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -9819,7 +10523,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -9834,16 +10542,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -9867,7 +10565,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -9882,16 +10584,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -10120,15 +10812,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -10136,14 +10838,20 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radio_clock",
                   "radiosonde",
@@ -10163,6 +10871,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -10170,7 +10880,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
             }
           ],
           "runs": {
@@ -10265,7 +10975,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -10285,7 +10999,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -10305,7 +11023,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -10325,7 +11047,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -10345,7 +11071,11 @@
                   "stream": 4
                 }
               ],
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -10360,16 +11090,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -10641,7 +11361,11 @@
                   "sink": "nfm"
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -10656,16 +11380,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -10839,15 +11553,25 @@
                   "df",
                   "df_fix",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
+                  "fst4",
+                  "fst4w",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
                   "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
                   "gsm",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ident",
                   "ils",
                   "inmarsat_aero",
@@ -10855,14 +11579,20 @@
                   "iridium",
                   "ism",
                   "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
                   "lora",
                   "lrpt",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "noise_figure",
                   "per",
                   "pocsag",
                   "psk",
+                  "q65",
                   "radar",
                   "radio_clock",
                   "radiosonde",
@@ -10882,6 +11612,8 @@
                   "vdl2",
                   "vor",
                   "wefax",
+                  "wenet",
+                  "wenet_image",
                   "wifi_occupancy",
                   "wmbus",
                   "wspr"
@@ -10889,7 +11621,7 @@
                 "type": "events"
               },
               "port_type": "events",
-              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, Digital voice, End-of-Train, ERMES, FLEX, FT4, FT8, GNSS lab, GSM, HFDL, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, LoRa, Meteor LRPT, Morse, NAVTEX, Noise figure, PER, POCSAG, PSK, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wi-Fi load, wM-Bus, WSPR"
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
             }
           ],
           "runs": {
@@ -10921,7 +11653,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -10978,7 +11714,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -10993,16 +11733,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11175,7 +11905,11 @@
                   "stream": 0
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -11195,7 +11929,11 @@
                   "stream": 1
                 }
               ],
-              "stream": 1
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -11215,7 +11953,11 @@
                   "stream": 2
                 }
               ],
-              "stream": 2
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -11235,7 +11977,11 @@
                   "stream": 3
                 }
               ],
-              "stream": 3
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "out",
@@ -11248,7 +11994,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 4
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -11263,16 +12013,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11303,7 +12043,11 @@
                   "stream": 4
                 }
               ],
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -11318,16 +12062,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11581,7 +12315,11 @@
                 "type": "iq"
               },
               "port_type": "iq",
-              "stream": 0
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
             },
             {
               "direction": "in",
@@ -11596,16 +12334,6 @@
               },
               "port_type": "control",
               "takes": "running"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "transmit",
-              "note": "The transmitter this radio sends",
-              "payload": {
-                "type": "transmit"
-              },
-              "port_type": "transmit"
             }
           ],
           "runs": {
@@ -11656,20 +12384,30 @@
                   "bss",
                   "dect",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
+                  "goes_hrit",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ils",
                   "inmarsat_aero",
                   "inmarsat_stdc",
                   "iridium",
                   "ism",
+                  "js8",
                   "lora",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "pocsag",
                   "psk",
@@ -11686,6 +12424,8 @@
                   "transmission",
                   "vdl2",
                   "vor",
+                  "wenet",
+                  "wenet_image",
                   "wmbus",
                   "wspr"
                 ],
@@ -11741,20 +12481,30 @@
                   "bss",
                   "dect",
                   "dsc",
+                  "dtmf",
                   "dv",
                   "eot",
                   "ermes",
+                  "fisb",
+                  "fleetsync",
                   "flex",
                   "ft4",
                   "ft8",
+                  "gk2a_lrit",
+                  "goes_hrit",
                   "hfdl",
+                  "horus",
+                  "hrpt",
                   "ils",
                   "inmarsat_aero",
                   "inmarsat_stdc",
                   "iridium",
                   "ism",
+                  "js8",
                   "lora",
+                  "mdc1200",
                   "morse",
+                  "msk144",
                   "navtex",
                   "pocsag",
                   "psk",
@@ -11771,6 +12521,8 @@
                   "transmission",
                   "vdl2",
                   "vor",
+                  "wenet",
+                  "wenet_image",
                   "wmbus",
                   "wspr"
                 ],
@@ -11781,6 +12533,447 @@
           ],
           "runs": {
             "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "f1ccfba6683f4a50": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq2"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane2"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq3"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane3"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq4"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane4"
+          }
+        },
+        {
+          "from": {
+            "node": "rec",
+            "port": "iq5"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "arr",
+            "port": "lane5"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "rec",
+          "kind": "device",
+          "label": "Device",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane",
+                  "sink": "arr",
+                  "stream": 0
+                }
+              ],
+              "stream": 0,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq2",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane2",
+                  "sink": "arr",
+                  "stream": 1
+                }
+              ],
+              "stream": 1,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq3",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane3",
+                  "sink": "arr",
+                  "stream": 2
+                }
+              ],
+              "stream": 2,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq4",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane4",
+                  "sink": "arr",
+                  "stream": 3
+                }
+              ],
+              "stream": 3,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "iq5",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "reaches": [
+                {
+                  "port": "lane5",
+                  "sink": "arr",
+                  "stream": 4
+                }
+              ],
+              "stream": 4,
+              "uses": [
+                "receive",
+                "both"
+              ]
+            },
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "control",
+              "note": "Opens the radio only while a schedule or satellite says so",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "run"
+                ]
+              },
+              "port_type": "control",
+              "takes": "running"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "note": "Recorded position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            }
+          ],
+          "runs": {
+            "device_set": 7,
+            "runs": "radio"
+          }
+        },
+        {
+          "id": "arr",
+          "kind": "array",
+          "label": "Array",
+          "ports": [
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq",
+                  "source": "rec",
+                  "stream": 0,
+                  "tap": {
+                    "device_set": 7,
+                    "stream": 0,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 0,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq2",
+                  "source": "rec",
+                  "stream": 1,
+                  "tap": {
+                    "device_set": 7,
+                    "stream": 1,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane2",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 1,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq3",
+                  "source": "rec",
+                  "stream": 2,
+                  "tap": {
+                    "device_set": 7,
+                    "stream": 2,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane3",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 2,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq4",
+                  "source": "rec",
+                  "stream": 3,
+                  "tap": {
+                    "device_set": 7,
+                    "stream": 3,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane4",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 3,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "feeds": [
+                {
+                  "payload": {
+                    "origins": [
+                      "radio"
+                    ],
+                    "type": "iq"
+                  },
+                  "port": "iq5",
+                  "source": "rec",
+                  "stream": 4,
+                  "tap": {
+                    "device_set": 7,
+                    "stream": 4,
+                    "tap": "lane"
+                  }
+                }
+              ],
+              "multi": "one",
+              "name": "lane5",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 4,
+              "takes": "a radio lane"
+            },
+            {
+              "coherent": true,
+              "direction": "in",
+              "exclusive": true,
+              "multi": "one",
+              "name": "lane6",
+              "note": "One radio lane per antenna, in antenna order",
+              "payload": {
+                "origins": [
+                  "radio"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq",
+              "stream": 5,
+              "takes": "a radio lane"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Array place and heading",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
           }
         }
       ],

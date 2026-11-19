@@ -11,9 +11,10 @@ use super::{
 };
 use crate::{
     aim::AimNode,
-    channel::{ChannelDescriptor, SettingField},
+    channel::{ChannelDescriptor, DecoderFamily, SettingField},
     control::ControlVerb,
     decode::{Capability, EventKind, EventKindEntry, KindSet},
+    device::Direction,
     filter::EventFilterNode,
     monitor::SpectrumMonitorNode,
     network::NetworkExportNode,
@@ -140,6 +141,25 @@ pub struct PatchCatalog {
     /// Array processors, built in and from plugins.
     #[serde(default)]
     pub processors: Vec<ProcessorType>,
+    /// Decoder groups in palette order, built in first.
+    #[serde(default)]
+    pub families: Vec<FamilyEntry>,
+}
+
+/// A decoder group and the heading it shows under.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct FamilyEntry {
+    pub id: DecoderFamily,
+    pub title: String,
+}
+
+impl From<&DecoderFamily> for FamilyEntry {
+    fn from(family: &DecoderFamily) -> Self {
+        Self {
+            id: family.clone(),
+            title: family.title(),
+        }
+    }
 }
 
 impl PatchCatalog {
@@ -154,7 +174,26 @@ impl PatchCatalog {
                 .iter()
                 .map(ProcessorType::resolved)
                 .collect(),
+            families: DecoderFamily::BUILT_IN
+                .iter()
+                .map(FamilyEntry::from)
+                .collect(),
         }
+    }
+
+    /// Adds the groups `decoders` bring beyond the built-in ones, by name.
+    #[must_use]
+    pub fn with_families_of(mut self, decoders: &[ChannelDescriptor]) -> Self {
+        let mut added: Vec<&DecoderFamily> = decoders
+            .iter()
+            .map(|decoder| &decoder.family)
+            .filter(|family| !DecoderFamily::BUILT_IN.contains(family))
+            .collect();
+        added.sort();
+        added.dedup();
+        self.families
+            .extend(added.into_iter().map(FamilyEntry::from));
+        self
     }
 }
 
@@ -351,10 +390,12 @@ macro_rules! nodes {
 nodes! {
             (Device(DeviceNode), "device", Source, "Device",
                 "A radio, a recording or a generator: where a patch starts",
-                Role::OpensRadio, Face::fit(420).dial(), [
-                iq_out(RADIO_IQ).repeated(PortRepeat::PerRxStream),
+                Role::OpensRadio, Face::fit(320).dial(), [
+                iq_out(RADIO_IQ).repeated(PortRepeat::PerRxStream).on_side(Direction::Rx),
                 run_in("Opens the radio only while a schedule or satellite says so"),
-                input(TRANSMIT_PORT, Payload::Transmit).noted("The transmitter this radio sends"),
+                input(TRANSMIT_PORT, Payload::Transmit)
+                    .on_side(Direction::Tx)
+                    .noted("The transmitter this radio sends"),
             ]),
             (Gps(GpsNode), "gps", Source, "GPS position", "Your station location, live or fixed",
                 Role::Plain, Face::fit(360), [
@@ -371,7 +412,7 @@ nodes! {
                 output(ARRAY_PORT, Payload::Array),
             ]),
             (Channel(ChannelNode), "channel", Channel, "Channel", "Tunes and decodes one signal",
-                Role::Plain, Face::fit(440).dial(), [
+                Role::Plain, Face::fit(320).dial(), [
                 iq_in().lanes().noted(
                     "every radio that may carry this decoder; it runs on the one that hears it",
                 ),
@@ -387,11 +428,6 @@ nodes! {
             (Scope, "scope", Output, "Scope", "Spectrum and waterfall", Role::Plain,
                 Face::sized(520, 360).min(320, 200), [
                 iq_in(),
-            ]),
-            (BasebandScope, "baseband_scope", Output, "Baseband scope",
-                "Constellation and eye of one channel", Role::Plain,
-                Face::sized(420, 340).min(320, 200), [
-                input(BASEBAND_PORT, Payload::Baseband),
             ]),
             (Speaker(SpeakerNode), "speaker", Output, "Speaker", "Plays channel audio", Role::Plain,
                 Face::fit(320), [
@@ -442,11 +478,6 @@ nodes! {
                 "Passes only matching events", Role::Pass(P::Events), Face::fit(380), [
                 events_in(Accept::Any),
                 events_out(Accept::Any),
-            ]),
-            (AudioFx(crate::AudioFxNode), "audio_fx", Tool, "Audio FX",
-                "Filters, denoise and AGC", Role::Pass(P::Audio), Face::fit(400), [
-                audio_in(),
-                audio_out(),
             ]),
             (EventOutput(EventOutputNode), "event_output", Output, "Event output",
                 "Sends events out, saves call audio", Role::Plain, Face::fit(420), [
@@ -501,7 +532,7 @@ nodes! {
                     .noted("Radios and recorders to run in its windows"),
             ]),
             (Satellite(SatelliteNode), "satellite", Tool, "Satellite",
-                "Predicts passes and follows Doppler", Role::Plain, Face::fit(420).dial(), [
+                "Predicts passes and follows Doppler", Role::Plain, Face::fit(320).dial(), [
                 position_in(),
                 output(CONTROL_PORT, Payload::control(SATELLITE_VERBS)).noted(
                     "decoders to tune and Doppler correct, rotators to point, radios to run",
@@ -548,12 +579,12 @@ nodes! {
                 audio_out(),
             ]),
             (Encoder(EncoderNode), "encoder", Encoder, "Encoder",
-                "Turns audio or a message into a signal", Role::Plain, Face::fit(280), [
+                "Turns audio or a message into a signal", Role::Plain, Face::fit(320).dial(), [
                 audio_in().noted("Voice for an analog mode"),
                 output(BASEBAND_PORT, Payload::Baseband).one(),
             ]),
             (Transmit(TransmitNode), "transmit", Output, "Transmitter",
-                "Puts an encoder or a lane on the air", Role::Plain, Face::fit(360), [
+                "Puts an encoder or a lane on the air", Role::Plain, Face::fit(320).dial(), [
                 iq_in().group(TRANSMIT_SOURCE).noted("A lane to send as it is"),
                 input(BASEBAND_PORT, Payload::Baseband).group(TRANSMIT_SOURCE),
                 output(TRANSMIT_PORT, Payload::Transmit).one(),

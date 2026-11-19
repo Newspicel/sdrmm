@@ -110,6 +110,7 @@ fn calling(device_set: u32, channel: u32) -> Resolved {
                 sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
                     channel_type: "dmr".to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
             ),
             at("log", sdrmm_wire::NodeBody::DecoderLog(Default::default())),

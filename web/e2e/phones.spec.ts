@@ -153,14 +153,16 @@ test("phone GPS source shows heading", async ({ page, context, baseURL }) => {
 
   await stage(page, "Phone GPS", { version: 4, graph: { nodes: [], edges: [] } });
   const gps = await addGps(page);
-  await gps
+  const inspector = page.getByRole("complementary", { name: "Inspector" });
+  await inspector
     .getByRole("group", { name: "Position source" })
     .getByText("Phone", { exact: true })
     .click();
-  await gps.getByRole("button", { name: /Heading phone/ }).click();
-  await expect(gps.getByRole("button", { name: "Paired phone giving the position" })).toContainText(
-    "Heading phone",
-  );
+  await inspector.getByRole("button", { name: /Heading phone/ }).click();
+  await expect(
+    inspector.getByRole("combobox", { name: "Paired phone giving the position" }),
+  ).toContainText("Heading phone");
+  await inspector.getByRole("button", { name: "Close inspector" }).click();
   await expect(gps.getByText("Offline", { exact: true })).toBeVisible();
 
   const phone = await context.newPage();

@@ -58,6 +58,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "ATV".to_owned(),
     summary: "Analog TV picture and sound".to_owned(),
     family: DecoderFamily::VIDEO,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 1_500_000.0,
     input_rate_hz: AtvParams::default().rate_hz,
     has_audio: true,

@@ -1,0 +1,69 @@
+{
+  "name": "02ee0bc98738f8eb",
+  "test": "withRadioUse > drops the wires on ports the new use leaves out, in the same edit",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "halfduplex"
+          },
+          "radio_use": "both"
+        }
+      },
+      {
+        "id": "scope",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "scope"
+      },
+      {
+        "id": "tx",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "transmit",
+        "data": {
+          "level_db": -3,
+          "timeout_s": 180
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "radio",
+          "port": "iq"
+        },
+        "to": {
+          "node": "scope",
+          "port": "iq"
+        }
+      },
+      {
+        "from": {
+          "node": "tx",
+          "port": "transmit"
+        },
+        "to": {
+          "node": "radio",
+          "port": "transmit"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

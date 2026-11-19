@@ -1,15 +1,10 @@
 use sdrmm_dsp::coding::fec::fano::{Fano, FanoCode};
+use sdrmm_modem::k32;
 
 use super::message::PAYLOAD_BITS;
 
 pub(crate) const CODED_BITS: usize = 162;
-const TAIL_BITS: usize = 31;
-const POLYNOMIALS: [u32; 2] = [0xf2d0_5351, 0xe461_3c47];
-const CODE: FanoCode<'static> = FanoCode {
-    polynomials: &POLYNOMIALS,
-    data: PAYLOAD_BITS,
-    tail: TAIL_BITS,
-};
+const CODE: FanoCode<'static> = k32::code(PAYLOAD_BITS);
 
 pub(crate) const SYNC: &[u8; CODED_BITS] = b"110000001000111000100101111000000010010100000010110011010001101000011010101010010010110001101010001000001001001110110011010001110000010100110000000110101100011000";
 
@@ -26,14 +21,7 @@ pub(crate) fn encode(payload: u64) -> [u8; CODED_BITS] {
 
 pub(crate) fn interleaved_positions() -> [usize; CODED_BITS] {
     let mut positions = [0usize; CODED_BITS];
-    let mut next = 0;
-    for index in 0..=255u8 {
-        let reversed = usize::from(index.reverse_bits());
-        if reversed < CODED_BITS {
-            positions[next] = reversed;
-            next += 1;
-        }
-    }
+    k32::bit_reversal(&mut positions);
     positions
 }
 

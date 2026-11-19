@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "SDR# baseband WAV via GopherTrunk downconverter",
+    "core:description": "Kenwood FleetSync-I ANI, fleet 107 unit 1772, start and end of one transmission"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 462562500.0,
+      "core:datetime": "2026-11-19T14:56:22.451057Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "https://github.com/MattCheramie/GopherTrunk/blob/5454622771dc5377f48244e4a94c6009a18445ec/internal/radio/fleetsync/afsk/testdata/fleetsync1_fleet107_unit1772_48k.cs16 (Apache-2.0); source SHA-256 c58a9a10d1f589f42d87668c7ba98c2bf0c4d1957a0f801aafd2e3d951eb5575; samples 0..62399 at 48000 Hz",
+      "core:sample_count": 62399,
+      "core:sample_start": 0
+    }
+  ]
+}

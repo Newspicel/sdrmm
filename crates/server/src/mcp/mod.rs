@@ -180,7 +180,7 @@ impl SdrMcp {
         annotations(title = "List node types", read_only_hint = true)
     )]
     async fn list_node_types(&self) -> Result<CallToolResult, ErrorData> {
-        structured(&PatchCatalog::build())
+        structured(&PatchCatalog::build().with_families_of(&sdrmm_decoder::descriptors()))
     }
 
     #[tool(

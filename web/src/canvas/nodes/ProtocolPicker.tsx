@@ -1,12 +1,10 @@
 import { Button } from "../../components/BaseControls";
-import { Checkbox } from "../../components/Checkbox";
 import { BTN_SM } from "../../components/controls";
 import { SettingChip } from "../../components/face/Chips";
 import {
   activePreset,
   choiceSummary,
   enabledKinds,
-  type Protocol,
   type ProtocolChoice,
   type ProtocolGroup,
   protocolPresets,
@@ -70,14 +68,14 @@ function Panel({
           />
         ))}
       </ul>
-      <label className="flex cursor-pointer items-center gap-2 border-t border-line bg-panel-2/40 px-3 py-2 text-xs text-ink-dim">
-        <Checkbox
+      <div className="flex border-t border-line px-3 py-2">
+        <Key
           label="Unidentified signals"
-          checked={choice.unidentified}
-          onChange={(unidentified) => onChange({ ...choice, unidentified })}
+          title="Report signals no decoder recognises"
+          on={choice.unidentified}
+          onToggle={(unidentified) => onChange({ ...choice, unidentified })}
         />
-        Unidentified signals
-      </label>
+      </div>
     </div>
   );
 }
@@ -122,22 +120,24 @@ function Family({
   const on = enabledKinds([group], disabled).length;
   return (
     <li className="flex flex-col gap-1.5 px-3 py-2">
-      <label className="flex cursor-pointer items-center gap-2 text-xs text-ink">
-        <Checkbox
-          label={group.title}
-          checked={on === kinds.length}
-          onChange={(enabled) => onToggle(kinds, enabled)}
-        />
+      <div className="flex items-center gap-2 text-xs text-ink">
         <span className="flex-1">{group.title}</span>
         <span className="font-mono text-2xs tabular-nums text-ink-faint">
           {on}/{kinds.length}
         </span>
-      </label>
-      <div className="flex flex-wrap gap-1 pl-6">
+        <Key
+          label="All"
+          title={`Every ${group.title} protocol`}
+          on={on === kinds.length}
+          onToggle={(enabled) => onToggle(kinds, enabled)}
+        />
+      </div>
+      <div className="flex flex-wrap gap-1">
         {group.protocols.map((protocol) => (
           <Key
             key={protocol.kind}
-            protocol={protocol}
+            label={protocol.label}
+            title={protocol.name}
             on={!disabled.includes(protocol.kind)}
             onToggle={(enabled) => onToggle([protocol.kind], enabled)}
           />
@@ -148,11 +148,13 @@ function Family({
 }
 
 function Key({
-  protocol,
+  label,
+  title,
   on,
   onToggle,
 }: {
-  protocol: Protocol;
+  label: string;
+  title: string;
   on: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
@@ -160,7 +162,7 @@ function Key({
     <Button
       type="button"
       aria-pressed={on}
-      title={protocol.name}
+      title={title}
       className={`${KEY} ${on ? KEY_ON : KEY_OFF}`}
       onClick={() => onToggle(!on)}
     >
@@ -170,7 +172,7 @@ function Key({
           on ? "bg-accent shadow-[0_0_4px_var(--color-accent)]" : "bg-line-strong"
         }`}
       />
-      {protocol.label}
+      {label}
     </Button>
   );
 }

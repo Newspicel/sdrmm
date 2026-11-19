@@ -936,7 +936,7 @@ async fn adsb_squitter_survives_the_ddc_and_reaches_the_decoded_stream() {
 
     let message = record.event.read::<AdsbMessage>().expect("filtered above");
     assert_eq!(message.icao, "3C6444");
-    assert_eq!(message.df, 17);
+    assert_eq!(message.df, Some(17));
     assert_eq!(message.altitude_ft, Some(38_000));
     let (lat, lon) = (message.lat.unwrap(), message.lon.unwrap());
     assert!((lat - 52.2657).abs() < 0.02, "lat {lat}");
@@ -958,7 +958,6 @@ async fn gps_ca_acquisition_survives_virtual_device_playback() {
             params: ChannelParams::new(
                 "gnss",
                 &GnssParams {
-                    prn: 7,
                     doppler_hz: 2_000,
                     threshold: 2.5,
                 },
@@ -1030,7 +1029,7 @@ async fn a_mode_s_identity_reply_survives_the_ddc_and_reaches_the_decoded_stream
             blanker: Default::default(),
             if_filter: Default::default(),
         },
-        |event| event.read::<AdsbMessage>().is_some_and(|a| a.df == 5),
+        |event| event.read::<AdsbMessage>().is_some_and(|a| a.df == Some(5)),
     )
     .await;
 

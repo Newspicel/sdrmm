@@ -10,7 +10,6 @@ import { HUE_COLOR } from "../sinks/hues";
 import { highlightEntity } from "../sinks/mapLayers";
 import { EntityCard } from "./map/EntityCard";
 import { type LegendGroup, MapLegend } from "./map/MapLegend";
-import { MapSettings } from "./map/MapSettings";
 import type { MapInputs, MapSinks } from "./map/mapState";
 import { useMapDrawLoop } from "./map/useMapDrawLoop";
 import { useLayerSync, useMapActive, useMapInstance } from "./map/useMapInstance";
@@ -147,9 +146,6 @@ export function MapPanel({
         headings={headings}
         basemap={basemap}
       />
-      <div className="absolute bottom-2 left-2 flex items-center rounded-control bg-plot-bg/85 p-0.5">
-        <MapSettings />
-      </div>
       {picked !== undefined && (
         <EntityCard
           entity={picked}

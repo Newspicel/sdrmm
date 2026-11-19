@@ -1,18 +1,15 @@
 use crate::lrpt::LrptMode;
 use num_complex::Complex;
-use sdrmm_dsp::{coding::fec::ccsds_rs::CcsdsReedSolomon, design_rrc};
+use sdrmm_dsp::design_rrc;
+use sdrmm_modem::ccsds::{CaduWriter, Segment};
+use sdrmm_modem::jpeg::{BitWriter, Tables, ZIGZAG, encode_block, forward_dct};
 use sdrmm_modem::synth::{NARROW_HZ, Render, Signal, resample};
 
 use crate::lrpt::{
     image::{FIRST_APID, IMAGE_HEADER, MCU_ID_AT, MCUS_PER_ROW, QUALITY_AT, TELEMETRY_APID, WIDTH},
-    jpeg::{
-        AC_TABLE, Block, Code, DC_TABLE, MCU_PIXELS, MCU_SIDE, MCUS_PER_PACKET, ZIGZAG,
-        forward_dct, magnitude_bits, magnitude_category, quant_table,
-    },
+    jpeg::{Block, MCU_PIXELS, MCU_SIDE, MCUS_PER_PACKET, quant_table},
     link::{
-        ASM, CADU_BYTES, CODED_BYTES, FILL_VCID, IMAGE_VCID, INTERLEAVE, MPDU_DATA,
-        NO_PACKET_START, PACKET_HEADER, PacketHeader, SEQUENCE_MODULO, VCDU_BYTES, VcduHeader,
-        conv_code, pn_sequence, reed_solomon,
+        BASIS, IMAGE_VCID, LAYOUT, PACKET_HEADER, PacketHeader, SEQUENCE_MODULO, SPACECRAFT_ID,
     },
 };
 
@@ -24,10 +21,8 @@ const ROLL_OFF: f64 = 0.6;
 const LEAD_FILL: usize = 4;
 const TRAIL_FILL: usize = 2;
 const ROW_MS: u32 = 1_200;
-const IDLE_APID: u16 = 0x7FF;
-const MIN_IDLE: usize = PACKET_HEADER + 1;
 
-pub type Cadu = [u8; CADU_BYTES];
+pub use sdrmm_modem::ccsds::Cadu;
 
 pub struct Scene {
     pub apids: Vec<u16>,
@@ -75,41 +70,6 @@ impl Scene {
     }
 }
 
-#[derive(Default)]
-struct BitWriter {
-    bytes: Vec<u8>,
-    filled: u8,
-}
-
-impl BitWriter {
-    fn bit(&mut self, bit: bool) {
-        if self.filled == 0 {
-            self.bytes.push(0);
-        }
-        if bit && let Some(last) = self.bytes.last_mut() {
-            *last |= 0x80 >> self.filled;
-        }
-        self.filled = (self.filled + 1) % 8;
-    }
-
-    fn bits(&mut self, value: u16, count: u8) {
-        for shift in (0..count).rev() {
-            self.bit(value >> shift & 1 == 1);
-        }
-    }
-
-    fn code(&mut self, code: Code) {
-        self.bits(code.bits, code.len);
-    }
-
-    fn finish(mut self) -> Vec<u8> {
-        while self.filled != 0 {
-            self.bit(true);
-        }
-        self.bytes
-    }
-}
-
 fn quantised(block: &Block, quant: &[u16; MCU_PIXELS]) -> [i32; MCU_PIXELS] {
     let coefficients = forward_dct(block);
     std::array::from_fn(|k| {
@@ -120,39 +80,16 @@ fn quantised(block: &Block, quant: &[u16; MCU_PIXELS]) -> [i32; MCU_PIXELS] {
     })
 }
 
-fn encode_block(writer: &mut BitWriter, zigzag: &[i32; MCU_PIXELS], previous_dc: &mut i32) {
-    let difference = (zigzag[0] - *previous_dc).clamp(-2047, 2047);
-    *previous_dc += difference;
-    let category = magnitude_category(difference);
-    writer.code(DC_TABLE.code(category));
-    writer.bits(magnitude_bits(difference, category), category);
-    let mut run = 0u8;
-    for &value in &zigzag[1..] {
-        if value == 0 {
-            run += 1;
-            continue;
-        }
-        while run > 15 {
-            writer.code(AC_TABLE.code(0xF0));
-            run -= 16;
-        }
-        let size = magnitude_category(value);
-        writer.code(AC_TABLE.code(run << 4 | size));
-        writer.bits(magnitude_bits(value, size), size);
-        run = 0;
-    }
-    if run > 0 {
-        writer.code(AC_TABLE.code(0x00));
-    }
-}
-
 #[must_use]
 pub fn encode_mcus(blocks: &[Block], quality: u8) -> Vec<u8> {
     let quant = quant_table(quality);
     let mut writer = BitWriter::default();
     let mut previous_dc = 0;
     for block in blocks {
-        encode_block(&mut writer, &quantised(block, &quant), &mut previous_dc);
+        let zigzag = quantised(block, &quant);
+        let difference = (zigzag[0] - previous_dc).clamp(-2047, 2047);
+        previous_dc += difference;
+        encode_block(&mut writer, difference, &zigzag, Tables::luma());
     }
     writer.finish()
 }
@@ -165,7 +102,9 @@ fn packet(apid: u16, sequence: u32, row: usize, user: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(&[0, 0]);
     bytes.extend_from_slice(user);
     PacketHeader {
+        secondary: true,
         apid,
+        segment: Segment::Unsegmented,
         sequence: (sequence % SEQUENCE_MODULO) as u16,
         length: bytes.len() - PACKET_HEADER,
     }
@@ -202,90 +141,20 @@ pub fn packets(scene: &Scene, quality: u8, first_sequence: u32) -> Vec<Vec<u8>> 
     out
 }
 
-fn idle_packet(len: usize) -> Vec<u8> {
-    let mut bytes = vec![0u8; len];
-    PacketHeader {
-        apid: IDLE_APID,
-        sequence: 0,
-        length: len - PACKET_HEADER,
-    }
-    .write(&mut bytes);
-    bytes
-}
-
-fn cadu(header: VcduHeader, zone: &[u8], code: &CcsdsReedSolomon, pn: &[u8]) -> Cadu {
-    let mut vcdu = vec![0u8; VCDU_BYTES];
-    header.write(&mut vcdu);
-    vcdu[VCDU_BYTES - MPDU_DATA..].copy_from_slice(zone);
-    let mut coded = Vec::with_capacity(CODED_BYTES);
-    code.encode_interleaved(&vcdu, INTERLEAVE, &mut coded);
-    let mut out = [0u8; CADU_BYTES];
-    out[..4].copy_from_slice(&ASM.to_be_bytes());
-    for (index, (slot, &byte)) in out[4..].iter_mut().zip(&coded).enumerate() {
-        *slot = byte ^ pn[index];
-    }
-    out
-}
-
-fn fill_cadu(counter: u32, code: &CcsdsReedSolomon, pn: &[u8]) -> Cadu {
-    let header = VcduHeader {
-        vcid: FILL_VCID,
-        counter,
-        first_header: NO_PACKET_START,
-    };
-    cadu(header, &[0u8; MPDU_DATA], code, pn)
-}
-
 #[must_use]
 pub fn cadus(packets: &[Vec<u8>]) -> Vec<Cadu> {
-    let code = reed_solomon();
-    let pn = pn_sequence();
-    let mut stream = Vec::new();
-    let mut starts = Vec::new();
-    for packet in packets {
-        starts.push(stream.len());
-        stream.extend_from_slice(packet);
-    }
-    let mut pad = MPDU_DATA - stream.len() % MPDU_DATA;
-    if pad < MIN_IDLE {
-        pad += MPDU_DATA;
-    }
-    starts.push(stream.len());
-    stream.extend_from_slice(&idle_packet(pad));
+    let writer = CaduWriter::new(SPACECRAFT_ID, LAYOUT, BASIS);
     let mut out: Vec<Cadu> = (0..LEAD_FILL)
-        .map(|index| fill_cadu(index as u32, &code, &pn))
+        .map(|index| writer.fill(index as u32))
         .collect();
-    for (index, zone) in stream.as_chunks::<MPDU_DATA>().0.iter().enumerate() {
-        let begin = index * MPDU_DATA;
-        let first_header = starts
-            .iter()
-            .find(|&&start| (begin..begin + MPDU_DATA).contains(&start))
-            .map_or(NO_PACKET_START, |&start| (start - begin) as u16);
-        let header = VcduHeader {
-            vcid: IMAGE_VCID,
-            counter: index as u32,
-            first_header,
-        };
-        out.push(cadu(header, zone, &code, &pn));
-    }
-    out.extend((0..TRAIL_FILL).map(|index| fill_cadu((LEAD_FILL + index) as u32, &code, &pn)));
+    out.extend(writer.channel(IMAGE_VCID, 0, packets));
+    out.extend((0..TRAIL_FILL).map(|index| writer.fill((LEAD_FILL + index) as u32)));
     out
-}
-
-fn coded_bits(cadus: &[Cadu]) -> Vec<bool> {
-    let bits: Vec<bool> = cadus
-        .iter()
-        .flat_map(|cadu| cadu.iter())
-        .flat_map(|&byte| (0..8).rev().map(move |shift| byte >> shift & 1 == 1))
-        .collect();
-    let mut coded = Vec::with_capacity(bits.len() * 2);
-    conv_code().encode(&bits, &mut coded);
-    coded
 }
 
 #[must_use]
 pub fn modulate(mode: LrptMode, cadus: &[Cadu], rate: f64) -> Vec<Complex<f32>> {
-    let coded = coded_bits(cadus);
+    let coded = sdrmm_modem::ccsds::coded_bits(cadus);
     let level = |bit: bool| if bit { 1.0f32 } else { -1.0 };
     let stagger = if mode.offset() { SYNTH_SPS / 2 } else { 0 };
     let symbols = coded.len() / 2;

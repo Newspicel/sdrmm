@@ -147,7 +147,9 @@ describe("PhonesPanel", () => {
     );
     expect(html).toContain(">No LAN address<");
     expect(html).toContain(">Discovery off<");
-    expect(html).toMatch(/disabled=""[^>]*title="Allow phones first"[^>]*>Pair phone</);
+    expect(html).toMatch(
+      /<button(?=[^>]*disabled="")[^>]*title="Allow phones first"[^>]*>Pair phone</,
+    );
   });
 
   it("switches phones on at the chosen port and says where they connect", () => {

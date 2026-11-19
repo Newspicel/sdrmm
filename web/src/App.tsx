@@ -7,6 +7,8 @@ import { Canvas } from "./canvas/Canvas";
 import { WorkspaceProvider } from "./canvas/context";
 import { FullFace } from "./canvas/FullFace";
 import { pruneRack } from "./canvas/graph";
+import { InspectorPanel } from "./canvas/InspectorPanel";
+import { InspectorProvider } from "./canvas/inspector";
 import { usePushToTalk } from "./canvas/pushToTalk";
 import { Rack } from "./canvas/Rack";
 import { useSwitchStore } from "./canvas/switches";
@@ -100,6 +102,7 @@ export function App() {
   const catalogReady = useCatalogStore((held) => held.catalog !== null);
   const [selected, setSelected] = useScopedState<string | null>(activeId, null);
   const [expanded, setExpanded] = useScopedState<string | null>(activeId, null);
+  const [inspected, setInspected] = useScopedState<string | null>(activeId, null);
   const applied = useSwitchStore((held) => held.report);
   const { applyEdit } = useChannelPatch();
   const tuneNode = useNodeTune();
@@ -197,6 +200,8 @@ export function App() {
               select: setSelected,
               expanded,
               expand: setExpanded,
+              inspected,
+              inspect: setInspected,
               talking,
               edit: workspace.save,
               editSettings,
@@ -229,10 +234,15 @@ export function App() {
                   catalog={context.catalog}
                 />
               )}
-              <div className="relative flex min-h-0 flex-1 flex-col">
-                {view === "patch" ? <Canvas key={activeId} /> : <Rack />}
-                <FullFace />
-              </div>
+              <InspectorProvider>
+                <div className="flex min-h-0 flex-1">
+                  <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                    {view === "patch" ? <Canvas key={activeId} /> : <Rack />}
+                    <FullFace />
+                  </div>
+                  <InspectorPanel />
+                </div>
+              </InspectorProvider>
             </ReactFlowProvider>
           </WorkspaceProvider>
         )}

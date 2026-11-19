@@ -1,9 +1,30 @@
-import { Tooltip } from "@base-ui/react/tooltip";
-import type { ReactElement, ReactNode } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { type ReactElement, type ReactNode, useState } from "react";
 import { SURFACE } from "./controls";
-import { usePortalContainer } from "./PortalContainer";
+import { usePopupHost } from "./Select";
 
 const TIP_DELAY_MS = 250;
+
+type Trigger = ReactElement<Record<string, unknown>>;
+
+/** A tip that repeats its trigger's `aria-label` names it, so a screen reader says it once. */
+export function tipRole(render: Trigger, text: string): "label" | undefined {
+  return render.props["aria-label"] === text ? "label" : undefined;
+}
+
+/**
+ * Mounts a tooltip's content only while it is open, where `usePopupHost` says, so a closed tip
+ * adds no text to its trigger's row.
+ */
+export function useTipMount() {
+  const [host, follow] = usePopupHost();
+  const [open, setOpen] = useState(false);
+  const onOpenChange = (next: boolean): void => {
+    follow(next);
+    setOpen(next);
+  };
+  return { host, open, onOpenChange };
+}
 
 export function Tip({
   text,
@@ -11,27 +32,28 @@ export function Tip({
   children,
 }: {
   text: string;
-  render: ReactElement;
+  render: Trigger;
   children?: ReactNode;
 }) {
-  const portalContainer = usePortalContainer();
+  const { host, open, onOpenChange } = useTipMount();
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger render={render} delay={TIP_DELAY_MS}>
-        {children}
-      </Tooltip.Trigger>
-      <Tooltip.Portal container={portalContainer} className="contents">
-        <Tooltip.Positioner
-          className="z-30 nodrag nopan"
+    <Tooltip
+      container={host}
+      delay={TIP_DELAY_MS}
+      type={tipRole(render, text)}
+      onOpenChange={onOpenChange}
+    >
+      <TooltipTrigger render={render}>{children}</TooltipTrigger>
+      {open && (
+        <TooltipContent
           side="top"
           sideOffset={6}
           collisionPadding={8}
+          className={`${SURFACE} nodrag nopan max-w-72 px-2 py-1 text-xs text-balance`}
         >
-          <Tooltip.Popup className={`${SURFACE} max-w-72 px-2 py-1 text-xs text-balance`}>
-            {text}
-          </Tooltip.Popup>
-        </Tooltip.Positioner>
-      </Tooltip.Portal>
-    </Tooltip.Root>
+          {text}
+        </TooltipContent>
+      )}
+    </Tooltip>
   );
 }

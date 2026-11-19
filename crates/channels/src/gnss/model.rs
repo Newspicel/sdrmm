@@ -1,25 +1,23 @@
-use sdrmm_wire::{Capability, EventContract, Hue, KindSpec};
+use sdrmm_wire::{Capability, EventContract, Hue, KindSpec, LatLon, Symbol};
 use serde::{Deserialize, Serialize};
 
 use sdrmm_wire::EventKind;
 
 use sdrmm_wire::present::EventPayload;
 use sdrmm_wire::present::Field;
+use sdrmm_wire::present::Place;
 use sdrmm_wire::present::Presentation;
 use sdrmm_wire::present::Unit;
 use sdrmm_wire::present::count;
 use sdrmm_wire::present::fields;
 use sdrmm_wire::present::joined;
 use sdrmm_wire::present::number;
+use sdrmm_wire::present::position;
 use sdrmm_wire::present::text;
 use sdrmm_wire::present::text_of;
 
-fn default_gnss_prn() -> u8 {
-    1
-}
-
 fn default_gnss_doppler_hz() -> u32 {
-    10_000
+    7_000
 }
 
 fn default_gnss_threshold() -> f32 {
@@ -28,8 +26,6 @@ fn default_gnss_threshold() -> f32 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GnssParams {
-    #[serde(default = "default_gnss_prn")]
-    pub prn: u8,
     #[serde(default = "default_gnss_doppler_hz")]
     pub doppler_hz: u32,
     #[serde(default = "default_gnss_threshold")]
@@ -39,13 +35,13 @@ pub struct GnssParams {
 impl Default for GnssParams {
     fn default() -> Self {
         Self {
-            prn: default_gnss_prn(),
             doppler_hz: default_gnss_doppler_hz(),
             threshold: default_gnss_threshold(),
         }
     }
 }
 
+/// One tracked satellite: reported when it is acquired and with each subframe it sends.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GnssFrame {
     pub prn: u8,
@@ -121,6 +117,79 @@ fn gnss_summary(g: &GnssFrame) -> String {
     joined(parts)
 }
 
+/// The receiver's own position solved from the tracked satellites.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GnssFix {
+    pub lat: f64,
+    pub lon: f64,
+    pub altitude_m: f64,
+    pub satellites: Vec<u8>,
+    pub pdop: f32,
+    pub hdop: f32,
+    pub vdop: f32,
+    pub residual_m: f32,
+    pub clock_bias_us: f64,
+    pub week: u16,
+    pub tow_seconds: f64,
+}
+
+impl EventPayload for GnssFix {
+    fn present(&self, _kind: &EventKind) -> Presentation {
+        Presentation {
+            entity: Some("GPS fix".to_owned()),
+            place: Some(Place {
+                altitude_m: Some(self.altitude_m as f32),
+                ..Place::at(LatLon {
+                    lat: self.lat,
+                    lon: self.lon,
+                })
+            }),
+            fields: fix_fields(self),
+            ..Presentation::of(fix_summary(self))
+        }
+    }
+}
+
+fn fix_fields(f: &GnssFix) -> Vec<Field> {
+    let satellites: Vec<String> = f.satellites.iter().map(u8::to_string).collect();
+    fields(&[
+        ("position", "Position", position(Some(f.lat), Some(f.lon))),
+        (
+            "altitude",
+            "Altitude",
+            number(Some(f.altitude_m), Unit::Metres, 1),
+        ),
+        (
+            "satellites",
+            "Satellites",
+            text(Some(&satellites.join(" "))),
+        ),
+        ("pdop", "PDOP", number(Some(f.pdop), Unit::None, 1)),
+        ("hdop", "HDOP", number(Some(f.hdop), Unit::None, 1)),
+        ("vdop", "VDOP", number(Some(f.vdop), Unit::None, 1)),
+        (
+            "residual",
+            "Residual",
+            number(Some(f.residual_m), Unit::Metres, 1),
+        ),
+        (
+            "time_of_week",
+            "Time of week",
+            number(Some(f.tow_seconds), Unit::Seconds, 1),
+        ),
+        ("week", "Week", count(Some(f.week))),
+    ])
+}
+
+fn fix_summary(f: &GnssFix) -> String {
+    joined([
+        format!("{:.5}, {:.5}", f.lat, f.lon),
+        format!("{:.0} m", f.altitude_m),
+        format!("{} sats", f.satellites.len()),
+        format!("PDOP {:.1}", f.pdop),
+    ])
+}
+
 pub(crate) fn gnss_kind() -> KindSpec {
     KindSpec::of::<GnssFrame>("GNSS lab", "Satellites", Hue::Muted)
         .caps(&[Capability::Log, Capability::Station])
@@ -128,8 +197,20 @@ pub(crate) fn gnss_kind() -> KindSpec {
         .build()
 }
 
+pub(crate) fn gnss_fix_kind() -> KindSpec {
+    KindSpec::of::<GnssFix>("GNSS fix", "Fixes", Hue::Muted)
+        .caps(&[Capability::Log, Capability::Station, Capability::Geo])
+        .symbol(Symbol::FIX)
+        .sighting()
+        .build()
+}
+
 impl EventContract for GnssFrame {
     const KIND: EventKind = EventKind::named("gnss");
+}
+
+impl EventContract for GnssFix {
+    const KIND: EventKind = EventKind::named("gnss_fix");
 }
 
 impl sdrmm_wire::DecoderSettings for GnssParams {
@@ -187,5 +268,33 @@ mod model_tests {
             "GPS PRN 7 · +1000 Hz · 44.5 dB-Hz · acquired"
         );
         assert_eq!(gnss.present().entity.as_deref(), Some("GPS-7"));
+    }
+
+    #[test]
+    fn a_fix_lands_on_the_map_with_its_satellites_and_dilution() {
+        let fix = DecoderEvent::of(&GnssFix {
+            lat: 60.182,
+            lon: 24.828,
+            altitude_m: 47.2,
+            satellites: vec![5, 7, 13, 20, 30],
+            pdop: 1.84,
+            hdop: 0.9,
+            vdop: 1.6,
+            residual_m: 2.1,
+            clock_bias_us: 1.5,
+            week: 2_305,
+            tow_seconds: 302_400.0,
+        });
+        let view = fix.present();
+        assert_eq!(
+            view.summary,
+            "60.18200, 24.82800 · 47 m · 5 sats · PDOP 1.8"
+        );
+        let place = view.place.expect("a fix has a place");
+        assert_eq!((place.at.lat, place.at.lon), (60.182, 24.828));
+        assert_eq!(
+            view.field("Satellites"),
+            text(Some("5 7 13 20 30")).as_ref()
+        );
     }
 }

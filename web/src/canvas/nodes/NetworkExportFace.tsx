@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
 import { Chips, ChoiceChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -23,6 +23,7 @@ import {
 import type { NetworkExportStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { basebandSourceOf, hasFeed } from "../lanes";
 import { runningSetOf } from "../workspaceDevice";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
@@ -85,49 +86,53 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
       title={channel === null ? "Network IQ" : "Network baseband"}
       category="output"
     >
-      <FaceBody>
-        <Chips>
-          <ChoiceChip
-            label="Transport"
-            title="Transport"
-            value={node.data.transport}
-            options={TRANSPORTS}
-            disabled={locked}
-            onChange={(transport) =>
-              edit(
-                transport === "rtl_tcp"
-                  ? { transport, format: "cu8", address: "127.0.0.1:1234" }
-                  : { transport },
-              )
-            }
-          />
-          <ChoiceChip
-            label="Samples"
-            title="Sample format"
-            value={node.data.format}
-            options={FORMATS}
-            disabled={locked || rtlTcp}
-            onChange={(format) => edit({ format })}
-          />
-          <TextChip
-            label={rtlTcp ? "Listen" : "To"}
-            name={rtlTcp ? "rtl_tcp listen address" : "Network IQ destination"}
-            title={
-              rtlTcp
-                ? "Exports the wired source. Set rtl_433 frequency and sample rate to match; client tuning commands are ignored."
-                : "Network IQ destination"
-            }
-            value={node.data.address}
-            disabled={locked}
-            onCommit={(address) => {
-              if (address !== "") {
-                edit({ address });
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <ChoiceChip
+              label="Transport"
+              title="Transport"
+              value={node.data.transport}
+              options={TRANSPORTS}
+              disabled={locked}
+              onChange={(transport) =>
+                edit(
+                  transport === "rtl_tcp"
+                    ? { transport, format: "cu8", address: "127.0.0.1:1234" }
+                    : { transport },
+                )
               }
-            }}
-          />
-        </Chips>
+            />
+            <ChoiceChip
+              label="Samples"
+              title="Sample format"
+              value={node.data.format}
+              options={FORMATS}
+              disabled={locked || rtlTcp}
+              onChange={(format) => edit({ format })}
+            />
+            <TextChip
+              label={rtlTcp ? "Listen" : "To"}
+              name={rtlTcp ? "rtl_tcp listen address" : "Network IQ destination"}
+              title={
+                rtlTcp
+                  ? "Exports the wired source. Set rtl_433 frequency and sample rate to match; client tuning commands are ignored."
+                  : "Network IQ destination"
+              }
+              value={node.data.address}
+              disabled={locked}
+              onCommit={(address) => {
+                if (address !== "") {
+                  edit({ address });
+                }
+              }}
+            />
+          </Chips>
+        </InspectSection>
+      </Inspect>
+      <FaceBody>
         {!wired ? (
-          <FaceEmpty hint="Wire a device's IQ or a channel's baseband in" />
+          <FaceEmpty />
         ) : control.kind === "active" ? (
           <>
             <Readouts columns={2}>
@@ -149,7 +154,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
         {control.kind === "active" ? (
           <Button
             type="button"
-            className={BTN_DANGER}
+            className={FACE_BTN_DANGER}
             disabled={exportIq.isPending}
             onClick={() => exportIq.mutate("stop")}
           >
@@ -158,7 +163,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
         ) : (
           <Button
             type="button"
-            className={BTN_PRIMARY}
+            className={FACE_BTN}
             title={rtlTcp ? "rtl_433 input, CU8" : "Raw interleaved I/Q"}
             disabled={control.kind !== "ready" || exportIq.isPending}
             onClick={() => exportIq.mutate("start")}

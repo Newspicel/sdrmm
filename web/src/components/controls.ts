@@ -10,6 +10,21 @@ export const BTN =
   `${INTERACTIVE} h-7 border border-line ${RAISED} px-2.5 text-xs font-medium ` +
   "hover:border-line-strong hover:bg-panel-3";
 
+/** The one button a face's footer uses, whatever the action. */
+export const FACE_BTN =
+  `${INTERACTIVE} h-6 border border-line ${RAISED} px-2 text-xs font-medium ` +
+  "hover:border-line-strong hover:bg-panel-3";
+
+/** A face's footer button that stops, drops or forgets: the same at rest, red on hover. */
+export const FACE_BTN_DANGER =
+  `${INTERACTIVE} h-6 border border-line ${RAISED} px-2 text-xs font-medium ` +
+  "hover:border-danger hover:bg-danger/10 hover:text-danger";
+
+/** A face's footer danger button armed to confirm: red until clicked again or left. */
+export const FACE_BTN_DANGER_ARMED =
+  `${INTERACTIVE} h-6 border border-danger bg-danger/10 px-2 text-xs font-medium text-danger ` +
+  "hover:bg-danger/25";
+
 export const BTN_SM =
   `${INTERACTIVE} h-5 border border-line ${RAISED} px-1.5 text-2xs font-medium ` +
   "hover:border-line-strong";
@@ -49,6 +64,10 @@ const ICON_BASE =
 export const ICON_BTN = `${ICON_BASE} size-7 pointer-coarse:size-10`;
 
 export const ICON_BTN_SM = `${ICON_BASE} size-5 pointer-coarse:size-10`;
+
+export const ICON_BTN_DANGER =
+  `${INTERACTIVE} size-7 justify-center border border-transparent text-ink-faint ` +
+  "hover:bg-danger/10 hover:text-danger pointer-coarse:size-10";
 
 export const ICON_BTN_SM_DANGER =
   `${INTERACTIVE} size-5 justify-center border border-transparent text-ink-dim ` +

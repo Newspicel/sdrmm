@@ -15,14 +15,15 @@ all.
 |---|---|---|
 | `audio` | Speaker | Live sound |
 | `audio` | Audio recorder | A WAV file |
-| `audio` | Audio FX | Filtered, denoised or levelled sound |
 | `events` | Readout | Current state: station text, aircraft table |
 | `events` | Decoder log | Message history |
 | `events` | Map | Positions |
 | `events` | Export | CSV or JSON of logged rows |
 | `events` | Event output | Events sent out, call audio saved |
 | `video` | Video | ATV, DVB, SSTV, WEFAX and weather satellite pictures |
-| `baseband` | Baseband scope, Baseband recorder, or Network IQ | The channel's filtered IQ |
+| `baseband` | Baseband recorder or Network IQ | The channel's filtered IQ |
+
+Click a channel to see its baseband (spectrum, constellation, eye, levels) in the side panel.
 
 To swap the mode, right-click the channel and choose **Replace with…**. The frequency and squelch
 stay; wires the new mode has no port for are dropped. `m` and `M` cycle NFM, WFM, AM and SSB.
@@ -107,11 +108,10 @@ capture an FM receiver or swamp a decoder.
 Tick **IF filter** to apply them. The chip reads `on` until an edge moves or a notch is added.
 The spectrum shades the narrowed passband and marks each notch in red.
 
-## Audio FX
+## Audio
 
-Wire a channel's `audio` through an **Audio FX** node to process what you hear. The raw audio
-stays available on the channel's other wires, so a recorder can keep it while a Speaker plays the
-cleaned version. Chain several nodes to stack effects. Stages run in this order, all off by
+The **Audio** section at the end of a decoder's settings processes its sound for everything wired
+to its `audio`. The header shows **FX** while any stage is on. Stages run in this order, all off by
 default:
 
 | Stage | Does |
@@ -126,7 +126,7 @@ default:
 
 DPDFNet is trained on speech. Leave it off for music, data tones and CW.
 
-Pick a DPDFNet model, then press the download button next to it. DPDFNet 2 is light; 8 sounds
+Pick a DPDFNet model under **Denoise**, then press the download button next to it. DPDFNet 2 is light; 8 sounds
 better and costs more CPU. The button next to a downloaded model removes it.
 
 ## Speaker output

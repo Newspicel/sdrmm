@@ -6,6 +6,7 @@ import { useFeeds } from "../../lib/resolved";
 import type { EventFilterNode, EventKindEntry, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import {
   FILTER_MODES,
   filterMode,
@@ -22,7 +23,7 @@ import {
   type TriState,
   toTriState,
 } from "./eventFilter";
-import { FaceBody, NodeShell } from "./NodeShell";
+import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 
 type TriKey = "has_position" | "encrypted" | "emergency";
 
@@ -61,12 +62,7 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
   };
 
   return (
-    <NodeShell
-      node={node}
-      title="Event filter"
-      category="tool"
-      subtitle={sources.length > 0 ? filterSaid(settings) : undefined}
-    >
+    <NodeShell node={node} title="Event filter" category="tool">
       <FaceBody
         title={
           sources.length === 0
@@ -76,43 +72,63 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
               : undefined
         }
       >
-        <Chips>
-          <ChoiceChip
-            label="Mode"
-            title="Keep passes only what matches; Drop removes what matches"
-            value={filterMode(settings)}
-            options={FILTER_MODES}
-            onChange={(mode) => edit({ mode })}
-          />
-          {offered.length > 1 &&
-            offered.map((kind) => (
-              <ToggleChip
-                key={kind}
-                label={kindLabel(kind, entries)}
-                title={`Match ${kindLabel(kind, entries)} events`}
-                on={kinds.includes(kind)}
-                onChange={(on) =>
-                  edit({
-                    kinds: on ? [...kinds, kind].toSorted() : kinds.filter((held) => held !== kind),
-                  })
-                }
-              />
-            ))}
-          {sections.flatMap((section) =>
-            section.predicates.map((predicate) => (
-              <Predicate
-                key={predicate}
-                which={predicate}
-                applies={section.applies}
-                settings={settings}
-                kinds={narrowed}
-                entries={entries}
-                edit={edit}
-              />
-            )),
-          )}
-        </Chips>
+        {sources.length > 0 ? (
+          <p className="px-2.5 py-2 font-mono text-xs text-ink">{filterSaid(settings)}</p>
+        ) : (
+          <FaceEmpty />
+        )}
       </FaceBody>
+      <Inspect node={node.id}>
+        <InspectSection label="Filter">
+          <Chips inset="none">
+            <ChoiceChip
+              label="Mode"
+              title="Keep passes only what matches; Drop removes what matches"
+              value={filterMode(settings)}
+              options={FILTER_MODES}
+              onChange={(mode) => edit({ mode })}
+            />
+          </Chips>
+        </InspectSection>
+        {offered.length > 1 && (
+          <InspectSection label="Kinds">
+            <Chips inset="none">
+              {offered.map((kind) => (
+                <ToggleChip
+                  key={kind}
+                  label={kindLabel(kind, entries)}
+                  title={`Match ${kindLabel(kind, entries)} events`}
+                  on={kinds.includes(kind)}
+                  onChange={(on) =>
+                    edit({
+                      kinds: on
+                        ? [...kinds, kind].toSorted()
+                        : kinds.filter((held) => held !== kind),
+                    })
+                  }
+                />
+              ))}
+            </Chips>
+          </InspectSection>
+        )}
+        {sections.map((section) => (
+          <InspectSection key={section.key} label={section.title}>
+            <Chips inset="none">
+              {section.predicates.map((predicate) => (
+                <Predicate
+                  key={predicate}
+                  which={predicate}
+                  applies={section.applies}
+                  settings={settings}
+                  kinds={narrowed}
+                  entries={entries}
+                  edit={edit}
+                />
+              ))}
+            </Chips>
+          </InspectSection>
+        ))}
+      </Inspect>
     </NodeShell>
   );
 }

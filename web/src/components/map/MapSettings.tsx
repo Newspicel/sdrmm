@@ -1,15 +1,14 @@
+import { InspectSection } from "../../canvas/inspector";
 import {
   BASEMAP_PRESETS,
   type BasemapPreset,
-  DEFAULT_BASEMAP,
   PRESET_COLORS,
   withCustom,
 } from "../../lib/map/basemap";
-import { DEFAULT_MAP_VIEW, setMapView, useMapView } from "../../lib/map/mapView";
-import { PlotSettings, Swatch } from "../PlotSettings";
-import { SettingsSection } from "../SettingsPanel";
-import { Switch } from "../Switch";
-import { TextField } from "../TextField";
+import { setMapView, useMapView } from "../../lib/map/mapView";
+import { Chips, ToggleChip } from "../face/Chips";
+import { TextChip } from "../face/TextChip";
+import { Swatch } from "../PlotSettings";
 
 const CUSTOM_FILL =
   "repeating-linear-gradient(45deg, var(--color-line-strong) 0 3px, transparent 3px 6px)";
@@ -19,16 +18,13 @@ function presetFill(preset: BasemapPreset): string {
   return `linear-gradient(to right, ${land} 0 60%, ${water} 60%)`;
 }
 
+/** The map's look, as inspector sections. Every map shares it. */
 export function MapSettings() {
   const view = useMapView();
   const { basemap } = view;
-  const changed =
-    basemap.preset !== DEFAULT_BASEMAP.preset ||
-    view.tracks !== DEFAULT_MAP_VIEW.tracks ||
-    view.globe !== DEFAULT_MAP_VIEW.globe;
   return (
-    <PlotSettings title="Map settings" changed={changed}>
-      <SettingsSection name="Style">
+    <>
+      <InspectSection label="Map style">
         <div className="grid grid-cols-3 gap-1.5">
           {BASEMAP_PRESETS.map((preset) => (
             <Swatch
@@ -46,36 +42,34 @@ export function MapSettings() {
             onClick={() => setMapView({ basemap: { ...basemap, preset: "custom" } })}
           />
         </div>
-      </SettingsSection>
-      <SettingsSection
-        name="Custom"
-        hint="XYZ tile template ({z}/{x}/{y}) or MapLibre style URL. API keys go in the URL."
-      >
-        <TextField
-          label="Custom map URL"
-          value={basemap.custom}
-          placeholder="https://…/{z}/{x}/{y}.png"
-          className="w-full"
-          onCommit={(custom) => setMapView({ basemap: withCustom(basemap, custom) })}
-        />
-      </SettingsSection>
-      <SettingsSection
-        name="Tracks"
-        hint="Path flown or sailed by each target"
-        aside={
-          <Switch
+        {basemap.preset === "custom" && (
+          <Chips inset="none">
+            <TextChip
+              label="URL"
+              title="XYZ tile template ({z}/{x}/{y}) or MapLibre style URL. API keys go in the URL."
+              value={basemap.custom}
+              placeholder="https://…/{z}/{x}/{y}.png"
+              onCommit={(custom) => setMapView({ basemap: withCustom(basemap, custom) })}
+            />
+          </Chips>
+        )}
+      </InspectSection>
+      <InspectSection label="Map">
+        <Chips inset="none">
+          <ToggleChip
             label="Tracks"
-            checked={view.tracks}
+            title="Path flown or sailed by each target"
+            on={view.tracks}
             onChange={(tracks) => setMapView({ tracks })}
           />
-        }
-      />
-      <SettingsSection
-        name="Globe"
-        aside={
-          <Switch label="Globe" checked={view.globe} onChange={(globe) => setMapView({ globe })} />
-        }
-      />
-    </PlotSettings>
+          <ToggleChip
+            label="Globe"
+            title="Draw the earth as a globe"
+            on={view.globe}
+            onChange={(globe) => setMapView({ globe })}
+          />
+        </Chips>
+      </InspectSection>
+    </>
   );
 }

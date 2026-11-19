@@ -174,6 +174,7 @@ pub enum UnboundReason {
     NotRunning,
     Stopped,
     Waiting,
+    SendOnly,
 }
 
 impl UnboundReason {
@@ -188,6 +189,7 @@ impl UnboundReason {
             Self::NotRunning => "Not running",
             Self::Stopped => "Radio stopped",
             Self::Waiting => "Waiting for its controller",
+            Self::SendOnly => "Radio set to send only",
         }
     }
 }

@@ -1,6 +1,6 @@
 import { Circle } from "lucide-react";
 import { Button } from "../../components/BaseControls";
-import { BTN_DANGER, BTN_PRIMARY } from "../../components/controls";
+import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
 import { Chips, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
@@ -24,6 +24,7 @@ import type { PatchNode, PatchNodeOf, PreRollStatus, RecordingStatus } from "../
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import { runningSetOf } from "../workspaceDevice";
 import { ownRecording, type RecorderNodeOf, withRecording, withSkipSilence } from "./audioRecorder";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
@@ -51,7 +52,7 @@ function RecorderSwitch({
   return (
     <Button
       type="button"
-      className={recording ? BTN_DANGER : BTN_PRIMARY}
+      className={recording ? FACE_BTN_DANGER : FACE_BTN}
       title={recording ? undefined : (blocked ?? (ruled ? RULED : title))}
       disabled={blocked !== null && !recording}
       onClick={() => switchTo(!recording)}
@@ -153,29 +154,33 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
 
   return (
     <NodeShell node={node} title="Recorder" category="output">
-      <FaceBody>
-        <Chips>
-          <ToggleChip
-            label="Pre-roll"
-            title="Keep the seconds before the press, so the file starts early"
-            on={preRollS > 0}
-            disabled={recording}
-            onChange={(on) => setPreRoll(on ? DEFAULT_PRE_ROLL_S : 0)}
-          />
-          {preRollS > 0 && (
-            <NumberChip
-              label="Keep"
-              title="Seconds held in memory ahead of the press"
-              value={preRollS}
-              unit="s"
-              min={MIN_PRE_ROLL_S}
-              max={MAX_PRE_ROLL_S}
-              step={1}
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <ToggleChip
+              label="Pre-roll"
+              title="Keep the seconds before the press, so the file starts early"
+              on={preRollS > 0}
               disabled={recording}
-              onCommit={setPreRoll}
+              onChange={(on) => setPreRoll(on ? DEFAULT_PRE_ROLL_S : 0)}
             />
-          )}
-        </Chips>
+            {preRollS > 0 && (
+              <NumberChip
+                label="Keep"
+                title="Seconds held in memory ahead of the press"
+                value={preRollS}
+                unit="s"
+                min={MIN_PRE_ROLL_S}
+                max={MAX_PRE_ROLL_S}
+                step={1}
+                disabled={recording}
+                onCommit={setPreRoll}
+              />
+            )}
+          </Chips>
+        </InspectSection>
+      </Inspect>
+      <FaceBody>
         <Readouts ruled={false}>
           {status === null ? (
             <Readout label="File">
@@ -275,10 +280,14 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (
     <NodeShell node={node} title="Audio recorder" category="output">
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <SkipSilenceChip node={node} />
+          </Chips>
+        </InspectSection>
+      </Inspect>
       <FaceBody>
-        <Chips>
-          <SkipSilenceChip node={node} />
-        </Chips>
         <Readouts ruled={false}>
           {takes.length === 0 && (
             <Readout label="File">{recording && ruled ? "Waiting" : IDLE}</Readout>

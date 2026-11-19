@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { EncoderDescriptor, PatchNode, TransmitStatus } from "../../lib/types";
 import {
   encoderSettings,
-  peakText,
   tooWide,
   transmitStatusOf,
   withEncoderSettings,
@@ -66,13 +65,6 @@ describe("encoder settings", () => {
     });
     const other = node({ kind: "scope" });
     expect(withEncoderSettings(other, { mode: "g3ruh" })).toBe(other);
-  });
-});
-
-describe("peakText", () => {
-  it("shows the peak once something was sent", () => {
-    expect(peakText(status("tx"))).toBe("none");
-    expect(peakText(status("tx", { peak_db: -3.04 }))).toBe("-3.0 dBFS");
   });
 });
 

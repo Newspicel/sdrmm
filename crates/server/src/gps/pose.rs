@@ -10,7 +10,7 @@ use sdrmm_wire::{
 };
 use tokio::time::Instant;
 
-use super::{GpsHub, PositionState, RouteState, WAITING, limit_error};
+use super::{GpsHub, PositionState, RouteState, limit_error};
 use crate::AppState;
 
 const WATCH_EVERY: Duration = Duration::from_secs(1);
@@ -45,14 +45,11 @@ impl GpsHub {
         if !state.phones.known(phone) {
             return Err(PHONE_NOT_PAIRED.to_owned());
         }
-        let next = PositionState {
-            fix,
-            error: error.map(limit_error),
-        };
+        let next = PositionState::of(fix, error.map(limit_error));
         let bound = self.bound_to(phone);
         locked(&self.pose_seen).insert(phone.to_owned(), Instant::now());
         for node in &bound {
-            self.publish_state(state, node, next.fix.clone(), next.error.clone());
+            self.publish_routed(RouteState::from(state), node, next.clone());
         }
         Ok(bound.len())
     }
@@ -72,7 +69,7 @@ impl GpsHub {
                     )
             });
             if stale {
-                self.publish_state(state, &node, None, Some(WAITING.to_owned()));
+                self.publish_waiting(state, &node);
             }
         }
     }
@@ -112,13 +109,17 @@ impl GpsHub {
     }
 
     pub(super) fn publish_phone_standing(&self, state: &AppState, node: &str, phone: &str) {
-        let standing = if !state.phones.known(phone) {
-            PHONE_NOT_PAIRED
+        let fault = if !state.phones.known(phone) {
+            Some(PHONE_NOT_PAIRED)
         } else if !self.is_online(phone) {
-            PHONE_OFFLINE
+            Some(PHONE_OFFLINE)
         } else {
-            WAITING
+            None
         };
+        if let Some(fault) = fault {
+            self.publish_state(state, node, None, Some(fault.to_owned()));
+            return;
+        }
         let holds_news = locked(&self.latest).get(node).is_some_and(|current| {
             current.fix.is_some()
                 || current
@@ -126,8 +127,8 @@ impl GpsHub {
                     .as_deref()
                     .is_some_and(|error| error != PHONE_OFFLINE && error != PHONE_NOT_PAIRED)
         });
-        if standing != WAITING || !holds_news {
-            self.publish_state(state, node, None, Some(standing.to_owned()));
+        if !holds_news {
+            self.publish_waiting(state, node);
         }
     }
 
@@ -167,7 +168,8 @@ impl GpsHub {
         for phone in silent {
             for node in self.bound_to(&phone) {
                 if self.fix(&node).is_some() {
-                    self.publish_routed(route.clone(), &node, None, Some(PHONE_SILENT.to_owned()));
+                    let silent = PositionState::of(None, Some(PHONE_SILENT.to_owned()));
+                    self.publish_routed(route.clone(), &node, silent);
                 }
             }
         }

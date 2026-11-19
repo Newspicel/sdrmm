@@ -12,7 +12,10 @@ import {
   sectionGroups,
 } from "./palette";
 
+const FAMILIES = WIRE_CATALOG.families ?? [];
+
 const CATALOG: PatchCatalog = {
+  families: FAMILIES,
   port_types: [],
   event_kinds: [],
   nodes: [
@@ -208,15 +211,23 @@ describe("encoders", () => {
 describe("decoderGroups", () => {
   it("files a type without a family under utility", () => {
     const { family: _family, ...bare } = TYPES[0]!;
-    expect(decoderGroups([bare]).map((group) => group.title)).toEqual(["Utility"]);
+    expect(decoderGroups(FAMILIES, [bare]).map((group) => group.title)).toEqual(["Utility"]);
   });
 
   it("gives a plugin family its own group after the built-in ones", () => {
     const plugin = { ...TYPES[0]!, type_id: "aurora", family: "space_weather" };
-    expect(decoderGroups([plugin, ...TYPES]).map((group) => group.title)).toEqual([
+    const families = [...FAMILIES, { id: "space_weather", title: "Space weather" }];
+    expect(decoderGroups(families, [plugin, ...TYPES]).map((group) => group.title)).toEqual([
       "Analog voice",
       "Aviation",
       "Space weather",
+    ]);
+  });
+
+  it("files a family the server did not list under its id", () => {
+    const plugin = { ...TYPES[0]!, type_id: "aurora", family: "space_weather" };
+    expect(decoderGroups(FAMILIES, [plugin]).map((group) => group.title)).toEqual([
+      "space_weather",
     ]);
   });
 });
@@ -230,20 +241,20 @@ describe("sectionGroups", () => {
 
 describe("channelPicker", () => {
   it("pins the suggested mode above the full list", () => {
-    const groups = channelPicker(TYPES, "plane");
+    const groups = channelPicker(FAMILIES, TYPES, "plane");
     expect(groups.map((group) => group.title)).toEqual(["Suggested", "Analog voice", "Aviation"]);
     expect(groups[0]?.items.map((item) => item.id)).toEqual(["suggested:plane"]);
   });
 
   it("offers every type on a server that does not describe the suggested one", () => {
-    expect(channelPicker(TYPES, "atv").map((group) => group.section)).toEqual([
+    expect(channelPicker(FAMILIES, TYPES, "atv").map((group) => group.section)).toEqual([
       "channel",
       "channel",
     ]);
   });
 
   it("has only the suggestion to show when the server describes one type", () => {
-    expect(channelPicker([TYPES[0]!], "voice").map((group) => group.id)).toEqual([
+    expect(channelPicker(FAMILIES, [TYPES[0]!], "voice").map((group) => group.id)).toEqual([
       "suggested",
       "family:analog_voice",
     ]);
@@ -252,16 +263,18 @@ describe("channelPicker", () => {
 
 describe("firstPaletteItem", () => {
   it("takes the suggestion when one is pinned", () => {
-    expect(firstPaletteItem(channelPicker(TYPES, "plane"))?.id).toBe("suggested:plane");
+    expect(firstPaletteItem(channelPicker(FAMILIES, TYPES, "plane"))?.id).toBe("suggested:plane");
   });
 
   it("takes the top of the narrowed list when a search has moved past it", () => {
-    const groups = filterPalette(channelPicker(TYPES, "plane"), "voice");
+    const groups = filterPalette(channelPicker(FAMILIES, TYPES, "plane"), "voice");
     expect(firstPaletteItem(groups)?.typeId).toBe("voice");
   });
 
   it("has nothing to take from a list that matches nothing", () => {
-    expect(firstPaletteItem(filterPalette(channelPicker(TYPES, "voice"), "atv"))).toBeUndefined();
+    expect(
+      firstPaletteItem(filterPalette(channelPicker(FAMILIES, TYPES, "voice"), "atv")),
+    ).toBeUndefined();
   });
 });
 

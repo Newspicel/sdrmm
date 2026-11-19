@@ -6,6 +6,7 @@ import {
   parsedBaud,
   rotctldLink,
   serialLink,
+  VIRTUAL_LINK,
   winegardLink,
   withRange,
 } from "./rotator";
@@ -40,6 +41,7 @@ describe("flipped", () => {
     expect(
       flipped({ ...flip, link: { type: "winegard", device: "/dev/ttyUSB0", baud: 57_600 } }),
     ).toBe(false);
+    expect(flipped({ ...flip, link: VIRTUAL_LINK })).toBe(true);
     expect(flipped({ tolerance_deg: 2 })).toBe(false);
   });
 });

@@ -25,6 +25,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "VOR".to_owned(),
     summary: "Bearing to a VOR beacon".to_owned(),
     family: DecoderFamily::AVIATION,
+    verification: sdrmm_wire::Verification::Experimental,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,

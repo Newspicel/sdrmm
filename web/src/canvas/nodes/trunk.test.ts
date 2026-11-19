@@ -17,12 +17,10 @@ import {
   followerCall,
   formatSearchRanges,
   formatTalkgroups,
-  formatVoiceKeys,
   otherControlLabel,
   parseControlHz,
   parseSearchRanges,
   parseTalkgroups,
-  parseVoiceKeys,
   planLabel,
   planSummary,
   searchCandidates,
@@ -35,6 +33,9 @@ import {
   trunkProtocols,
   trunkSpec,
   usable,
+  voiceKeys,
+  withBandBase,
+  withBandSpacing,
   withChannel,
   withoutChannel,
 } from "./trunk";
@@ -101,16 +102,10 @@ describe("trunk protocols", () => {
 });
 
 describe("voice keys", () => {
-  it("reads key ID:hex pairs, the last entry for an ID winning", () => {
-    expect(parseVoiceKeys("137:58ffa35a8c, 1:00, 137:aa x 70000:11 2:zz")).toEqual([
-      { key_id: 137, key: "AA" },
-      { key_id: 1, key: "00" },
+  it("keeps whole entries", () => {
+    expect(voiceKeys([{ key_id: 137, key: "58FFA35A8C" }, { key_id: 1 }])).toEqual([
+      { key_id: 137, key: "58FFA35A8C" },
     ]);
-  });
-
-  it("writes them back the way they are typed", () => {
-    expect(formatVoiceKeys([{ key_id: 137, key: "58FFA35A8C" }])).toBe("137:58FFA35A8C");
-    expect(formatVoiceKeys(undefined)).toBe("");
   });
 });
 
@@ -422,5 +417,24 @@ describe("the receivers a trunk system owns", () => {
 
   it("claims nothing while the system has no receivers open", () => {
     expect(trunkChannelRoles([system()], 1).size).toBe(0);
+  });
+});
+
+describe("channel band", () => {
+  it("starts a band at the typed channel 0 in 12.5 kHz steps", () => {
+    expect(withBandBase(null, "423.0")).toEqual({ base_hz: 423_000_000, spacing_hz: 12_500 });
+  });
+
+  it("keeps the spacing when the base moves and drops the band when cleared", () => {
+    const band = { base_hz: 423_000_000, spacing_hz: 25_000 };
+    expect(withBandBase(band, "424")).toEqual({ base_hz: 424_000_000, spacing_hz: 25_000 });
+    expect(withBandBase(band, "")).toBeNull();
+  });
+
+  it("takes a spacing in kHz and refuses one out of range", () => {
+    const band = { base_hz: 423_000_000, spacing_hz: 12_500 };
+    expect(withBandSpacing(band, "6.25")).toEqual({ base_hz: 423_000_000, spacing_hz: 6_250 });
+    expect(withBandSpacing(band, "0")).toBe(band);
+    expect(withBandSpacing(band, "abc")).toBe(band);
   });
 });

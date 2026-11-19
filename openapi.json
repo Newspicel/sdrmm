@@ -6030,6 +6030,13 @@
             "items": {
               "$ref": "#/components/schemas/Field"
             }
+          },
+          "waiting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the node waits for, never a fault: a wire, a setting or data still to come."
           }
         }
       },
@@ -8033,14 +8040,6 @@
           }
         }
       },
-      "AudioFxNode": {
-        "type": "object",
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/AudioProcessing"
-          }
-        }
-      },
       "AudioProcessing": {
         "type": "object",
         "properties": {
@@ -9477,6 +9476,9 @@
           },
           "type_id": {
             "type": "string"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/Verification"
           }
         }
       },
@@ -9701,6 +9703,10 @@
           "channel_type"
         ],
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AudioProcessing",
+            "description": "Filters, denoise and AGC on the decoder's audio, for everything wired to it."
+          },
           "channel_type": {
             "type": "string"
           },
@@ -12121,6 +12127,9 @@
               "minimum": 0
             }
           },
+          "radio_use": {
+            "$ref": "#/components/schemas/RadioUse"
+          },
           "split_tuning": {
             "type": "boolean"
           },
@@ -12226,6 +12235,9 @@
           "channels"
         ],
         "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/RadioActivity"
+          },
           "agc_gains": {
             "type": "array",
             "items": {
@@ -12328,6 +12340,10 @@
               }
             ]
           },
+          "radio_use": {
+            "$ref": "#/components/schemas/RadioUse",
+            "description": "What the radio is used for, narrowed to what it can do."
+          },
           "recording": {
             "oneOf": [
               {
@@ -12370,6 +12386,13 @@
                 "type": "null"
               }
             ]
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RadioUse"
+            },
+            "description": "The uses its duplex offers."
           },
           "virtual_lanes": {
             "type": "array",
@@ -13979,6 +14002,22 @@
           }
         }
       },
+      "FamilyEntry": {
+        "type": "object",
+        "description": "A decoder group and the heading it shows under.",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/DecoderFamily"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "Feed": {
         "type": "object",
         "required": [
@@ -14094,6 +14133,13 @@
           },
           "node": {
             "type": "string"
+          },
+          "waiting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the node waits for, never a fault: a wire, a setting or data still to come."
           }
         }
       },
@@ -17866,20 +17912,6 @@
           {
             "type": "object",
             "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "baseband_scope"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
               "data",
               "kind"
             ],
@@ -18027,24 +18059,6 @@
                 "type": "string",
                 "enum": [
                   "event_filter"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "data",
-              "kind"
-            ],
-            "properties": {
-              "data": {
-                "$ref": "#/components/schemas/AudioFxNode"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "audio_fx"
                 ]
               }
             }
@@ -18435,7 +18449,6 @@
           "array",
           "channel",
           "scope",
-          "baseband_scope",
           "speaker",
           "map",
           "signal_map",
@@ -18445,7 +18458,6 @@
           "spectrum_monitor",
           "trunk",
           "event_filter",
-          "audio_fx",
           "event_output",
           "video",
           "recorder",
@@ -19091,6 +19103,13 @@
             "items": {
               "$ref": "#/components/schemas/EventKindEntry"
             }
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FamilyEntry"
+            },
+            "description": "Decoder groups in palette order, built in first."
           },
           "feeds": {
             "type": "array",
@@ -20037,6 +20056,13 @@
               "string",
               "null"
             ]
+          },
+          "uses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RadioUse"
+            },
+            "description": "The radio uses a Device offers this port in. Empty: every use."
           }
         }
       },
@@ -21487,6 +21513,16 @@
           }
         }
       },
+      "RadioActivity": {
+        "type": "string",
+        "description": "What a radio does right now, for its node's header.",
+        "enum": [
+          "idle",
+          "receiving",
+          "sending",
+          "receive_paused"
+        ]
+      },
       "RadioFeatures": {
         "type": "object",
         "required": [
@@ -21760,6 +21796,15 @@
             }
           }
         }
+      },
+      "RadioUse": {
+        "type": "string",
+        "description": "What the operator uses a radio for. Receive keeps a transmitter off it; Send runs no\nreceive stream, so a half-duplex radio never has to stop listening for a burst.",
+        "enum": [
+          "receive",
+          "send",
+          "both"
+        ]
       },
       "Range": {
         "type": "object",
@@ -22440,6 +22485,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A simulated mount that slews like a real one, for trying rotator patches with no hardware.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "virtual"
+                ]
+              }
+            }
           }
         ]
       },
@@ -22535,6 +22595,13 @@
                 "type": "null"
               }
             ]
+          },
+          "waiting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the node waits for, never a fault: a wire, a setting or data still to come."
           }
         }
       },
@@ -22918,6 +22985,13 @@
           },
           "visible": {
             "type": "boolean"
+          },
+          "waiting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the node waits for, never a fault: a wire, a setting or data still to come."
           }
         }
       },
@@ -24146,6 +24220,13 @@
                   },
                   "node": {
                     "type": "string"
+                  },
+                  "waiting": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "What the node waits for, never a fault: a wire, a setting or data still to come."
                   }
                 }
               },
@@ -25256,6 +25337,13 @@
           },
           "running": {
             "type": "boolean"
+          },
+          "waiting": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the node waits for, never a fault: a wire, a setting or data still to come."
           }
         }
       },
@@ -26985,6 +27073,26 @@
           }
         }
       },
+      "TrunkBand": {
+        "type": "object",
+        "description": "Channel numbers counted up from a base frequency, as a site's channel plan numbers them:\nchannel N transmits on `base_hz + N * spacing_hz`.",
+        "required": [
+          "base_hz",
+          "spacing_hz"
+        ],
+        "properties": {
+          "base_hz": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spacing_hz": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "TrunkChannel": {
         "type": "object",
         "required": [
@@ -27162,6 +27270,17 @@
       "TrunkNode": {
         "type": "object",
         "properties": {
+          "band": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TrunkBand",
+                "description": "Where numbered channels sit when the operator knows the plan; the map's own entries win."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "channel_map": {
             "type": "array",
             "items": {
@@ -27526,7 +27645,8 @@
           "not_placed",
           "not_running",
           "stopped",
-          "waiting"
+          "waiting",
+          "send_only"
         ]
       },
       "Unit": {
@@ -27622,6 +27742,17 @@
             "minimum": 0
           }
         }
+      },
+      "Verification": {
+        "type": "string",
+        "description": "How far a decoder is proven. The catalogs in the docs and on the site are built from it.\n\nA decoder that does not say, such as a plugin built before the field, is `Unverified`: no\nclaim is made for it.",
+        "enum": [
+          "on_air",
+          "reference_fixture",
+          "own_modulator",
+          "experimental",
+          "unverified"
+        ]
       },
       "ViewSpec": {
         "oneOf": [

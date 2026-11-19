@@ -1,6 +1,8 @@
 import { formatHz } from "../../components/format";
 import type {
   ChannelDescriptor,
+  SettingField,
+  TrunkBand,
   TrunkChannel,
   TrunkChannelEntry,
   TrunkChannelSource,
@@ -18,8 +20,10 @@ export const MAX_SEARCH_CANDIDATES = 512;
 export const MIN_SEARCH_STEP_HZ = 1_250;
 export const MAX_CHANNEL_MAP = 512;
 export const MAX_TALKGROUPS = 256;
-export const MAX_VOICE_KEYS = 256;
 export const AUTO_PROTOCOL = "auto";
+export const DEFAULT_BAND_SPACING_HZ = 12_500;
+export const MIN_BAND_SPACING_HZ = 1_250;
+export const MAX_BAND_SPACING_HZ = 1_000_000;
 
 /** The decoders a trunk system can run on, in registry order. */
 export function trunkDecoders(
@@ -30,12 +34,19 @@ export function trunkDecoders(
     .map((type) => ({ value: type.type_id, label: type.name }));
 }
 
-/** How the node's decoder trunks: its own pick, or the first decoder that can. */
-export function trunkSpec(types: readonly ChannelDescriptor[], decoder: string): TrunkSpec | null {
-  const found = types.find(
+/** The node's decoder: its own pick, or the first decoder that can trunk. */
+function trunkDecoder(
+  types: readonly ChannelDescriptor[],
+  decoder: string,
+): ChannelDescriptor | undefined {
+  return types.find(
     (type) => type.trunking != null && (decoder === "" || type.type_id === decoder),
   );
-  return found?.trunking ?? null;
+}
+
+/** How the node's decoder trunks. */
+export function trunkSpec(types: readonly ChannelDescriptor[], decoder: string): TrunkSpec | null {
+  return trunkDecoder(types, decoder)?.trunking ?? null;
 }
 
 /** The highest logical channel the protocol numbers, or any channel while none is known. */
@@ -82,20 +93,19 @@ export function formatTalkgroups(ids: readonly number[] | undefined): string {
 }
 
 /** Voice keys typed as `key ID:hex key`, comma separated; a later entry for an ID wins. */
-export function parseVoiceKeys(text: string): VoiceKey[] {
-  const keys = new Map<number, string>();
-  for (const part of text.split(/[\s,;]+/)) {
-    const [, digits, key] = /^(\d+):([0-9a-fA-F]{1,64})$/.exec(part) ?? [];
-    const id = Number(digits);
-    if (key !== undefined && Number.isSafeInteger(id) && id <= 0xffff) {
-      keys.set(id, key.toUpperCase());
-    }
-  }
-  return [...keys].map(([key_id, key]) => ({ key_id, key })).slice(0, MAX_VOICE_KEYS);
+/** The decoder's own key list, so a trunk takes keys the way its channels do. */
+export function trunkKeysField(
+  types: readonly ChannelDescriptor[],
+  decoder: string,
+): SettingField | null {
+  return trunkDecoder(types, decoder)?.settings?.find((field) => field.key === "keys") ?? null;
 }
 
-export function formatVoiceKeys(keys: readonly VoiceKey[] | undefined): string {
-  return (keys ?? []).map((entry) => `${entry.key_id}:${entry.key}`).join(", ");
+/** List entries as voice keys, dropping any not yet whole. */
+export function voiceKeys(entries: readonly Readonly<Record<string, unknown>>[]): VoiceKey[] {
+  return entries.flatMap(({ key_id, key }) =>
+    typeof key_id === "number" && typeof key === "string" ? [{ key_id, key }] : [],
+  );
 }
 
 /** Where a call runs: the slot only when a carrier holds more than one call. */
@@ -222,6 +232,25 @@ export function parseControlHz(text: string): number | undefined {
     return undefined;
   }
   return Math.round(value * 1e6);
+}
+
+/** The band with channel 0 typed in MHz; blank or nonsense drops the band. */
+export function withBandBase(band: TrunkBand | null | undefined, text: string): TrunkBand | null {
+  const base_hz = parseControlHz(text);
+  if (base_hz === undefined) {
+    return null;
+  }
+  return { base_hz, spacing_hz: band?.spacing_hz ?? DEFAULT_BAND_SPACING_HZ };
+}
+
+/** The band with its spacing typed in kHz; a spacing out of range leaves it as it was. */
+export function withBandSpacing(band: TrunkBand, text: string): TrunkBand {
+  const spacing_hz = Math.round(Number(text.trim()) * 1e3);
+  const inRange =
+    Number.isFinite(spacing_hz) &&
+    spacing_hz >= MIN_BAND_SPACING_HZ &&
+    spacing_hz <= MAX_BAND_SPACING_HZ;
+  return inRange ? { ...band, spacing_hz } : band;
 }
 
 export function controlChannelStalled(

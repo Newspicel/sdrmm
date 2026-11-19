@@ -6,15 +6,46 @@ mod model;
 #[cfg(any(test, feature = "synth"))]
 pub mod synth;
 pub use model::*;
+mod fst4;
 mod ftx;
+mod js8;
+mod jt65;
+mod jt72;
+mod jt9;
+mod minute;
+mod msk144;
+mod q65;
+mod sync_tone;
 mod wspr;
 
 #[cfg(any(test, feature = "synth"))]
+pub(crate) use fst4::waveform as fst4_waveform;
+#[cfg(any(test, feature = "synth"))]
 pub(crate) use ftx::{FT4, FT8, pack as pack_ftx, waveform as ftx_waveform};
+#[cfg(any(test, feature = "synth"))]
+pub(crate) use msk144::waveform as msk144_waveform;
+#[cfg(any(test, feature = "synth"))]
+pub(crate) use q65::waveform as q65_waveform;
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use wspr::waveform as wspr_waveform;
 
+use fst4::{Fst4Decoder, Fst4Setup, Narrow};
+pub use fst4::{Fst4Message, Fst4Params, Fst4Period, Fst4wParams, Fst4wPeriod, Fst4wSpot};
+pub(crate) use fst4::{fst4_decoder, fst4w_decoder};
 use ftx::FtxDecoder;
+pub use js8::Js8Message;
+pub(crate) use js8::js8_decoder;
+use js8::{JS8_DESCRIPTOR, Js8Decoder};
+use jt9::JT9_DESCRIPTOR;
+pub(crate) use jt9::jt9_decoder;
+use jt65::JT65_DESCRIPTOR;
+pub(crate) use jt65::jt65_decoder;
+use msk144::Msk144Decoder;
+pub use msk144::Msk144Params;
+pub(crate) use msk144::msk144_decoder;
+pub(crate) use q65::q65_decoder;
+use q65::{Q65Decoder, Q65Setup};
+pub use q65::{Q65Params, Q65Period, Q65Submode};
 use wspr::WsprDecoder;
 
 use std::{
@@ -27,6 +58,7 @@ use num_complex::Complex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelParams, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
+    Verification,
 };
 
 use sdrmm_decoder::{
@@ -50,6 +82,7 @@ static FT8_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         "FT8",
         "FT8 weak signal contacts",
         EventKind::named("ft8"),
+        Verification::OnAir,
     )
 });
 static FT4_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
@@ -58,6 +91,7 @@ static FT4_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         "FT4",
         "FT4 fast weak signal contacts",
         EventKind::named("ft4"),
+        Verification::OwnModulator,
     )
 });
 static WSPR_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
@@ -66,15 +100,23 @@ static WSPR_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         "WSPR",
         "WSPR propagation beacons",
         EventKind::named("wspr"),
+        Verification::OwnModulator,
     )
 });
 
-fn descriptor(type_id: &str, name: &str, summary: &str, kind: EventKind) -> ChannelDescriptor {
+fn descriptor(
+    type_id: &str,
+    name: &str,
+    summary: &str,
+    kind: EventKind,
+    verification: Verification,
+) -> ChannelDescriptor {
     ChannelDescriptor {
         type_id: type_id.to_owned(),
         name: name.to_owned(),
         summary: summary.to_owned(),
         family: DecoderFamily::AMATEUR,
+        verification,
         bandwidth_hz: 3_200.0,
         input_rate_hz: INPUT_RATE_HZ,
         has_audio: false,
@@ -83,11 +125,17 @@ fn descriptor(type_id: &str, name: &str, summary: &str, kind: EventKind) -> Chan
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Ft8,
     Ft4,
     Wspr,
+    Msk144,
+    Q65(Q65Setup),
+    Jt65,
+    Jt9,
+    Js8,
+    Fst4(Fst4Setup),
 }
 
 impl Mode {
@@ -97,17 +145,24 @@ impl Mode {
 
     fn slot_samples(self) -> usize {
         match self {
-            Self::Ft8 => 180_000,
+            Self::Ft8 | Self::Js8 => 180_000,
             Self::Ft4 => 90_000,
             Self::Wspr => 1_440_000,
+            Self::Msk144 => msk144::BLOCK,
+            Self::Q65(setup) => setup.period_s as usize * INPUT_RATE_HZ as usize,
+            Self::Jt65 | Self::Jt9 => sync_tone::SLOT_SAMPLES,
+            Self::Fst4(setup) => setup.slot_samples(),
         }
     }
 
     fn hop_samples(self) -> usize {
         match self {
-            Self::Ft8 => 24_000,
-            Self::Ft4 => 24_000,
+            Self::Ft8 | Self::Ft4 | Self::Js8 => 24_000,
             Self::Wspr => 60_000,
+            Self::Msk144 => msk144::BLOCK_STEP,
+            Self::Q65(setup) => setup.hop_samples(),
+            Self::Jt65 | Self::Jt9 => 120_000,
+            Self::Fst4(setup) => setup.hop_samples(),
         }
     }
 
@@ -116,34 +171,100 @@ impl Mode {
             Self::Ft8 => "ft8",
             Self::Ft4 => "ft4",
             Self::Wspr => "wspr",
+            Self::Msk144 => "msk144",
+            Self::Q65(_) => "q65",
+            Self::Jt65 => "jt65",
+            Self::Jt9 => "jt9",
+            Self::Js8 => "js8",
+            Self::Fst4(setup) if setup.wspr => "fst4w",
+            Self::Fst4(_) => "fst4",
         }
     }
 
     fn nominal_start_s(self) -> f64 {
         match self {
-            Self::Ft8 | Self::Ft4 => 0.5,
-            Self::Wspr => 1.0,
+            Self::Ft8 | Self::Ft4 | Self::Js8 => 0.5,
+            Self::Wspr | Self::Jt65 | Self::Jt9 => 1.0,
+            Self::Msk144 => 0.0,
+            Self::Q65(setup) => f64::from(setup.nominal_start_s()),
+            Self::Fst4(setup) => f64::from(fst4::nominal_start_s(setup)),
         }
     }
 
     /// The UTC period transmissions start on.
     fn period_s(self) -> f64 {
         match self {
-            Self::Ft8 => 15.0,
+            Self::Ft8 | Self::Js8 => 15.0,
             Self::Ft4 => 7.5,
             Self::Wspr => 120.0,
+            Self::Msk144 => 15.0,
+            Self::Q65(setup) => f64::from(setup.period_s),
+            Self::Jt65 | Self::Jt9 => 60.0,
+            Self::Fst4(setup) => f64::from(setup.period_s),
         }
     }
 
+    /// Samples per second of the stream a window holds.
+    fn rate(self) -> f64 {
+        match self {
+            Self::Fst4(setup) => setup.stream_rate(),
+            _ => INPUT_RATE_HZ,
+        }
+    }
+
+    /// The mode a channel's settings select, for modes whose timing is a setting.
+    fn with(self, params: &ChannelParams) -> Result<Self, ChannelError> {
+        Ok(match self {
+            Self::Q65(_) => Self::Q65(
+                params
+                    .parse::<Q65Params>()
+                    .map_err(ChannelError::InvalidSettings)?
+                    .setup(),
+            ),
+            Self::Fst4(setup) => Self::Fst4(fst4::setup(params, setup.wspr)?),
+            other => other,
+        })
+    }
+
+    /// Whether a message may start anywhere in its period rather than at its start.
+    fn anywhere_in_period(self) -> bool {
+        matches!(self, Self::Msk144)
+    }
+
+    fn timing(self, window: Option<SystemTime>, start_s: f32) -> (f32, Option<String>) {
+        Grid {
+            nominal_s: self.nominal_start_s(),
+            period_s: self.period_s(),
+            anywhere: self.anywhere_in_period(),
+        }
+        .timing(window, start_s)
+    }
+}
+
+/// A UTC grid of `period_s` periods whose transmissions start `nominal_s` into a period, or
+/// anywhere in it when `anywhere` holds.
+#[derive(Clone, Copy)]
+struct Grid {
+    nominal_s: f64,
+    period_s: f64,
+    anywhere: bool,
+}
+
+impl Grid {
     /// Where a transmission that started `start_s` into a window captured at `window` sits on
-    /// the UTC grid: its offset from the nominal start of the nearest period, and that period.
-    fn on_the_grid(self, window: SystemTime, start_s: f32) -> Option<(f32, String)> {
+    /// the grid: its offset from the nominal start of its period, and that period.
+    fn place(self, window: SystemTime, start_s: f32) -> Option<(f32, String)> {
         let window = window
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()?
             .as_secs_f64();
-        let since_nominal = window + f64::from(start_s) - self.nominal_start_s();
-        let period = (since_nominal / self.period_s()).round() * self.period_s();
+        let since_nominal = window + f64::from(start_s) - self.nominal_s;
+        let periods = since_nominal / self.period_s;
+        let period = if self.anywhere {
+            periods.floor()
+        } else {
+            periods.round()
+        } * self.period_s;
         let start = jiff::Timestamp::from_millisecond((period * 1_000.0).round() as i64).ok()?;
         Some((
             (since_nominal - period) as f32,
@@ -151,14 +272,29 @@ impl Mode {
         ))
     }
 
-    /// The offset a decode reports: from the UTC grid when the window's capture time is known,
-    /// else from the window's own nominal start.
+    /// The offset a decode reports: from the grid when the window's capture time is known, else
+    /// from the window's own nominal start.
     fn timing(self, window: Option<SystemTime>, start_s: f32) -> (f32, Option<String>) {
-        match window.and_then(|window| self.on_the_grid(window, start_s)) {
+        match window.and_then(|window| self.place(window, start_s)) {
             Some((offset, period)) => (offset, Some(period)),
-            None => (start_s - self.nominal_start_s() as f32, None),
+            None => (start_s - self.nominal_s as f32, None),
         }
     }
+}
+
+/// [`Grid::timing`] for transmissions that start `nominal_s` into `period_s` periods.
+fn grid_timing(
+    window: Option<SystemTime>,
+    start_s: f32,
+    nominal_s: f64,
+    period_s: f64,
+) -> (f32, Option<String>) {
+    Grid {
+        nominal_s,
+        period_s,
+        anywhere: false,
+    }
+    .timing(window, start_s)
 }
 
 #[derive(Clone)]
@@ -175,6 +311,8 @@ struct Job {
     audio_low_hz: f32,
     audio_high_hz: f32,
     max_candidates: usize,
+    /// The audio frequency at the stream's 0 Hz: zero unless the mode narrows its audio.
+    shift_hz: f32,
     samples: Vec<f32>,
 }
 
@@ -210,11 +348,16 @@ struct WeakSignal {
     jobs: Producer<Job>,
     done: Consumer<Done>,
     spare: Vec<Vec<f32>>,
+    narrow: Option<Narrow>,
+    shift_hz: f32,
+    staged: Vec<Complex<f32>>,
 }
 
 impl WeakSignal {
     fn new(mode: Mode, settings: &ChannelSettings) -> Result<Self, ChannelError> {
+        let mode = mode.with(&settings.params)?;
         let (low, high, candidates) = configured(mode, &settings.params)?;
+        let (narrow, shift_hz) = front_end(mode, low, high).unzip();
         let (jobs, incoming) = RingBuffer::new(QUEUED_SLOTS);
         let (outgoing, done) = RingBuffer::new(QUEUED_SLOTS);
         thread::Builder::new()
@@ -241,18 +384,35 @@ impl WeakSignal {
             spare: (0..SPARE_SLOTS)
                 .map(|_| Vec::with_capacity(mode.slot_samples()))
                 .collect(),
+            narrow,
+            shift_hz: shift_hz.unwrap_or_default(),
+            staged: Vec::new(),
         })
     }
 
     fn apply(&mut self, settings: &ChannelSettings) -> Result<(), ChannelError> {
+        if self.mode.with(&settings.params)? != self.mode {
+            return Err(ChannelError::InvalidSettings(
+                "a new period or submode needs a new channel".to_owned(),
+            ));
+        }
         let (low, high, candidates) = configured(self.mode, &settings.params)?;
         self.audio_low_hz = low;
         self.audio_high_hz = high;
         self.max_candidates = candidates;
+        let (narrow, shift_hz) = front_end(self.mode, low, high).unzip();
+        if shift_hz.unwrap_or_default() != self.shift_hz {
+            self.narrow = narrow;
+            self.shift_hz = shift_hz.unwrap_or_default();
+            self.reset();
+        }
         Ok(())
     }
 
     fn reset(&mut self) {
+        if let Some(narrow) = self.narrow.as_mut() {
+            narrow.reset();
+        }
         self.audio.clear();
         self.read = 0;
         self.window_start = 0;
@@ -263,13 +423,14 @@ impl WeakSignal {
 
     fn captured_at(&mut self, time: SystemTime) {
         let next = self.window_start + (self.audio.len() - self.read) as u64;
-        self.clock = Some((next, time));
+        let delay = Duration::from_secs_f64(self.narrow.as_ref().map_or(0.0, Narrow::delay_s));
+        self.clock = time.checked_sub(delay).map(|time| (next, time));
     }
 
     fn window_time(&self) -> Option<SystemTime> {
         let (index, time) = self.clock?;
-        let seconds =
-            |samples: u64| Duration::try_from_secs_f64(samples as f64 / INPUT_RATE_HZ).ok();
+        let rate = self.mode.rate();
+        let seconds = |samples: u64| Duration::try_from_secs_f64(samples as f64 / rate).ok();
         if self.window_start >= index {
             time.checked_add(seconds(self.window_start - index)?)
         } else {
@@ -278,14 +439,23 @@ impl WeakSignal {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        self.compact(iq.len());
-        self.audio.extend(iq.iter().map(|sample| {
+        self.compact((iq.len() as f64 * self.mode.rate() / INPUT_RATE_HZ).ceil() as usize + 1);
+        let audio = iq.iter().map(|sample| {
             if sample.re.is_finite() {
                 sample.re.clamp(-1.0, 1.0)
             } else {
                 0.0
             }
-        }));
+        });
+        match self.narrow.as_mut() {
+            Some(narrow) => {
+                self.staged.clear();
+                self.staged
+                    .extend(audio.map(|value| Complex::new(value, 0.0)));
+                narrow.process(&self.staged, &mut self.audio);
+            }
+            None => self.audio.extend(audio),
+        }
 
         let slot = self.mode.slot_samples();
         let hop = self.mode.hop_samples();
@@ -320,6 +490,7 @@ impl WeakSignal {
             audio_low_hz: self.audio_low_hz,
             audio_high_hz: self.audio_high_hz,
             max_candidates: self.max_candidates,
+            shift_hz: self.shift_hz,
             samples,
         };
         match self.jobs.push(job) {
@@ -345,8 +516,9 @@ impl WeakSignal {
 
     fn keep(&mut self, window_start: u64, decoded: Decoded, out: &mut ChannelOutputs) {
         let start = window_start as i64
-            + ((self.mode.nominal_start_s() + f64::from(decoded.window_offset_s)) * INPUT_RATE_HZ)
-                .round() as i64;
+            + ((self.mode.nominal_start_s() + f64::from(decoded.window_offset_s))
+                * self.mode.rate())
+            .round() as i64;
         if self.is_duplicate(decoded.text, decoded.audio_hz, start) {
             return;
         }
@@ -365,7 +537,7 @@ impl WeakSignal {
         let duplicate = self.recent.iter().any(|item| {
             item.text == text
                 && (item.audio_hz - audio_hz).abs() < 3.0
-                && (item.start_sample - start_sample).unsigned_abs() < INPUT_RATE_HZ as u64
+                && (item.start_sample - start_sample).unsigned_abs() < self.mode.rate() as u64
         });
         if !duplicate {
             self.recent.push(Recent {
@@ -379,22 +551,33 @@ impl WeakSignal {
 }
 
 enum Worker {
-    Ftx(Box<FtxDecoder>, EventKind),
+    Ftx(Box<FtxDecoder>),
     Wspr(Box<WsprDecoder>),
+    Msk144(Box<Msk144Decoder>),
+    Q65(Box<Q65Decoder>),
+    Minute(Box<dyn minute::MinuteDecoder>, EventKind),
+    Js8(Box<Js8Decoder>),
+    Fst4(Box<Fst4Decoder>),
 }
 
 impl Worker {
     fn new(mode: Mode) -> Self {
         match mode {
-            Mode::Ft8 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT8)), mode.kind()),
-            Mode::Ft4 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT4)), mode.kind()),
+            Mode::Ft8 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT8))),
+            Mode::Ft4 => Self::Ftx(Box::new(FtxDecoder::new(&ftx::FT4))),
             Mode::Wspr => Self::Wspr(Box::new(WsprDecoder::new())),
+            Mode::Msk144 => Self::Msk144(Box::new(Msk144Decoder::new())),
+            Mode::Q65(setup) => Self::Q65(Box::new(Q65Decoder::new(setup))),
+            Mode::Jt65 => Self::Minute(Box::new(jt65::Jt65Decoder::new()), mode.kind()),
+            Mode::Jt9 => Self::Minute(Box::new(jt9::Jt9Decoder::new()), mode.kind()),
+            Mode::Js8 => Self::Js8(Box::new(Js8Decoder::new())),
+            Mode::Fst4(setup) => Self::Fst4(Box::new(Fst4Decoder::new(setup))),
         }
     }
 
     fn decode(&mut self, job: &Job, mode: Mode) -> Vec<Decoded> {
         match self {
-            Self::Ftx(decoder, kind) => decoder
+            Self::Ftx(decoder) => decoder
                 .decode(
                     &job.samples,
                     job.window_start,
@@ -404,25 +587,40 @@ impl Worker {
                 )
                 .into_iter()
                 .map(|found| {
-                    let (time_offset_s, slot) = mode.timing(job.window_time, found.start_s);
-                    let message = WsjtMessage {
-                        text: found.text,
-                        snr_db: found.snr_db,
-                        audio_hz: found.frequency_hz,
-                        time_offset_s,
-                        hard_errors: found.hard_errors,
-                        slot,
-                    };
-                    Decoded {
-                        event: DecoderEvent::tagged(kind.clone(), &message),
-                        text: message.text,
-                        audio_hz: message.audio_hz,
-                        window_offset_s: found.start_s - mode.nominal_start_s() as f32,
-                    }
+                    let unclocked = found.start_s - mode.nominal_start_s() as f32;
+                    wsjt_decoded(job, mode, found, unclocked)
                 })
                 .collect(),
             Self::Wspr(decoder) => decode_wspr(job, decoder, mode),
+            Self::Msk144(decoder) => msk144::decoded(decoder, job, mode),
+            Self::Q65(decoder) => q65::decoded(decoder, job, mode),
+            Self::Minute(decoder, kind) => minute::decode(job, decoder.as_mut(), kind, mode),
+            Self::Js8(decoder) => decoder.decode(job),
+            Self::Fst4(decoder) => fst4::decoded(decoder, job, mode),
         }
+    }
+}
+
+/// The event for a WSJT message, timed on the UTC grid when the clock is known and by
+/// `unclocked` otherwise.
+fn wsjt_decoded(job: &Job, mode: Mode, found: ftx::Found, unclocked: f32) -> Decoded {
+    let (time_offset_s, slot) = match mode.timing(job.window_time, found.start_s) {
+        (_, None) => (unclocked, None),
+        timed => timed,
+    };
+    let message = WsjtMessage {
+        text: found.text,
+        snr_db: found.snr_db,
+        audio_hz: found.frequency_hz,
+        time_offset_s,
+        hard_errors: found.hard_errors,
+        slot,
+    };
+    Decoded {
+        event: DecoderEvent::tagged(mode.kind(), &message),
+        text: message.text,
+        audio_hz: message.audio_hz,
+        window_offset_s: found.start_s - mode.nominal_start_s() as f32,
     }
 }
 
@@ -520,13 +718,31 @@ fn configured(mode: Mode, params: &ChannelParams) -> Result<(f32, f32, usize), C
         )));
     }
     let search = match mode {
-        Mode::Ft8 | Mode::Ft4 => {
+        Mode::Ft8 | Mode::Ft4 | Mode::Jt65 | Mode::Jt9 | Mode::Js8 => {
             wsjt_config(&params.parse().map_err(ChannelError::InvalidSettings)?)
         }
         Mode::Wspr => wspr_config(&params.parse().map_err(ChannelError::InvalidSettings)?),
+        Mode::Msk144 => msk144::search(params.parse().map_err(ChannelError::InvalidSettings)?),
+        Mode::Q65(_) => q65::search(&params.parse().map_err(ChannelError::InvalidSettings)?),
+        Mode::Fst4(setup) => fst4::search(params, setup)?,
     };
     validate_passband(search)?;
     Ok(search)
+}
+
+/// The narrowing front end a mode needs for a search from `low_hz` to `high_hz`, and the audio
+/// frequency it moves to the stream's 0 Hz.
+fn front_end(mode: Mode, low_hz: f32, high_hz: f32) -> Option<(Narrow, f32)> {
+    let Mode::Fst4(setup) = mode else {
+        return None;
+    };
+    let by = fst4::narrowing(setup.period_s);
+    (by > 1).then(|| {
+        (
+            Narrow::new(INPUT_RATE_HZ, by, f64::from(f32::midpoint(low_hz, high_hz))),
+            fst4::shift_hz(setup, low_hz, high_hz),
+        )
+    })
 }
 
 fn wsjt_config(params: &WsjtParams) -> (f32, f32, usize) {
@@ -574,7 +790,7 @@ fn search_filter(search: (f32, f32, usize)) -> Result<FilterSpec, ChannelError> 
 }
 
 macro_rules! channel {
-    ($name:ident, $mode:expr, $descriptor:ident) => {
+    ($name:ident, $mode:expr, $descriptor:path) => {
         pub struct $name(WeakSignal);
 
         impl NativeChannel for $name {
@@ -621,6 +837,25 @@ macro_rules! channel {
 channel!(Ft8Channel, Mode::Ft8, FT8_DESCRIPTOR);
 channel!(Ft4Channel, Mode::Ft4, FT4_DESCRIPTOR);
 channel!(WsprChannel, Mode::Wspr, WSPR_DESCRIPTOR);
+channel!(Msk144Channel, Mode::Msk144, msk144::DESCRIPTOR);
+channel!(
+    Q65Channel,
+    Mode::Q65(Q65Params::default().setup()),
+    q65::DESCRIPTOR
+);
+channel!(Jt65Channel, Mode::Jt65, JT65_DESCRIPTOR);
+channel!(Jt9Channel, Mode::Jt9, JT9_DESCRIPTOR);
+channel!(Js8Channel, Mode::Js8, JS8_DESCRIPTOR);
+channel!(
+    Fst4Channel,
+    Mode::Fst4(Fst4Params::default().setup()),
+    fst4::DESCRIPTOR
+);
+channel!(
+    Fst4wChannel,
+    Mode::Fst4(Fst4wParams::default().setup()),
+    fst4::FST4W_DESCRIPTOR
+);
 
 const FT8_SPOTS: &[HzRange] = &[
     HzRange::spot_khz(1_840.0, 2.0),

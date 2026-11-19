@@ -115,6 +115,14 @@ pub struct DeviceSet {
     pub virtual_lanes: Vec<crate::array::VirtualLane>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held: Vec<crate::array::HeldLane>,
+    /// What the radio is used for, narrowed to what it can do.
+    #[serde(default)]
+    pub radio_use: crate::RadioUse,
+    /// The uses its duplex offers.
+    #[serde(default)]
+    pub uses: Vec<crate::RadioUse>,
+    #[serde(default)]
+    pub activity: crate::RadioActivity,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

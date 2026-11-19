@@ -19,6 +19,9 @@ const WAIT: Duration = Duration::from_secs(30);
 const AUDIO_RATE: f64 = 48_000.0;
 const TONE_HZ: f64 = 1_000.0;
 
+/// Long enough for a virtual transmitter's buffered samples to leave the air after it goes idle.
+const AIRED: Duration = Duration::from_millis(1500);
+
 fn engine() -> Arc<Engine> {
     let mut registry = DeviceRegistry::new();
     registry.register(10, Box::new(VirtualDriver::new()));
@@ -182,6 +185,14 @@ async fn a_message_sent_from_a_half_duplex_radio_is_decoded_by_another() {
         done.peak_db
             .is_some_and(|peak| (-3.5..-2.5).contains(&peak))
     );
+    tokio::time::sleep(AIRED).await;
+    let snapshot = engine.snapshot();
+    let set = snapshot
+        .device_sets
+        .iter()
+        .find(|set| set.id == talker)
+        .expect("talker");
+    assert_eq!(set.overruns, 0, "the burst was booked as lost receive");
 
     engine.disarm_transmitter(talker, "tx").expect("disarmed");
     assert_eq!(status(&engine, talker), None);

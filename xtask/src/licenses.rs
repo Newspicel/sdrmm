@@ -66,6 +66,12 @@ const NATIVE: &[Native] = &[
         files: &["libairspyhf-BSD-3-Clause.txt"],
     },
     Native {
+        name: "GopherTrunk P25 Phase 2 tables and captures",
+        license: "Apache-2.0",
+        url: "https://github.com/MattCheramie/GopherTrunk",
+        files: &["GopherTrunk-Apache-2.0.txt"],
+    },
+    Native {
         name: "hackrf-nusb 0.3.0",
         license: "MIT OR Apache-2.0",
         url: "https://github.com/bastibl/hackrf-nusb",
@@ -84,6 +90,12 @@ const NATIVE: &[Native] = &[
         files: &["BSD-3-Clause-dmrconfig.txt"],
     },
     Native {
+        name: "JS8Call (JS8 LDPC tables, CRC and message layer)",
+        license: "GPL-3.0-or-later",
+        url: "https://github.com/js8call/js8call",
+        files: &[],
+    },
+    Native {
         name: "mbelib",
         license: "ISC",
         url: "https://github.com/szechyjs/mbelib",
@@ -96,9 +108,81 @@ const NATIVE: &[Native] = &[
         files: &["codec2-LGPL-2.1.txt"],
     },
     Native {
+        name: "horusdemodlib Horus Binary modem",
+        license: "LGPL-2.1-only",
+        url: "https://github.com/projecthorus/horusdemodlib",
+        files: &["codec2-LGPL-2.1.txt"],
+    },
+    Native {
+        name: "Meteor HRPT recording (Meti's sat-archive, received by Seler1500)",
+        license: "CC-BY-SA-4.0",
+        url: "https://sat-archive.metislair.com/",
+        files: &[],
+    },
+    Native {
+        name: "GOES-19 HRIT recording (Meti's sat-archive, received by Patrick Cunningham)",
+        license: "CC-BY-SA-4.0",
+        url: "https://sat-archive.metislair.com/",
+        files: &[],
+    },
+    Native {
+        name: "MetOp AHRPT CADUs (Meti's sat-archive, received by Meti)",
+        license: "CC-BY-SA-4.0",
+        url: "https://sat-archive.metislair.com/",
+        files: &[],
+    },
+    Native {
+        name: "libaec (CCSDS 121.0 Rice decoding)",
+        license: "BSD-2-Clause",
+        url: "https://gitlab.dkrz.de/k202009/libaec",
+        files: &[],
+    },
+    Native {
         name: "NAVAREA limits (United States Coast Guard)",
         license: "LicenseRef-USCG-public-use",
         url: "https://www.arcgis.com/home/item.html?id=161e115920164289af6d70130b3e8a1f",
+        files: &[],
+    },
+    Native {
+        name: "dump978 (UAT frame layout)",
+        license: "GPL-2.0-or-later",
+        url: "https://github.com/mutability/dump978",
+        files: &[],
+    },
+    Native {
+        name: "fisb-decode (FIS-B text records)",
+        license: "BSD-2-Clause-Patent",
+        url: "https://github.com/rand-projects/fisb-decode",
+        files: &[],
+    },
+    Native {
+        name: "WSJT-X (JT65, JT9, MSK144, Q65 and FST4 decoders, sample recordings)",
+        license: "GPL-3.0-only",
+        url: "https://github.com/WSJTX/wsjtx",
+        files: &["WSJT-X-GPL-3.0.txt"],
+    },
+    Native {
+        name: "SSDV packet format and tables (Philip Heron)",
+        license: "GPL-3.0-or-later",
+        url: "https://codeberg.org/fsphil/ssdv",
+        files: &[],
+    },
+    Native {
+        name: "Wenet LDPC code and scrambler (Project Horus)",
+        license: "GPL-3.0-or-later",
+        url: "https://github.com/projecthorus/wenet",
+        files: &[],
+    },
+    Native {
+        name: "SDRTrunk LTR check table",
+        license: "GPL-3.0-or-later",
+        url: "https://github.com/DSheirer/sdrtrunk",
+        files: &[],
+    },
+    Native {
+        name: "nrsc5 (HD Radio receiver and sample capture)",
+        license: "GPL-3.0-or-later",
+        url: "https://github.com/theori-io/nrsc5",
         files: &[],
     },
     Native {

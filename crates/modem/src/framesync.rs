@@ -1,3 +1,4 @@
+mod fixed;
 mod rotation;
 mod tone_array;
 
@@ -5,6 +6,7 @@ use std::f64::consts::TAU;
 
 use num_complex::Complex;
 
+pub use fixed::{FixedFramer, Framed};
 pub use rotation::{conj_product, derotate, derotate_from, rotor};
 pub use tone_array::ToneArray;
 

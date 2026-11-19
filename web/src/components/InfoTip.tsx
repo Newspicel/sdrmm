@@ -1,35 +1,32 @@
-import { Popover } from "@base-ui/react/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@ui-sdk/react/popover";
 import { Info } from "lucide-react";
 import { SURFACE } from "./controls";
 import { Icon } from "./Icon";
-import { usePortalContainer } from "./PortalContainer";
+import { usePopupHost } from "./Select";
 
 const HOVER_DELAY_MS = 250;
 
 export function InfoTip({ text }: { text: string }) {
-  const portalContainer = usePortalContainer();
+  const [host, follow] = usePopupHost();
+  const prepare = () => follow(true);
   return (
-    <Popover.Root>
-      <Popover.Trigger
-        openOnHover
-        delay={HOVER_DELAY_MS}
+    <Popover container={host} openOnHover delay={HOVER_DELAY_MS} onOpenChange={follow}>
+      <PopoverTrigger
         aria-label={text}
-        className="nodrag nopan inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full text-ink-faint/60 hover:text-accent data-popup-open:text-accent"
+        onPointerEnter={prepare}
+        onFocus={prepare}
+        className="nodrag nopan inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full text-ink-faint/60 hover:text-accent data-open:text-accent"
       >
         <Icon glyph={Info} size={12} />
-      </Popover.Trigger>
-      <Popover.Portal container={portalContainer} className="contents">
-        <Popover.Positioner
-          className="z-30 nodrag nopan"
-          side="top"
-          sideOffset={6}
-          collisionPadding={8}
-        >
-          <Popover.Popup className={`${SURFACE} max-w-72 px-2 py-1 text-xs text-balance`}>
-            {text}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        sideOffset={6}
+        collisionPadding={8}
+        className={`${SURFACE} nodrag nopan max-w-72 data-ending-style:hidden px-2 py-1 text-xs text-balance`}
+      >
+        {text}
+      </PopoverContent>
+    </Popover>
   );
 }

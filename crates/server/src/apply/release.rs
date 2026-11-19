@@ -10,6 +10,7 @@ pub(crate) fn release(
     let (before, after) = (&state.runs.gated(before), &state.runs.gated(after));
     let snapshot = state.engine.snapshot();
     let mut refused = close_dropped_radios(state, &snapshot, before, after);
+    refused.extend(super::settle_uses(state, after));
     refused.extend(stop_dropped_captures(state, &snapshot, before, after));
     refused.extend(close_dropped_channels(state, &snapshot, before, after));
     if !before.same_topology(after) {

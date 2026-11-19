@@ -79,6 +79,14 @@ impl CaptureProducer {
         self.room.clone()
     }
 
+    /// Skips a span the radio spent transmitting. Only a gap before it counts as dropped.
+    pub(crate) fn deaf(&mut self, at: u64, samples: u64) {
+        if let Some(next) = self.next {
+            self.metrics.dropped(at.saturating_sub(next) as usize);
+        }
+        self.next = Some(at.saturating_add(samples));
+    }
+
     pub(crate) fn push(&mut self, samples: &[Complex<f32>], start: u64) -> usize {
         if let Some(next) = self.next {
             self.metrics.dropped(start.saturating_sub(next) as usize);
@@ -396,6 +404,17 @@ mod tests {
         assert_eq!(drain(&mut consumer, 8), expected(16..20));
         assert_eq!(counter.load(Ordering::Relaxed), 16);
         assert_eq!(consumer.metrics.snapshot().dropped, 16);
+    }
+
+    #[test]
+    fn a_transmit_turn_is_not_counted_as_dropped_but_a_gap_before_it_is() {
+        let (mut producer, consumer) = capture_ring(64);
+        let counter = consumer.metrics.dropped_counter();
+        assert_eq!(producer.push(&ramp(0, 4), 0), 4);
+        producer.deaf(6, 1_000);
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
+        assert_eq!(producer.push(&ramp(1_006, 4), 1_006), 4);
+        assert_eq!(counter.load(Ordering::Relaxed), 2);
     }
 
     #[test]

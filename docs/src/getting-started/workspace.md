@@ -17,9 +17,9 @@ A wire joins an output port to an input port of the same type:
 | Port | Carries | Typical wire |
 |---|---|---|
 | `iq` | Raw radio samples | Device → channel, Scope, Recorder |
-| `audio` | Sound | Channel → Audio FX, Speaker, Audio recorder |
+| `audio` | Sound | Channel → Speaker, Audio recorder |
 | `events` | Decoded messages | Channel → Readout, Decoder log, Map |
-| `baseband` | One channel's filtered IQ | Channel → Baseband scope, Baseband recorder, Network IQ |
+| `baseband` | One channel's filtered IQ | Channel → Baseband recorder, Network IQ |
 | `video` | Pictures and video | Channel → Video |
 | `control` | Tune, point and run commands | Scanner, Satellite → channel; Schedule → Device, recorder |
 | `position` | Location and heading | GPS position → Map, Array, Satellite, channel |
@@ -31,7 +31,7 @@ A wire joins an output port to an input port of the same type:
 
 **+ Add** groups nodes as **Sources** (Device, GPS position, Microphone), **Decoders** (every
 [decoder](../user-guide/decoders.md) by family), **Encoders** (every mode that
-[transmits](../user-guide/transmit.md)), **Tools** (Scanner, Array, Audio FX and more) and
+[transmits](../user-guide/transmit.md)), **Tools** (Scanner, Array, Event filter and more) and
 **Outputs** (Scope, Speaker, Map, recorders and more). It lists what the running server offers.
 [Wires and what they carry](../wires.md) lists every node and its ports.
 

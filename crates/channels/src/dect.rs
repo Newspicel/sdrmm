@@ -33,6 +33,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "DECT".to_owned(),
     summary: "DECT cordless phone survey and voice".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: OCCUPIED_BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

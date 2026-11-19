@@ -4,15 +4,23 @@
 //! [`QcLayout`] the circulant description of a quasi-cyclic one. [`MinSum`] decodes any
 //! [`ParityCheck`] in floating point with a layered or flooding schedule. [`QuasiCyclic`]
 //! runs the same normalized min-sum layer by layer on 16-bit lanes, one lane per row of a
-//! circulant, for the long codes where that parallelism pays.
+//! circulant, for the long codes where that parallelism pays. [`Systematic`] encodes a code
+//! given by generator rows, and [`Osd`] decodes any code by ordered statistics.
+//! [`RepeatAccumulate`] encodes and describes the staircase codes codec2 modems use.
 
 mod lanes;
 mod min_sum;
+mod osd;
 mod quasi_cyclic;
+mod repeat_accumulate;
+mod systematic;
 
 pub use lanes::Kernel;
 pub use min_sum::{MinSum, Schedule};
+pub use osd::{Osd, OsdWord};
 pub use quasi_cyclic::{Circulant, QcLayout, QuasiCyclic};
+pub use repeat_accumulate::RepeatAccumulate;
+pub use systematic::Systematic;
 
 /// A sparse binary parity-check matrix, stored by check (row) and by variable (column).
 #[derive(Clone, Debug, PartialEq, Eq)]

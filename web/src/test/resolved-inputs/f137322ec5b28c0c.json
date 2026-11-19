@@ -1,6 +1,6 @@
 {
   "name": "f137322ec5b28c0c",
-  "test": "SpectrumMonitorFace > shows the range in MHz",
+  "test": "SpectrumMonitorFace > reads its settings on the face",
   "graph": {
     "nodes": [
       {

@@ -63,6 +63,8 @@ export function winegardLink(device: string): RotatorLink {
   return { type: "winegard", device, baud: ROTATOR_LIMITS.winegard_baud };
 }
 
+export const VIRTUAL_LINK: RotatorLink = { type: "virtual" };
+
 export function rotctldLink(address: string = ROTATOR_LIMITS.rotctld_address): RotatorLink {
   return { type: "rotctld", address };
 }

@@ -4,10 +4,12 @@ use std::collections::HashMap;
 mod pack;
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use pack::pack;
+#[cfg(any(test, feature = "synth"))]
+pub(crate) use pack::pack28;
 
 pub(crate) const PAYLOAD_BITS: u32 = 77;
 
-const NTOKENS: u32 = 2_063_592;
+pub(crate) const NTOKENS: u32 = 2_063_592;
 const MAX22: u32 = 4_194_304;
 pub(crate) const MAXGRID4: u32 = 32_400;
 const CQ_LETTERS_END: u32 = 1_003 + 27 * 27 * 27 * 27;
@@ -365,7 +367,7 @@ fn extra_field(value: u32, roger: bool) -> Option<String> {
     })
 }
 
-fn grid4(mut value: u32) -> String {
+pub(crate) fn grid4(mut value: u32) -> String {
     let mut grid = [0u8; 4];
     grid[3] = b'0' + (value % 10) as u8;
     value /= 10;
@@ -388,7 +390,7 @@ fn grid6(mut value: u32) -> Option<String> {
     (value == 0).then(|| String::from_utf8_lossy(&grid).into_owned())
 }
 
-fn call28(value: u32, book: &mut CallBook) -> Option<String> {
+pub(crate) fn call28(value: u32, book: &mut CallBook) -> Option<String> {
     match value {
         0 => Some("DE".to_owned()),
         1 => Some("QRZ".to_owned()),

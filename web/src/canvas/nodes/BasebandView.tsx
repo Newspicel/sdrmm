@@ -1,4 +1,4 @@
-import { Settings2 } from "lucide-react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../components/BaseControls";
 import {
@@ -19,14 +19,10 @@ import {
   Trend,
 } from "../../components/baseband";
 import { ICON_BTN_SM, TAB_BAR, tab } from "../../components/controls";
+import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { Icon } from "../../components/Icon";
-import { NumberField } from "../../components/NumberField";
-import { Popover } from "../../components/Popover";
 import { colormapLut } from "../../components/persistence";
-import { Segmented } from "../../components/Segmented";
-import { SettingsPanel, SettingsSection } from "../../components/SettingsPanel";
-import { Switch } from "../../components/Switch";
 import { dequantize } from "../../components/spectrumTraces";
 import { FULL_VIEW } from "../../components/spectrumView";
 import type { Palette } from "../../gl/colormap";
@@ -36,6 +32,7 @@ import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { iqHub, symbolHub } from "../../lib/portTaps";
 import { spectrumHub } from "../../lib/spectrum";
 import { token } from "../../lib/tokens";
+import { Inspect, InspectSection } from "../inspector";
 import { measurements } from "./basebandMeasure";
 import { drawPlot, GridBitmap, PLOT_FONT, prepareCanvas } from "./scopePlot";
 import {
@@ -77,11 +74,25 @@ const PLOT_INSET: PlotInset = { top: 10, bottom: 4 };
 
 const PORT = "baseband";
 
-export function BasebandView({ node, colormap }: { node: string; colormap: Palette }) {
+export function BasebandView({
+  node,
+  colormap,
+  initial = "spectrum",
+  onClose,
+  expanded = false,
+  onExpand,
+}: {
+  node: string;
+  colormap: Palette;
+  initial?: BasebandView;
+  onClose?: () => void;
+  expanded?: boolean;
+  onExpand?: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [frame, setFrame] = useState<IqFrame | null>(() => iqHub.latest(node, PORT));
   const frameRef = useRef<IqFrame | null>(frame);
-  const [view, setView] = useState<BasebandView>("spectrum");
+  const [view, setView] = useState<BasebandView>(initial);
   const [eyeComponent, setEyeComponent] = useState<EyeComponent>("frequency");
   const [symbolRate, setSymbolRate] = useState(4800);
   const [decimate, setDecimate] = useState(true);
@@ -245,6 +256,13 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
   const period = frame === null ? 0 : samplesPerSymbol(frame.sampleRate, symbolRate);
 
   const shown = symbols === null && SYMBOL_VIEWS.includes(view) ? "spectrum" : view;
+  const pickView = (name: BasebandView): void => {
+    if (name === shown && onClose !== undefined) {
+      onClose();
+      return;
+    }
+    setView(name);
+  };
   const hint = waiting(shown, frame, symbols);
   const rows = measurements(shown, frame, symbols, period);
 
@@ -257,31 +275,53 @@ export function BasebandView({ node, colormap }: { node: string; colormap: Palet
           className="flex min-w-0 flex-wrap items-stretch"
         >
           {SIGNAL_VIEWS.map((name) => (
-            <ViewTab key={name} name={name} active={shown === name} onPick={setView} />
+            <ViewTab key={name} name={name} active={shown === name} onPick={pickView} />
           ))}
           {symbols !== null && (
             <>
               <span aria-hidden className="mx-1 my-2 w-px bg-line" />
               {SYMBOL_VIEWS.map((name) => (
-                <ViewTab key={name} name={name} active={shown === name} onPick={setView} />
+                <ViewTab key={name} name={name} active={shown === name} onPick={pickView} />
               ))}
             </>
           )}
         </div>
-        <span className="ml-auto flex items-center">
-          <ViewOptions
-            view={shown}
-            symbols={symbols !== null}
-            eyeComponent={eyeComponent}
-            onEyeComponent={setEyeComponent}
-            decimate={decimate}
-            onDecimate={setDecimate}
-            symbolRate={symbolRate}
-            onSymbolRate={setSymbolRate}
-            nyquist={nyquist}
-          />
-        </span>
+        {onExpand !== undefined && (
+          <Button
+            type="button"
+            aria-label={expanded ? "Leave full screen" : "Show full screen"}
+            aria-pressed={expanded}
+            title={expanded ? "Back to the panel" : "Fill the window with this chart"}
+            className={`${ICON_BTN_SM} ml-auto self-center text-ink-faint`}
+            onClick={onExpand}
+          >
+            <Icon glyph={expanded ? Minimize2 : Maximize2} size={12} />
+          </Button>
+        )}
+        {onClose !== undefined && (
+          <Button
+            type="button"
+            aria-label="Close chart"
+            title="Close chart"
+            className={`${ICON_BTN_SM} self-center text-ink-faint ${onExpand === undefined ? "ml-auto" : ""}`}
+            onClick={onClose}
+          >
+            <Icon glyph={X} size={12} />
+          </Button>
+        )}
       </div>
+      <ViewOptions
+        node={node}
+        view={shown}
+        symbols={symbols !== null}
+        eyeComponent={eyeComponent}
+        onEyeComponent={setEyeComponent}
+        decimate={decimate}
+        onDecimate={setDecimate}
+        symbolRate={symbolRate}
+        onSymbolRate={setSymbolRate}
+        nyquist={nyquist}
+      />
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 min-w-0 flex-1 bg-plot-bg">
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
@@ -327,6 +367,7 @@ function ViewTab({
 }
 
 function ViewOptions({
+  node,
   view,
   symbols,
   eyeComponent,
@@ -337,6 +378,7 @@ function ViewOptions({
   onSymbolRate,
   nyquist,
 }: {
+  node: string;
   view: BasebandView;
   symbols: boolean;
   eyeComponent: EyeComponent;
@@ -354,53 +396,41 @@ function ViewOptions({
     return null;
   }
   return (
-    <Popover
-      label={<Icon glyph={Settings2} size={12} />}
-      title="View settings"
-      triggerClass={ICON_BTN_SM}
-      width="w-64"
-      padded={false}
-    >
-      {() => (
-        <SettingsPanel>
+    <Inspect node={node}>
+      <InspectSection label="View">
+        <Chips inset="none">
           {view === "eye" && (
-            <SettingsSection name="Trace">
-              <Segmented
-                label="Eye trace"
-                value={eyeComponent}
-                options={EYE_OPTIONS}
-                onChange={onEyeComponent}
-                fill
-              />
-            </SettingsSection>
+            <ChoiceChip
+              label="Trace"
+              title="Eye trace"
+              value={eyeComponent}
+              options={EYE_OPTIONS}
+              onChange={onEyeComponent}
+            />
           )}
           {decimates && (
-            <SettingsSection
-              name="Symbols only"
-              hint="Plot one point per symbol instead of every sample"
-              aside={<Switch label="Symbols only" checked={decimate} onChange={onDecimate} />}
+            <ToggleChip
+              label="Symbols only"
+              title="Plot one point per symbol instead of every sample"
+              on={decimate}
+              onChange={onDecimate}
             />
           )}
           {needsRate && (
-            <SettingsSection
-              name="Symbol rate"
-              aside={
-                <NumberField
-                  label="Symbol rate"
-                  className="w-24"
-                  value={symbolRate}
-                  min={MIN_SYMBOL_RATE}
-                  max={nyquist}
-                  step={100}
-                  onCommit={onSymbolRate}
-                  unit="Bd"
-                />
-              }
+            <NumberChip
+              label="Symbol rate"
+              title="Symbol rate"
+              value={symbolRate}
+              unit="Bd"
+              min={MIN_SYMBOL_RATE}
+              max={nyquist}
+              step={100}
+              onCommit={onSymbolRate}
             />
           )}
-        </SettingsPanel>
-      )}
-    </Popover>
+        </Chips>
+      </InspectSection>
+    </Inspect>
   );
 }
 
@@ -683,4 +713,15 @@ function recolour(grid: BasebandGrid, colormap: Palette, out: Uint8ClampedArray)
     out[at + 2] = lut[entry + 2] ?? 0;
     out[at + 3] = Math.min(255, Math.round(40 + value * 215));
   }
+}
+
+/** The view tabs alone, for a closed chart: picking one opens it on that view. */
+export function BasebandTabs({ onPick }: { onPick: (view: BasebandView) => void }) {
+  return (
+    <div role="group" aria-label="Baseband view" className={`${TAB_BAR} shrink-0 pr-1`}>
+      {SIGNAL_VIEWS.map((name) => (
+        <ViewTab key={name} name={name} active={false} onPick={onPick} />
+      ))}
+    </div>
+  );
 }

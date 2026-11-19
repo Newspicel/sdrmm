@@ -54,6 +54,9 @@ fn settings(node: &PatchNode, channels: Option<&[ChannelDescriptor]>) -> Result<
             {
                 return Err(PatchError::ChannelType(channel.channel_type.clone()));
             }
+            if channel.audio.validate().is_err() {
+                return refused();
+            }
         }
         NodeBody::Gps(gps) => {
             if let Some(source) = &gps.source {
@@ -88,7 +91,6 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::EventFilter(settings) => settings.valid(),
         NodeBody::Note(note) => note.valid(),
         NodeBody::Speaker(speaker) => speaker.valid(),
-        NodeBody::AudioFx(fx) => fx.settings.validate().is_ok(),
         NodeBody::SpectrumMonitor(settings) => settings.valid(),
         NodeBody::Propagation(settings) => settings.valid(),
         NodeBody::Recorder(settings) => settings.valid(),

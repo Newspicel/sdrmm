@@ -1,20 +1,15 @@
 import type { ReactNode } from "react";
 import { Button } from "../../components/BaseControls";
 import { DB_LIMIT, DB_STEP, withCeiling, withFloor } from "../../components/dbRange";
+import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
 import { GradientEditor } from "../../components/GradientEditor";
-import { PlotSettings, Swatch } from "../../components/PlotSettings";
-import { Segmented } from "../../components/Segmented";
-import { SettingsSection } from "../../components/SettingsPanel";
+import { Swatch } from "../../components/PlotSettings";
 import { Slider } from "../../components/Slider";
-import { Switch } from "../../components/Switch";
 import { type DbWindow, TRACE_MODES, type TraceMode } from "../../components/spectrumTraces";
-import {
-  AVERAGE_CHOICES,
-  type AverageFrames,
-  DEFAULT_AVERAGE,
-} from "../../components/videoAverage";
+import { AVERAGE_CHOICES, type AverageFrames } from "../../components/videoAverage";
 import { COLORMAPS, type Palette, type Rgb, samplePalette } from "../../gl/colormap";
 import { SPECTRUM_OVERLAPS, type SpectrumOverlap } from "../../lib/spectrum";
+import { Inspect, InspectSection } from "../inspector";
 import { CUSTOM, type PaletteChoice, paletteOf } from "./scopePalette";
 import { TRACE_INK } from "./scopePlot";
 
@@ -34,6 +29,7 @@ const AVERAGE_OPTIONS = AVERAGE_CHOICES.map((frames) => ({
 const OVERLAP_OPTIONS = SPECTRUM_OVERLAPS.map((overlap) => ({ value: overlap, label: overlap }));
 
 export interface ScopeSettingsProps {
+  node: string;
   colormap: PaletteChoice;
   onColormap: (choice: PaletteChoice) => void;
   custom: readonly Rgb[];
@@ -55,118 +51,127 @@ export interface ScopeSettingsProps {
 }
 
 export function ScopeSettings(props: ScopeSettingsProps) {
-  const palette = paletteOf(props.colormap, props.custom);
-  const changed =
-    props.average !== DEFAULT_AVERAGE ||
-    props.overlap !== "auto" ||
-    props.traces.length > 0 ||
-    props.phosphor ||
-    props.manual;
   return (
-    <PlotSettings title="Scope settings" changed={changed}>
-      <SettingsSection name="Colours">
-        <div className="grid grid-cols-3 gap-1.5">
-          {COLORMAPS.map((name) => (
-            <Swatch
-              key={name}
-              name={name}
-              fill={gradient(name, "to right")}
-              on={name === props.colormap}
-              onClick={() => props.onColormap(name)}
-            />
-          ))}
-          <Swatch
-            name={CUSTOM}
-            fill={gradient(props.custom, "to right")}
-            on={props.colormap === CUSTOM}
-            onClick={() => props.onColormap(CUSTOM)}
+    <Inspect node={props.node}>
+      <InspectSection label="Display">
+        <Chips inset="none">
+          <ChoiceChip
+            label="Average"
+            title="Frames blended into the trace and waterfall"
+            value={props.average}
+            options={AVERAGE_OPTIONS}
+            onChange={props.onAverage}
           />
-        </div>
-        {props.colormap === CUSTOM && (
-          <GradientEditor stops={props.custom} onChange={props.onCustom} />
-        )}
-      </SettingsSection>
-      <SettingsSection name="Average" hint="Frames blended into the trace and waterfall">
-        <Segmented
-          label="Frames averaged"
-          value={props.average}
-          options={AVERAGE_OPTIONS}
-          onChange={props.onAverage}
-          fill
+          <ChoiceChip
+            label="Overlap"
+            title="Smoother trace, more server CPU. The highest open Scope wins"
+            value={props.overlap}
+            options={OVERLAP_OPTIONS}
+            onChange={props.onOverlap}
+          />
+          <ToggleChip
+            label="Band plan"
+            title="Show band allocations above the trace"
+            on={props.bands}
+            onChange={props.onBands}
+          />
+        </Chips>
+      </InspectSection>
+      <InspectSection label="Colours">
+        <Colours {...props} />
+      </InspectSection>
+      <InspectSection label="Traces">
+        <Traces {...props} />
+      </InspectSection>
+      <InspectSection label="Levels">
+        <Levels {...props} />
+      </InspectSection>
+    </Inspect>
+  );
+}
+
+function Colours(props: ScopeSettingsProps) {
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-1.5">
+        {COLORMAPS.map((name) => (
+          <Swatch
+            key={name}
+            name={name}
+            fill={gradient(name, "to right")}
+            on={name === props.colormap}
+            onClick={() => props.onColormap(name)}
+          />
+        ))}
+        <Swatch
+          name={CUSTOM}
+          fill={gradient(props.custom, "to right")}
+          on={props.colormap === CUSTOM}
+          onClick={() => props.onColormap(CUSTOM)}
         />
-      </SettingsSection>
-      <SettingsSection
-        name="Overlap"
-        hint="Smoother trace, more server CPU. The highest open Scope wins"
-      >
-        <Segmented
-          label="Transform overlap"
-          value={props.overlap}
-          options={OVERLAP_OPTIONS}
-          onChange={props.onOverlap}
-          fill
-        />
-      </SettingsSection>
-      <SettingsSection name="Traces">
-        <div className="grid grid-cols-2 gap-1.5">
-          {TRACE_MODES.map((mode) => (
-            <TraceToggle
-              key={mode}
-              label={TRACE_LABEL[mode]}
-              on={props.traces.includes(mode)}
-              onClick={() => props.onTrace(mode)}
-            >
-              <TraceSample>
-                <span
-                  className="h-0.5 w-full rounded-full"
-                  style={{ background: `var(--color-${TRACE_INK[mode]})` }}
-                />
-              </TraceSample>
-            </TraceToggle>
-          ))}
-          <TraceToggle label="phosphor" on={props.phosphor} onClick={props.onPhosphor}>
-            <TraceSample>
-              <span
-                className="-mx-0.5 h-full w-[calc(100%+4px)]"
-                style={{ background: gradient(palette, "to top") }}
-              />
-            </TraceSample>
-          </TraceToggle>
-        </div>
-      </SettingsSection>
-      <SettingsSection
-        name="Band plan"
-        hint="Show band allocations above the trace"
-        aside={<Switch label="Band plan" checked={props.bands} onChange={props.onBands} />}
-      />
-      <SettingsSection
-        name="Levels"
-        hint="dBFS range the waterfall colours span"
-        aside={
-          <span className="flex items-center gap-2 font-mono text-2xs text-ink-faint">
-            auto
-            <Switch
-              label="Automatic levels"
-              checked={!props.manual}
-              onChange={(auto) => (auto ? props.onAuto() : props.onRange(props.range))}
+      </div>
+      {props.colormap === CUSTOM && (
+        <GradientEditor stops={props.custom} onChange={props.onCustom} />
+      )}
+    </>
+  );
+}
+
+function Traces(props: ScopeSettingsProps) {
+  const palette = paletteOf(props.colormap, props.custom);
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      {TRACE_MODES.map((mode) => (
+        <TraceToggle
+          key={mode}
+          label={TRACE_LABEL[mode]}
+          on={props.traces.includes(mode)}
+          onClick={() => props.onTrace(mode)}
+        >
+          <TraceSample>
+            <span
+              className="h-0.5 w-full rounded-full"
+              style={{ background: `var(--color-${TRACE_INK[mode]})` }}
             />
-          </span>
-        }
-      >
-        <Level
-          name="floor"
-          label="Waterfall dBFS floor"
-          value={props.range.min}
-          onChange={(db) => props.onRange(withFloor(props.range, db))}
+          </TraceSample>
+        </TraceToggle>
+      ))}
+      <TraceToggle label="phosphor" on={props.phosphor} onClick={props.onPhosphor}>
+        <TraceSample>
+          <span
+            className="-mx-0.5 h-full w-[calc(100%+4px)]"
+            style={{ background: gradient(palette, "to top") }}
+          />
+        </TraceSample>
+      </TraceToggle>
+    </div>
+  );
+}
+
+function Levels(props: ScopeSettingsProps) {
+  return (
+    <>
+      <Chips inset="none">
+        <ToggleChip
+          label="Auto"
+          title="Fit the waterfall colours to the signal"
+          on={!props.manual}
+          onChange={(auto) => (auto ? props.onAuto() : props.onRange(props.range))}
         />
-        <Level
-          name="ceiling"
-          label="Waterfall dBFS ceiling"
-          value={props.range.max}
-          onChange={(db) => props.onRange(withCeiling(props.range, db))}
-        />
-      </SettingsSection>
-    </PlotSettings>
+      </Chips>
+      <Level
+        name="floor"
+        label="Waterfall dBFS floor"
+        value={props.range.min}
+        onChange={(db) => props.onRange(withFloor(props.range, db))}
+      />
+      <Level
+        name="ceiling"
+        label="Waterfall dBFS ceiling"
+        value={props.range.max}
+        onChange={(db) => props.onRange(withCeiling(props.range, db))}
+      />
+    </>
   );
 }
 

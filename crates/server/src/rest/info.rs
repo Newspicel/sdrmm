@@ -17,7 +17,7 @@ use super::{
     )),
 )]
 pub(super) async fn get_patch_catalog() -> Json<PatchCatalog> {
-    Json(PatchCatalog::build())
+    Json(PatchCatalog::build().with_families_of(&sdrmm_decoder::descriptors()))
 }
 
 #[utoipa::path(

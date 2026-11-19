@@ -201,6 +201,7 @@ fn preset_merge(id: i64, targets: &[(u32, PresetDevice)]) -> Merge {
                 NodeBody::Channel(sdrmm_wire::ChannelNode {
                     channel_type: channel.params.type_id().to_owned(),
                     tuning_locked: false,
+                    audio: Default::default(),
                 }),
                 PRESET_COLUMN,
                 settings.len(),

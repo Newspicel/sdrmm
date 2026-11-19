@@ -71,8 +71,10 @@ function pressed(html: string, label: string): boolean {
   return attributesOf(html, label).includes('aria-pressed="true"');
 }
 
-function chip(html: string, label: string): string | undefined {
-  return new RegExp(`>${label}</span><b[^>]*>([^<]*)<`).exec(html)?.[1];
+function row(html: string, label: string): string | undefined {
+  return new RegExp(
+    `>${label}</span><div[^>]*><\\w+[^>]*role="combobox"[^>]*><span[^>]*>([^<]*)<`,
+  ).exec(html)?.[1];
 }
 
 function plain(html: string): string {
@@ -97,12 +99,13 @@ describe("a bearing face", () => {
   it("shows the true frame once heading is known", () => {
     holding(BEARING, [text("bearing", "Bearing", "137°")]);
     const { node, graph } = wired("df");
-    const html = renderFace(ProcessorFace, node, { graph });
+    const html = renderFace(ProcessorFace, node, { graph, inspected: true });
     expect(pressed(html, "True")).toBe(true);
     expect(html).toContain('aria-label="Bearing rose"');
     expect(html).toContain(">N</text>");
     expect(html).toMatch(/>Bearing<.*>137°</);
-    expect(html).toMatch(/>Method<\/span><b[^>]*>MUSIC</);
+    expect(row(html, "Method")).toBe("MUSIC");
+    expect(renderFace(ProcessorFace, node, { graph })).not.toContain(">Method<");
     expect(html).toContain("5 lanes");
     expect(html).toContain(">Direction finder<");
   });
@@ -120,13 +123,13 @@ describe("a bearing face", () => {
     expect(html).toMatch(/title="Wire a GPS with heading"[^>]*>No heading</);
   });
 
-  it("explains a gated processor and says when no array is wired", () => {
+  it("explains a gated processor and stays quiet when no array is wired", () => {
     holding(BEARING, [], { ...FIVE, processors: [processor({ gated: "phase" })] });
     const { node, graph } = wired("df");
     expect(renderFace(ProcessorFace, node, { graph })).toContain("needs cal");
-    expect(renderFace(ProcessorFace, node, { graph: { nodes: graph.nodes, edges: [] } })).toContain(
-      "no array",
-    );
+    const unwired = renderFace(ProcessorFace, node, { graph: { nodes: graph.nodes, edges: [] } });
+    expect(unwired).not.toContain("Wire an array");
+    expect(unwired).not.toContain("no array");
   });
 
   it("shows what the processor lost and why it stopped", () => {
@@ -155,11 +158,11 @@ describe("a pattern face", () => {
       flags: [{ label: "No steer", title: "No bearing to steer at" }],
     });
     const { node, graph } = wired("beamformer");
-    const html = renderFace(ProcessorFace, node, { graph });
+    const html = renderFace(ProcessorFace, node, { graph, inspected: true });
     expect(html).toContain('aria-label="Beam pattern"');
     expect(html).toContain('title="L2 -1.2 dB 34°"');
     expect(html).toContain('aria-valuenow="87"');
-    expect(chip(html, "Mode")).toBeDefined();
+    expect(row(html, "Mode")).toBeDefined();
     expect(html).toMatch(/title="No bearing to steer at"[^>]*>No steer</);
   });
 });
@@ -194,7 +197,7 @@ describe("a surface face", () => {
   it("labels the plot, lists the rows and offers the declared action", () => {
     holding(RADAR);
     const { node, graph } = wired("passive_radar");
-    const html = renderFace(ProcessorFace, node, { graph });
+    const html = renderFace(ProcessorFace, node, { graph, inspected: true });
     for (const unit of [">km<", ">Hz<", ">m/s<", ">dB<"]) {
       expect(html).toContain(unit);
     }
@@ -215,10 +218,10 @@ describe("a surface face", () => {
   it("offers a frame toggle over a bearing surface", () => {
     holding({ surface: { heading_deg: 90, marks: [] } }, [text("peak", "Peak", "433.920 MHz")]);
     const { node, graph } = wired("spatial_spectrum");
-    const html = renderFace(ProcessorFace, node, { graph });
+    const html = renderFace(ProcessorFace, node, { graph, inspected: true });
     expect(plain(html)).toContain("433.920 MHz");
     expect(html).toContain('aria-label="Bearing frame"');
-    expect(html).toMatch(/>Columns<\/span><b[^>]*>256</);
+    expect(row(html, "Columns")).toBe("256");
   });
 
   it("sums up the shown layer", () => {
@@ -243,10 +246,10 @@ describe("other declared views", () => {
       text("hand", "Hand", "RH"),
     ]);
     const { node, graph } = wired("polarimeter");
-    const html = renderFace(ProcessorFace, node, { graph });
+    const html = renderFace(ProcessorFace, node, { graph, inspected: true });
     expect(html).toContain('aria-label="Polarisation"');
     expect(html).toContain("RH");
-    expect(html).toMatch(/>H<\/span><b[^>]*>1</);
+    expect(row(html, "H")).toBe("1");
   });
 
   it("asks for the array tuning the processor declares", () => {
@@ -286,6 +289,7 @@ describe("a plugin processor", () => {
         graph: { nodes: [node], edges: [] },
         catalog: WITH_METER,
         resolved: null,
+        inspected: true,
       }),
     );
     expect(html).toContain("Lane meter");

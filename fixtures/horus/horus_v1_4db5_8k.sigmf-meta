@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 8000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "horusdemodlib samples/horus_binary_ebno_4.5db.wav",
+    "core:description": "Horus Binary v1 at Eb/N0 4.5 dB, synthetic USB audio"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-19T15:12:27.786816Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "samples/horus_binary_ebno_4.5db.wav from horusdemodlib (LGPL-2.1, github.com/projecthorus/horusdemodlib at 8cc43de5), 8 kHz audio as I, zero Q; source SHA-256 28e78803180b77ddc1dc86035f9a8646a03ad807c23b3d59f70f328a96a9a4d2; samples 0..24000 at 8000 Hz",
+      "core:sample_count": 24000,
+      "core:sample_start": 0
+    }
+  ]
+}

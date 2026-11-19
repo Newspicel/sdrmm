@@ -3,11 +3,13 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { PHONES_KEY } from "../../lib/api";
+import { PHONE_OFFLINE } from "../../lib/phones";
 import { usePositionStore } from "../../lib/position";
 import type { PatchNode, PhonesResponse, PositionFix } from "../../lib/types";
 import { stubWorkspace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
 import { WorkspaceProvider } from "../context";
+import { InlineInspector } from "../inspector";
 import { GpsFace } from "./GpsFace";
 
 const PHONE = "p0123456789abcdef";
@@ -39,15 +41,28 @@ function phones(online: boolean, listed = true): PhonesResponse {
   };
 }
 
-function render(response: PhonesResponse, fix: PositionFix | null, error: string | null): string {
-  usePositionStore.setState({ sources: { gps1: { fix, error, history: [] } } });
+function render(
+  response: PhonesResponse,
+  fix: PositionFix | null,
+  error: string | null,
+  inspected = true,
+  waiting: string | null = null,
+): string {
+  usePositionStore.setState({ sources: { gps1: { fix, error, waiting, history: [] } } });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData(PHONES_KEY, response);
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <ReactFlowProvider>
-        <WorkspaceProvider value={stubWorkspace({ graph: { nodes: [NODE], edges: [] } })}>
-          <GpsFace node={NODE} />
+        <WorkspaceProvider
+          value={{
+            ...stubWorkspace({ graph: { nodes: [NODE], edges: [] } }),
+            inspected: inspected ? NODE.id : null,
+          }}
+        >
+          <InlineInspector>
+            <GpsFace node={NODE} />
+          </InlineInspector>
         </WorkspaceProvider>
       </ReactFlowProvider>
     </QueryClientProvider>,
@@ -80,15 +95,27 @@ describe("GpsFace with a phone", () => {
     expect(html).toMatch(/>Fix<\/dt><dd[^>]*>0 </);
   });
 
+  it("keeps the source picker off the face", () => {
+    const html = render(phones(true), null, null, false);
+    expect(html).not.toContain("Field phone");
+    expect(html).not.toContain("Forget source");
+  });
+
   it("shows offline and not paired in the header, not as a fault", () => {
-    const offline = render(phones(true), null, "phone offline");
+    const offline = render(phones(true), null, PHONE_OFFLINE);
     expect(offline).toContain(">Offline<");
     expect(offline).not.toContain('role="alert"');
-    const gone = render(phones(false, false), null, "phone offline");
+    const gone = render(phones(false, false), null, PHONE_OFFLINE);
     expect(gone).toContain(">Not paired<");
     expect(gone).toContain(PHONE);
-    const silent = render(phones(true), null, "phone silent");
+    const silent = render(phones(true), null, "Phone silent");
     expect(silent).toContain(">Online<");
-    expect(silent).toContain(">phone silent<");
+    expect(silent).toContain(">Phone silent<");
+  });
+
+  it("shows a wait for a fix as a hint, not as a fault", () => {
+    const html = render(phones(true), null, null, true, "Waiting for a fix");
+    expect(html).toContain("Waiting for a fix");
+    expect(html).not.toContain('role="alert"');
   });
 });

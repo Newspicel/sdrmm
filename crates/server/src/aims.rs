@@ -8,6 +8,7 @@ use sdrmm_dsp::radar::bistatic::{Geodetic, look};
 use sdrmm_wire::{
     AimParams, AimStatus, ControlAck, ControlCommand, DecodedRecord, LatLon, NodeBody,
     POSITION_PORT, PatchGraph, PositionFix, SatelliteLook, ServerEvent, SkyTrack,
+    position::{WAITING_FOR_FIX, WIRE_A_POSITION},
     present::Presentation,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
@@ -19,9 +20,7 @@ mod tests;
 
 const TICK: Duration = Duration::from_secs(1);
 const METRES_PER_KM: f64 = 1_000.0;
-const NO_POSITION: &str = "wire a position";
-const NO_FIX: &str = "waiting for a position fix";
-const NO_TARGET: &str = "waiting for a decoded position";
+const NO_TARGET: &str = "Waiting for a target";
 
 #[derive(Clone, Debug, PartialEq)]
 struct Target {
@@ -166,9 +165,9 @@ fn aim(
         age_s: target.map(|target| now.saturating_duration_since(target.seen).as_secs_f64()),
         ..AimStatus::default()
     };
-    let problem = match (&wiring.position, station, target) {
-        (None, _, _) => NO_POSITION,
-        (Some(_), None, _) => NO_FIX,
+    let waiting = match (&wiring.position, station, target) {
+        (None, _, _) => WIRE_A_POSITION,
+        (Some(_), None, _) => WAITING_FOR_FIX,
         (Some(_), Some(_), None) => NO_TARGET,
         (Some(_), Some(station), Some(target)) => {
             let look = look_at(station, target);
@@ -182,7 +181,7 @@ fn aim(
             return (status, Some(sky));
         }
     };
-    status.error = Some(problem.to_owned());
+    status.waiting = Some(waiting.to_owned());
     (status, None)
 }
 

@@ -4,8 +4,10 @@ use serde_json::Value;
 
 use super::{StoreError, coherent_break};
 
+mod audio_fx;
 mod backends;
 mod banks;
+mod baseband_scopes;
 mod clip_wires;
 mod encoders;
 mod filter_kinds;
@@ -14,6 +16,7 @@ mod pictures;
 mod place;
 mod preroll;
 mod processors;
+mod radio_use;
 mod refused;
 mod silent_events;
 mod sources;
@@ -27,6 +30,7 @@ type Step = fn(&mut Value) -> Vec<WorkspaceNoticeKind>;
 
 const STEPS: &[Step] = &[
     encoders::modulators_become_encoders,
+    baseband_scopes::drop_baseband_scopes,
     filter_kinds::drop_unknown_filter_kinds,
     sources::sources_become_device_nodes,
     preroll::time_machines_become_recorders,
@@ -38,6 +42,7 @@ const STEPS: &[Step] = &[
     clip_wires::drop_clip_wires,
     silent_events::drop_silent_event_wires,
     processors::processors_become_processor_nodes,
+    audio_fx::audio_fx_joins_decoders,
     refused::drop_refused_edges,
 ];
 
@@ -45,6 +50,10 @@ const ONCE: &[(&str, Step)] = &[
     ("step:wire_watched_lanes", watched_lanes::wire_watched_lanes),
     ("step:wire_pictures", pictures::wire_pictures),
     ("step:split_kraken_banks", banks::split_kraken_banks),
+    (
+        "step:keep_transmitting_radios",
+        radio_use::keep_transmitting_radios,
+    ),
 ];
 
 /// Installs the built-in decoders and processors first, so a step only drops an event kind no
@@ -67,6 +76,7 @@ fn upgrade_with(snapshot: &mut Value, once: &[Step]) -> Vec<WorkspaceNoticeKind>
     notices
 }
 
+pub(super) use baseband_scopes::RETIRED_BASEBAND_SCOPE;
 pub(super) use generators::migrated_generator_device_id;
 
 pub(crate) fn upgrade_import(export: &mut Value) -> Vec<WorkspaceNoticeKind> {

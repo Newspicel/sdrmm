@@ -23,7 +23,7 @@ export function VideoFace({ node }: { node: PatchNode }) {
     <NodeShell node={node} title="Video" category="output">
       <FaceBody>
         {inputs.length === 0 ? (
-          <FaceEmpty hint="Wire a video channel's picture in" />
+          <FaceEmpty />
         ) : (
           inputs.map((input) => (
             <VideoView

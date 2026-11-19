@@ -19,7 +19,7 @@ export function ReadoutFace({ node }: { node: PatchNode }) {
     <NodeShell node={node} title="Readout" category="output">
       <FaceBody>
         {feeds.length === 0 ? (
-          <FaceEmpty hint="Wire a decoder's events in" />
+          <FaceEmpty />
         ) : (
           <ReadoutView feed={feed} sourceName={sourceName} now={now} />
         )}

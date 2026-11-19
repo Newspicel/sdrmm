@@ -1,4 +1,4 @@
-import { BTN } from "./controls";
+import { BTN, FACE_BTN } from "./controls";
 import { Popover } from "./Popover";
 
 export interface DownloadChoice {
@@ -11,7 +11,7 @@ export function DownloadMenu({
   choices,
   label = "Download",
   disabled = false,
-  triggerClass = BTN,
+  triggerClass = FACE_BTN,
 }: {
   choices: readonly DownloadChoice[];
   label?: string;

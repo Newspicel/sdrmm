@@ -36,7 +36,7 @@ const VIEW: PropagationView = {
   receiver: { lat: 52.5, lon: 13 },
 };
 
-function render(view: PropagationView | null): string {
+function render(view: PropagationView | null, inspected = false): string {
   useSinkStore.setState({
     sinks: {
       prop: {
@@ -50,7 +50,7 @@ function render(view: PropagationView | null): string {
       },
     },
   });
-  return renderFace(PropagationFace, NODE, { graph: { nodes: [NODE], edges: [] } });
+  return renderFace(PropagationFace, NODE, { graph: { nodes: [NODE], edges: [] }, inspected });
 }
 
 describe("propagation face", () => {
@@ -66,5 +66,10 @@ describe("propagation face", () => {
   it("shows an empty model until spots arrive", () => {
     const html = render(null);
     expect(html).toContain("No reflection points yet.");
+  });
+
+  it("keeps its settings in the inspector", () => {
+    expect(render(null)).not.toContain("Half-life");
+    expect(render(null, true)).toContain("Half-life");
   });
 });

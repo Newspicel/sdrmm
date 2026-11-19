@@ -1,0 +1,23 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:sample_rate": 2083334,
+    "core:version": "1.2.5",
+    "core:license": "https://www.gnu.org/licenses/agpl-3.0.html",
+    "core:description": "Frozen UAT reference: dump978 sample frames keyed with fresh RS parity, then fisb-978 off-air discriminator packets re-modulated to IQ. Not an antenna recording.",
+    "core:sha512": "cea97f6670b7d49093992cd92d00906579f2d7ff33590b9257b6d7d2e29fc708b75972a82d7ce5cbc4ea0ebb53d2d80cec6725b03e93d62d4f1fb94fa67b759f"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 978000000
+    }
+  ],
+  "annotations": [
+    {
+      "core:sample_start": 0,
+      "core:sample_count": 118261,
+      "core:label": "3 ADS-B and 2 uplinks from dump978 sample-data.txt.gz lines 1, 547, 1003, 135, 138; 2 ADS-B and 5 FIS-B uplinks from fisb-978 eye-samples"
+    }
+  ]
+}

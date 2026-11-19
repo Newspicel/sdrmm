@@ -1,4 +1,10 @@
-import { Slider as Primitive } from "@base-ui/react/slider";
+import {
+  Slider as Primitive,
+  SliderControl,
+  SliderIndicator,
+  SliderThumb,
+  SliderTrack,
+} from "@ui-sdk/react/slider";
 import type { ReactNode } from "react";
 
 export const SLIDER_CONTROL =
@@ -9,7 +15,11 @@ export const SLIDER_TRACK =
   "relative h-2 w-full rounded-inset bg-well " +
   "shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_2px_oklch(0_0_0/0.2)]";
 
-export const SLIDER_FILL = "rounded-inset bg-accent";
+/** Insets the travel by half the thumb, so the thumb stays inside the rail at both ends. */
+export const SLIDER_TRAVEL = "mx-0.5 h-full";
+
+/** Starts the fill at the rail's edge and ends it at the thumb's center. */
+export const SLIDER_FILL = "-ml-0.5 box-content rounded-inset bg-accent pl-0.5";
 
 export const SLIDER_THUMB =
   "h-4 w-1 cursor-grab rounded-inset shadow-[0_0_0_1.5px_var(--color-panel)] " +
@@ -40,33 +50,26 @@ export function Slider({
   className?: string;
 }) {
   return (
-    <Primitive.Root
+    <Primitive
       data-hotkeys="off"
-      thumbAlignment="edge"
       className={`flex ${className ?? "w-24"}`}
       disabled={disabled}
       value={value}
       min={min}
       max={max}
       step={step}
-      onValueChange={(next) => {
-        if (typeof next === "number") {
-          onChange(next);
-        }
-      }}
-      onValueCommitted={(next) => {
-        if (typeof next === "number") {
-          onCommit?.(next);
-        }
-      }}
+      onValueChange={(next) => onChange(next)}
+      onValueCommit={(next) => onCommit?.(next)}
     >
-      <Primitive.Control className={SLIDER_CONTROL}>
-        <Primitive.Track className={SLIDER_TRACK}>
-          <Primitive.Indicator className={SLIDER_FILL} />
-          <Primitive.Thumb aria-label={label} className={`${SLIDER_THUMB} ${SLIDER_THUMB_IDLE}`} />
-        </Primitive.Track>
-      </Primitive.Control>
-    </Primitive.Root>
+      <SliderControl className={SLIDER_CONTROL}>
+        <div className={SLIDER_TRACK}>
+          <SliderTrack className={SLIDER_TRAVEL}>
+            <SliderIndicator className={SLIDER_FILL} />
+            <SliderThumb aria-label={label} className={`${SLIDER_THUMB} ${SLIDER_THUMB_IDLE}`} />
+          </SliderTrack>
+        </div>
+      </SliderControl>
+    </Primitive>
   );
 }
 

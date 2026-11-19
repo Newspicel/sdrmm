@@ -5,6 +5,7 @@ import { patchNode } from "../graph";
 import { defaultScannerSettings } from "../newNode";
 import { controlledOf } from "../workspaceDevice";
 import { NodeShell } from "./NodeShell";
+import { SWEEP_WANTS, useUnwired } from "./needs";
 
 export function ScannerFace({ node }: { node: PatchNode }) {
   if (node.kind !== "scanner") {
@@ -16,6 +17,7 @@ export function ScannerFace({ node }: { node: PatchNode }) {
 function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
   const workspace = useWorkspaceContext();
   const decoder = controlledOf(workspace, node.id);
+  const unwired = useUnwired(node.id, SWEEP_WANTS);
   const settings = node.data?.settings ?? defaultScannerSettings(workspace.context.catalog);
   const remember = (next: ScanSettings): void => {
     workspace.edit((snapshot) => ({
@@ -33,7 +35,7 @@ function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
         node={node.id}
         active={decoder?.set ?? null}
         channel={decoder?.channel ?? null}
-        hint="Wire this node's control out to a decoder"
+        unwired={unwired}
         settings={settings}
         onSettings={remember}
       />

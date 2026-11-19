@@ -16,6 +16,10 @@ before you arm.
 | bladeRF, LimeSDR, USRP (Soapy) | Per board | One `TX` gain per element the board has, set alike on every transmit channel |
 | Transceiver, Half-duplex (virtual) | Full, half | Debug builds. What one virtual radio sends, the others hear |
 
+A Device's **Use** decides what its radio does: **Receive** (the default) never keys a
+Transmitter, **Send** runs no receiver, and **Both** receives and sends, taking turns on a
+half-duplex radio. The Device header says `receiving`, `sending` or `receive paused`.
+
 The transmit gain is the `TX` gain on the Device; a Soapy board shows one per gain element, such
 as `TX PAD`. The radio sends around the Device's centre, so
 a transmit frequency has to fall inside the Device's window.
@@ -25,9 +29,10 @@ a transmit frequency has to fall inside the Device's window.
 1. Add a message encoder from **Encoders**, such as APRS.
 2. Add a **Transmitter**. Wire the encoder's `baseband` to it, and its `transmit` to the Device's
    `transmit`.
-3. Set the Transmitter's frequency. Empty means the Device's centre.
-4. Press **Arm**.
-5. Fill in the message on the encoder and press **Send**.
+3. Set the Device's **Use** to Send or Both.
+4. Set the Transmitter's frequency. Empty means the Device's centre.
+5. Press **Arm**.
+6. Fill in the message on the encoder and press **Send**.
 
 The burst goes out once and the Transmitter returns to idle, still armed.
 

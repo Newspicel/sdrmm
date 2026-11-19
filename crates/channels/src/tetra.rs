@@ -91,6 +91,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "TETRA".to_owned(),
     summary: "TETRA downlink control and calls".to_owned(),
     family: DecoderFamily::DIGITAL_VOICE,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
-import { BTN, BTN_PRIMARY, BTN_QUIET_DANGER, FIELD } from "../../components/controls";
+import { BTN, FACE_BTN, FACE_BTN_DANGER, FIELD } from "../../components/controls";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatBytes, formatMhz, formatSampleRate } from "../../components/format";
@@ -93,7 +93,7 @@ export function RecordedPosition({ node }: { node: string }) {
     <Readouts columns={2}>
       <Readout label="Position" title="Recorded at the playhead">
         {fix === null
-          ? (state.error ?? "none")
+          ? (state.error ?? state.waiting ?? "none")
           : `${fix.latitude.toFixed(6)}, ${fix.longitude.toFixed(6)}`}
       </Readout>
       {fix !== null && <Readout label="Grid">{gridLocator(fix.latitude, fix.longitude)}</Readout>}
@@ -181,7 +181,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         <FaceFooter>
           <Button
             type="button"
-            className={BTN_QUIET_DANGER}
+            className={FACE_BTN_DANGER}
             title="Free this node so you can pick another recording"
             onClick={forget}
           >
@@ -189,7 +189,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
           </Button>
           <Button
             type="button"
-            className={BTN_PRIMARY}
+            className={FACE_BTN}
             title={
               gone
                 ? "This recording is no longer in the library"
@@ -225,7 +225,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
         <MakeArrayButton node={node.id} />
         <Button
           type="button"
-          className={BTN_QUIET_DANGER}
+          className={FACE_BTN_DANGER}
           title="Stop playing and free the node: the wires stay drawn"
           onClick={forget}
         >

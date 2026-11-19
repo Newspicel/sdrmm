@@ -33,6 +33,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Noise figure".to_owned(),
     summary: "Receiver noise figure by the Y-factor method".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 2.0 * MEASURED_HALF_HZ,
     input_rate_hz: RATE,
     has_audio: false,

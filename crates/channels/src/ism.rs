@@ -38,6 +38,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "ISM sensors".to_owned(),
     summary: "OOK and FSK remotes, weather and tyre sensors".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: ISM_BANDWIDTH_HZ,
     input_rate_hz: RATE,
     has_audio: false,

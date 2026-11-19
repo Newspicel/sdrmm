@@ -1444,6 +1444,7 @@ fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
             body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
                 channel_type: (*channel_type).to_string(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
             position: sdrmm_wire::Position { x: 400.0, y: 300.0 },
             size: None,

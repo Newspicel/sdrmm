@@ -20,7 +20,6 @@ import {
   fusionSources,
   geoToGrid,
   insideBox,
-  NO_SOURCES,
   stationAge,
   stationAlign,
   stationBearing,
@@ -200,12 +199,13 @@ describe("fusionSources", () => {
 });
 
 describe("TriangulationFace", () => {
-  it("asks for finders when nothing is wired", () => {
-    const html = renderFace(TriangulationFace, TRI, { graph: { nodes: [TRI], edges: [] } });
+  it("holds its shape when nothing is wired", () => {
+    const graph = { nodes: [TRI], edges: [] };
+    const html = renderFace(TriangulationFace, TRI, { graph });
     expect(html).toContain("0 of 0 reporting");
-    expect(html).toContain(NO_SOURCES);
     expect(html).toContain(">Clear<");
-    expect(html).toContain("Fade");
+    expect(html).not.toContain("Fade");
+    expect(renderFace(TriangulationFace, TRI, { graph, inspected: true })).toContain("Fade");
   });
 
   it("shows the estimate, guidance, stations and lost bearings", () => {
@@ -220,6 +220,5 @@ describe("TriangulationFace", () => {
     expect(html).toContain("3.1°");
     expect(html).toContain("Dropped");
     expect(html).not.toContain("Refused");
-    expect(html).not.toContain(NO_SOURCES);
   });
 });

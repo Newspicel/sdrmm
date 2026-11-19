@@ -109,7 +109,8 @@ fn a_rewire_stops_a_running_scan_and_new_settings_clear_its_cells() {
     let changed = hub.apply(HashMap::from([("sky".to_owned(), rewired.clone())]));
     let status = changed.first().expect("changed");
     assert!(!status.running);
-    assert_eq!(status.error.as_deref(), Some(REWIRED));
+    assert_eq!(status.waiting.as_deref(), Some(REWIRED));
+    assert_eq!(status.error, None);
     assert_eq!(status.cells.len(), 1);
     assert!(hub.record("sky", generation, cell, 100e6).is_none());
     assert!(hub.finish("sky", generation, None).is_none());

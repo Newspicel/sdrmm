@@ -29,6 +29,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "PER tester".to_owned(),
     summary: "Packet and bit error rate of a test frame stream".to_owned(),
     family: DecoderFamily::UTILITY,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 2.0 * half_band_hz(PerBaud::Baud9600),
     input_rate_hz: RATE,
     has_audio: false,

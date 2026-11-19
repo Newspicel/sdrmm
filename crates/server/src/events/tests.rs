@@ -24,6 +24,7 @@ fn channel(id: &str, channel_type: &str) -> PatchNode {
         NodeBody::Channel(ChannelNode {
             channel_type: channel_type.to_owned(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
     )
 }

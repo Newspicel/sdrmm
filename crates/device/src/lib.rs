@@ -219,6 +219,14 @@ impl RxSink {
         self.index = self.index.saturating_add(samples);
     }
 
+    pub fn deaf(&mut self, samples: u64) {
+        self.handler.event(LaneEvent::Deaf {
+            at: self.index,
+            samples,
+        });
+        self.index = self.index.saturating_add(samples);
+    }
+
     pub fn dropped_estimate(&mut self, samples: u64, error: u64, scope: GapScope) {
         self.index = self.index.saturating_add(samples);
         self.realigned(Uncertainty::EstimatedGap, error, scope);
@@ -445,6 +453,41 @@ mod tests {
         assert_eq!(room.free(), 5);
         room.freed(3);
         assert_eq!(room.free(), 8);
+    }
+
+    #[test]
+    fn a_deaf_span_is_announced_and_the_next_block_lands_after_it() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        let mut sink = RxSink::with_items(
+            move |item: SinkItem<'_>| {
+                let entry = match item {
+                    SinkItem::Samples { index, .. } => (index, None),
+                    SinkItem::Event(event) => (0, Some(event)),
+                };
+                log.lock().expect("log").push(entry);
+            },
+            |_| {},
+        );
+        let block = [Sample::new(0.0, 0.0); 4];
+        sink.push(&block);
+        sink.deaf(100);
+        sink.push(&block);
+        let seen = seen.lock().expect("log").clone();
+        assert_eq!(
+            seen,
+            vec![
+                (0, None),
+                (
+                    0,
+                    Some(LaneEvent::Deaf {
+                        at: 4,
+                        samples: 100
+                    })
+                ),
+                (104, None),
+            ]
+        );
     }
 
     struct NoopTx;

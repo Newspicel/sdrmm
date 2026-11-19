@@ -134,7 +134,7 @@ impl Engine {
                 .iter()
                 .map(|&span| combo_bits(protocol, span))
                 .collect(),
-            ldpc: ldpc::Decoder::new(),
+            ldpc: ldpc::Decoder::new(protocol.code),
             wave: Vec::new(),
             envelope: Vec::new(),
             smoothed: Vec::new(),

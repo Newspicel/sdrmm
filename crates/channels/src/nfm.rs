@@ -9,12 +9,10 @@ pub mod synth;
 pub(crate) use encoder::nfm_encoder;
 pub use encoder::{NfmEncoderSettings, NfmModulator};
 pub use model::*;
-use std::{f64::consts::FRAC_1_SQRT_2, sync::LazyLock};
+use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{
-    Biquad, Compander, Deemphasis, Preemphasis, RealDecimator, deemphasis_gain, design_lowpass,
-};
+use sdrmm_dsp::{Compander, Preemphasis, RealDecimator};
 use sdrmm_modem::analog::{AngleDemod, AngleDetector, AngleKind, AngleParams, AngleRx};
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelHealth, ChannelSettings, ChannelStatus, DecoderEvent,
@@ -30,27 +28,25 @@ use sdrmm_modem::analog::{
         DEFAULT_INVERSION_HZ, Inversion, InversionDetector, MAX_INVERSION_HZ, MIN_INVERSION_HZ,
         VoiceInverter, is_supported_inversion,
     },
-    tone_squelch::{
-        AUDIO_CORNER_HZ, CTCSS_TONES_HZ, DCS_CODES, ToneSquelch, is_standard_ctcss, is_standard_dcs,
+    tone_squelch::{CTCSS_TONES_HZ, DCS_CODES, ToneSquelch, is_standard_ctcss, is_standard_dcs},
+    voice::{
+        EMPHASIS_REFERENCE_HZ, EMPHASIS_TAU_US, SubaudibleCut, VOICE_CUTOFF_HZ, VoiceDeemphasis,
+        voice_lowpass,
     },
 };
 use sdrmm_wire::ToneSquelchStatus;
 
-const VOICE_CUTOFF_HZ: f64 = 3_400.0;
 const COMPANDER_REFERENCE_RMS: f32 = 0.25;
 const COMPANDER_RANGE_DB: f32 = 40.0;
 const COMPANDER_HEADROOM_DB: f32 = 9.0;
-const AUDIO_TAPS: usize = 129;
 const CHANNEL_TAPS: usize = 129;
-const EMPHASIS_TAU_US: f32 = 750.0;
-const EMPHASIS_REFERENCE_HZ: f64 = 1_000.0;
-const SUBAUDIBLE_SECTIONS: usize = 2;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "nfm".to_owned(),
     name: "NFM".to_owned(),
     summary: "Narrowband FM voice with CTCSS and DCS".to_owned(),
     family: DecoderFamily::ANALOG_VOICE,
+    verification: sdrmm_wire::Verification::OwnModulator,
     bandwidth_hz: 12_500.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
@@ -63,7 +59,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 pub struct NfmChannel {
     demod: AngleDemod,
     subaudible_cut: SubaudibleCut,
-    deemphasis: AudioDeemphasis,
+    deemphasis: VoiceDeemphasis,
     audio_lp: RealDecimator,
     demod_buf: Vec<f32>,
     tone: Option<Tone>,
@@ -71,63 +67,6 @@ pub struct NfmChannel {
     tone_dropped: bool,
     scrambler: Option<Scrambler>,
     expander: Option<Compander>,
-}
-
-struct SubaudibleCut {
-    sections: [Biquad; SUBAUDIBLE_SECTIONS],
-}
-
-impl SubaudibleCut {
-    fn new(rate: f64) -> Self {
-        Self {
-            sections: std::array::from_fn(|_| {
-                Biquad::highpass(rate, AUDIO_CORNER_HZ, FRAC_1_SQRT_2)
-            }),
-        }
-    }
-
-    fn reset(&mut self) {
-        for section in &mut self.sections {
-            section.reset();
-        }
-    }
-
-    fn process(&mut self, audio: &mut [f32]) {
-        for section in &mut self.sections {
-            section.process(audio);
-        }
-    }
-}
-
-fn emphasis_reference_gain(rate: f64) -> f32 {
-    deemphasis_gain(rate, EMPHASIS_TAU_US, EMPHASIS_REFERENCE_HZ)
-}
-
-struct AudioDeemphasis {
-    rate: f64,
-    filter: Deemphasis,
-    gain: f32,
-}
-
-impl AudioDeemphasis {
-    fn new(rate: f64) -> Self {
-        Self {
-            rate,
-            filter: Deemphasis::new(rate, EMPHASIS_TAU_US),
-            gain: 1.0 / emphasis_reference_gain(rate),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.filter = Deemphasis::new(self.rate, EMPHASIS_TAU_US);
-    }
-
-    fn process(&mut self, audio: &mut [f32]) {
-        self.filter.process(audio);
-        for s in audio {
-            *s *= self.gain;
-        }
-    }
 }
 
 fn audio_preemphasis(rate: f64) -> Preemphasis {
@@ -359,10 +298,7 @@ pub(crate) fn channel_filter(p: &NfmParams) -> Result<FilterSpec, ChannelError> 
 }
 
 fn audio_lowpass() -> RealDecimator {
-    RealDecimator::new(
-        &design_lowpass(AUDIO_TAPS, VOICE_CUTOFF_HZ / f64::from(AUDIO_RATE)),
-        1,
-    )
+    voice_lowpass(f64::from(AUDIO_RATE))
 }
 
 fn expander() -> Compander {
@@ -385,7 +321,7 @@ impl NativeChannel for NfmChannel {
         Ok(Self {
             demod: discriminator(ctx.input_rate, p),
             subaudible_cut: SubaudibleCut::new(ctx.input_rate),
-            deemphasis: AudioDeemphasis::new(ctx.input_rate),
+            deemphasis: VoiceDeemphasis::new(ctx.input_rate),
             audio_lp: audio_lowpass(),
             demod_buf: Vec::new(),
             tone: (p.tone_mode != NfmToneMode::Off).then(|| Tone::new(p)),
@@ -697,7 +633,7 @@ mod tests {
     #[test]
     fn de_emphasis_follows_the_published_750_us_curve() {
         for hz in EMPHASIS_PROBES {
-            let mut filter = AudioDeemphasis::new(RATE);
+            let mut filter = VoiceDeemphasis::new(RATE);
             let measured = response_db(hz, |audio| filter.process(audio));
             let want = curve_db(hz);
             assert!(
@@ -718,7 +654,7 @@ mod tests {
                 "{hz} Hz: {measured:.2} dB against the curve's {want:.2} dB"
             );
             let mut lift = audio_preemphasis(RATE);
-            let mut fall = AudioDeemphasis::new(RATE);
+            let mut fall = VoiceDeemphasis::new(RATE);
             let paired = response_db(hz, |audio| {
                 lift.process(audio);
                 fall.process(audio);

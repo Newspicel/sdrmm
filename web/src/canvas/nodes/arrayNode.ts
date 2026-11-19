@@ -1,5 +1,5 @@
 import type { Options } from "../../components/controls";
-import { CAL_TEXT, failureText, SYNC_TEXT } from "../../lib/arrays";
+import { CAL_TEXT, failureText, isNeed, SYNC_TEXT } from "../../lib/arrays";
 import { ARRAY_LIMITS } from "../../lib/limits";
 import { HEADING_SOURCE_LABEL } from "../../lib/phones";
 import type {
@@ -257,7 +257,7 @@ export function arraySubtitle(status: ArrayStatus | undefined, wired: number): s
   if (wired === 0) {
     return NO_LANES;
   }
-  if (status?.failure != null) {
+  if (status?.failure != null && !isNeed(status.failure)) {
     return FAILED;
   }
   return SYNC_TEXT[status?.sync ?? "idle"].toLowerCase();

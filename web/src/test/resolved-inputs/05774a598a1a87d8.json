@@ -1,0 +1,100 @@
+{
+  "name": "05774a598a1a87d8",
+  "test": "TransmitFace > arms a radio set to send and receive",
+  "graph": {
+    "nodes": [
+      {
+        "id": "radio",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "device",
+        "data": {
+          "device": {
+            "backend": "virtual",
+            "key": "halfduplex"
+          },
+          "radio_use": "both"
+        }
+      },
+      {
+        "id": "mod",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "encoder",
+        "data": {
+          "encoder_type": "nfm"
+        }
+      },
+      {
+        "id": "tx",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "kind": "transmit",
+        "data": {
+          "frequency_hz": null,
+          "level_db": -3,
+          "timeout_s": 180
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": {
+          "node": "mod",
+          "port": "baseband"
+        },
+        "to": {
+          "node": "tx",
+          "port": "baseband"
+        }
+      },
+      {
+        "from": {
+          "node": "tx",
+          "port": "transmit"
+        },
+        "to": {
+          "node": "radio",
+          "port": "transmit"
+        }
+      }
+    ]
+  },
+  "live": {
+    "device_sets": [
+      {
+        "id": 1,
+        "device": {
+          "driver": "virtual",
+          "key": "halfduplex",
+          "label": "Half-duplex 1×1 (virtual)"
+        },
+        "capabilities": {
+          "freq_ranges": [],
+          "sample_rates": [],
+          "gains": [],
+          "antennas": [],
+          "bandwidths": [],
+          "duplex": "half"
+        },
+        "settings": {},
+        "status": "running",
+        "channels": [],
+        "overruns": 0,
+        "radio_use": "both",
+        "uses": [
+          "receive",
+          "send",
+          "both"
+        ]
+      }
+    ],
+    "revision": 0
+  }
+}

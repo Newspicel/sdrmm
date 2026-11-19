@@ -715,6 +715,7 @@ async fn draw_channel_node(app: &Router, ds: u32, id: &str, channel_type: &str) 
         body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
             channel_type: channel_type.to_string(),
             tuning_locked: false,
+            audio: Default::default(),
         }),
         position: sdrmm_wire::Position { x: 400.0, y: 600.0 },
         size: None,
@@ -831,7 +832,7 @@ fn adsb_record(at: &str, device_set: u32, icao: &str, callsign: &str) -> Decoded
         freq_hz: 1_090_000_000.0,
         event: DecoderEvent::of(&AdsbMessage {
             icao: icao.to_string(),
-            df: 17,
+            df: Some(17),
             callsign: Some(callsign.to_string()),
             raw: "8D3C6444".to_string(),
             ..AdsbMessage::default()
@@ -975,6 +976,7 @@ fn virtual_snapshot(key: &str, taps: &[(&str, &str, &str)]) -> sdrmm_wire::Works
             body: sdrmm_wire::NodeBody::Channel(sdrmm_wire::ChannelNode {
                 channel_type: (*channel_type).to_string(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
             position: sdrmm_wire::Position { x: 400.0, y: 300.0 },
             size: None,

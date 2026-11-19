@@ -152,6 +152,6 @@ describe("meter row", () => {
     );
     expect(html).toContain("Squelch");
     expect(html).toContain("-40 dB");
-    expect(html).toContain("grid-cols-[3.5rem_minmax(0,1fr)_3.75rem_2.75rem_0]");
+    expect(html).toContain("grid-cols-[var(--meter-label,3.5rem)_minmax(0,1fr)_3.75rem_2.75rem_0]");
   });
 });

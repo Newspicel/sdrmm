@@ -21,8 +21,8 @@ use sdrmm_wire::{
     AudioRecordingStatus, AudioRoute, BandMiss, Capabilities, ChannelInfo, ChannelSettings,
     ChannelStatus, DecodedRecord, DeviceBackend, DeviceFault, DeviceInfo, DeviceSet,
     DeviceSetStatus, DeviceSettings, EventOrigin, HeldLane, NetworkExportSettings,
-    NetworkExportStatus, PositionFix, RecordingStatus, ServerEvent, SettingsRefused, StateScope,
-    StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
+    NetworkExportStatus, PositionFix, RadioActivity, RadioUse, RecordingStatus, ServerEvent,
+    SettingsRefused, StateScope, StateSnapshot, StreamScope, TrunkSystemStatus, VirtualLane,
 };
 use tokio::sync::broadcast;
 
@@ -53,6 +53,7 @@ mod placement;
 mod planning;
 mod position;
 mod publishing;
+mod radio_use;
 mod reattach;
 pub mod recording;
 mod refusal;
@@ -75,6 +76,7 @@ pub use image::ImageCapture;
 pub use iq::{IQ_BLOCK_SAMPLES, IQ_BLOCKS_PER_SEC, IqBlock};
 pub use placement::{Allocation, Lane, Placeable, Placement};
 pub(crate) use planning::{dc_block, descriptor_for};
+pub use radio_use::SET_TO_RECEIVE;
 pub use recording::FinalizedRecording;
 pub use runtime::{BackgroundSpectrum, OverlapClaim, SpectrumSnapshot};
 pub use symbols::{SYMBOL_BLOCKS_PER_SEC, SymbolBlock};
@@ -700,6 +702,7 @@ struct DeviceSetState {
     held: BTreeMap<u32, String>,
     locked: BTreeSet<u32>,
     virtual_lanes: BTreeMap<u32, VirtualLaneState>,
+    radio_use: RadioUse,
 }
 
 struct OverrunMeter {
@@ -870,7 +873,23 @@ impl DeviceSetState {
                     array: array.clone(),
                 })
                 .collect(),
+            radio_use: self.radio_use,
+            uses: RadioUse::offered(self.capabilities.duplex),
+            activity: self.activity(),
         }
+    }
+
+    fn activity(&self) -> RadioActivity {
+        let on_air = self
+            .transmit
+            .as_ref()
+            .is_some_and(|transmit| transmit.status().phase == sdrmm_wire::TransmitPhase::OnAir);
+        RadioActivity::of(
+            self.radio_use,
+            self.capabilities.duplex,
+            self.status == DeviceSetStatus::Running,
+            on_air,
+        )
     }
 
     fn scanner_statuses(&self) -> Vec<sdrmm_wire::ScannerStatus> {

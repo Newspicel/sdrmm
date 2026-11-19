@@ -361,7 +361,7 @@ fn wanted_audio(
                 let route = AudioRoute {
                     device_set: addr.device_set,
                     channel: addr.channel,
-                    fx: feed.via.clone(),
+                    fx: graph.audio_fx(&feed.source),
                 };
                 wanted.insert(
                     take,
@@ -590,6 +590,7 @@ mod tests {
             NodeBody::Channel(ChannelNode {
                 channel_type: "nfm".to_owned(),
                 tuning_locked: false,
+                audio: Default::default(),
             }),
         )
     }
@@ -735,30 +736,6 @@ mod tests {
         };
         assert_eq!(skip("audio"), Some((route.clone(), false)));
         assert_eq!(skip("quiet"), Some((route, true)));
-        engine.remove_device_set(ds).expect("close");
-    }
-
-    #[test]
-    fn a_recorder_fed_one_channel_twice_records_it_once_and_says_so() {
-        let dir = tempfile::TempDir::new().expect("tempdir");
-        let (engine, ds, _) = radio(&dir);
-        let mut graph = patch(true);
-        graph.nodes.push(node(
-            "fx",
-            NodeBody::AudioFx(sdrmm_wire::AudioFxNode::default()),
-        ));
-        graph.edges.push(audio("ch", "fx"));
-        graph.edges.push(audio("fx", "audio"));
-        let (wanted, doubled) = wanted(&graph, &engine);
-        assert_eq!(wanted.len(), 1);
-        assert_eq!(
-            doubled,
-            vec![NodeProblem {
-                node: "audio".to_owned(),
-                source: ProblemSource::Recorder,
-                text: ONE_TAKE_PER_CHANNEL.to_owned(),
-            }]
-        );
         engine.remove_device_set(ds).expect("close");
     }
 
