@@ -5,6 +5,7 @@ use super::*;
 
 fn new_call(encrypted: bool) -> NewCall {
     NewCall {
+        talkgroup_name: None,
         node: "calls".to_owned(),
         started_at: "2026-08-14T10:00:00Z".to_owned(),
         ended_at: "2026-08-14T10:00:01Z".to_owned(),

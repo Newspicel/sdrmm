@@ -40,6 +40,7 @@ export type ParamChoice = components["schemas"]["ParamChoice"];
 export type TrunkScheme = components["schemas"]["TrunkScheme"];
 export type TrunkSpec = components["schemas"]["TrunkSpec"];
 export type TrunkTalkgroups = components["schemas"]["TrunkTalkgroups"];
+export type TalkgroupName = components["schemas"]["TalkgroupName"];
 export type TrunkSite = components["schemas"]["TrunkSite"];
 export type TrunkDiscovery = components["schemas"]["TrunkDiscovery"];
 export type TrunkSearchRange = components["schemas"]["TrunkSearchRange"];

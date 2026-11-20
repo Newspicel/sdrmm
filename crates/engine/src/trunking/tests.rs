@@ -232,6 +232,32 @@ fn a_grant_on_a_defined_channel_opens_a_slot_filtered_receiver() {
 }
 
 #[test]
+fn a_receiver_goes_idle_once_its_call_stops_being_heard() {
+    let engine = engine();
+    let (device_set, channel, center_hz) = control_channel(&engine);
+    let carrier = (device_set, channel);
+    let mut follower = follower(&engine, "tier_three", carrier);
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &grant(2)));
+    assert!(
+        status(&follower).followers[0].active,
+        "a fresh grant is not live"
+    );
+
+    let past = Instant::now()
+        .checked_sub(GRANT_HOLD)
+        .expect("a clock older than the grant hold");
+    for open in follower.followers.values_mut() {
+        open.heard = past;
+    }
+    follower.publish();
+    assert!(
+        !status(&follower).followers[0].active,
+        "a quiet receiver still looks live"
+    );
+}
+
+#[test]
 fn a_followed_call_is_deciphered_with_the_systems_keys() {
     let engine = engine();
     let (device_set, channel, center_hz) = control_channel(&engine);

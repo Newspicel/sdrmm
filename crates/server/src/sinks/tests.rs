@@ -75,6 +75,7 @@ fn aircraft(icao: &str, callsign: &str) -> DecoderEvent {
 
 fn call(node: &str) -> DecoderEvent {
     DecoderEvent::of(&VoiceCall {
+        talkgroup_name: None,
         id: 7,
         node: node.to_owned(),
         started_at: "2026-09-21T10:00:00Z".to_owned(),

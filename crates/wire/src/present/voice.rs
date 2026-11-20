@@ -265,10 +265,13 @@ impl EventPayload for VoiceCall {
 }
 
 fn call_fields(c: &VoiceCall) -> Vec<Field> {
-    let destination = c.destination.map(|id| match c.group_call {
-        Some(false) => format!("radio {id}"),
-        _ => format!("talkgroup {id}"),
-    });
+    let destination = c
+        .destination
+        .map(|id| match (c.group_call, &c.talkgroup_name) {
+            (Some(false), _) => format!("radio {id}"),
+            (_, Some(name)) => format!("{name} (talkgroup {id})"),
+            (_, None) => format!("talkgroup {id}"),
+        });
     fields(&[
         ("mode", "Mode", text_of(c.mode_label())),
         ("destination", "Destination", text(destination.as_deref())),
@@ -300,10 +303,11 @@ fn seconds(ms: u64, digits: u8) -> Option<FieldValue> {
 fn call_summary(c: &VoiceCall) -> String {
     let mut parts = vec![c.mode_label()];
     if let Some(id) = c.destination {
-        parts.push(match c.group_call {
-            Some(true) => format!("talkgroup {id}"),
-            Some(false) => format!("radio {id}"),
-            None => format!("to {id}"),
+        parts.push(match (c.group_call, &c.talkgroup_name) {
+            (Some(false), _) => format!("radio {id}"),
+            (_, Some(name)) => name.clone(),
+            (Some(true), None) => format!("talkgroup {id}"),
+            (None, None) => format!("to {id}"),
         });
     }
     parts.extend(c.source.map(|id| format!("from {id}")));
@@ -494,6 +498,24 @@ mod tests {
         );
         assert_eq!(view.field("Emergency"), only_if(true).as_ref());
         assert_eq!(view.field("Encrypted"), None);
+    }
+
+    #[test]
+    fn a_named_talkgroup_leads_with_its_name() {
+        let view = serde_json::from_value::<VoiceCall>(serde_json::json!({
+            "id": 1, "node": "n", "started_at": "2026-01-01T00:00:00Z",
+            "ended_at": "2026-01-01T00:00:04Z", "duration_ms": 4200, "device_set": 0,
+            "channel": 0, "freq_hz": 851e6, "mode": "P25", "destination": 9,
+            "group_call": true, "talkgroup_name": "Fire", "encrypted": false, "emergency": false,
+        }))
+        .unwrap()
+        .present(&EventKind::CALL);
+        assert_eq!(
+            view.field("Destination"),
+            text_of("Fire (talkgroup 9)").as_ref()
+        );
+        assert!(view.summary.contains("Fire"));
+        assert!(!view.summary.contains("talkgroup 9"));
     }
 
     #[test]

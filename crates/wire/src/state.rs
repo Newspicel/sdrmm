@@ -161,6 +161,9 @@ pub struct TrunkFollower {
     pub source: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_call: Option<bool>,
+    /// The control channel still grants this call, or its bursts still decode.
+    #[serde(default)]
+    pub active: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

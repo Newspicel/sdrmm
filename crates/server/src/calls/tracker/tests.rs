@@ -149,6 +149,32 @@ fn a_conventional_transmission_completes_one_call() {
 }
 
 #[test]
+fn a_call_to_a_named_talkgroup_carries_its_name() {
+    let engine = Engine::with_registry(DeviceRegistry::new(), None);
+    let mut decoded = engine.subscribe_decoded();
+    let mut tracker = Tracker::new(Arc::new(Calls::default()), Arc::downgrade(&engine));
+    tracker.rebind(framed("dmr"));
+    tracker.rename(HashMap::from([(
+        "dmr".to_owned(),
+        sdrmm_wire::TrunkTalkgroups {
+            names: vec![sdrmm_wire::TalkgroupName {
+                id: 91,
+                name: "Fire Dispatch".to_owned(),
+            }],
+            ..sdrmm_wire::TrunkTalkgroups::default()
+        },
+    )]));
+    tracker.record(&record(DvFrameKind::Header, 1));
+    tracker.record(&record(DvFrameKind::Terminator, 1));
+
+    let announced = completed(&mut decoded);
+    assert_eq!(
+        announced[0].talkgroup_name.as_deref(),
+        Some("Fire Dispatch")
+    );
+}
+
+#[test]
 fn the_two_slots_of_one_channel_are_two_calls() {
     let engine = Engine::with_registry(DeviceRegistry::new(), None);
     let mut tracker = Tracker::new(Arc::new(Calls::default()), Arc::downgrade(&engine));

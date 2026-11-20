@@ -5,6 +5,7 @@ use utoipa::ToSchema;
 pub const AUTO_TRUNK_PROTOCOL: &str = "auto";
 
 pub const MAX_TRUNK_TALKGROUPS: usize = 256;
+pub const MAX_TALKGROUP_NAME_LEN: usize = 48;
 
 /// How a trunked protocol places its calls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -71,7 +72,23 @@ pub struct TrunkCallSettings {
     pub vocoder: Option<String>,
 }
 
-/// Which talkgroups a trunk node follows, and which win a traffic channel when all are busy.
+/// A name the operator gave a talkgroup.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TalkgroupName {
+    pub id: u32,
+    pub name: String,
+}
+
+impl TalkgroupName {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        let name = self.name.trim();
+        !name.is_empty() && name.chars().count() <= MAX_TALKGROUP_NAME_LEN
+    }
+}
+
+/// Which talkgroups a trunk node follows, which win a traffic channel when all are busy, and
+/// what the operator calls them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct TrunkTalkgroups {
@@ -82,17 +99,35 @@ pub struct TrunkTalkgroups {
     /// Follow only the priority talkgroups.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub listed_only: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub names: Vec<TalkgroupName>,
 }
 
 impl TrunkTalkgroups {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.priority.len() <= MAX_TRUNK_TALKGROUPS && self.lockout.len() <= MAX_TRUNK_TALKGROUPS
+        self.priority.len() <= MAX_TRUNK_TALKGROUPS
+            && self.lockout.len() <= MAX_TRUNK_TALKGROUPS
+            && self.names.len() <= MAX_TRUNK_TALKGROUPS
+            && self.names.iter().all(TalkgroupName::valid)
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.priority.is_empty() && self.lockout.is_empty() && !self.listed_only
+        self.priority.is_empty()
+            && self.lockout.is_empty()
+            && !self.listed_only
+            && self.names.is_empty()
+    }
+
+    /// The operator's name for `talkgroup`; the last entry wins when one is named twice.
+    #[must_use]
+    pub fn name_of(&self, talkgroup: u32) -> Option<&str> {
+        self.names
+            .iter()
+            .rev()
+            .find(|entry| entry.id == talkgroup)
+            .map(|entry| entry.name.trim())
     }
 
     #[must_use]
@@ -134,7 +169,7 @@ mod tests {
         let talkgroups = TrunkTalkgroups {
             priority: vec![9],
             lockout: vec![9, 7],
-            listed_only: false,
+            ..TrunkTalkgroups::default()
         };
         assert!(!talkgroups.follows(7));
         assert!(!talkgroups.follows(9));
@@ -145,11 +180,45 @@ mod tests {
     fn listed_only_follows_just_the_priority_talkgroups() {
         let talkgroups = TrunkTalkgroups {
             priority: vec![9],
-            lockout: Vec::new(),
             listed_only: true,
+            ..TrunkTalkgroups::default()
         };
         assert!(talkgroups.follows(9));
         assert!(!talkgroups.follows(3));
+    }
+
+    #[test]
+    fn a_named_talkgroup_reads_back_its_name() {
+        let talkgroups = TrunkTalkgroups {
+            names: vec![
+                TalkgroupName {
+                    id: 9,
+                    name: " Fire ".to_owned(),
+                },
+                TalkgroupName {
+                    id: 9,
+                    name: "Fire Dispatch".to_owned(),
+                },
+            ],
+            ..TrunkTalkgroups::default()
+        };
+        assert_eq!(talkgroups.name_of(9), Some("Fire Dispatch"));
+        assert_eq!(talkgroups.name_of(3), None);
+        assert!(!talkgroups.is_empty());
+    }
+
+    #[test]
+    fn a_blank_or_overlong_name_is_refused() {
+        let named = |name: &str| TrunkTalkgroups {
+            names: vec![TalkgroupName {
+                id: 1,
+                name: name.to_owned(),
+            }],
+            ..TrunkTalkgroups::default()
+        };
+        assert!(named("Fire").valid());
+        assert!(!named("  ").valid());
+        assert!(!named(&"x".repeat(MAX_TALKGROUP_NAME_LEN + 1)).valid());
     }
 
     #[test]

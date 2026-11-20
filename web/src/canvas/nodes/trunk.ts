@@ -1,7 +1,9 @@
 import { formatHz } from "../../components/format";
+import type { Form } from "../../lib/settingsForm";
 import type {
   ChannelDescriptor,
   SettingField,
+  TalkgroupName,
   TrunkBand,
   TrunkChannel,
   TrunkChannelEntry,
@@ -20,6 +22,7 @@ export const MAX_SEARCH_CANDIDATES = 512;
 export const MIN_SEARCH_STEP_HZ = 1_250;
 export const MAX_CHANNEL_MAP = 512;
 export const MAX_TALKGROUPS = 256;
+export const MAX_TALKGROUP_NAME_LEN = 48;
 export const AUTO_PROTOCOL = "auto";
 export const DEFAULT_BAND_SPACING_HZ = 12_500;
 export const MIN_BAND_SPACING_HZ = 1_250;
@@ -79,17 +82,60 @@ export function planLabel(scheme: TrunkScheme | null): string {
   return scheme?.kind === "grants" ? "Channel plan" : "Repeater outputs";
 }
 
-export function parseTalkgroups(text: string): number[] {
+/** Talkgroups typed by number or by name, comma separated; unknown names drop out. */
+export function parseTalkgroups(text: string, names?: readonly TalkgroupName[]): number[] {
   const ids = text
-    .split(/[\s,;]+/)
-    .filter((part) => /^\d+$/.test(part))
-    .map(Number)
+    .split(/[,;]+/)
+    .map((part) => part.trim())
+    .flatMap((part) => idOf(part, names) ?? numbersIn(part))
     .filter((id) => Number.isSafeInteger(id) && id <= 0xffff_ffff);
   return [...new Set(ids)].slice(0, MAX_TALKGROUPS);
 }
 
-export function formatTalkgroups(ids: readonly number[] | undefined): string {
-  return (ids ?? []).join(", ");
+function idOf(name: string, names: readonly TalkgroupName[] | undefined): number[] | null {
+  const wanted = name.toLowerCase();
+  const named = (names ?? []).findLast((entry) => entry.name.trim().toLowerCase() === wanted);
+  return named === undefined ? null : [named.id];
+}
+
+function numbersIn(part: string): number[] {
+  return part
+    .split(/\s+/)
+    .filter((word) => /^\d+$/.test(word))
+    .map(Number);
+}
+
+export function formatTalkgroups(
+  ids: readonly number[] | undefined,
+  names?: readonly TalkgroupName[],
+): string {
+  return (ids ?? []).map((id) => nameOf(id, names) ?? String(id)).join(", ");
+}
+
+export const TALKGROUP_NAME_ITEM: Form = [
+  {
+    key: "id",
+    label: "Talkgroup",
+    control: { type: "number", min: 0, max: 0xffff_ffff, step: 1 },
+  },
+  {
+    key: "name",
+    label: "Name",
+    control: { type: "text", placeholder: "Fire Dispatch", max_len: MAX_TALKGROUP_NAME_LEN },
+  },
+];
+
+/** List entries as talkgroup names, dropping any not yet whole. */
+export function talkgroupNames(
+  entries: readonly Readonly<Record<string, unknown>>[],
+): TalkgroupName[] {
+  return entries
+    .flatMap(({ id, name }) =>
+      typeof id === "number" && typeof name === "string" && name.trim() !== ""
+        ? [{ id, name: name.trim().slice(0, MAX_TALKGROUP_NAME_LEN) }]
+        : [],
+    )
+    .slice(0, MAX_TALKGROUPS);
 }
 
 /** Voice keys typed as `key ID:hex key`, comma separated; a later entry for an ID wins. */
@@ -113,13 +159,34 @@ export function slotLabel(slot: number | null | undefined, slots: number): strin
   return slots > 1 && slot != null ? `TS ${slot}` : "Call";
 }
 
-export function followerCall(follower: TrunkFollower): string {
+/** A talkgroup by the name the operator gave it, else by number. */
+export function talkgroupLabel(id: number, names: readonly TalkgroupName[] | undefined): string {
+  return nameOf(id, names) ?? `TG ${id}`;
+}
+
+function nameOf(id: number, names: readonly TalkgroupName[] | undefined): string | null {
+  const named = (names ?? []).findLast((entry) => entry.id === id);
+  return named === undefined ? null : named.name.trim();
+}
+
+/** Who a traffic channel carries: the called talkgroup or radio, and who is talking. */
+export function followerCall(
+  follower: TrunkFollower,
+  names: readonly TalkgroupName[] | undefined,
+): string {
+  const { destination, source, group_call } = follower;
+  if (destination == null) {
+    return "";
+  }
+  const called = group_call === false ? `ID ${destination}` : talkgroupLabel(destination, names);
+  return source == null ? called : `${called} ← ${source}`;
+}
+
+/** Where a traffic channel sits, for its readout's title. */
+export function followerPlace(follower: TrunkFollower): string {
   const parts = [formatHz(follower.freq_hz)];
   if (follower.logical_channel != null) {
     parts.push(`LCN ${follower.logical_channel}`);
-  }
-  if (follower.destination != null) {
-    parts.push(`${follower.group_call === false ? "ID" : "TG"} ${follower.destination}`);
   }
   return parts.join(" · ");
 }

@@ -59,6 +59,8 @@ Trunk system --events--> Event output
 
 - **P25 TDMA** grants automatically spawn P25 Phase 2 on the granted slot.
 - **Priority** preempts busy receivers, **Lockout** skips talkgroups, **Only these** restricts to priority list. Control failover is automatic.
+- **Names** label talkgroups on the face and in the call log. Priority and Lockout take names too.
+- Each receiver shows `talkgroup ← source`: green while the call is live, faded once idle.
 
 ## Voice privacy
 

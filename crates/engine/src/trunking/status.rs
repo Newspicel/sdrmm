@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::{sync::atomic::Ordering, time::Instant};
 
 use sdrmm_wire::{
     TrunkChannel, TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem,
@@ -21,6 +21,7 @@ impl Follower {
     }
 
     pub(super) fn status_of(&self, system: &TrunkSystem) -> TrunkSystemStatus {
+        let now = Instant::now();
         let mut status = TrunkSystemStatus {
             node: system.node.clone(),
             detected: self.detected.get(&system.node).cloned(),
@@ -47,6 +48,7 @@ impl Follower {
                     destination: follower.call.map(|call| call.destination),
                     source: follower.call.and_then(|call| call.source),
                     group_call: follower.call.and_then(|call| call.group_call),
+                    active: follower.active(now),
                 })
                 .collect(),
             problems: self

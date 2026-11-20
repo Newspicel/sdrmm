@@ -239,6 +239,7 @@ mod tests {
             audio: None,
             audio_error: None,
             talker_alias: None,
+            talkgroup_name: None,
             key_id: None,
         }
     }

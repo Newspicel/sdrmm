@@ -166,6 +166,11 @@ impl FollowerChannel {
         now.saturating_duration_since(self.granted) >= GRANT_HOLD
     }
 
+    /// Still carrying its call: granted again, or a burst decoded on it, within [`GRANT_HOLD`].
+    fn active(&self, now: Instant) -> bool {
+        self.call.is_some() && now.saturating_duration_since(self.heard) < GRANT_HOLD
+    }
+
     fn lingered(&self, now: Instant) -> bool {
         now.saturating_duration_since(self.heard) >= FOLLOWER_LINGER
     }

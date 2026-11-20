@@ -61,6 +61,7 @@ fn discord_webhook() -> EventOutputTarget {
 
 fn call() -> VoiceCall {
     VoiceCall {
+        talkgroup_name: None,
         id: 7,
         node: "trunk".to_owned(),
         started_at: "2026-08-15T10:00:00Z".to_owned(),

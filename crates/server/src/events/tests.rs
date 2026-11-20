@@ -196,6 +196,7 @@ fn a_kind_the_sink_does_not_accept_is_not_stamped_and_counts_as_ignored() {
         audio: None,
         audio_error: None,
         talker_alias: None,
+        talkgroup_name: None,
         key_id: None,
     });
 

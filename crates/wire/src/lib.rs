@@ -54,8 +54,8 @@ pub mod tools;
 pub mod transmit;
 pub mod trunk;
 pub use trunk::{
-    AUTO_TRUNK_PROTOCOL, MAX_TRUNK_TALKGROUPS, TrunkCallSettings, TrunkKind, TrunkScheme,
-    TrunkSite, TrunkSpec, TrunkTalkgroups,
+    AUTO_TRUNK_PROTOCOL, MAX_TRUNK_TALKGROUPS, TalkgroupName, TrunkCallSettings, TrunkKind,
+    TrunkScheme, TrunkSite, TrunkSpec, TrunkTalkgroups,
 };
 pub mod units;
 pub mod workspace;

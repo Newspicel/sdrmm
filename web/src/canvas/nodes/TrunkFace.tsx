@@ -12,6 +12,7 @@ import type {
   PatchNode,
   PatchNodeOf,
   SettingField,
+  TalkgroupName,
   TrunkBand,
   TrunkSpec,
   TrunkSystemStatus,
@@ -33,6 +34,7 @@ import {
   controlChannelStalled,
   fallbackControl,
   followerCall,
+  followerPlace,
   formatSearchRanges,
   formatTalkgroups,
   maxChannel,
@@ -44,6 +46,8 @@ import {
   searchSummary,
   siteLabel,
   slotLabel,
+  TALKGROUP_NAME_ITEM,
+  talkgroupNames,
   trunkDecoders,
   trunkKeysField,
   trunkProtocolLabel,
@@ -76,6 +80,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
     priority: [],
     lockout: [],
     listed_only: false,
+    names: [],
     ...node.data.talkgroups,
   };
   const discovery = node.data.discovery ?? { enabled: false, ranges: [], max_probes: 0 };
@@ -111,7 +116,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
         !unwired && need === null
           ? [
               protocol === AUTO_PROTOCOL ? trunkProtocolLabel(scheme) : null,
-              `${followers.length} following`,
+              `${followers.filter((follower) => follower.active === true).length} active`,
             ]
               .filter(Boolean)
               .join(" · ")
@@ -157,7 +162,12 @@ export function TrunkFace({ node }: { node: PatchNode }) {
       </Inspect>
       <FaceBody>
         {need !== null && <FaceEmpty hint={need} />}
-        <TrunkActivity status={status} slots={slots} controlHz={node.data.control_hz} />
+        <TrunkActivity
+          status={status}
+          slots={slots}
+          controlHz={node.data.control_hz}
+          names={talkgroups.names}
+        />
         {stalled && (
           <FaceFault
             message="Control channel not running"
@@ -311,25 +321,34 @@ function CallChips({
   onVocoder: (vocoder: string | null) => void;
 }) {
   const priority = talkgroups.priority;
+  const names = talkgroups.names ?? [];
   return (
     <Chips inset="none">
+      <ListChip
+        label="Names"
+        title="Talkgroup names, shown on calls and accepted in Priority and Lockout"
+        item={TALKGROUP_NAME_ITEM}
+        entries={names}
+        quiet={names.length === 0}
+        onChange={(entries) => onChange({ names: talkgroupNames(entries) })}
+      />
       <TextChip
         label="Priority"
         name="Priority talkgroups"
-        title="Talkgroups that take a receiver from other calls when all are busy"
-        value={formatTalkgroups(priority)}
+        title="Talkgroups that take a receiver from other calls when all are busy, by number or name"
+        value={formatTalkgroups(priority, names)}
         shown={priority.length === 0 ? "none" : undefined}
         placeholder="101, 102"
-        onCommit={(text) => onChange({ priority: parseTalkgroups(text) })}
+        onCommit={(text) => onChange({ priority: parseTalkgroups(text, names) })}
       />
       <TextChip
         label="Lockout"
         name="Locked out talkgroups"
-        title="Talkgroups never followed"
-        value={formatTalkgroups(talkgroups.lockout)}
+        title="Talkgroups never followed, by number or name"
+        value={formatTalkgroups(talkgroups.lockout, names)}
         shown={talkgroups.lockout.length === 0 ? "none" : undefined}
         placeholder="900"
-        onCommit={(text) => onChange({ lockout: parseTalkgroups(text) })}
+        onCommit={(text) => onChange({ lockout: parseTalkgroups(text, names) })}
       />
       {priority.length > 0 && (
         <ToggleChip
@@ -368,43 +387,37 @@ function TrunkActivity({
   status,
   slots,
   controlHz,
+  names,
 }: {
   status: TrunkSystemStatus | undefined;
   slots: number;
   controlHz: number | null | undefined;
+  names: readonly TalkgroupName[] | undefined;
 }) {
   const followers = status?.followers ?? [];
   const probes = status?.probes ?? [];
   const otherControl = status?.other_control_hz ?? [];
-  const site = siteLabel(status?.site);
   const fallback = fallbackControl(status, controlHz);
-  if (
-    followers.length === 0 &&
-    probes.length === 0 &&
-    otherControl.length === 0 &&
-    site === null &&
-    fallback === null
-  ) {
-    return null;
-  }
   return (
     <Readouts>
-      {site !== null && (
-        <Readout label="Site" title="Identity the control channel broadcasts">
-          {site}
-        </Readout>
-      )}
+      <Readout label="Site" title="Identity the control channel broadcasts">
+        {siteLabel(status?.site) ?? ""}
+      </Readout>
       {fallback !== null && (
         <Readout label="Control" title="The set control channel went quiet">
           {formatHz(fallback)}
         </Readout>
       )}
+      {followers.length === 0 && <Readout label={slotLabel(null, slots)}>{""}</Readout>}
       {followers.map((follower) => (
         <Readout
           key={`${follower.freq_hz}-${follower.slot}`}
           label={slotLabel(follower.slot, slots)}
+          title={followerPlace(follower)}
+          tone={follower.active === true ? "ok" : undefined}
+          faint={follower.active !== true}
         >
-          {followerCall(follower)}
+          {followerCall(follower, names)}
         </Readout>
       ))}
       {probes.length > 0 && (

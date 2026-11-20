@@ -15,6 +15,7 @@ import {
   controlChannelStalled,
   fallbackControl,
   followerCall,
+  followerPlace,
   formatSearchRanges,
   formatTalkgroups,
   otherControlLabel,
@@ -27,6 +28,8 @@ import {
   searchSummary,
   siteLabel,
   slotLabel,
+  talkgroupLabel,
+  talkgroupNames,
   trunkChannelRoles,
   trunkDecoders,
   trunkProtocolLabel,
@@ -115,18 +118,39 @@ describe("talkgroups", () => {
     expect(formatTalkgroups([101, 102])).toBe("101, 102");
   });
 
-  it("names the call a traffic channel was granted to", () => {
-    expect(
-      followerCall({
-        device_set: 1,
-        channel: 2,
-        slot: 1,
-        freq_hz: 451_012_500,
-        logical_channel: 17,
-        destination: 91,
-        group_call: true,
-      }),
-    ).toBe(`${formatHz(451_012_500)} · LCN 17 · TG 91`);
+  const NAMES = [{ id: 91, name: "Fire Dispatch" }];
+  const FOLLOWER = {
+    device_set: 1,
+    channel: 2,
+    slot: 1,
+    freq_hz: 451_012_500,
+    logical_channel: 17,
+    destination: 91,
+    source: 5678,
+    group_call: true,
+    active: true,
+  };
+
+  it("names the call a traffic channel was granted to and who talks", () => {
+    expect(followerCall(FOLLOWER, [])).toBe("TG 91 ← 5678");
+    expect(followerCall(FOLLOWER, NAMES)).toBe("Fire Dispatch ← 5678");
+    expect(followerCall({ ...FOLLOWER, group_call: false, source: undefined }, NAMES)).toBe(
+      "ID 91",
+    );
+    expect(followerPlace(FOLLOWER)).toBe(`${formatHz(451_012_500)} · LCN 17`);
+  });
+
+  it("takes talkgroups by name as well as number", () => {
+    expect(parseTalkgroups("fire dispatch, 102", NAMES)).toEqual([91, 102]);
+    expect(parseTalkgroups("Unknown, 7", NAMES)).toEqual([7]);
+    expect(formatTalkgroups([91, 102], NAMES)).toBe("Fire Dispatch, 102");
+    expect(talkgroupLabel(5, NAMES)).toBe("TG 5");
+  });
+
+  it("keeps only whole names", () => {
+    expect(talkgroupNames([{ id: 91, name: " Fire " }, { id: 2 }, { id: 3, name: " " }])).toEqual([
+      { id: 91, name: "Fire" },
+    ]);
   });
 });
 

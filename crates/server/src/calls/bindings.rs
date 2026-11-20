@@ -1,9 +1,14 @@
+use std::collections::HashMap;
+
 use sdrmm_wire::{
-    CallGate, ChannelAddr, EVENTS_PORT, EventKind, Keeps, NodeProblem, ProblemSource,
-    ResolvedPatch, Runs, StateSnapshot,
+    CallGate, ChannelAddr, EVENTS_PORT, EventKind, Keeps, NodeBody, NodeProblem, PatchGraph,
+    ProblemSource, ResolvedPatch, Runs, StateSnapshot, TrunkTalkgroups,
 };
 
 use super::tracker::Bindings;
+
+/// The talkgroups of each trunk node that names any, by node id.
+pub(crate) type TalkgroupNames = HashMap<String, TrunkTalkgroups>;
 
 const SQUELCH_OFF: &str = "Squelch off, no calls";
 
@@ -59,6 +64,19 @@ pub(crate) fn bindings(
         }
     }
     (bound, problems)
+}
+
+pub(crate) fn talkgroup_names(graph: &PatchGraph) -> TalkgroupNames {
+    graph
+        .nodes
+        .iter()
+        .filter_map(|node| match &node.body {
+            NodeBody::Trunk(trunk) if !trunk.talkgroups.names.is_empty() => {
+                Some((node.id.clone(), trunk.talkgroups.clone()))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn addresses(runs: &Runs) -> Vec<ChannelAddr> {

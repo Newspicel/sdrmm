@@ -55,6 +55,7 @@ export function Readout({
   title,
   hint,
   tone,
+  faint = false,
   wide = false,
   children,
 }: {
@@ -62,9 +63,12 @@ export function Readout({
   title?: string;
   hint?: string;
   tone?: ChipTone;
+  /** Shows a value that is no longer current, such as the last call of an idle receiver. */
+  faint?: boolean;
   wide?: boolean;
   children: ReactNode;
 }) {
+  const ink = faint ? "text-ink-faint" : tone === undefined ? "text-ink" : TONE[tone];
   return (
     <div
       className={`flex min-w-0 items-baseline justify-between gap-2 ${wide ? "col-span-full" : ""}`}
@@ -74,9 +78,7 @@ export function Readout({
         {label}
         {hint !== undefined && <InfoTip text={hint} />}
       </dt>
-      <dd
-        className={`min-w-0 truncate text-right font-mono text-xs tabular-nums ${tone === undefined ? "text-ink" : TONE[tone]}`}
-      >
+      <dd className={`min-w-0 truncate text-right font-mono text-xs tabular-nums ${ink}`}>
         <WithUnit>{children}</WithUnit>
       </dd>
     </div>

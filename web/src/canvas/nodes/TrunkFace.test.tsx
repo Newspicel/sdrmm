@@ -42,7 +42,9 @@ const STATUS: TrunkSystemStatus = {
       freq_hz: 451_012_500,
       logical_channel: 17,
       destination: 91,
+      source: 5678,
       group_call: true,
+      active: true,
     },
   ],
   problems: [],
@@ -62,6 +64,35 @@ describe("TrunkFace", () => {
     expect(markup).toContain("TG 91");
   });
 
+  it("shows a named talkgroup by its name", () => {
+    const named = trunk({
+      talkgroups: {
+        priority: [91],
+        lockout: [],
+        listed_only: false,
+        names: [{ id: 91, name: "Fire Dispatch" }],
+      },
+    });
+    expect(render(named, STATUS)).toContain("Fire Dispatch ← 5678");
+    expect(render(named, undefined, true)).toContain("Fire Dispatch");
+  });
+
+  it("tells an idle receiver from a live call", () => {
+    const live = render(trunk(), STATUS);
+    const idle = render(trunk(), {
+      ...STATUS,
+      followers: STATUS.followers.map((follower) => ({ ...follower, active: false })),
+    });
+    expect(live).toContain("text-ok");
+    expect(idle).toContain("text-ink-faint");
+  });
+
+  it("keeps its readouts before anything is heard", () => {
+    const markup = render(trunk());
+    expect(markup).toContain("Site");
+    expect(markup).toContain("Call");
+  });
+
   it("names the site and the control channel it moved to", () => {
     const markup = render(trunk(), STATUS);
     expect(markup).toContain("net 12 · site 3");
@@ -70,7 +101,9 @@ describe("TrunkFace", () => {
 
   it("lists the priority and locked out talkgroups", () => {
     const markup = render(
-      trunk({ talkgroups: { priority: [101, 102], lockout: [900], listed_only: false } }),
+      trunk({
+        talkgroups: { priority: [101, 102], lockout: [900], listed_only: false, names: [] },
+      }),
       undefined,
       true,
     );

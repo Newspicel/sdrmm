@@ -7199,6 +7199,12 @@ export interface components {
             heads: string[];
             rows: components["schemas"]["TableRow"][];
         };
+        /** @description A name the operator gave a talkgroup. */
+        TalkgroupName: {
+            /** Format: int32 */
+            id: number;
+            name: string;
+        };
         Tap: {
             /** Format: int32 */
             device_set: number;
@@ -7469,6 +7475,8 @@ export interface components {
             ranges?: components["schemas"]["TrunkSearchRange"][];
         };
         TrunkFollower: {
+            /** @description The control channel still grants this call, or its bursts still decode. */
+            active?: boolean;
             /** Format: int32 */
             channel: number;
             /**
@@ -7612,7 +7620,10 @@ export interface components {
             searching?: number;
             site?: components["schemas"]["TrunkSite"];
         };
-        /** @description Which talkgroups a trunk node follows, and which win a traffic channel when all are busy. */
+        /**
+         * @description Which talkgroups a trunk node follows, which win a traffic channel when all are busy, and
+         *     what the operator calls them.
+         */
         TrunkTalkgroups: {
             /**
              * @description Follow only the priority talkgroups.
@@ -7621,6 +7632,8 @@ export interface components {
             listed_only: boolean;
             /** @default [] */
             lockout: number[];
+            /** @default [] */
+            names: components["schemas"]["TalkgroupName"][];
             /** @default [] */
             priority: number[];
         };

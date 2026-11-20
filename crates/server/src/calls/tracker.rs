@@ -10,7 +10,7 @@ use sdrmm_wire::{
     DecodedRecord, DecoderEvent, DvFrame, DvFrameKind, EventOrigin, TrunkSystemStatus,
 };
 
-use super::CallBinding;
+use super::{CallBinding, bindings::TalkgroupNames};
 use super::{Calls, DECIMATION, MAX_CALL_SAMPLES, NewCall, RETENTION, wav};
 use sdrmm_wire::CallGate;
 
@@ -118,6 +118,7 @@ impl ActiveCall {
             mode: self.mode,
             frame: self.frame,
             audio_error: self.audio_error,
+            talkgroup_name: None,
         };
         (call, audio)
     }
@@ -183,6 +184,7 @@ pub(super) struct Tracker {
     engine: Weak<Engine>,
     taps: Vec<f32>,
     bindings: Bindings,
+    names: TalkgroupNames,
     active: HashMap<CallKey, ActiveCall>,
 }
 
@@ -193,6 +195,7 @@ impl Tracker {
             engine,
             taps: design_lowpass(ANTIALIAS_TAPS, 0.5 / DECIMATION as f64),
             bindings: HashMap::new(),
+            names: HashMap::new(),
             active: HashMap::new(),
         }
     }
@@ -203,6 +206,20 @@ impl Tracker {
             .filter(|(_, bound)| bound.iter().any(hears_audio))
             .map(|(source, _)| *source)
             .collect()
+    }
+
+    pub(super) fn rename(&mut self, names: TalkgroupNames) {
+        self.names = names;
+    }
+
+    /// The name the call's trunk node gives the talkgroup it went to.
+    fn talkgroup_name(&self, call: &NewCall) -> Option<String> {
+        let frame = call.frame.as_ref()?;
+        if frame.group_call == Some(false) {
+            return None;
+        }
+        let talkgroup = frame.destination?;
+        Some(self.names.get(&call.node)?.name_of(talkgroup)?.to_owned())
     }
 
     pub(super) fn rebind(&mut self, bindings: Bindings) {
@@ -436,7 +453,8 @@ impl Tracker {
         let Some(engine) = self.engine.upgrade() else {
             return;
         };
-        let (new, audio) = call.into_new_call(key);
+        let (mut new, audio) = call.into_new_call(key);
+        new.talkgroup_name = self.talkgroup_name(&new);
         let (call, _) = self.calls.push(new, audio, RETENTION);
         engine.publish_decoded(DecodedRecord {
             origin: Some(EventOrigin {

@@ -42,6 +42,9 @@ pub struct VoiceCall {
     pub audio_error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub talker_alias: Option<String>,
+    /// The name the trunk node gives the called talkgroup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub talkgroup_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_id: Option<u16>,
 }

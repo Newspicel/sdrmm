@@ -65,6 +65,7 @@ pub(crate) struct NewCall {
     pub mode: String,
     pub frame: Option<DvFrame>,
     pub audio_error: Option<String>,
+    pub talkgroup_name: Option<String>,
 }
 
 impl Calls {
@@ -154,6 +155,7 @@ impl Calls {
             }),
             audio_error: new.audio_error,
             talker_alias: frame.talker_alias,
+            talkgroup_name: new.talkgroup_name,
             key_id: frame.key_id,
         };
         inner.audio_bytes += audio.as_ref().map_or(0, Bytes::len);
@@ -268,6 +270,7 @@ pub(crate) async fn run(watch: CallWatch) {
             let (bound, missing) = bindings::bindings(&current.patch, &strong.snapshot());
             problems.replace(&strong, ProblemSource::Calls, &missing);
             tracker.rebind(bound);
+            tracker.rename(bindings::talkgroup_names(&current.graph));
             reconcile_audio(&strong, &input_tx, &tracker.sources(), &mut audio_tasks);
         }
         tokio::select! {
