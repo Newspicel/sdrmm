@@ -1,10 +1,14 @@
 ---
 import Page from "../layouts/Page.astro";
-import { ALL, allocations, band, CATALOG, counts, familyTitle, levelOf, rate } from "../modes";
+import { allocations, band, bars, CATALOG, counts, levelOf, RADIO_BANDS, rate, si } from "../modes";
 
 const summary = "Every mode SDRmm decodes, and how well each is tested.";
 const tally = counts(CATALOG, "");
-const groups = [{ id: ALL, title: "All" }, ...CATALOG.families];
+const plotted = bars(CATALOG.modes);
+const lanes = Math.max(0, ...plotted.map((bar) => bar.lane)) + 1;
+const fixed = CATALOG.modes.filter((mode) => mode.bands.length > 0).length;
+const resting = `${fixed} modes on fixed bands, ${CATALOG.modes.length - fixed} tune anywhere`;
+const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
 ---
 
 <Page title="Modes · SDRmm" description={summary} summary={summary}>
@@ -12,167 +16,292 @@ const groups = [{ id: ALL, title: "All" }, ...CATALOG.families];
     <h1>Modes</h1>
     <p class="lede">{summary}</p>
 
-    <div class="filters">
-      <label class="search">
-        <span>Search</span>
-        <input type="search" placeholder="Name" autocomplete="off" />
-      </label>
-      <div class="tabs" role="tablist" aria-label="Group">
+    <figure class="spectrum">
+      <p class="readout" aria-live="polite" data-resting={resting}>{resting}</p>
+      <div class="plot" style={`--lanes: ${lanes}`}>
         {
-          groups.map((group) => (
-            <button
-              type="button"
-              role="tab"
-              data-family={group.id}
-              aria-selected={group.id === ALL ? "true" : "false"}
-              tabindex={group.id === ALL ? undefined : -1}
-            >
-              {group.title} <span class="count">{tally.get(group.id) ?? 0}</span>
+          plotted.map((bar) => (
+            <a
+              class={`bar ${bar.mode.verification}`}
+              href={`#mode-${bar.mode.type_id}`}
+              data-id={bar.mode.type_id}
+              aria-label={`${bar.mode.name}, ${si(bar.band.low, "Hz")} to ${si(bar.band.high, "Hz")}`}
+              style={`left: ${percent(bar.start)}; width: ${percent(bar.width)}; --lane: ${bar.lane}`}
+            />
+          ))
+        }
+      </div>
+      <ol class="scale">
+        {
+          RADIO_BANDS.map((range) => (
+            <li>
+              <strong>{range.name}</strong>
+              <span>{band([range])}</span>
+            </li>
+          ))
+        }
+      </ol>
+    </figure>
+
+    <div class="filters">
+      <input type="search" placeholder="Search modes" aria-label="Search modes" autocomplete="off" />
+      <div class="levels" role="group" aria-label="Tested">
+        {
+          CATALOG.levels.map((level) => (
+            <button type="button" class={`level ${level.id}`} data-level={level.id} aria-pressed="false" title={level.means}>
+              {level.label}
             </button>
           ))
         }
       </div>
     </div>
 
-    <div class="sheet" role="table" aria-label="Modes">
-      <div class="row head" role="row">
-        <span role="columnheader">Mode</span>
-        <span role="columnheader">Group</span>
-        <span role="columnheader">Band</span>
-        <span role="columnheader" title="Sample rate the mode needs">Rate</span>
-        <span role="columnheader">Tested</span>
-      </div>
-      {
-        CATALOG.modes.map((mode) => {
-          const level = levelOf(CATALOG, mode.verification);
-          return (
-            <div class="row" role="row" data-family={mode.family} data-id={mode.type_id}>
-              <span class="mode" role="cell">
-                <strong>{mode.name}</strong>
-                <small>{mode.summary}</small>
-              </span>
-              <span role="cell">{familyTitle(CATALOG, mode.family)}</span>
-              <span role="cell" class="num" title={allocations(mode.bands) || undefined}>
-                {band(mode.bands)}
-              </span>
-              <span role="cell" class="num">{rate(mode.input_rate_hz)}</span>
-              <span role="cell" class={`level ${mode.verification}`} title={level?.means}>
-                {level?.label ?? mode.verification}
-              </span>
-            </div>
-          );
-        })
-      }
-      <p class="none" hidden>No mode matches.</p>
-    </div>
-
-    <dl class="key">
-      {
-        CATALOG.levels.map((level) => (
-          <div>
-            <dt class={`level ${level.id}`}>{level.label}</dt>
-            <dd>{level.means}</dd>
+    {
+      CATALOG.families.map((family) => (
+        <section class="family" data-family={family.id}>
+          <h2>
+            {family.title} <span class="count">{tally.get(family.id) ?? 0}</span>
+          </h2>
+          <div role="table" aria-label={family.title}>
+            {CATALOG.modes
+              .filter((mode) => mode.family === family.id)
+              .map((mode) => {
+                const level = levelOf(CATALOG, mode.verification);
+                return (
+                  <div class="row" role="row" id={`mode-${mode.type_id}`} data-id={mode.type_id}>
+                    <span class="mode" role="cell">
+                      <strong>{mode.name}</strong>
+                      <small>{mode.summary}</small>
+                    </span>
+                    <span role="cell" class="num" title={allocations(mode.bands) || undefined}>
+                      {band(mode.bands) || "Any"}
+                    </span>
+                    <span role="cell" class="num">{rate(mode.input_rate_hz)}</span>
+                    <span role="cell" class={`level ${mode.verification}`} title={level?.means}>
+                      {level?.label ?? mode.verification}
+                    </span>
+                  </div>
+                );
+              })}
           </div>
-        ))
-      }
-    </dl>
+        </section>
+      ))
+    }
+    <p class="none" hidden>No mode matches.</p>
     <p class="note">Details in the <a href="/docs/user-guide/decoders">decoder docs</a>.</p>
   </div>
 </Page>
 
 <style>
   .top { padding-block: clamp(56px, 9vw, 112px); }
-  .filters { display: grid; gap: 16px; margin-bottom: 24px; }
-  .search { display: flex; flex-direction: column; gap: 6px; max-width: 360px; }
-  .search span { font-size: 14px; font-weight: 500; color: var(--ink-dim); }
-  .search input {
-    width: 100%;
-    padding: 10px 12px;
+
+  .spectrum { margin: clamp(32px, 5vw, 56px) 0 0; }
+  .readout {
+    margin: 0 0 12px;
+    min-height: 1.5em;
+    font: 13px var(--mono);
+    color: var(--ink-faint);
+  }
+  .readout strong { color: var(--ink); font-weight: 600; }
+  .plot {
+    position: relative;
+    height: calc(var(--lanes) * 7px + 10px);
+    border-block: 1px solid var(--line);
+    background:
+      linear-gradient(to right, var(--line) 1px, transparent 1px) 0 0 / 20% 100%,
+      var(--well);
+  }
+  .bar {
+    position: absolute;
+    bottom: calc(4px + var(--lane) * 7px);
+    height: 4px;
+    min-width: 3px;
+    border-radius: 1px;
+    background: var(--ink-faint);
+    transition: opacity 0.1s;
+  }
+  .bar.on_air { background: var(--audio); }
+  .bar.reference_fixture { background: var(--accent); }
+  .bar.experimental, .bar.unverified { background: var(--events); }
+  .bar.off { opacity: 0.12; }
+  .plot:has(.bar.hot) .bar:not(.hot) { opacity: 0.25; }
+  .bar:focus-visible { outline: 2px solid var(--vfo); outline-offset: 2px; }
+  .scale {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    margin: 0;
+    padding: 8px 0 0;
+    list-style: none;
+    font: 12px var(--mono);
+    color: var(--ink-faint);
+  }
+  .scale li { display: flex; gap: 8px; flex-wrap: wrap; }
+  .scale strong { color: var(--ink-dim); font-weight: 600; }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 24px;
+    margin: 32px 0 0;
+  }
+  .filters input {
+    flex: 0 1 280px;
+    padding: 8px 12px;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--well);
     color: var(--ink);
     font: inherit;
-    font-size: 16px;
+    font-size: 15px;
   }
-  .search input:hover { border-color: var(--line-strong); }
-  .search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
-  .count { color: var(--ink-faint); }
-  .sheet {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-face);
+  .filters input:hover { border-color: var(--line-strong); }
+  .filters input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+  .levels { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  .levels button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border: 0;
+    background: none;
+    font: 13px var(--mono);
+    cursor: pointer;
   }
+  .levels button::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+  }
+  .levels button[aria-pressed="true"]::before { background: currentColor; }
+  .levels button:hover { text-decoration: underline; text-underline-offset: 4px; }
+  .levels button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .family { margin-top: 40px; padding-block: 0; }
+  .filters + .family { margin-top: 24px; }
+  .family[hidden] { display: none; }
+  h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line-strong);
+    font-size: 20px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .count { font: 13px var(--mono); color: var(--ink-faint); }
   .row {
     display: grid;
-    grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 2.6fr) minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 1fr);
     gap: 16px;
     align-items: baseline;
-    padding: 12px 20px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
     font-size: 15px;
     color: var(--ink-dim);
+    scroll-margin-top: 120px;
   }
-  .row + .row { border-top: 1px solid var(--line); }
   .row[hidden] { display: none; }
-  .head { font: 12px var(--mono); color: var(--ink-faint); text-transform: uppercase; }
+  .row:target, .row.hot { background: linear-gradient(to right, var(--panel), transparent); }
   .mode { display: flex; flex-direction: column; }
   .mode strong { font-weight: 600; color: var(--ink); }
   .mode small { font-size: 14px; color: var(--ink-faint); }
   .num { font: 13px var(--mono); }
-  .level { font: 13px var(--mono); }
+  .level { font: 13px var(--mono); color: var(--ink-dim); }
   .level.on_air { color: var(--audio); }
   .level.reference_fixture { color: var(--accent); }
-  .level.own_modulator { color: var(--ink-dim); }
   .level.experimental, .level.unverified { color: var(--events); }
-  .none { margin: 0; padding: 20px; color: var(--ink-faint); }
-  .key { display: grid; gap: 6px; margin: 28px 0 0; font-size: 15px; }
-  .key div { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-  .key dd { margin: 0; color: var(--ink-faint); }
+  .none { margin: 24px 0 0; color: var(--ink-faint); }
+  .note { margin-top: 40px; }
 
   @media (max-width: 760px) {
-    .head { display: none; }
+    .scale span { display: none; }
     .row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; }
     .mode { grid-column: 1 / -1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bar { transition: none; }
   }
 </style>
 
 <script>
-  import { ALL, CATALOG, counts, shown } from "../modes";
-  import { tabs } from "../tabs";
+  import { ALL, allocations, CATALOG, counts, shown } from "../modes";
 
-  const search = document.querySelector<HTMLInputElement>(".search input");
-  const list = document.querySelector<HTMLElement>(".filters .tabs");
-  const rows = [...document.querySelectorAll<HTMLElement>(".row[data-family]")];
+  const search = document.querySelector<HTMLInputElement>(".filters input");
+  const levelButtons = [...document.querySelectorAll<HTMLButtonElement>(".levels button")];
+  const rows = [...document.querySelectorAll<HTMLElement>(".row[data-id]")];
+  const plotBars = [...document.querySelectorAll<HTMLElement>(".bar[data-id]")];
+  const families = [...document.querySelectorAll<HTMLElement>(".family[data-family]")];
+  const readout = document.querySelector<HTMLElement>(".readout");
   const none = document.querySelector<HTMLElement>(".none");
   const byId = new Map(CATALOG.modes.map((mode) => [mode.type_id, mode]));
-  let family = ALL;
+  const levels = new Set<string>();
+
+  function visible(id: string | undefined): boolean {
+    const mode = byId.get(id ?? "");
+    return mode !== undefined && shown(mode, search?.value ?? "", levels);
+  }
 
   function refresh() {
-    const query = search?.value ?? "";
-    let left = 0;
     for (const row of rows) {
-      const mode = byId.get(row.dataset.id ?? "");
-      row.hidden = mode === undefined || !shown(mode, query, family);
-      left += row.hidden ? 0 : 1;
+      row.hidden = !visible(row.dataset.id);
+    }
+    for (const bar of plotBars) {
+      bar.classList.toggle("off", !visible(bar.dataset.id));
+    }
+    const tally = counts(CATALOG, search?.value ?? "", levels);
+    for (const family of families) {
+      const left = tally.get(family.dataset.family ?? "") ?? 0;
+      family.hidden = left === 0;
+      const count = family.querySelector(".count");
+      if (count !== null) {
+        count.textContent = String(left);
+      }
     }
     if (none !== null) {
-      none.hidden = left > 0;
-    }
-    const tally = counts(CATALOG, query);
-    for (const count of list?.querySelectorAll<HTMLElement>("[data-family]") ?? []) {
-      const label = count.querySelector(".count");
-      if (label !== null) {
-        label.textContent = String(tally.get(count.dataset.family ?? "") ?? 0);
-      }
+      none.hidden = (tally.get(ALL) ?? 0) > 0;
     }
   }
 
-  if (list !== null) {
-    tabs(list, (tab) => {
-      family = tab.dataset.family ?? ALL;
+  function point(id: string | undefined) {
+    const mode = byId.get(id ?? "");
+    for (const element of [...plotBars, ...rows]) {
+      element.classList.toggle("hot", mode !== undefined && element.dataset.id === id);
+    }
+    if (readout === null) {
+      return;
+    }
+    if (mode === undefined) {
+      readout.textContent = readout.dataset.resting ?? "";
+      return;
+    }
+    const name = document.createElement("strong");
+    name.textContent = mode.name;
+    readout.replaceChildren(name, ` ${allocations(mode.bands)}`);
+  }
+
+  for (const button of levelButtons) {
+    button.addEventListener("click", () => {
+      const level = button.dataset.level ?? "";
+      const on = !levels.has(level);
+      if (on) {
+        levels.add(level);
+      } else {
+        levels.delete(level);
+      }
+      button.setAttribute("aria-pressed", String(on));
       refresh();
     });
+  }
+  for (const bar of plotBars) {
+    bar.addEventListener("pointerenter", () => point(bar.dataset.id));
+    bar.addEventListener("pointerleave", () => point(undefined));
+    bar.addEventListener("focus", () => point(bar.dataset.id));
+    bar.addEventListener("blur", () => point(undefined));
   }
   search?.addEventListener("input", refresh);
 </script>

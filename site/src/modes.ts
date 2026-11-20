@@ -80,13 +80,18 @@ export function matches(mode: Mode, query: string): boolean {
   return wanted === "" || mode.name.toLowerCase().includes(wanted) || mode.type_id.includes(wanted);
 }
 
-export function shown(mode: Mode, query: string, family: string): boolean {
-  return (family === ALL || mode.family === family) && matches(mode, query);
+/** Whether a mode passes the search and the picked levels; no level picked means every level. */
+export function shown(mode: Mode, query: string, levels: ReadonlySet<string>): boolean {
+  return (levels.size === 0 || levels.has(mode.verification)) && matches(mode, query);
 }
 
-/** How many modes match the query, in all and per family. */
-export function counts(catalog: Catalog, query: string): Map<string, number> {
-  const found = catalog.modes.filter((mode) => matches(mode, query));
+/** How many modes are shown, in all and per family. */
+export function counts(
+  catalog: Catalog,
+  query: string,
+  levels: ReadonlySet<string> = new Set(),
+): Map<string, number> {
+  const found = catalog.modes.filter((mode) => shown(mode, query, levels));
   const tally = new Map<string, number>([[ALL, found.length]]);
   for (const family of catalog.families) {
     tally.set(family.id, found.filter((mode) => mode.family === family.id).length);
@@ -100,4 +105,53 @@ export function levelOf(catalog: Catalog, id: string): Level | undefined {
 
 export function familyTitle(catalog: Catalog, id: string): string {
   return catalog.families.find((family) => family.id === id)?.title ?? id;
+}
+
+/** The ITU bands the strip spans, LF to UHF. */
+export const RADIO_BANDS: readonly { name: string; low: number; high: number }[] = [
+  { name: "LF", low: 30e3, high: 300e3 },
+  { name: "MF", low: 300e3, high: 3e6 },
+  { name: "HF", low: 3e6, high: 30e6 },
+  { name: "VHF", low: 30e6, high: 300e6 },
+  { name: "UHF", low: 300e6, high: 3e9 },
+];
+
+const SPAN_LOW = 30e3;
+const SPAN_HIGH = 3e9;
+/** The narrowest a bar is drawn, as a share of the strip, so a single channel still shows. */
+const MIN_WIDTH = 0.006;
+/** The space kept between two bars in one lane. */
+const LANE_GAP = 0.004;
+
+/** Where `hz` falls on the strip, 0 at its low edge and 1 at its high edge. */
+export function position(hz: number): number {
+  const at = Math.log10(hz / SPAN_LOW) / Math.log10(SPAN_HIGH / SPAN_LOW);
+  return Math.min(1, Math.max(0, at));
+}
+
+export interface Bar {
+  mode: Mode;
+  band: Band;
+  start: number;
+  width: number;
+  lane: number;
+}
+
+/** Every allocation as a bar, stacked into the fewest lanes that keep bars apart. */
+export function bars(modes: readonly Mode[]): Bar[] {
+  const placed = modes
+    .flatMap((mode) => mode.bands.map((range) => ({ mode, band: range })))
+    .map(({ mode, band: range }) => {
+      const start = position(range.low);
+      const width = Math.max(MIN_WIDTH, position(range.high) - start);
+      return { mode, band: range, start, width, lane: 0 };
+    })
+    .toSorted((a, b) => a.start - b.start);
+  const ends: number[] = [];
+  for (const bar of placed) {
+    const free = ends.findIndex((end) => end + LANE_GAP <= bar.start);
+    bar.lane = free === -1 ? ends.length : free;
+    ends[bar.lane] = bar.start + bar.width;
+  }
+  return placed;
 }
