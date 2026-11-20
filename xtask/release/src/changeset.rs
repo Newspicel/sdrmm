@@ -773,7 +773,7 @@ mod tests {
             "web/src/generated/frame.ts",
             "web/src/panels/Scope.test.tsx",
             "xtask/src/main.rs",
-            "docs/src/wires.md",
+            "docs/reference/wires.md",
             ".github/workflows/ci.yml",
             "Cargo.lock",
             "crates/channels/README.md",

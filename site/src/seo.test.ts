@@ -31,10 +31,11 @@ describe("sitePages", () => {
 });
 
 describe("docPages", () => {
-  it("lists the chapters of the book summary under the docs", () => {
-    const summary =
-      "[Welcome](index.md)\n\n# Get started\n\n- [Install](getting-started/install.md)\n- [Draft]()";
-    expect(docPages(summary)).toEqual([`${SITE}/docs/`, `${SITE}/docs/getting-started/install`]);
+  it("lists every docs slug as a canonical URL", () => {
+    expect(docPages(["", "start/install"])).toEqual([
+      `${SITE}/docs/`,
+      `${SITE}/docs/start/install`,
+    ]);
   });
 });
 

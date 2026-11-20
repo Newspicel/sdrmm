@@ -125,3 +125,12 @@ export function releases(): Promise<Release[]> {
   cached ??= fetchReleases();
   return cached;
 }
+
+export async function latestVersion(fallback: string): Promise<string> {
+  try {
+    const all = await releases();
+    return all[0]?.version ?? fallback;
+  } catch {
+    return fallback;
+  }
+}

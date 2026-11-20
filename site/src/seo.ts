@@ -6,7 +6,7 @@ export const SHARE_IMAGE = { path: "/og.png", width: 1200, height: 630 } as cons
 
 export const DOCS = "/docs/";
 
-const UNLISTED = new Set(["demo", "recordings"]);
+const UNLISTED = new Set(["demo", "recordings", "404"]);
 
 export function canonical(pathname: string): URL {
   return new URL(pathname.replace(/\.html$/, "").replace(/(^|\/)index$/, "$1"), SITE);
@@ -19,10 +19,8 @@ export function sitePages(sources: readonly string[]): string[] {
     .map((page) => canonical(`/${page}`).href);
 }
 
-export function docPages(summary: string): string[] {
-  return [...summary.matchAll(/\]\(([^)#\s]+)\.md\)/g)].flatMap((match) =>
-    match[1] === undefined ? [] : [canonical(`${DOCS}${match[1]}`).href],
-  );
+export function docPages(slugs: readonly string[]): string[] {
+  return slugs.map((slug) => canonical(slug === "" ? DOCS : `${DOCS}${slug}`).href);
 }
 
 function escapeXml(text: string): string {

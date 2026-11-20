@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INSTALLS, installFor } from "./installs";
+import { FALLBACK_VERSION, INSTALLS, installFor, withVersion } from "./installs";
 
 describe("installFor", () => {
   it("picks the package manager of the platform", () => {
@@ -30,5 +30,12 @@ describe("INSTALLS", () => {
   it("splits the Homebrew app and server into separate boxes", () => {
     const brew = INSTALLS.find((install) => install.id === "brew");
     expect(brew?.shells.map((shell) => shell.label)).toEqual(["App", "Server"]);
+  });
+
+  it("updates the Nix version line cleanly", () => {
+    const nix = INSTALLS.find((install) => install.id === "nix");
+    expect(nix?.shells[0]?.dynamicVersion).toBe(true);
+    expect(nix?.shells[0]?.lines).toContain(`VERSION=${FALLBACK_VERSION}`);
+    expect(withVersion(nix?.shells[0]?.lines ?? "", "2.5.0")).toContain("VERSION=2.5.0");
   });
 });

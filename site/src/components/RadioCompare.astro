@@ -1,0 +1,1031 @@
+---
+import {
+  BAND_ZONES,
+  BW_MAX,
+  BW_MIN,
+  BW_TICKS,
+  DC_LABELS,
+  DRIVER_LABELS,
+  FREQ_MAX,
+  FREQ_MIN,
+  fmtCompactHz,
+  fmtHz,
+  fmtRanges,
+  fmtShortRanges,
+  highestHz,
+  logPos,
+  lowestHz,
+  RADIOS,
+  SPECTRUM_TICKS,
+} from "../radios";
+
+const pct = (value: number) => `${(value * 100).toFixed(3)}%`;
+
+const PLOT_W = 840;
+const PLOT_H = 310;
+const PAD_L = 52;
+const PAD_R = 28;
+const PAD_T = 26;
+const PAD_B = 42;
+const INNER_W = PLOT_W - PAD_L - PAD_R;
+const INNER_H = PLOT_H - PAD_T - PAD_B;
+
+const scatterX = (bw: number) => PAD_L + logPos(bw, BW_MIN, BW_MAX) * INNER_W;
+const scatterY = (bits: number) => PAD_T + (1 - (bits - 7) / 10) * INNER_H;
+
+const SCATTER_LABEL_POS: Record<
+  string,
+  { dx: number; dy: number; anchor: "start" | "middle" | "end" }
+> = {
+  kiwisdr: { dx: 10, dy: 3.5, anchor: "start" },
+  funcube: { dx: 10, dy: 3.5, anchor: "start" },
+  "airspy-hf": { dx: 10, dy: 3.5, anchor: "start" },
+  rtlsdr: { dx: 10, dy: 3.5, anchor: "start" },
+  hackrf: { dx: 10, dy: 3.5, anchor: "start" },
+  rspdx: { dx: 10, dy: -8, anchor: "start" },
+  "airspy-r2": { dx: 0, dy: 24, anchor: "middle" },
+  pluto: { dx: 0, dy: -12, anchor: "middle" },
+  "limesdr-mini": { dx: 0, dy: 16, anchor: "middle" },
+  espsdr: { dx: -10, dy: 3.5, anchor: "end" },
+  limesdr: { dx: 12, dy: -10, anchor: "start" },
+  bladerf: { dx: 12, dy: 16, anchor: "start" },
+  "aaronia-eco": { dx: -10, dy: 3.5, anchor: "end" },
+  "aaronia-plus": { dx: -10, dy: 3.5, anchor: "end" },
+};
+
+const scatterPoints = RADIOS.map((radio, index) => {
+  const same = RADIOS.slice(0, index).filter(
+    (other) =>
+      Math.abs(Math.log10(other.bandwidthHz / radio.bandwidthHz)) < 0.045 &&
+      other.bits === radio.bits,
+  ).length;
+  const offset = same === 0 ? 0 : (same % 2 === 1 ? 1 : -1) * Math.ceil(same / 2) * 10;
+  const x = scatterX(radio.bandwidthHz);
+  const y = scatterY(radio.bits) + offset;
+  const pos = SCATTER_LABEL_POS[radio.id] ?? { dx: 10, dy: 3.5, anchor: "start" as const };
+  return {
+    radio,
+    x,
+    y,
+    r: radio.rx >= 5 ? 7 : radio.rx >= 2 ? 5.5 : 4.5,
+    labelX: x + pos.dx,
+    labelAnchor: pos.anchor,
+    labelDy: pos.dy,
+  };
+});
+---
+
+<div class="rc" data-radio-compare>
+  <div class="rc-top">
+    <div class="tabs rc-view-tabs" role="tablist" aria-label="Comparison chart">
+      <button type="button" role="tab" data-view="freq" aria-selected="true">Coverage</button>
+      <button type="button" role="tab" data-view="bw" aria-selected="false" tabindex="-1">Bandwidth</button>
+      <button type="button" role="tab" data-view="scatter" aria-selected="false" tabindex="-1">Bits vs BW</button>
+    </div>
+
+    <div class="rc-top-right">
+      <span class="rc-count" data-rc-count>{RADIOS.length} radios</span>
+      <label class="rc-sort">
+        <span>Sort</span>
+        <select data-rc-sort>
+          <option value="default">Default</option>
+          <option value="bw">Bandwidth</option>
+          <option value="bits">ADC bits</option>
+          <option value="low">Lowest freq</option>
+          <option value="high">Highest freq</option>
+          <option value="rx">RX lanes</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="rc-filter-bar">
+    <input
+      type="search"
+      class="rc-search"
+      placeholder="Filter radios..."
+      aria-label="Filter radios"
+      autocomplete="off"
+    />
+    <div class="rc-filters" role="group" aria-label="Capabilities">
+      <button type="button" data-filter="builtin" aria-pressed="false">Built-in</button>
+      <button type="button" data-filter="tx" aria-pressed="false">TX</button>
+      <button type="button" data-filter="multi" aria-pressed="false">Multi-RX</button>
+      <button type="button" data-filter="hf" aria-pressed="false">HF</button>
+      <button type="button" data-filter="ghz24" aria-pressed="false">2.4 GHz+</button>
+    </div>
+  </div>
+
+  <div class="rc-card">
+    <div class="rc-panel" data-panel="freq">
+      <div class="rc-head">
+        <span class="rc-col-title">Radio</span>
+        <div class="rc-zone-head">
+          {
+            BAND_ZONES.map((zone) => {
+              const left = logPos(zone.low, FREQ_MIN, FREQ_MAX);
+              const width = logPos(zone.high, FREQ_MIN, FREQ_MAX) - left;
+              return (
+                <span
+                  class:list={["rc-zone-label", { shaded: zone.shaded }]}
+                  style={`left: ${pct(left)}; width: ${pct(width)}`}
+                >
+                  {zone.label}
+                </span>
+              );
+            })
+          }
+        </div>
+        <span class="rc-col-title right">Range</span>
+      </div>
+
+      <div class="rc-rows" data-rc-list="freq">
+        {
+          RADIOS.map((radio, index) => (
+            <div
+              class="rc-row"
+              data-radio={radio.id}
+              data-index={index}
+              data-bw={radio.bandwidthHz}
+              data-bits={radio.bits}
+              data-low={lowestHz(radio)}
+              data-high={highestHz(radio)}
+              data-rx={radio.rx}
+            >
+              <a class="rc-name" href={radio.href}>
+                <span>{radio.name}</span>
+                {radio.tx > 0 && <em class="rc-tag tx">TX</em>}
+                {radio.rx > 1 && <em class="rc-tag rx">{radio.rx}×</em>}
+              </a>
+              <div class="rc-track">
+                {BAND_ZONES.filter((z) => z.shaded).map((zone) => {
+                  const left = logPos(zone.low, FREQ_MIN, FREQ_MAX);
+                  const width = logPos(zone.high, FREQ_MIN, FREQ_MAX) - left;
+                  return <span class="rc-zone-bg" style={`left: ${pct(left)}; width: ${pct(width)}`} />;
+                })}
+                {SPECTRUM_TICKS.slice(1, -1).map((tick) => (
+                  <span class="rc-gridline" style={`left: ${pct(logPos(tick.hz, FREQ_MIN, FREQ_MAX))}`} />
+                ))}
+                <span class="rc-rail" />
+                {radio.ranges.map((range) => {
+                  const start = logPos(range.low, FREQ_MIN, FREQ_MAX);
+                  const end = logPos(range.high, FREQ_MIN, FREQ_MAX);
+                  return (
+                    <span
+                      class:list={["rc-span", radio.tx > 0 ? "has-tx" : "rx-only"]}
+                      style={`left: ${pct(start)}; width: ${pct(Math.max(0.012, end - start))}`}
+                    />
+                  );
+                })}
+              </div>
+              <span class="rc-val">{fmtShortRanges(radio)}</span>
+            </div>
+          ))
+        }
+      </div>
+
+      <div class="rc-axis-foot">
+        <div class="rc-legend-inline">
+          <span><i class="swatch rx" /> RX</span>
+          <span><i class="swatch tx" /> RX + TX</span>
+        </div>
+        <div class="rc-ticks">
+          {
+            SPECTRUM_TICKS.map((tick) => (
+              <span style={`left: ${pct(logPos(tick.hz, FREQ_MIN, FREQ_MAX))}`}>{tick.label}</span>
+            ))
+          }
+        </div>
+        <span />
+      </div>
+    </div>
+
+    <div class="rc-panel" data-panel="bw" hidden>
+      <div class="rc-head">
+        <span class="rc-col-title">Radio</span>
+        <div class="rc-legend-inline">
+          <span><i class="swatch bw" /> Usable bandwidth</span>
+          <span><i class="swatch rate" /> Max sample rate</span>
+        </div>
+        <span class="rc-col-title right">BW / Rate</span>
+      </div>
+
+      <div class="rc-rows" data-rc-list="bw">
+        {
+          RADIOS.map((radio, index) => {
+            const bwW = logPos(radio.bandwidthHz, BW_MIN, BW_MAX);
+            const rateW = logPos(radio.maxRateHz, BW_MIN, BW_MAX);
+            return (
+              <div
+                class="rc-row"
+                data-radio={radio.id}
+                data-index={index}
+                data-bw={radio.bandwidthHz}
+                data-bits={radio.bits}
+                data-low={lowestHz(radio)}
+                data-high={highestHz(radio)}
+                data-rx={radio.rx}
+              >
+                <a class="rc-name" href={radio.href}>
+                  <span>{radio.name}</span>
+                  <em class="rc-tag bits">{radio.bits}b</em>
+                </a>
+                <div class="rc-track">
+                  {BW_TICKS.slice(1, -1).map((tick) => (
+                    <span class="rc-gridline" style={`left: ${pct(logPos(tick.hz, BW_MIN, BW_MAX))}`} />
+                  ))}
+                  <span class="rc-rail" />
+                  <span class="rc-span rate" style={`left: 0; width: ${pct(Math.max(0.014, rateW))}`} />
+                  <span class="rc-span bw" style={`left: 0; width: ${pct(Math.max(0.014, bwW))}`} />
+                </div>
+                <span class="rc-val">
+                  {fmtCompactHz(radio.bandwidthHz)} / {fmtCompactHz(radio.maxRateHz, "S/s")}
+                </span>
+              </div>
+            );
+          })
+        }
+      </div>
+
+      <div class="rc-axis-foot">
+        <span />
+        <div class="rc-ticks">
+          {
+            BW_TICKS.map((tick) => (
+              <span style={`left: ${pct(logPos(tick.hz, BW_MIN, BW_MAX))}`}>{tick.label}</span>
+            ))
+          }
+        </div>
+        <span />
+      </div>
+    </div>
+
+    <div class="rc-panel rc-scatter-panel" data-panel="scatter" hidden>
+      <div class="rc-scatter-bar">
+        <div class="rc-legend-inline">
+          <span><i class="swatch dot-rx" /> RX only</span>
+          <span><i class="swatch dot-tx" /> RX + TX</span>
+          <span><i class="swatch dot-multi" /> Ring = multi-RX</span>
+        </div>
+        <span class="rc-col-title">Usable bandwidth (log) vs ADC bits</span>
+      </div>
+      <svg
+        class="rc-scatter"
+        viewBox={`0 0 ${PLOT_W} ${PLOT_H}`}
+        role="img"
+        aria-label="Scatter plot comparing usable bandwidth on a log axis against ADC bit depth."
+      >
+        {
+          [8, 10, 12, 14, 16].map((bits) => {
+            const y = scatterY(bits);
+            return (
+              <g>
+                <line class="rc-grid" x1={PAD_L} y1={y} x2={PLOT_W - PAD_R} y2={y} />
+                <text class="rc-axis-num" x={PAD_L - 10} y={y + 3.5} text-anchor="end">
+                  {bits}b
+                </text>
+              </g>
+            );
+          })
+        }
+        {
+          BW_TICKS.map((tick) => {
+            const x = scatterX(tick.hz);
+            return (
+              <g>
+                <line class="rc-grid" x1={x} y1={PAD_T} x2={x} y2={PLOT_H - PAD_B} />
+                <text class="rc-axis-num" x={x} y={PLOT_H - 16} text-anchor="middle">
+                  {tick.label}
+                </text>
+              </g>
+            );
+          })
+        }
+        {
+          scatterPoints.map(({ radio, x, y, r, labelX, labelAnchor, labelDy }) => (
+            <a
+              href={radio.href}
+              class="rc-pt-link"
+              data-radio={radio.id}
+              aria-label={`${radio.name}: ${fmtHz(radio.bandwidthHz)}, ${radio.bits} bits`}
+            >
+              {radio.rx > 1 && <circle class="rc-pt-ring" cx={x} cy={y} r={r + 3.2} />}
+              <circle
+                class:list={["rc-pt", radio.tx > 0 ? "has-tx" : "rx-only"]}
+                cx={x}
+                cy={y}
+                r={r}
+              />
+              {radio.shortLabel && (
+                <text class="rc-pt-label" x={labelX} y={y + labelDy} text-anchor={labelAnchor}>
+                  {radio.shortLabel}
+                </text>
+              )}
+            </a>
+          ))
+        }
+      </svg>
+    </div>
+
+    <div class="rc-foot">
+      <p class="rc-readout" aria-live="polite">
+        Hover any radio to inspect · click a name for driver setup
+      </p>
+    </div>
+  </div>
+
+  <p class="rc-empty" hidden>No radios match the current filter.</p>
+
+  <div class="table-wrap rc-table-wrap">
+    <table class="rc-table">
+      <thead>
+        <tr>
+          <th>Radio</th>
+          <th>Tunes</th>
+          <th>Max rate</th>
+          <th>Bandwidth</th>
+          <th>Bits</th>
+          <th>RX / TX</th>
+          <th>DC spike</th>
+          <th>Driver</th>
+        </tr>
+      </thead>
+      <tbody data-rc-tbody>
+        {
+          RADIOS.map((radio, index) => (
+            <tr
+              data-radio={radio.id}
+              data-index={index}
+              data-bw={radio.bandwidthHz}
+              data-bits={radio.bits}
+              data-low={lowestHz(radio)}
+              data-high={highestHz(radio)}
+              data-rx={radio.rx}
+            >
+              <td class="radio-col">
+                <a href={radio.href}>{radio.name}</a>
+              </td>
+              <td class="num" title={fmtRanges(radio)}>{fmtShortRanges(radio)}</td>
+              <td class="num" title={radio.rateNote}>{fmtCompactHz(radio.maxRateHz, "S/s")}</td>
+              <td class="num" title={radio.bandwidthNote}>{fmtCompactHz(radio.bandwidthHz)}</td>
+              <td class="num">{radio.bits}</td>
+              <td class="num">
+                {radio.rx}/{radio.tx}
+              </td>
+              <td>{DC_LABELS[radio.dcSpike]}</td>
+              <td>{DRIVER_LABELS[radio.driver]}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .rc {
+    margin: 18px 0 32px;
+  }
+
+  .rc-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+    margin-bottom: 10px;
+  }
+
+  .rc-top-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font: 12px var(--mono);
+    color: var(--ink-faint);
+  }
+
+  .rc-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .rc-sort select {
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink);
+    font: 12px var(--mono);
+    cursor: pointer;
+  }
+
+  .rc-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin-bottom: 12px;
+  }
+
+  .rc-search {
+    flex: 1 1 180px;
+    max-width: 240px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--well);
+    color: var(--ink);
+    font: 13px var(--sans);
+  }
+
+  .rc-search:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+  }
+
+  .rc-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .rc-filters button {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--ink-dim);
+    font: 12px var(--mono);
+    cursor: pointer;
+    transition:
+      border-color 0.1s,
+      color 0.1s,
+      background-color 0.1s;
+  }
+
+  .rc-filters button:hover {
+    color: var(--ink);
+    border-color: var(--line-strong);
+    background: var(--panel);
+  }
+
+  .rc-filters button[aria-pressed="true"] {
+    border-color: color-mix(in oklab, var(--accent) 70%, var(--line));
+    background: color-mix(in oklab, var(--accent) 14%, var(--panel));
+    color: var(--ink);
+  }
+
+  .rc-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--well);
+    overflow: hidden;
+  }
+
+  .rc-panel[hidden] {
+    display: none;
+  }
+
+  .rc-head,
+  .rc-row,
+  .rc-axis-foot {
+    display: grid;
+    grid-template-columns: minmax(175px, 224px) minmax(0, 1fr) 152px;
+    align-items: center;
+    gap: 14px;
+    padding-inline: 16px;
+  }
+
+  .rc-head {
+    height: 34px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in oklab, var(--panel) 55%, var(--well));
+  }
+
+  .rc-col-title {
+    font: 500 11px var(--mono);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .rc-col-title.right {
+    text-align: right;
+  }
+
+  .rc-zone-head {
+    position: relative;
+    height: 100%;
+  }
+
+  .rc-zone-label {
+    position: absolute;
+    inset-block: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font: 500 10.5px var(--mono);
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+    white-space: nowrap;
+  }
+
+  .rc-zone-label.shaded {
+    background: color-mix(in oklab, var(--ink) 4%, transparent);
+    border-inline: 1px solid color-mix(in oklab, var(--line) 45%, transparent);
+  }
+
+  .rc-row {
+    height: 32px;
+    border-top: 1px solid color-mix(in oklab, var(--line) 45%, transparent);
+    transition: background-color 0.08s;
+  }
+
+  .rc-row:first-child {
+    border-top: 0;
+  }
+
+  .rc-row[hidden] {
+    display: none;
+  }
+
+  .rc-row.hot,
+  .rc-row:hover {
+    background: color-mix(in oklab, var(--panel-2) 70%, transparent);
+  }
+
+  .rc-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--ink);
+    font-size: 13px;
+    text-decoration: none;
+  }
+
+  .rc-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rc-name:hover span {
+    color: var(--accent);
+  }
+
+  .rc-tag {
+    flex-shrink: 0;
+    padding: 0 4px;
+    border-radius: 3px;
+    font: 600 9.5px/16px var(--mono);
+    font-style: normal;
+  }
+
+  .rc-tag.tx {
+    background: color-mix(in oklab, var(--transmit) 18%, transparent);
+    color: var(--transmit);
+  }
+
+  .rc-tag.rx {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    color: var(--accent);
+  }
+
+  .rc-tag.bits {
+    background: color-mix(in oklab, var(--panel-2) 85%, transparent);
+    color: var(--ink-dim);
+  }
+
+  .rc-track {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .rc-zone-bg {
+    position: absolute;
+    inset-block: 0;
+    background: color-mix(in oklab, var(--ink) 2.5%, transparent);
+    border-inline: 1px solid color-mix(in oklab, var(--line) 32%, transparent);
+  }
+
+  .rc-gridline {
+    position: absolute;
+    inset-block: 0;
+    width: 1px;
+    background: color-mix(in oklab, var(--line) 45%, transparent);
+  }
+
+  .rc-rail {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: color-mix(in oklab, var(--line-strong) 55%, transparent);
+  }
+
+  .rc-span {
+    position: absolute;
+    top: 50%;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: 2px;
+  }
+
+  .rc-span.rx-only {
+    background: var(--accent);
+  }
+
+  .rc-span.has-tx {
+    background: var(--transmit);
+  }
+
+  .rc-span.rate {
+    height: 10px;
+    background: color-mix(in oklab, var(--accent) 22%, transparent);
+    border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+
+  .rc-span.bw {
+    height: 6px;
+    background: var(--accent);
+  }
+
+  .rc-row.hot .rc-span.rx-only,
+  .rc-row:hover .rc-span.rx-only,
+  .rc-row.hot .rc-span.bw,
+  .rc-row:hover .rc-span.bw {
+    box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+
+  .rc-row.hot .rc-span.has-tx,
+  .rc-row:hover .rc-span.has-tx {
+    box-shadow: 0 0 10px color-mix(in oklab, var(--transmit) 45%, transparent);
+  }
+
+  .rc-val {
+    font: 11.5px var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-dim);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .rc-axis-foot {
+    height: 30px;
+    border-top: 1px solid var(--line);
+    background: color-mix(in oklab, var(--panel) 35%, var(--well));
+  }
+
+  .rc-ticks {
+    position: relative;
+    height: 16px;
+  }
+
+  .rc-ticks span {
+    position: absolute;
+    top: 1px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font: 10.5px var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-faint);
+  }
+
+  .rc-ticks span:first-child {
+    transform: none;
+  }
+
+  .rc-ticks span:last-child {
+    transform: translateX(-100%);
+  }
+
+  .rc-legend-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font: 11px var(--mono);
+    color: var(--ink-faint);
+  }
+
+  .rc-legend-inline span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .swatch {
+    display: inline-block;
+    width: 10px;
+    height: 6px;
+    border-radius: 2px;
+  }
+
+  .swatch.rx,
+  .swatch.bw {
+    background: var(--accent);
+  }
+
+  .swatch.tx {
+    background: var(--transmit);
+  }
+
+  .swatch.rate {
+    height: 9px;
+    background: color-mix(in oklab, var(--accent) 24%, transparent);
+    border: 1px solid color-mix(in oklab, var(--accent) 55%, transparent);
+  }
+
+  .swatch.dot-rx {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .swatch.dot-tx {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--transmit);
+  }
+
+  .swatch.dot-multi {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+  }
+
+  .rc-scatter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in oklab, var(--panel) 55%, var(--well));
+  }
+
+  .rc-scatter {
+    display: block;
+    width: 100%;
+    height: auto;
+    padding: 6px 8px 4px;
+    font-family: var(--mono);
+  }
+
+  .rc-grid {
+    stroke: color-mix(in oklab, var(--line) 60%, transparent);
+    stroke-width: 1;
+  }
+
+  .rc-axis-num {
+    fill: var(--ink-faint);
+    font-size: 11px;
+  }
+
+  .rc-pt {
+    stroke: var(--well);
+    stroke-width: 1.5;
+    transition: transform 0.1s;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .rc-pt.rx-only {
+    fill: var(--accent);
+  }
+
+  .rc-pt.has-tx {
+    fill: var(--transmit);
+  }
+
+  .rc-pt-ring {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.25;
+    opacity: 0.7;
+  }
+
+  .rc-pt-label {
+    fill: var(--ink-dim);
+    font-size: 10px;
+    pointer-events: none;
+  }
+
+  .rc-pt-link[hidden] {
+    display: none;
+  }
+
+  .rc-pt-link:hover .rc-pt,
+  .rc-pt-link.hot .rc-pt {
+    transform: scale(1.45);
+  }
+
+  .rc-pt-link:hover .rc-pt-label,
+  .rc-pt-link.hot .rc-pt-label {
+    fill: var(--ink);
+  }
+
+  .rc-foot {
+    padding: 9px 16px;
+    border-top: 1px solid var(--line);
+    background: color-mix(in oklab, var(--panel) 50%, var(--well));
+  }
+
+  .rc-readout {
+    margin: 0 !important;
+    min-height: 18px;
+    font: 12px/1.5 var(--mono);
+    color: var(--ink-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rc-readout strong {
+    color: var(--ink);
+  }
+
+  .rc-empty {
+    margin: 14px 0 !important;
+    font-size: 14px;
+    color: var(--ink-faint);
+  }
+
+  .rc-table-wrap {
+    margin-top: 18px !important;
+  }
+
+  .rc-table {
+    font-size: 13px !important;
+  }
+
+  .rc-table th,
+  .rc-table td {
+    padding: 7px 10px !important;
+    white-space: nowrap;
+  }
+
+  .rc-table td.num {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .rc-table tr.hot td {
+    background: color-mix(in oklab, var(--accent) 10%, var(--panel)) !important;
+  }
+
+  .rc-table tr[hidden] {
+    display: none;
+  }
+
+  @media (max-width: 780px) {
+    .rc-head,
+    .rc-row,
+    .rc-axis-foot {
+      grid-template-columns: minmax(120px, 155px) minmax(0, 1fr);
+    }
+    .rc-col-title.right,
+    .rc-val,
+    .rc-axis-foot > span:last-child {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  import { fmtHz, fmtRanges, matchesRadio, RADIOS, type RadioFilter } from "../radios";
+  import { tabs } from "../tabs";
+
+  const root = document.querySelector<HTMLElement>("[data-radio-compare]");
+  if (root) {
+    const search = root.querySelector<HTMLInputElement>(".rc-search");
+    const filterButtons = [...root.querySelectorAll<HTMLButtonElement>("[data-filter]")];
+    const viewTabs = root.querySelector<HTMLElement>(".rc-view-tabs");
+    const panels = [...root.querySelectorAll<HTMLElement>("[data-panel]")];
+    const readout = root.querySelector<HTMLElement>(".rc-readout");
+    const empty = root.querySelector<HTMLElement>(".rc-empty");
+    const countEl = root.querySelector<HTMLElement>("[data-rc-count]");
+    const sortSelect = root.querySelector<HTMLSelectElement>("[data-rc-sort]");
+    const tbody = root.querySelector<HTMLTableSectionElement>("[data-rc-tbody]");
+    const lists = [...root.querySelectorAll<HTMLElement>("[data-rc-list]")];
+
+    const allElements = [...root.querySelectorAll<HTMLElement | SVGElement>("[data-radio]")];
+    const byId = new Map(RADIOS.map((r) => [r.id, r]));
+    const activeFilters = new Set<RadioFilter>();
+
+    if (viewTabs) {
+      tabs(viewTabs, (tab) => {
+        const view = tab.dataset.view ?? "freq";
+        for (const panel of panels) {
+          panel.hidden = panel.dataset.panel !== view;
+        }
+      });
+    }
+
+    function setRestingReadout(visibleCount: number) {
+      if (!readout) return;
+      readout.textContent = `${visibleCount} ${visibleCount === 1 ? "radio" : "radios"} · hover any row or point to inspect`;
+    }
+
+    function refresh() {
+      const q = search?.value ?? "";
+      let visibleCount = 0;
+      const visibleIds = new Set<string>();
+      for (const radio of RADIOS) {
+        if (matchesRadio(radio, q, activeFilters)) {
+          visibleIds.add(radio.id);
+          visibleCount += 1;
+        }
+      }
+      for (const el of allElements) {
+        const id = el.dataset.radio ?? "";
+        const hide = !visibleIds.has(id);
+        if (el instanceof HTMLElement) {
+          el.hidden = hide;
+        } else if (hide) {
+          el.setAttribute("hidden", "");
+        } else {
+          el.removeAttribute("hidden");
+        }
+      }
+      if (empty) empty.hidden = visibleCount > 0;
+      if (countEl) countEl.textContent = `${visibleCount} ${visibleCount === 1 ? "radio" : "radios"}`;
+      if (!root?.querySelector(".hot")) {
+        setRestingReadout(visibleCount);
+      }
+    }
+
+    function highlight(id: string | undefined) {
+      for (const el of allElements) {
+        el.classList.toggle("hot", id !== undefined && el.dataset.radio === id);
+      }
+      if (!readout) return;
+      const radio = id ? byId.get(id) : undefined;
+      if (!radio) {
+        refresh();
+        return;
+      }
+      const name = document.createElement("strong");
+      name.textContent = radio.name;
+      const parts = [
+        fmtRanges(radio),
+        `${fmtHz(radio.bandwidthHz)} BW${radio.bandwidthNote ? ` (${radio.bandwidthNote})` : ""}`,
+        `${fmtHz(radio.maxRateHz, "S/s")}${radio.rateNote ? ` (${radio.rateNote})` : ""}`,
+        `${radio.bits}-bit`,
+        `${radio.rx} RX${radio.tx > 0 ? ` / ${radio.tx} TX` : ""}`,
+      ];
+      readout.replaceChildren(name, ` · ${parts.join(" · ")}`);
+    }
+
+    function sortContainer(container: Element, selector: string, mode: string) {
+      const items = [...container.querySelectorAll<HTMLElement>(selector)];
+      const num = (el: HTMLElement, key: string) => Number(el.dataset[key] ?? "0");
+      items.sort((a, b) => {
+        if (mode === "bw") return num(b, "bw") - num(a, "bw");
+        if (mode === "bits") return num(b, "bits") - num(a, "bits") || num(b, "bw") - num(a, "bw");
+        if (mode === "low") return num(a, "low") - num(b, "low");
+        if (mode === "high") return num(b, "high") - num(a, "high");
+        if (mode === "rx") return num(b, "rx") - num(a, "rx");
+        return num(a, "index") - num(b, "index");
+      });
+      container.append(...items);
+    }
+
+    for (const button of filterButtons) {
+      button.addEventListener("click", () => {
+        const key = button.dataset.filter as RadioFilter;
+        const on = !activeFilters.has(key);
+        if (on) activeFilters.add(key);
+        else activeFilters.delete(key);
+        button.setAttribute("aria-pressed", String(on));
+        refresh();
+      });
+    }
+
+    search?.addEventListener("input", refresh);
+
+    for (const el of allElements) {
+      el.addEventListener("pointerenter", () => highlight(el.dataset.radio));
+      el.addEventListener("pointerleave", () => highlight(undefined));
+      el.addEventListener("focus", () => highlight(el.dataset.radio));
+      el.addEventListener("blur", () => highlight(undefined));
+    }
+
+    sortSelect?.addEventListener("change", () => {
+      const mode = sortSelect.value;
+      for (const list of lists) sortContainer(list, ".rc-row", mode);
+      if (tbody) sortContainer(tbody, "tr", mode);
+    });
+  }
+</script>

@@ -20,7 +20,7 @@ export const CONTACT = `${BUSINESS.href}#contact`;
 export const PRIMARY: Link[] = [
   { label: "Docs", href: "/docs/" },
   MODES,
-  { label: "Hardware", href: "/docs/hardware" },
+  { label: "Hardware", href: "/docs/radios" },
   BENCHMARKS,
   BUSINESS,
 ];
@@ -37,9 +37,9 @@ export const FOOTER: LinkGroup[] = [
       DOWNLOAD,
       { label: "Docs", href: "/docs/" },
       MODES,
-      { label: "First receiver", href: "/docs/getting-started/first-receiver" },
-      { label: "Troubleshooting", href: "/docs/troubleshooting" },
-      { label: "Build from source", href: "/docs/development/building" },
+      { label: "First receiver", href: "/docs/start/first-receiver" },
+      { label: "Troubleshooting", href: "/docs/reference/troubleshooting" },
+      { label: "Build from source", href: "/docs/develop/building" },
       BENCHMARKS,
       { label: "Changelog", href: "/changelog" },
     ],
@@ -61,5 +61,23 @@ function page(path: string): string {
 }
 
 export function isCurrent(href: string, pathname: string): boolean {
-  return href.startsWith("/") && page(href) === page(pathname);
+  if (!href.startsWith("/")) {
+    return false;
+  }
+  const target = page(href);
+  const current = page(pathname);
+  if (target === current) {
+    return true;
+  }
+  if (target === "/docs/radios") {
+    return current.startsWith("/docs/radios/");
+  }
+  if (target === "/docs") {
+    return (
+      current.startsWith("/docs/") &&
+      current !== "/docs/radios" &&
+      !current.startsWith("/docs/radios/")
+    );
+  }
+  return false;
 }

@@ -9,7 +9,10 @@ const LISTED_KINDS: usize = 6;
 
 pub(crate) fn page(catalog: &PatchCatalog) -> String {
     let mut out = String::from(
-        "# Wires and what they carry\n\n\
+        "---\n\
+         title: Wires and what they carry\n\
+         description: Every port type, event kind, node, and array processor contract generated from the server catalog.\n\
+         ---\n\n\
          Every port has a type and a contract. A wire joins an output to an input of the same \
          type, and the server refuses one the contract does not allow. This page is generated \
          by `cargo xtask codegen` from the node catalog.\n",

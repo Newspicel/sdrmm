@@ -24,8 +24,8 @@ Read the [docs](https://sdrmm.com/docs/). Questions or ideas? Join the
 
 Download a desktop installer or portable server from
 [GitHub Releases](https://github.com/Newspicel/sdrmm/releases), or
-[build](https://sdrmm.com/docs/development/building) it yourself.
-The [installation guide](https://sdrmm.com/docs/getting-started/install)
+[build](https://sdrmm.com/docs/develop/building) it yourself.
+The [installation guide](https://sdrmm.com/docs/start/install)
 covers macOS, Windows, Linux, Homebrew, APT, DNF, Nix, and Docker.
 
 ## Start with an RTL-SDR
@@ -35,30 +35,31 @@ covers macOS, Windows, Linux, Homebrew, APT, DNF, Nix, and Docker.
 3. Wire Device `iq` to WFM `iq`, and WFM `audio` to the Speaker.
 4. Start the Speaker. Press `p` on a node to pin it to the Rack.
 
-[Your first receiver](https://sdrmm.com/docs/getting-started/first-receiver) walks
-through it. [Radios](https://sdrmm.com/docs/hardware) covers other hardware.
+[Your first receiver](https://sdrmm.com/docs/start/first-receiver) walks
+through it. [Radios](https://sdrmm.com/docs/radios) covers other hardware.
 
 ## What it supports
 
-- **Listening:** [AM, NFM, WFM with stereo and RDS, SSB](https://sdrmm.com/docs/user-guide/channels), digital voice
-  (DMR, P25, NXDN, D-STAR, FreeDV, M17), and [noise reduction](https://sdrmm.com/docs/user-guide/channels#audio-fx).
+- **Listening:** [AM, NFM, WFM with stereo and RDS, SSB](https://sdrmm.com/docs/operate/channels), digital voice
+  (DMR, P25, NXDN, D-STAR, FreeDV, M17), and [noise reduction](https://sdrmm.com/docs/operate/channels#audio).
 - **Decoding:** [aircraft, ships, pagers, amateur modes, weather satellites, radiosondes, DAB, DRM,
-  and DVB](https://sdrmm.com/docs/user-guide/decoders#catalog).
-- **Displays:** [spectrum, waterfalls, maps, decoded messages, and video](https://sdrmm.com/docs/getting-started/workspace).
-- **Recording:** [device IQ, channel baseband, audio, and each call](https://sdrmm.com/docs/user-guide/recording),
+  and DVB](https://sdrmm.com/docs/operate/decoders#catalog).
+- **Displays:** [spectrum, waterfalls, maps, decoded messages, and video](https://sdrmm.com/docs/operate/displays).
+- **Recording:** [device IQ, channel baseband, audio, and each call](https://sdrmm.com/docs/operate/recording),
   with a pre-roll and SigMF playback.
-- **Transmitting:** [NFM, AM and SSB voice, and APRS](https://sdrmm.com/docs/user-guide/transmit).
+- **Transmitting:** [NFM, AM and SSB voice, and APRS](https://sdrmm.com/docs/operate/transmit).
 - **Finding signals:** [scanning, signal identification, band monitoring, and transmitter
-  hunting](https://sdrmm.com/docs/user-guide/scanning).
-- **Arrays:** [coherent arrays](https://sdrmm.com/docs/user-guide/arrays),
-  [direction finding](https://sdrmm.com/docs/user-guide/direction-finding), and
-  [passive radar](https://sdrmm.com/docs/user-guide/passive-radar).
-- **Location:** [GPS](https://sdrmm.com/docs/user-guide/position), [satellite tracking](https://sdrmm.com/docs/user-guide/satellites),
-  and a [propagation map](https://sdrmm.com/docs/user-guide/propagation).
-- **Phones:** [iPhone and Android remote](https://sdrmm.com/docs/user-guide/phones) with CarPlay and Android Auto.
-- **Tools:** [antenna calculator, NanoVNA, and radio programmer](https://sdrmm.com/docs/user-guide/tools).
+  hunting](https://sdrmm.com/docs/operate/finding-signals).
+- **Arrays:** [coherent arrays](https://sdrmm.com/docs/operate/arrays),
+  [direction finding](https://sdrmm.com/docs/operate/direction-finding), and
+  [passive radar](https://sdrmm.com/docs/operate/passive-radar).
+- **Location:** [GPS and satellite tracking](https://sdrmm.com/docs/operate/position-satellites),
+  [rotators](https://sdrmm.com/docs/operate/rotators), and a
+  [propagation map](https://sdrmm.com/docs/operate/propagation).
+- **Phones:** [iPhone and Android remote](https://sdrmm.com/docs/operate/phones) with CarPlay and Android Auto.
+- **Tools:** [antenna calculator, NanoVNA, and radio programmer](https://sdrmm.com/docs/operate/tools).
 - **Automation:** [REST, WebSocket, and MCP](https://sdrmm.com/docs/server/api), plus
-  [network IQ, webhooks, MQTT, and databases](https://sdrmm.com/docs/user-guide/network-iq).
+  [network IQ, webhooks, MQTT, and databases](https://sdrmm.com/docs/operate/network-export).
 
 ## Screenshots
 

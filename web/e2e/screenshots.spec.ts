@@ -1,8 +1,9 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { serverURL } from "../playwright.screenshots.config";
-import { listen, SCENES, type Scene } from "./scenes";
+import { DOCS_SCENES, listen, SCENES, type Scene } from "./scenes";
 
 const SHOTS = "../assets/screenshots";
+const DOCS_SHOTS = "../site/public/docs/screens";
 const REPAINT_MS = 2_000;
 const MIN_SPREAD = 0.05;
 
@@ -94,5 +95,20 @@ for (const scene of SCENES) {
     await page.waitForTimeout(REPAINT_MS);
     await scene.settle?.(page);
     await capture(page, scene, `${SHOTS}/${scene.id}-light.png`);
+  });
+}
+
+for (const scene of DOCS_SCENES) {
+  test(`docs: ${scene.title}`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+    await scene.stage(page);
+    await scene.ready(page);
+    if (scene.speaker !== undefined) {
+      await listen(page, scene.speaker);
+    }
+    await page.waitForTimeout(scene.settleSeconds * 1000);
+    await scene.settle?.(page);
+    await capture(page, scene, `${DOCS_SHOTS}/${scene.id}-dark.png`);
   });
 }

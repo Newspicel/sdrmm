@@ -1,21 +1,30 @@
 ---
-import type { Shell } from "../installs";
+import { latestVersion } from "../changelog";
+import { FALLBACK_VERSION, type Shell, withVersion } from "../installs";
 
 interface Props {
   shells: Shell[];
 }
 
 const { shells } = Astro.props;
+const version = shells.some((shell) => shell.dynamicVersion)
+  ? await latestVersion(FALLBACK_VERSION)
+  : FALLBACK_VERSION;
 ---
 
 <div class="shells">
   {
-    shells.map((shell) => (
-      <div class="shell-group">
-        {shell.label && <p class="shell-label">{shell.label}</p>}
-        <div class="shell"><pre>{shell.lines}</pre></div>
-      </div>
-    ))
+    shells.map((shell) => {
+      const lines = shell.dynamicVersion ? withVersion(shell.lines, version) : shell.lines;
+      return (
+        <div class="shell-group">
+          {shell.label && <p class="shell-label">{shell.label}</p>}
+          <div class="shell">
+            <pre data-dynamic-version={shell.dynamicVersion ? "" : undefined}>{lines}</pre>
+          </div>
+        </div>
+      );
+    })
   }
 </div>
 
@@ -36,3 +45,21 @@ const { shells } = Astro.props;
     color: var(--ink-faint);
   }
 </style>
+
+<script>
+  import { withVersion } from "../installs";
+
+  const targets = [...document.querySelectorAll<HTMLPreElement>("pre[data-dynamic-version]")];
+  if (targets.length > 0) {
+    fetch("https://downloads.sdrmm.com/releases/release.json", { cache: "no-cache" })
+      .then((res) => (res.ok ? (res.json() as Promise<{ tag?: string }>) : null))
+      .then((data) => {
+        const version = data?.tag?.match(/^v(\d+\.\d+\.\d+)$/)?.[1];
+        if (!version) return;
+        for (const pre of targets) {
+          pre.textContent = withVersion(pre.textContent ?? "", version);
+        }
+      })
+      .catch(() => {});
+  }
+</script>

@@ -1,0 +1,31 @@
+---
+import Page from "../layouts/Page.astro";
+---
+
+<Page
+  title="Page not found · SDRmm"
+  description="The page you asked for is not here."
+  summary="The page you asked for is not here."
+  noindex
+>
+  <section class="wrap missing">
+    <p class="code">404</p>
+    <h1>Page not found</h1>
+    <p class="lede">The page you asked for moved or does not exist.</p>
+    <div class="actions">
+      <a class="btn primary" href="/docs/">Open docs</a>
+      <a class="btn ghost" href="/">Home</a>
+    </div>
+  </section>
+</Page>
+
+<style>
+  .missing {
+    padding-block: clamp(72px, 12vw, 140px);
+  }
+  .code {
+    margin: 0 0 12px;
+    font: 600 14px var(--mono);
+    color: var(--accent);
+  }
+</style>

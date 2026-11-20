@@ -1,6 +1,13 @@
 export interface Shell {
   label?: string;
   lines: string;
+  dynamicVersion?: boolean;
+}
+
+export const FALLBACK_VERSION = "2.4.4";
+
+export function withVersion(lines: string, version: string): string {
+  return lines.replace(/^VERSION=[^\n]+/m, `VERSION=${version}`);
 }
 
 export interface Install {
@@ -60,13 +67,14 @@ sudo dnf install sdrmm-app`,
     note: "Flake package for x86-64 and ARM64 Linux, with SoapySDR modules selectable.",
     shells: [
       {
-        lines: `VERSION=1.2.3
+        dynamicVersion: true,
+        lines: `VERSION=${FALLBACK_VERSION}
 nix --extra-experimental-features 'nix-command flakes' profile install \\
   "https://github.com/Newspicel/sdrmm/releases/download/v$VERSION/sdrmm-$VERSION-src.tar.gz"
 sdrmm-desktop`,
       },
     ],
-    more: { href: "/docs/getting-started/install#nix", label: "NixOS module options" },
+    more: { href: "/docs/start/install#nix", label: "NixOS module options" },
   },
   {
     id: "container",

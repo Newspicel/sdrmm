@@ -1,0 +1,350 @@
+---
+import { allocations, band, CATALOG, counts, levelOf, rate } from "../modes";
+
+const tally = counts(CATALOG, "");
+---
+
+<div class="dc" data-decoder-catalog>
+  <div class="dc-controls">
+    <input
+      type="search"
+      class="dc-search"
+      placeholder={`Filter ${CATALOG.modes.length} decoders...`}
+      aria-label="Filter decoders"
+      autocomplete="off"
+    />
+    <div class="dc-levels" role="group" aria-label="Verification status">
+      {
+        CATALOG.levels.map((level) => (
+          <button
+            type="button"
+            class={`dc-level ${level.id}`}
+            data-dc-level={level.id}
+            aria-pressed="false"
+            title={level.means}
+          >
+            <i class="dot" />
+            <span>{level.label}</span>
+          </button>
+        ))
+      }
+    </div>
+    <span class="dc-count" data-dc-count>{CATALOG.modes.length} decoders</span>
+  </div>
+
+  <div class="dc-grid">
+    {
+      CATALOG.families.map((family) => {
+        const items = CATALOG.modes.filter((mode) => mode.family === family.id);
+        return (
+          <section class="dc-group" data-dc-family={family.id}>
+            <div class="dc-group-head">
+              <h3>{family.title}</h3>
+              <span class="dc-group-count">{tally.get(family.id) ?? items.length}</span>
+            </div>
+            <div class="dc-chips">
+              {items.map((mode) => {
+                const level = levelOf(CATALOG, mode.verification);
+                const bandText = allocations(mode.bands) || band(mode.bands) || "Any frequency";
+                const tip = `${mode.summary} · ${bandText} · ${rate(mode.input_rate_hz)} · ${level?.label ?? mode.verification}`;
+                return mode.doc ? (
+                  <a
+                    class={`dc-chip linked ${mode.verification}`}
+                    href={mode.doc}
+                    data-dc-mode={mode.type_id}
+                    title={tip}
+                  >
+                    <i class="dot" />
+                    <span>{mode.name}</span>
+                  </a>
+                ) : (
+                  <span
+                    class={`dc-chip ${mode.verification}`}
+                    data-dc-mode={mode.type_id}
+                    title={tip}
+                  >
+                    <i class="dot" />
+                    <span>{mode.name}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })
+    }
+  </div>
+
+  <p class="dc-empty" hidden>No decoders match the current filter.</p>
+
+  <div class="dc-legend">
+    {
+      CATALOG.levels.map((level) => (
+        <span class={`dc-legend-item ${level.id}`}>
+          <i class="dot" />
+          <strong>{level.label}</strong>
+          <span>{level.means}</span>
+        </span>
+      ))
+    }
+  </div>
+</div>
+
+<style>
+  .dc {
+    margin: 14px 0 24px;
+  }
+
+  .dc-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: 14px;
+  }
+
+  .dc-search {
+    flex: 1 1 190px;
+    max-width: 250px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--well);
+    color: var(--ink);
+    font: 13px var(--sans);
+  }
+
+  .dc-search:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+  }
+
+  .dc-levels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .dc-level {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--ink-dim);
+    font: 12px var(--mono);
+    cursor: pointer;
+    transition:
+      border-color 0.1s,
+      background-color 0.1s,
+      color 0.1s;
+  }
+
+  .dc-level:hover {
+    color: var(--ink);
+    border-color: var(--line-strong);
+    background: var(--panel);
+  }
+
+  .dc-level[aria-pressed="true"] {
+    border-color: var(--dot-color, var(--accent));
+    background: color-mix(in oklab, var(--dot-color, var(--accent)) 14%, var(--panel));
+    color: var(--ink);
+  }
+
+  .dc-count {
+    margin-left: auto;
+    font: 12px var(--mono);
+    color: var(--ink-faint);
+  }
+
+  .dc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .dc-group {
+    padding: 12px 14px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: color-mix(in oklab, var(--panel) 45%, var(--well));
+  }
+
+  .dc-group[hidden] {
+    display: none;
+  }
+
+  .dc-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
+  }
+
+  .dc-group-head h3 {
+    margin: 0 !important;
+    font: 600 13px var(--mono) !important;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  .dc-group-count {
+    font: 11.5px var(--mono);
+    color: var(--ink-faint);
+  }
+
+  .dc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .dc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border: 1px solid color-mix(in oklab, var(--line) 85%, transparent);
+    border-radius: var(--radius);
+    background: var(--well);
+    color: var(--ink-dim);
+    font: 12.5px/1.3 var(--sans);
+    text-decoration: none;
+    transition:
+      border-color 0.1s,
+      color 0.1s,
+      background-color 0.1s;
+  }
+
+  .dc-chip[hidden] {
+    display: none;
+  }
+
+  .dc-chip.linked {
+    color: var(--ink);
+    border-color: var(--line-strong);
+  }
+
+  .dc-chip.linked:hover {
+    border-color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 10%, var(--panel));
+    color: var(--accent);
+  }
+
+  .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--dot-color, var(--ink-faint));
+  }
+
+  .on_air {
+    --dot-color: var(--audio);
+  }
+
+  .reference_fixture {
+    --dot-color: var(--accent);
+  }
+
+  .own_modulator {
+    --dot-color: var(--ink-faint);
+  }
+
+  .experimental,
+  .unverified {
+    --dot-color: var(--events);
+  }
+
+  .dc-empty {
+    margin: 12px 0 !important;
+    font-size: 14px;
+    color: var(--ink-faint);
+  }
+
+  .dc-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--well);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+
+  .dc-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dc-legend-item strong {
+    font: 500 11.5px var(--mono);
+    color: var(--ink-dim);
+  }
+
+  @media (max-width: 760px) {
+    .dc-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>
+
+<script>
+  import { ALL, CATALOG, counts, shown } from "../modes";
+
+  const root = document.querySelector<HTMLElement>("[data-decoder-catalog]");
+  if (root) {
+    const search = root.querySelector<HTMLInputElement>(".dc-search");
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>("[data-dc-level]")];
+    const chips = [...root.querySelectorAll<HTMLElement>("[data-dc-mode]")];
+    const groups = [...root.querySelectorAll<HTMLElement>("[data-dc-family]")];
+    const countEl = root.querySelector<HTMLElement>("[data-dc-count]");
+    const empty = root.querySelector<HTMLElement>(".dc-empty");
+    const byId = new Map(CATALOG.modes.map((m) => [m.type_id, m]));
+    const active = new Set<string>();
+
+    function refresh() {
+      const q = search?.value ?? "";
+      for (const chip of chips) {
+        const mode = byId.get(chip.dataset.dcMode ?? "");
+        chip.hidden = !mode || !shown(mode, q, active);
+      }
+      const tally = counts(CATALOG, q, active);
+      for (const group of groups) {
+        const left = tally.get(group.dataset.dcFamily ?? "") ?? 0;
+        group.hidden = left === 0;
+        const badge = group.querySelector(".dc-group-count");
+        if (badge) badge.textContent = String(left);
+      }
+      const total = tally.get(ALL) ?? 0;
+      if (countEl) countEl.textContent = `${total} ${total === 1 ? "decoder" : "decoders"}`;
+      if (empty) empty.hidden = total > 0;
+    }
+
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        const level = button.dataset.dcLevel ?? "";
+        const on = !active.has(level);
+        if (on) active.add(level);
+        else active.delete(level);
+        button.setAttribute("aria-pressed", String(on));
+        refresh();
+      });
+    }
+
+    search?.addEventListener("input", refresh);
+  }
+</script>

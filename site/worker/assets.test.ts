@@ -26,13 +26,15 @@ async function get(path: string, env: Env) {
 }
 
 describe("docsPath", () => {
-  it("maps old chapter addresses into the docs", () => {
-    expect(docsPath("/hardware")).toBe("/docs/hardware");
-    expect(docsPath("/hardware.html")).toBe("/docs/hardware");
-    expect(docsPath("/user-guide/decoders/")).toBe("/docs/user-guide/decoders");
+  it("maps old chapter addresses into the new docs paths", () => {
+    expect(docsPath("/hardware")).toBe("/docs/radios");
+    expect(docsPath("/hardware.html")).toBe("/docs/radios");
+    expect(docsPath("/user-guide/decoders/")).toBe("/docs/operate/decoders");
+    expect(docsPath("/docs/getting-started/install")).toBe("/docs/start/install");
+    expect(docsPath("/docs/hardware.html")).toBe("/docs/radios");
   });
 
-  it("leaves the root, the docs and files alone", () => {
+  it("leaves the root, current docs, and files alone", () => {
     expect(docsPath("/")).toBeNull();
     expect(docsPath("/docs")).toBeNull();
     expect(docsPath("/docs/nowhere")).toBeNull();
@@ -41,12 +43,12 @@ describe("docsPath", () => {
 });
 
 describe("missing assets", () => {
-  const env = environment({ "/docs/hardware": "hardware", "/docs/404": "not found" });
+  const env = environment({ "/docs/radios": "radios", "/404": "not found" });
 
   it("moves an old chapter into the docs, keeping the query", async () => {
     const response = await get("/hardware.html?from=readme", env);
     expect(response.status).toBe(301);
-    expect(response.headers.get("location")).toBe("https://sdrmm.com/docs/hardware?from=readme");
+    expect(response.headers.get("location")).toBe("https://sdrmm.com/docs/radios?from=readme");
   });
 
   it("answers anything else with the 404 page", async () => {

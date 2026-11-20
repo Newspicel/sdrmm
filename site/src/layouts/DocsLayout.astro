@@ -1,0 +1,504 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { DOCS_NAV, docHref, findDoc, prevNext } from "../docs/nav";
+import { canonical, NAME, REPOSITORY, SHARE_IMAGE } from "../seo";
+import "../styles/site.css";
+import "../styles/docs.css";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  slug: string;
+  title: string;
+  description?: string;
+  editPath: string;
+  headings: Heading[];
+  wide?: boolean;
+}
+
+const { slug, title, description, editPath, headings, wide = false } = Astro.props;
+const current = findDoc(slug);
+const { prev, next } = prevNext(slug);
+const toc = headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
+const url = canonical(docHref(slug));
+const image = canonical(SHARE_IMAGE.path);
+const metaDesc =
+  description ?? `${title} in the ${NAME} documentation. Install, operate, and develop SDRmm.`;
+const pageTitle = slug === "" ? `${NAME} Docs` : `${title} · ${NAME} Docs`;
+const editUrl = `${REPOSITORY}/edit/main/${editPath}`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0d0f10" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={metaDesc} />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="canonical" href={url} />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content={NAME} />
+    <meta property="og:url" content={url} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={metaDesc} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:width" content={String(SHARE_IMAGE.width)} />
+    <meta property="og:image:height" content={String(SHARE_IMAGE.height)} />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <Header />
+
+    <div class="docs-bar">
+      <div class="docs-bar-inner">
+        <button type="button" id="docs-nav-toggle" aria-expanded="false" aria-controls="docs-sidebar">
+          Menu
+        </button>
+        <button type="button" data-open-search>Search</button>
+      </div>
+    </div>
+
+    <div class:list={["docs-shell", { "docs-wide": wide }]}>
+      <aside class="docs-sidebar" id="docs-sidebar" aria-label="Documentation">
+        <button type="button" class="docs-search-btn" data-open-search>
+          <span>Search docs and modes</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        {
+          DOCS_NAV.map((section) => (
+            <div class="docs-nav-group">
+              <p class="docs-nav-title">{section.title}</p>
+              <ul class="docs-nav-list">
+                {section.items.map((item) => (
+                  <li>
+                    <a
+                      href={docHref(item.slug)}
+                      aria-current={item.slug === slug ? "page" : undefined}
+                    >
+                      {item.label}
+                    </a>
+                    {item.children && (
+                      <ul class="docs-nav-sub">
+                        {item.children.map((child) => (
+                          <li>
+                            <a
+                              href={docHref(child.slug)}
+                              aria-current={child.slug === slug ? "page" : undefined}
+                            >
+                              {child.label}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        }
+      </aside>
+
+      <main class="docs-main" id="main">
+        <article class:list={["docs-article", { wide }]}>
+          {
+            current && (
+              <p class="docs-crumb">
+                <span>{current.section}</span>
+                {current.parent && (
+                  <>
+                    <span class="sep">/</span>
+                    <a href={docHref(current.parent.slug)}>{current.parent.label}</a>
+                  </>
+                )}
+              </p>
+            )
+          }
+
+          <header class="docs-header">
+            <h1>{title}</h1>
+            {description && <p class="docs-desc">{description}</p>}
+          </header>
+
+          {
+            toc.length > 0 && (
+              <details class="docs-mobile-toc">
+                <summary>On this page</summary>
+                <ul>
+                  {toc.map((heading) => (
+                    <li class={`depth-${heading.depth}`}>
+                      <a href={`#${heading.slug}`}>{heading.text}</a>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )
+          }
+
+          <div class="prose">
+            <slot />
+          </div>
+
+          {
+            (prev || next) && (
+              <nav class="docs-pager" aria-label="Page navigation">
+                {prev && (
+                  <a class="prev" href={docHref(prev.slug)}>
+                    <span class="dir">Previous</span>
+                    <span class="label">{prev.label}</span>
+                  </a>
+                )}
+                {next && (
+                  <a class="next" href={docHref(next.slug)}>
+                    <span class="dir">Next</span>
+                    <span class="label">{next.label}</span>
+                  </a>
+                )}
+              </nav>
+            )
+          }
+
+          <p class="docs-edit">
+            <a href={editUrl}>Edit this page on GitHub</a>
+          </p>
+        </article>
+      </main>
+
+      <aside class="docs-toc" aria-label="On this page">
+        {
+          toc.length > 0 && (
+            <>
+              <p class="docs-toc-title">On this page</p>
+              <ul>
+                {toc.map((heading) => (
+                  <li class={`depth-${heading.depth}`}>
+                    <a href={`#${heading.slug}`} data-toc-link={heading.slug}>
+                      {heading.text}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )
+        }
+      </aside>
+
+      <div class="docs-footer">
+        <Footer />
+      </div>
+    </div>
+
+    <dialog class="docs-search-dialog" id="docs-search-dialog" aria-label="Search documentation">
+      <div class="docs-search-top">
+        <input
+          type="search"
+          id="docs-search-input"
+          placeholder="Search docs, radios, modes..."
+          autocomplete="off"
+        />
+        <kbd>Esc</kbd>
+      </div>
+      <ul class="docs-search-results" id="docs-search-results" role="listbox"></ul>
+    </dialog>
+
+    <script>
+      interface SearchEntry {
+        title: string;
+        section: string;
+        href: string;
+        headings: string[];
+        body: string;
+      }
+
+      const sidebar = document.querySelector<HTMLElement>("#docs-sidebar");
+      const navToggle = document.querySelector<HTMLButtonElement>("#docs-nav-toggle");
+      navToggle?.addEventListener("click", () => {
+        const open = sidebar?.classList.toggle("open") ?? false;
+        navToggle.setAttribute("aria-expanded", String(open));
+        navToggle.textContent = open ? "Close" : "Menu";
+      });
+      sidebar?.addEventListener("click", (event) => {
+        if (event.target instanceof Element && event.target.closest("a")) {
+          sidebar.classList.remove("open");
+          navToggle?.setAttribute("aria-expanded", "false");
+          if (navToggle) navToggle.textContent = "Menu";
+        }
+      });
+
+      // Heading anchor links
+      for (const heading of document.querySelectorAll<HTMLElement>(".prose h2[id], .prose h3[id]")) {
+        const anchor = document.createElement("a");
+        anchor.className = "heading-anchor";
+        anchor.href = `#${heading.id}`;
+        anchor.setAttribute("aria-label", `Link to ${heading.textContent ?? ""}`);
+        anchor.textContent = "#";
+        heading.append(anchor);
+      }
+
+      // Code block header + copy button
+      for (const pre of document.querySelectorAll<HTMLPreElement>(".prose pre")) {
+        if (pre.closest(".shell") || pre.closest(".code-block")) continue;
+        const lang = pre.dataset.language ?? "";
+        const wrap = document.createElement("div");
+        wrap.className = "code-block";
+        const head = document.createElement("div");
+        head.className = "code-head";
+        const label = document.createElement("span");
+        label.textContent = lang && lang !== "plaintext" ? lang : "text";
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "code-copy";
+        copy.textContent = "Copy";
+        copy.addEventListener("click", async () => {
+          const text = pre.textContent ?? "";
+          try {
+            await navigator.clipboard.writeText(text.trimEnd());
+            copy.textContent = "Copied";
+            copy.dataset.done = "";
+          } catch {
+            copy.textContent = "Select";
+          }
+          setTimeout(() => {
+            copy.textContent = "Copy";
+            delete copy.dataset.done;
+          }, 1500);
+        });
+        head.append(label, copy);
+        pre.replaceWith(wrap);
+        wrap.append(head, pre);
+      }
+
+      // Copy buttons on embedded .shell blocks
+      for (const shell of document.querySelectorAll<HTMLElement>(".shell")) {
+        const code = shell.querySelector("pre");
+        if (!code || shell.querySelector(".copy")) continue;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "copy";
+        button.textContent = "Copy";
+        button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText((code.textContent ?? "").trim());
+            button.textContent = "Copied";
+          } catch {
+            button.textContent = "Select";
+          }
+          button.dataset.done = "";
+          setTimeout(() => {
+            button.textContent = "Copy";
+            delete button.dataset.done;
+          }, 1500);
+        });
+        shell.append(button);
+      }
+
+      // Scroll-spy for TOC
+      const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>("[data-toc-link]")];
+      if (tocLinks.length > 0) {
+        const map = new Map(tocLinks.map((link) => [link.dataset.tocLink ?? "", link]));
+        const observed = [...map.keys()]
+          .map((id) => document.getElementById(id))
+          .filter((el): el is HTMLElement => el !== null);
+        const setActive = (id: string) => {
+          for (const [key, link] of map) {
+            link.classList.toggle("active", key === id);
+          }
+        };
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting) {
+                setActive(entry.target.id);
+                break;
+              }
+            }
+          },
+          { rootMargin: "-80px 0px -70% 0px", threshold: 0 },
+        );
+        for (const el of observed) observer.observe(el);
+      }
+
+      // Search modal
+      const dialog = document.querySelector<HTMLDialogElement>("#docs-search-dialog");
+      const input = document.querySelector<HTMLInputElement>("#docs-search-input");
+      const results = document.querySelector<HTMLUListElement>("#docs-search-results");
+      let indexPromise: Promise<SearchEntry[]> | null = null;
+      let activeIndex = -1;
+
+      function loadIndex(): Promise<SearchEntry[]> {
+        if (!indexPromise) {
+          indexPromise = fetch("/docs/search.json")
+            .then((res) => (res.ok ? (res.json() as Promise<SearchEntry[]>) : []))
+            .catch(() => []);
+        }
+        return indexPromise;
+      }
+
+      function escapeRegExp(text: string): string {
+        return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+
+      function snippetFor(body: string, terms: string[]): string {
+        const lower = body.toLowerCase();
+        let pos = -1;
+        for (const term of terms) {
+          const found = lower.indexOf(term);
+          if (found !== -1 && (pos === -1 || found < pos)) pos = found;
+        }
+        const start = Math.max(0, pos === -1 ? 0 : pos - 48);
+        const slice = body.slice(start, start + 140).trim();
+        return (start > 0 ? "..." : "") + slice + (start + 140 < body.length ? "..." : "");
+      }
+
+      function scoreEntry(entry: SearchEntry, terms: string[]): number {
+        const title = entry.title.toLowerCase();
+        const headings = entry.headings.join(" ").toLowerCase();
+        const body = entry.body.toLowerCase();
+        let total = 0;
+        for (const term of terms) {
+          if (title.includes(term)) total += title.startsWith(term) ? 14 : 10;
+          else if (headings.includes(term)) total += 6;
+          else if (body.includes(term)) total += 2;
+          else return 0;
+        }
+        return total;
+      }
+
+      async function runSearch(query: string) {
+        if (!results) return;
+        const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const index = await loadIndex();
+        activeIndex = -1;
+
+        if (terms.length === 0) {
+          results.replaceChildren();
+          const hint = document.createElement("li");
+          hint.className = "docs-search-empty";
+          hint.textContent = "Type to search guides, radios, decoders, and API docs.";
+          results.append(hint);
+          return;
+        }
+
+        const hits = index
+          .map((entry) => ({ entry, score: scoreEntry(entry, terms) }))
+          .filter((hit) => hit.score > 0)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 14);
+
+        results.replaceChildren();
+        if (hits.length === 0) {
+          const none = document.createElement("li");
+          none.className = "docs-search-empty";
+          none.textContent = "No matching pages.";
+          results.append(none);
+          return;
+        }
+
+        const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+        for (const { entry } of hits) {
+          const li = document.createElement("li");
+          const a = document.createElement("a");
+          a.href = entry.href;
+          a.setAttribute("role", "option");
+
+          const meta = document.createElement("span");
+          meta.className = "docs-search-meta";
+          meta.textContent = entry.section;
+
+          const titleEl = document.createElement("span");
+          titleEl.className = "docs-search-title";
+          titleEl.textContent = entry.title;
+
+          const snip = document.createElement("span");
+          snip.className = "docs-search-snippet";
+          const raw = snippetFor(entry.body, terms);
+          for (const part of raw.split(pattern)) {
+            if (part && terms.includes(part.toLowerCase())) {
+              const mark = document.createElement("mark");
+              mark.textContent = part;
+              snip.append(mark);
+            } else {
+              snip.append(part);
+            }
+          }
+
+          a.append(meta, titleEl, snip);
+          a.addEventListener("click", () => dialog?.close());
+          li.append(a);
+          results.append(li);
+        }
+      }
+
+      function openSearch() {
+        if (!dialog || !input) return;
+        dialog.showModal();
+        input.value = "";
+        input.focus();
+        void runSearch("");
+      }
+
+      for (const btn of document.querySelectorAll<HTMLButtonElement>("[data-open-search]")) {
+        btn.addEventListener("click", openSearch);
+      }
+
+      dialog?.addEventListener("click", (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+
+      input?.addEventListener("input", () => {
+        void runSearch(input.value);
+      });
+
+      input?.addEventListener("keydown", (event) => {
+        if (!results) return;
+        const links = [...results.querySelectorAll<HTMLAnchorElement>("a")];
+        if (links.length === 0) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          activeIndex = (activeIndex + 1) % links.length;
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          activeIndex = (activeIndex - 1 + links.length) % links.length;
+        } else if (event.key === "Enter" && activeIndex >= 0) {
+          event.preventDefault();
+          links[activeIndex]?.click();
+          return;
+        } else {
+          return;
+        }
+        links.forEach((link, idx) => {
+          link.setAttribute("aria-selected", String(idx === activeIndex));
+          if (idx === activeIndex) link.scrollIntoView({ block: "nearest" });
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          if (dialog?.open) dialog.close();
+          else openSearch();
+        } else if (
+          event.key === "/" &&
+          !dialog?.open &&
+          !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
+        ) {
+          event.preventDefault();
+          openSearch();
+        }
+      });
+    </script>
+  </body>
+</html>

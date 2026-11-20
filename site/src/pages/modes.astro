@@ -70,7 +70,9 @@ const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
                 return (
                   <div class="row" role="row" id={`mode-${mode.type_id}`} data-id={mode.type_id}>
                     <span class="mode" role="cell">
-                      <strong>{mode.name}</strong>
+                      <strong>
+                        {mode.doc ? <a href={mode.doc}>{mode.name}</a> : mode.name}
+                      </strong>
                       <small>{mode.summary}</small>
                     </span>
                     <span role="cell" class="num" title={allocations(mode.bands) || undefined}>
@@ -88,7 +90,7 @@ const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
       ))
     }
     <p class="none" hidden>No mode matches.</p>
-    <p class="note">Details in the <a href="/docs/user-guide/decoders">decoder docs</a>.</p>
+    <p class="note">Details in the <a href="/docs/operate/decoders">decoder docs</a>.</p>
   </div>
 </Page>
 

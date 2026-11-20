@@ -1,8 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+declare const process: { env: Record<string, string | undefined> };
+
 const PORT = 8098;
 const SCRATCH = ".shots-tmp";
-const SERVERS = 4;
+const SERVERS = Number(process.env.SHOT_SERVERS ?? 4);
 
 const FIRST = `http://127.0.0.1:${PORT}`;
 
@@ -14,15 +16,18 @@ export function serverURL(first: string, index: number): string {
 
 function server(index: number, playbackSpeed: number, profile: string) {
   const scratch = `web/${SCRATCH}/${index}`;
+  const bin = process.env.SDRMM_BIN || `cargo run -q ${profile} -p sdrmm --`;
   const build =
     index === 0
-      ? "pnpm --dir web build"
+      ? process.env.WEB_PREBUILT === "1"
+        ? "true"
+        : "pnpm --dir web build"
       : `until curl -sf ${FIRST}/api/state >/dev/null; do sleep 1; done`;
   return {
     command:
       `${build} && rm -rf ${scratch} && mkdir -p ${scratch}/recordings ` +
       `&& cp fixtures/*.sigmf-meta fixtures/*.sigmf-data ${scratch}/recordings/ ` +
-      `&& cargo run -q ${profile} -p sdrmm -- --bind 127.0.0.1:${PORT + index} ` +
+      `&& ${bin} --bind 127.0.0.1:${PORT + index} ` +
       `--db ${scratch}/shots.db --recordings-dir ${scratch}/recordings ` +
       `--playback-speed ${playbackSpeed}`,
     cwd: "..",

@@ -11,10 +11,28 @@ import type {
   StateSnapshot,
   WorkspaceSnapshot,
 } from "../src/lib/types";
-import { type Box, face, fitPatch, node, nodeUrl, radioNodeOf, stage, wire } from "./canvas";
+import {
+  type Box,
+  face,
+  fitPatch,
+  laneWires,
+  node,
+  nodeUrl,
+  numbers,
+  radioNodeOf,
+  readout,
+  stage,
+  wire,
+} from "./canvas";
 
 const BAND: DeviceRef = { backend: "virtual", key: "band" };
+const KRAKEN: DeviceRef = { backend: "virtual", key: "kraken5" };
 const BAND_CENTER_HZ = 100_000_000;
+const ISS_TLE = [
+  "ISS (ZARYA)",
+  "1 25544U 98067A   24001.50000000  .00016717  00000-0  30306-3 0  9999",
+  "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.50377579432041",
+].join("\n");
 const SSTV_PICTURE = /Robot 36/;
 const SCAN_RESTARTED = 0.1;
 const SCAN_SHOWN = 0.85;
@@ -634,6 +652,252 @@ const rack: Scene = {
   },
 };
 
+const dmr: Scene = {
+  id: "dmr",
+  title: "DMR digital voice call",
+  speaker: "speaker",
+  settleSeconds: 8,
+  shows: (page) => [face(page, "log"), face(page, "scope").locator("canvas").first()],
+  async stage(page) {
+    const device = await recording(page, "dmr_call_48k");
+    await stage(page, "Digital voice (DMR)", {
+      version: 4,
+      graph: {
+        nodes: [
+          node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
+          channel("ch", "dmr", { x: 540, y: 0, w: 440, h: 260 }),
+          node("speaker", { kind: "speaker" }, { x: 1100, y: 0, w: 280, h: 204 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 200, w: 980, h: 660 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 244, w: 760, h: 616 }),
+        ],
+        edges: [
+          wire(["dev", "iq"], ["scope", "iq"]),
+          wire(["dev", "iq"], ["ch", "iq"]),
+          wire(["ch", "audio"], ["speaker", "audio"]),
+          wire(["ch", "events"], ["log", "events"]),
+        ],
+      },
+    });
+    await tune(page, device, { dmr: 0 });
+    await fitForCapture(page);
+  },
+  async ready(page) {
+    await expect(face(page, "log").locator("tbody tr, [role='row']").first()).toBeVisible({
+      timeout: 60_000,
+    });
+  },
+};
+
+const df: Scene = {
+  id: "df",
+  title: "direction finding and triangulation",
+  settleSeconds: 10,
+  shows: (page) => [face(page, "finder"), face(page, "map").locator("canvas").first()],
+  async stage(page) {
+    await stage(page, "Direction finding", {
+      version: 4,
+      graph: {
+        nodes: [
+          node(
+            "site",
+            { kind: "gps", data: { source: { type: "fixed", lat: 52.0, lon: 13.0 } } },
+            { x: 0, y: 0, w: 320, h: 280 },
+          ),
+          node(
+            "kraken",
+            { kind: "device", data: { device: KRAKEN } },
+            { x: 0, y: 320, w: 380, h: 640 },
+          ),
+          node("arr", { kind: "array", data: {} }, { x: 440, y: 0, w: 460, h: 620 }),
+          node(
+            "finder",
+            { kind: "processor", data: { processor_type: "df", settings: {} } },
+            { x: 960, y: 0, w: 380, h: 620 },
+          ),
+          node("tri", { kind: "triangulation", data: {} }, { x: 1400, y: 0, w: 400, h: 620 }),
+          node("map", { kind: "map" }, { x: 440, y: 660, w: 1360, h: 480 }),
+        ],
+        edges: [
+          ...laneWires("kraken", "arr", 5),
+          wire(["site", "position"], ["arr", "position"]),
+          wire(["arr", "array"], ["finder", "array"]),
+          wire(["finder", "events"], ["tri", "events"]),
+          wire(["tri", "events"], ["map", "events"]),
+          wire(["finder", "events"], ["map", "events"]),
+        ],
+      },
+    });
+    await fitForCapture(page);
+  },
+  async ready(page) {
+    const finder = face(page, "finder");
+    await expect
+      .poll(async () => numbers(await readout(finder, "Bearing").textContent()).length, {
+        timeout: 60_000,
+      })
+      .toBeGreaterThan(0);
+  },
+};
+
+const radar: Scene = {
+  id: "radar",
+  title: "passive radar range-Doppler",
+  settleSeconds: 10,
+  shows: (page) => [face(page, "radar"), face(page, "map").locator("canvas").first()],
+  async stage(page) {
+    await stage(page, "Passive radar", {
+      version: 4,
+      graph: {
+        nodes: [
+          node(
+            "rx",
+            { kind: "gps", data: { source: { type: "fixed", lat: 52.0, lon: 13.0 } } },
+            { x: 0, y: 0, w: 320, h: 280 },
+          ),
+          node(
+            "tx",
+            { kind: "gps", data: { source: { type: "fixed", lat: 52.1, lon: 13.2 } } },
+            { x: 0, y: 320, w: 320, h: 280 },
+          ),
+          node(
+            "kraken",
+            { kind: "device", data: { device: KRAKEN } },
+            { x: 380, y: 0, w: 380, h: 640 },
+          ),
+          node("arr", { kind: "array", data: {} }, { x: 820, y: 0, w: 460, h: 620 }),
+          node(
+            "radar",
+            { kind: "processor", data: { processor_type: "passive_radar", settings: {} } },
+            { x: 1340, y: 0, w: 640, h: 740 },
+          ),
+          node("map", { kind: "map" }, { x: 820, y: 660, w: 1160, h: 480 }),
+        ],
+        edges: [
+          ...laneWires("kraken", "arr", 5),
+          wire(["rx", "position"], ["arr", "position"]),
+          wire(["arr", "array"], ["radar", "array"]),
+          wire(["tx", "position"], ["radar", "tx"]),
+          wire(["radar", "events"], ["map", "events"]),
+        ],
+      },
+    });
+    await fitForCapture(page);
+  },
+  async ready(page) {
+    await expect
+      .poll(() => face(page, "radar").locator("table tbody tr").count(), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+  },
+};
+
+const monitor: Scene = {
+  id: "monitor",
+  title: "spectrum monitor watching a band",
+  settleSeconds: 10,
+  shows: (page) => [face(page, "scope").locator("canvas").first(), face(page, "monitor")],
+  async stage(page) {
+    await stage(page, "Spectrum monitor", {
+      version: 4,
+      graph: {
+        nodes: [
+          node("dev", { kind: "device", data: { device: BAND } }, { x: 0, y: 0, w: 420, h: 236 }),
+          node("monitor", { kind: "spectrum_monitor", data: {} }, { x: 500, y: 0, w: 460, h: 360 }),
+          node("scope", { kind: "scope" }, { x: 0, y: 400, w: 960, h: 520 }),
+          node("log", { kind: "decoder_log", data: {} }, { x: 1020, y: 0, w: 720, h: 920 }),
+        ],
+        edges: [
+          wire(["dev", "iq"], ["scope", "iq"]),
+          wire(["dev", "iq"], ["monitor", "iq"]),
+          wire(["monitor", "events"], ["log", "events"]),
+        ],
+      },
+    });
+    await fitForCapture(page);
+  },
+  async ready(page) {
+    await expect(face(page, "scope").getByText(/MHz/).first()).toBeVisible({ timeout: 60_000 });
+  },
+};
+
+const satellite: Scene = {
+  id: "satellite",
+  title: "satellite pass tracking and Doppler control",
+  settleSeconds: 6,
+  shows: (page) => [face(page, "sat"), face(page, "map").locator("canvas").first()],
+  async stage(page) {
+    await stage(page, "Satellite pass", {
+      version: 4,
+      graph: {
+        nodes: [
+          node(
+            "gps",
+            { kind: "gps", data: { source: { type: "fixed", lat: 52.52, lon: 13.405 } } },
+            { x: 0, y: 0, w: 320, h: 280 },
+          ),
+          node(
+            "sat",
+            { kind: "satellite", data: { tle: ISS_TLE, downlink_hz: 145_800_000 } },
+            { x: 400, y: 0, w: 460, h: 480 },
+          ),
+          channel("ch", "nfm", { x: 940, y: 0, w: 440, h: 320 }),
+          node("map", { kind: "map" }, { x: 940, y: 360, w: 720, h: 460 }),
+        ],
+        edges: [
+          wire(["gps", "position"], ["sat", "position"]),
+          wire(["sat", "control"], ["ch", "control"]),
+          wire(["sat", "events"], ["map", "events"]),
+        ],
+      },
+    });
+    await fitForCapture(page);
+  },
+  async ready(page) {
+    await expect(face(page, "ch").getByRole("button", { name: /Tuned by Satellite/ })).toBeVisible({
+      timeout: 60_000,
+    });
+  },
+};
+
+const survey: Scene = {
+  id: "survey",
+  title: "signal survey mapping field strength",
+  settleSeconds: 6,
+  shows: (page) => [face(page, "survey"), face(page, "scope").locator("canvas").first()],
+  async stage(page) {
+    await stage(page, "Signal survey", {
+      version: 4,
+      graph: {
+        nodes: [
+          node("dev", { kind: "device", data: { device: BAND } }, { x: 0, y: 0, w: 420, h: 236 }),
+          node(
+            "gps",
+            { kind: "gps", data: { source: { type: "fixed", lat: 52.52, lon: 13.405 } } },
+            { x: 0, y: 280, w: 420, h: 280 },
+          ),
+          node(
+            "survey",
+            { kind: "signal_map", data: { offset_hz: 0, bandwidth_hz: 12_500 } },
+            { x: 500, y: 0, w: 460, h: 420 },
+          ),
+          node("scope", { kind: "scope" }, { x: 1020, y: 0, w: 760, h: 560 }),
+        ],
+        edges: [
+          wire(["dev", "iq"], ["scope", "iq"]),
+          wire(["dev", "iq"], ["survey", "iq"]),
+          wire(["gps", "position"], ["survey", "position"]),
+        ],
+      },
+    });
+    await fitForCapture(page);
+  },
+  async ready(page) {
+    const nodeFace = face(page, "survey");
+    await expect(nodeFace.getByText("Ready")).toBeVisible({ timeout: 30_000 });
+    await nodeFace.getByRole("button", { name: "Start survey" }).click();
+    await expect(readout(nodeFace, "Cells")).toHaveText("1", { timeout: 15_000 });
+  },
+};
+
 export const SCENES: Scene[] = [
   patch,
   spectrum,
@@ -648,8 +912,10 @@ export const SCENES: Scene[] = [
   rack,
 ];
 
+export const DOCS_SCENES: Scene[] = [dmr, df, radar, monitor, satellite, survey];
+
 export function scene(id: string): Scene {
-  const found = SCENES.find((candidate) => candidate.id === id);
+  const found = [...SCENES, ...DOCS_SCENES].find((candidate) => candidate.id === id);
   if (found === undefined) {
     throw new Error(`no scene ${id}`);
   }

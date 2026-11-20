@@ -74,18 +74,10 @@ export function HelpPanel({
               <LinkRow
                 glyph={Radio}
                 label="First receiver"
-                href={docsPage("getting-started/first-receiver")}
+                href={docsPage("start/first-receiver")}
               />
-              <LinkRow
-                glyph={Workflow}
-                label="Nodes and wires"
-                href={docsPage("getting-started/workspace")}
-              />
-              <LinkRow
-                glyph={AudioWaveform}
-                label="Decoders"
-                href={docsPage("user-guide/decoders")}
-              />
+              <LinkRow glyph={Workflow} label="Nodes and wires" href={docsPage("start/concepts")} />
+              <LinkRow glyph={AudioWaveform} label="Decoders" href={docsPage("operate/decoders")} />
               <LinkRow
                 glyph={Braces}
                 label="API"
@@ -96,7 +88,7 @@ export function HelpPanel({
               <LinkRow
                 glyph={LifeBuoy}
                 label="Troubleshooting"
-                href={docsPage("troubleshooting")}
+                href={docsPage("reference/troubleshooting")}
               />
               <LinkRow glyph={MessagesSquare} label="Ask on Discord" href={DISCORD} />
               <ActionRow glyph={Bug} label="Report a problem" onClick={handOff(onShowReport)} />
@@ -183,7 +175,7 @@ function Keyboard() {
           Keyboard
         </h3>
         <a
-          href={docsPage("user-guide/keyboard")}
+          href={docsPage("reference/keyboard")}
           target="_blank"
           rel="noreferrer"
           className="legend hover:text-accent"

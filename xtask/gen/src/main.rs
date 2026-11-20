@@ -127,16 +127,17 @@ fn generated(root: &Path) -> Result<Vec<(&'static str, String)>> {
             "web/src/generated/backends.json",
             serde_json::to_string_pretty(&sdrmm_wire::backend_table())?,
         ),
-        ("docs/src/wires.md", wires::page(&catalog)),
+        ("docs/reference/wires.md", wires::page(&catalog)),
         (
             modes::DOCS_PAGE,
             modes::docs_page(
+                root,
                 &std::fs::read_to_string(root.join(modes::DOCS_PAGE))
                     .with_context(|| format!("read {}", modes::DOCS_PAGE))?,
                 &decoders,
             )?,
         ),
-        (modes::SITE_DATA, modes::site_data(&decoders)?),
+        (modes::SITE_DATA, modes::site_data(root, &decoders)?),
         (
             "web/src/generated/frame.ts",
             sdrmm_wire::typescript_frames(),

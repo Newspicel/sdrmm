@@ -13,6 +13,7 @@ export interface Mode {
   verification: string;
   input_rate_hz: number;
   bands: Band[];
+  doc?: string;
 }
 
 export interface Level {

@@ -35,8 +35,6 @@ pub fn icons(root: &Path) -> Result<()> {
 
     let copies = [
         root.join("web/public/icon.svg"),
-        root.join("docs/src/icon.svg"),
-        root.join("docs/theme/favicon.svg"),
         root.join("site/public/icon.svg"),
     ];
     for path in &copies {
@@ -48,7 +46,6 @@ pub fn icons(root: &Path) -> Result<()> {
         ("apps/desktop/icons/128x128.png", 128),
         ("apps/desktop/icons/128x128@2x.png", 256),
         ("apps/desktop/icons/icon.png", 512),
-        ("docs/theme/favicon.png", 32),
         ("site/public/apple-touch-icon.png", 180),
     ];
     for (path, size) in pngs {

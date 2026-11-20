@@ -1,0 +1,71 @@
+---
+import { getEntry, render } from "astro:content";
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+const entry = await getEntry("docs", "index");
+if (!entry) {
+  throw new Error("docs/index.md is missing");
+}
+const { Content, headings } = await render(entry);
+
+const cards = [
+  {
+    kicker: "Start",
+    title: "Your first receiver",
+    text: "Plug in an RTL-SDR, wire a WFM channel to a speaker, and pin it to the Rack.",
+    href: "/docs/start/first-receiver",
+  },
+  {
+    kicker: "Radios",
+    title: "Supported hardware",
+    text: "Compare 20+ USB and network SDRs, check driver steps, and calibrate offsets.",
+    href: "/docs/radios",
+  },
+  {
+    kicker: "Operate",
+    title: "Decoders and modes",
+    text: "Voice, aviation, marine, HF digital, weather satellites, IoT, and trunking.",
+    href: "/docs/operate/decoders",
+  },
+  {
+    kicker: "Server",
+    title: "Run at the antenna",
+    text: "Deploy with Docker or as a service, set tokens and HTTPS, or automate over REST and MCP.",
+    href: "/docs/server/configuration",
+  },
+  {
+    kicker: "Reference",
+    title: "Wires and troubleshooting",
+    text: "Port contracts for every node, keyboard controls, and quick fixes.",
+    href: "/docs/reference/wires",
+  },
+  {
+    kicker: "Develop",
+    title: "Build and plugins",
+    text: "Build from source, read the crate boundaries, or write a WebAssembly plugin.",
+    href: "/docs/develop/building",
+  },
+];
+---
+
+<DocsLayout
+  slug=""
+  title={entry.data.title}
+  description={entry.data.description}
+  editPath="docs/index.md"
+  headings={headings}
+>
+  <div class="docs-cards">
+    {
+      cards.map((card) => (
+        <a class="docs-card" href={card.href}>
+          <span class="docs-card-kicker">{card.kicker}</span>
+          <strong>{card.title}</strong>
+          <span>{card.text}</span>
+        </a>
+      ))
+    }
+  </div>
+
+  <Content />
+</DocsLayout>

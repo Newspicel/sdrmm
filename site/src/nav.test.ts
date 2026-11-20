@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
-import summary from "../../docs/src/SUMMARY.md?raw";
+import { FLAT_DOCS } from "./docs/nav";
 import { COMMUNITY, FOOTER, isCurrent, LEGAL, PRIMARY } from "./nav";
 import { canonical, docPages, sitePages } from "./seo";
 
 const pages = Object.keys(import.meta.glob("./pages/*.astro"));
-const known = new Set([...sitePages(pages), ...docPages(summary)]);
-const sources = import.meta.glob<string>(["./pages/*.astro", "./components/*.astro"], {
-  query: "?raw",
-  import: "default",
-  eager: true,
-});
+const known = new Set([...sitePages(pages), ...docPages(FLAT_DOCS.map((doc) => doc.slug))]);
+const sources = import.meta.glob<string>(
+  ["./pages/*.astro", "./pages/docs/*.astro", "./components/*.astro"],
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+);
 
 describe("page sources", () => {
   it("link to a page or a docs chapter", () => {
@@ -51,6 +54,12 @@ describe("isCurrent", () => {
 
   it("treats the index as the root", () => {
     expect(isCurrent("/", "/index.html")).toBe(true);
+  });
+
+  it("highlights Docs and Hardware for nested docs pages", () => {
+    expect(isCurrent("/docs/", "/docs/start/install")).toBe(true);
+    expect(isCurrent("/docs/", "/docs/radios")).toBe(false);
+    expect(isCurrent("/docs/radios", "/docs/radios/usb")).toBe(true);
   });
 
   it("never marks other pages or external links", () => {

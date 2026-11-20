@@ -69,7 +69,7 @@ mod tests {
             "web/src/App.tsx",
             "apps/android/app/build.gradle.kts",
             "crates/engine/src/lib.rs",
-            "docs/src/user-guide/phones.md",
+            "docs/operate/phones.md",
             "crates/wireless/src/lib.rs",
             "",
         ] {

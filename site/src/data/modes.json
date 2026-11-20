@@ -70,8 +70,9 @@
       "summary": "Wi-Fi, Bluetooth, 802.15.4 and ovens by airtime, energy only",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 20000000.0,
-      "bands": []
+      "input_rate_hz": 20000000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#24-ghz-survey-and-wi-fi-occupancy"
     },
     {
       "type_id": "sarsat",
@@ -79,11 +80,11 @@
       "summary": "COSPAS-SARSAT EPIRB, ELT and PLB bursts",
       "family": "utility",
       "verification": "own_modulator",
-      "input_rate_hz": 24000.0,
+      "input_rate_hz": 24000,
       "bands": [
         {
-          "low": 406000000.0,
-          "high": 406100000.0
+          "low": 406000000,
+          "high": 406100000
         }
       ]
     },
@@ -93,11 +94,11 @@
       "summary": "Aircraft text messages on VHF",
       "family": "aviation",
       "verification": "on_air",
-      "input_rate_hz": 24000.0,
+      "input_rate_hz": 24000,
       "bands": [
         {
-          "low": 129000000.0,
-          "high": 137000000.0
+          "low": 129000000,
+          "high": 137000000
         }
       ]
     },
@@ -107,11 +108,11 @@
       "summary": "Aircraft positions on 1090 MHz",
       "family": "aviation",
       "verification": "on_air",
-      "input_rate_hz": 2400000.0,
+      "input_rate_hz": 2400000,
       "bands": [
         {
-          "low": 1089000000.0,
-          "high": 1091000000.0
+          "low": 1089000000,
+          "high": 1091000000
         }
       ]
     },
@@ -121,15 +122,15 @@
       "summary": "Ship positions and names",
       "family": "marine",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 161962500.0,
-          "high": 161987500.0
+          "low": 161962500,
+          "high": 161987500
         },
         {
-          "low": 162012500.0,
-          "high": 162037500.0
+          "low": 162012500,
+          "high": 162037500
         }
       ]
     },
@@ -139,11 +140,11 @@
       "summary": "AM voice, airband and shortwave",
       "family": "analog_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 118000000.0,
-          "high": 137000000.0
+          "low": 118000000,
+          "high": 137000000
         }
       ]
     },
@@ -153,11 +154,11 @@
       "summary": "Amateur packet positions and messages",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 144300000.0,
-          "high": 145200000.0
+          "low": 144300000,
+          "high": 145200000
         }
       ]
     },
@@ -167,8 +168,9 @@
       "summary": "Analog TV picture and sound",
       "family": "video",
       "verification": "own_modulator",
-      "input_rate_hz": 20000000.0,
-      "bands": []
+      "input_rate_hz": 20000000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/broadcast-video#atv"
     },
     {
       "type_id": "ble",
@@ -176,8 +178,9 @@
       "summary": "Bluetooth LE devices, beacons and trackers",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 4000000.0,
-      "bands": []
+      "input_rate_hz": 4000000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#ble-advertisements"
     },
     {
       "type_id": "bss",
@@ -185,21 +188,22 @@
       "summary": "Benshi handheld chat, positions and calls",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 144000000.0,
-          "high": 148000000.0
+          "low": 144000000,
+          "high": 148000000
         },
         {
-          "low": 420000000.0,
-          "high": 450000000.0
+          "low": 420000000,
+          "high": 450000000
         },
         {
-          "low": 462500000.0,
-          "high": 467800000.0
+          "low": 462500000,
+          "high": 467800000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/amateur-hf#bss"
     },
     {
       "type_id": "cw_skimmer",
@@ -207,7 +211,7 @@
       "summary": "Every Morse signal in the band at once",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": []
     },
     {
@@ -216,15 +220,15 @@
       "summary": "D-STAR amateur digital voice",
       "family": "digital_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 144000000.0,
-          "high": 148000000.0
+          "low": 144000000,
+          "high": 148000000
         },
         {
-          "low": 430000000.0,
-          "high": 450000000.0
+          "low": 430000000,
+          "high": 450000000
         }
       ]
     },
@@ -234,17 +238,18 @@
       "summary": "DAB and DAB+ digital radio",
       "family": "broadcast",
       "verification": "reference_fixture",
-      "input_rate_hz": 2048000.0,
+      "input_rate_hz": 2048000,
       "bands": [
         {
-          "low": 174000000.0,
-          "high": 240000000.0
+          "low": 174000000,
+          "high": 240000000
         },
         {
-          "low": 1452000000.0,
-          "high": 1492000000.0
+          "low": 1452000000,
+          "high": 1492000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/broadcast-video#dab-and-dab"
     },
     {
       "type_id": "datv",
@@ -252,8 +257,9 @@
       "summary": "Digital amateur TV over DVB-S and S2",
       "family": "broadcast",
       "verification": "experimental",
-      "input_rate_hz": 2000000.0,
-      "bands": []
+      "input_rate_hz": 2000000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/broadcast-video#dvb-tt2-and-datv"
     },
     {
       "type_id": "dect",
@@ -261,17 +267,18 @@
       "summary": "DECT cordless phone survey and voice",
       "family": "utility",
       "verification": "own_modulator",
-      "input_rate_hz": 2304000.0,
+      "input_rate_hz": 2304000,
       "bands": [
         {
-          "low": 1880000000.0,
-          "high": 1900000000.0
+          "low": 1880000000,
+          "high": 1900000000
         },
         {
-          "low": 1920000000.0,
-          "high": 1930000000.0
+          "low": 1920000000,
+          "high": 1930000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/voice#dect"
     },
     {
       "type_id": "dsc",
@@ -279,35 +286,35 @@
       "summary": "Maritime distress and calling alerts",
       "family": "marine",
       "verification": "on_air",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": [
         {
-          "low": 2186500.0,
-          "high": 2188500.0
+          "low": 2186500,
+          "high": 2188500
         },
         {
-          "low": 4206500.0,
-          "high": 4208500.0
+          "low": 4206500,
+          "high": 4208500
         },
         {
-          "low": 6311000.0,
-          "high": 6313000.0
+          "low": 6311000,
+          "high": 6313000
         },
         {
-          "low": 8413500.0,
-          "high": 8415500.0
+          "low": 8413500,
+          "high": 8415500
         },
         {
-          "low": 12576000.0,
-          "high": 12578000.0
+          "low": 12576000,
+          "high": 12578000
         },
         {
-          "low": 16803500.0,
-          "high": 16805500.0
+          "low": 16803500,
+          "high": 16805500
         },
         {
-          "low": 156512500.0,
-          "high": 156537500.0
+          "low": 156512500,
+          "high": 156537500
         }
       ]
     },
@@ -317,19 +324,19 @@
       "summary": "DMR two-way radio voice",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
       ]
     },
@@ -339,19 +346,19 @@
       "summary": "dPMR two-way radio voice",
       "family": "digital_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
       ]
     },
@@ -361,19 +368,19 @@
       "summary": "Digital Radio Mondiale receiver",
       "family": "broadcast",
       "verification": "reference_fixture",
-      "input_rate_hz": 192000.0,
+      "input_rate_hz": 192000,
       "bands": [
         {
-          "low": 150000.0,
-          "high": 30000000.0
+          "low": 150000,
+          "high": 30000000
         },
         {
-          "low": 47000000.0,
-          "high": 108000000.0
+          "low": 47000000,
+          "high": 108000000
         },
         {
-          "low": 174000000.0,
-          "high": 240000000.0
+          "low": 174000000,
+          "high": 240000000
         }
       ]
     },
@@ -383,8 +390,9 @@
       "summary": "Drone ID and position over Bluetooth and Wi-Fi",
       "family": "aviation",
       "verification": "reference_fixture",
-      "input_rate_hz": 4000000.0,
-      "bands": []
+      "input_rate_hz": 4000000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#drone-remote-id"
     },
     {
       "type_id": "dtmf",
@@ -392,17 +400,18 @@
       "summary": "Touch-tone digits over FM",
       "family": "paging",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/utility-iot#dtmf"
     },
     {
       "type_id": "dvbt",
@@ -411,7 +420,8 @@
       "family": "broadcast",
       "verification": "experimental",
       "input_rate_hz": 9142857.142857144,
-      "bands": []
+      "bands": [],
+      "doc": "/docs/operate/decoders/broadcast-video#dvb-tt2-and-datv"
     },
     {
       "type_id": "edacs",
@@ -419,19 +429,19 @@
       "summary": "EDACS trunking control channel and voice",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 403000000.0,
-          "high": 512000000.0
+          "low": 403000000,
+          "high": 512000000
         },
         {
-          "low": 806000000.0,
-          "high": 870000000.0
+          "low": 806000000,
+          "high": 870000000
         }
       ]
     },
@@ -441,25 +451,26 @@
       "summary": "Railroad EOT telemetry and HOT commands",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 450256250.0,
-          "high": 450268750.0
+          "low": 450256250,
+          "high": 450268750
         },
         {
-          "low": 452931250.0,
-          "high": 452943750.0
+          "low": 452931250,
+          "high": 452943750
         },
         {
-          "low": 457931250.0,
-          "high": 457943750.0
+          "low": 457931250,
+          "high": 457943750
         },
         {
-          "low": 477693750.0,
-          "high": 477706250.0
+          "low": 477693750,
+          "high": 477706250
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/utility-iot#end-of-train"
     },
     {
       "type_id": "ermes",
@@ -467,11 +478,11 @@
       "summary": "ERMES pager messages",
       "family": "paging",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 169400000.0,
-          "high": 169800000.0
+          "low": 169400000,
+          "high": 169800000
         }
       ]
     },
@@ -481,19 +492,19 @@
       "summary": "Kenwood unit IDs, status and messages on FM",
       "family": "paging",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
       ]
     },
@@ -503,19 +514,19 @@
       "summary": "FLEX pager messages",
       "family": "paging",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 148000000.0,
-          "high": 175000000.0
+          "low": 148000000,
+          "high": 175000000
         },
         {
-          "low": 426000000.0,
-          "high": 470000000.0
+          "low": 426000000,
+          "high": 470000000
         },
         {
-          "low": 929000000.0,
-          "high": 932000000.0
+          "low": 929000000,
+          "high": 932000000
         }
       ]
     },
@@ -525,23 +536,23 @@
       "summary": "FreeDV HF digital voice",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": [
         {
-          "low": 7174000.0,
-          "high": 7180000.0
+          "low": 7174000,
+          "high": 7180000
         },
         {
-          "low": 14233000.0,
-          "high": 14239000.0
+          "low": 14233000,
+          "high": 14239000
         },
         {
-          "low": 21310000.0,
-          "high": 21316000.0
+          "low": 21310000,
+          "high": 21316000
         },
         {
-          "low": 28327000.0,
-          "high": 28333000.0
+          "low": 28327000,
+          "high": 28333000
         }
       ]
     },
@@ -551,8 +562,9 @@
       "summary": "FST4 LF and MF contacts",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
-      "bands": []
+      "input_rate_hz": 12000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/amateur-hf#msk144-q65-and-fst4"
     },
     {
       "type_id": "fst4w",
@@ -560,7 +572,7 @@
       "summary": "FST4W LF and MF beacons",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": []
     },
     {
@@ -569,41 +581,42 @@
       "summary": "FT4 fast weak signal contacts",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 3573000.0,
-          "high": 3577000.0
+          "low": 3573000,
+          "high": 3577000
         },
         {
-          "low": 7045500.0,
-          "high": 7049500.0
+          "low": 7045500,
+          "high": 7049500
         },
         {
-          "low": 10138000.0,
-          "high": 10142000.0
+          "low": 10138000,
+          "high": 10142000
         },
         {
-          "low": 14078000.0,
-          "high": 14082000.0
+          "low": 14078000,
+          "high": 14082000
         },
         {
-          "low": 18102000.0,
-          "high": 18106000.0
+          "low": 18102000,
+          "high": 18106000
         },
         {
-          "low": 21138000.0,
-          "high": 21142000.0
+          "low": 21138000,
+          "high": 21142000
         },
         {
-          "low": 24917000.0,
-          "high": 24921000.0
+          "low": 24917000,
+          "high": 24921000
         },
         {
-          "low": 28178000.0,
-          "high": 28182000.0
+          "low": 28178000,
+          "high": 28182000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/amateur-hf#ft8-ft4-and-wspr"
     },
     {
       "type_id": "ft8",
@@ -611,49 +624,50 @@
       "summary": "FT8 weak signal contacts",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 1838000.0,
-          "high": 1842000.0
+          "low": 1838000,
+          "high": 1842000
         },
         {
-          "low": 3571000.0,
-          "high": 3575000.0
+          "low": 3571000,
+          "high": 3575000
         },
         {
-          "low": 7072000.0,
-          "high": 7076000.0
+          "low": 7072000,
+          "high": 7076000
         },
         {
-          "low": 10134000.0,
-          "high": 10138000.0
+          "low": 10134000,
+          "high": 10138000
         },
         {
-          "low": 14072000.0,
-          "high": 14076000.0
+          "low": 14072000,
+          "high": 14076000
         },
         {
-          "low": 18098000.0,
-          "high": 18102000.0
+          "low": 18098000,
+          "high": 18102000
         },
         {
-          "low": 21072000.0,
-          "high": 21076000.0
+          "low": 21072000,
+          "high": 21076000
         },
         {
-          "low": 24913000.0,
-          "high": 24917000.0
+          "low": 24913000,
+          "high": 24917000
         },
         {
-          "low": 28072000.0,
-          "high": 28076000.0
+          "low": 28072000,
+          "high": 28076000
         },
         {
-          "low": 50311000.0,
-          "high": 50315000.0
+          "low": 50311000,
+          "high": 50315000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/amateur-hf#ft8-ft4-and-wspr"
     },
     {
       "type_id": "gk2a_lrit",
@@ -661,13 +675,14 @@
       "summary": "GK-2A weather satellite pictures and bulletins",
       "family": "weather",
       "verification": "own_modulator",
-      "input_rate_hz": 256000.0,
+      "input_rate_hz": 256000,
       "bands": [
         {
-          "low": 1692000000.0,
-          "high": 1692300000.0
+          "low": 1692000000,
+          "high": 1692300000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/weather-space#goes-hrit-and-gk-2a-lrit"
     },
     {
       "type_id": "gnss",
@@ -675,8 +690,9 @@
       "summary": "GPS satellite tracking and position fix",
       "family": "utility",
       "verification": "experimental",
-      "input_rate_hz": 2048000.0,
-      "bands": []
+      "input_rate_hz": 2048000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#gnss-lab"
     },
     {
       "type_id": "goes_hrit",
@@ -684,13 +700,14 @@
       "summary": "GOES-R weather satellite pictures and bulletins",
       "family": "weather",
       "verification": "on_air",
-      "input_rate_hz": 1854000.0,
+      "input_rate_hz": 1854000,
       "bands": [
         {
-          "low": 1694000000.0,
-          "high": 1694200000.0
+          "low": 1694000000,
+          "high": 1694200000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/weather-space#goes-hrit-and-gk-2a-lrit"
     },
     {
       "type_id": "gsm",
@@ -699,7 +716,8 @@
       "family": "utility",
       "verification": "on_air",
       "input_rate_hz": 541666.6666666666,
-      "bands": []
+      "bands": [],
+      "doc": "/docs/operate/decoders/voice#gsm-downlink"
     },
     {
       "type_id": "hd_radio",
@@ -710,10 +728,11 @@
       "input_rate_hz": 558140.625,
       "bands": [
         {
-          "low": 87500000.0,
-          "high": 108000000.0
+          "low": 87500000,
+          "high": 108000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/broadcast-video#hd-radio"
     },
     {
       "type_id": "hfdl",
@@ -721,11 +740,11 @@
       "summary": "Aircraft datalink on HF",
       "family": "aviation",
       "verification": "own_modulator",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 2500000.0,
-          "high": 22000000.0
+          "low": 2500000,
+          "high": 22000000
         }
       ]
     },
@@ -735,13 +754,14 @@
       "summary": "High-altitude balloon telemetry",
       "family": "weather",
       "verification": "reference_fixture",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": [
         {
-          "low": 433050000.0,
-          "high": 434790000.0
+          "low": 433050000,
+          "high": 434790000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/weather-space#horus-binary"
     },
     {
       "type_id": "hrpt",
@@ -749,11 +769,11 @@
       "summary": "Meteor-M, NOAA and MetOp weather pictures in L band",
       "family": "weather",
       "verification": "on_air",
-      "input_rate_hz": 2661600.0,
+      "input_rate_hz": 2661600,
       "bands": [
         {
-          "low": 1695000000.0,
-          "high": 1710000000.0
+          "low": 1695000000,
+          "high": 1710000000
         }
       ]
     },
@@ -763,15 +783,15 @@
       "summary": "ILS landing guidance deviation",
       "family": "aviation",
       "verification": "experimental",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 108100000.0,
-          "high": 111950000.0
+          "low": 108100000,
+          "high": 111950000
         },
         {
-          "low": 329150000.0,
-          "high": 335000000.0
+          "low": 329150000,
+          "high": 335000000
         }
       ]
     },
@@ -781,13 +801,14 @@
       "summary": "Aircraft datalink over Inmarsat",
       "family": "aviation",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 1525000000.0,
-          "high": 1559000000.0
+          "low": 1525000000,
+          "high": 1559000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/aviation-marine#inmarsat-and-iridium"
     },
     {
       "type_id": "inmarsat_stdc",
@@ -795,13 +816,14 @@
       "summary": "Maritime text and safety messages over Inmarsat",
       "family": "marine",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 1525000000.0,
-          "high": 1559000000.0
+          "low": 1525000000,
+          "high": 1559000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/aviation-marine#inmarsat-and-iridium"
     },
     {
       "type_id": "iridium",
@@ -809,13 +831,14 @@
       "summary": "Iridium satellite bursts",
       "family": "utility",
       "verification": "reference_fixture",
-      "input_rate_hz": 250000.0,
+      "input_rate_hz": 250000,
       "bands": [
         {
-          "low": 1616000000.0,
-          "high": 1626500000.0
+          "low": 1616000000,
+          "high": 1626500000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/aviation-marine#inmarsat-and-iridium"
     },
     {
       "type_id": "ism",
@@ -823,25 +846,26 @@
       "summary": "OOK and FSK remotes, weather and tyre sensors",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 250000.0,
+      "input_rate_hz": 250000,
       "bands": [
         {
-          "low": 314500000.0,
-          "high": 315500000.0
+          "low": 314500000,
+          "high": 315500000
         },
         {
-          "low": 433050000.0,
-          "high": 434790000.0
+          "low": 433050000,
+          "high": 434790000
         },
         {
-          "low": 863000000.0,
-          "high": 870000000.0
+          "low": 863000000,
+          "high": 870000000
         },
         {
-          "low": 902000000.0,
-          "high": 928000000.0
+          "low": 902000000,
+          "high": 928000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/utility-iot#ism-sensors"
     },
     {
       "type_id": "js8",
@@ -849,49 +873,50 @@
       "summary": "JS8Call keyboard chat",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 1839000.0,
-          "high": 1845000.0
+          "low": 1839000,
+          "high": 1845000
         },
         {
-          "low": 3575000.0,
-          "high": 3581000.0
+          "low": 3575000,
+          "high": 3581000
         },
         {
-          "low": 7075000.0,
-          "high": 7081000.0
+          "low": 7075000,
+          "high": 7081000
         },
         {
-          "low": 10127000.0,
-          "high": 10133000.0
+          "low": 10127000,
+          "high": 10133000
         },
         {
-          "low": 14075000.0,
-          "high": 14081000.0
+          "low": 14075000,
+          "high": 14081000
         },
         {
-          "low": 18101000.0,
-          "high": 18107000.0
+          "low": 18101000,
+          "high": 18107000
         },
         {
-          "low": 21075000.0,
-          "high": 21081000.0
+          "low": 21075000,
+          "high": 21081000
         },
         {
-          "low": 24919000.0,
-          "high": 24925000.0
+          "low": 24919000,
+          "high": 24925000
         },
         {
-          "low": 28075000.0,
-          "high": 28081000.0
+          "low": 28075000,
+          "high": 28081000
         },
         {
-          "low": 50315000.0,
-          "high": 50321000.0
+          "low": 50315000,
+          "high": 50321000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/amateur-hf#js8"
     },
     {
       "type_id": "jt65",
@@ -899,7 +924,7 @@
       "summary": "JT65 weak signal contacts",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": []
     },
     {
@@ -908,7 +933,7 @@
       "summary": "JT9 weak signal contacts",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": []
     },
     {
@@ -917,8 +942,9 @@
       "summary": "LoRa, LoRaWAN, Meshtastic and MeshCore",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 250000.0,
-      "bands": []
+      "input_rate_hz": 250000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#lora"
     },
     {
       "type_id": "ltr",
@@ -926,7 +952,7 @@
       "summary": "LTR trunked repeater voice and data",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": []
     },
     {
@@ -935,15 +961,15 @@
       "summary": "M17 open amateur digital voice",
       "family": "digital_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 144000000.0,
-          "high": 148000000.0
+          "low": 144000000,
+          "high": 148000000
         },
         {
-          "low": 430000000.0,
-          "high": 450000000.0
+          "low": 430000000,
+          "high": 450000000
         }
       ]
     },
@@ -953,19 +979,19 @@
       "summary": "Motorola unit IDs and status on FM",
       "family": "paging",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
       ]
     },
@@ -975,8 +1001,9 @@
       "summary": "Meteor-M weather satellite pictures",
       "family": "weather",
       "verification": "on_air",
-      "input_rate_hz": 288000.0,
-      "bands": []
+      "input_rate_hz": 288000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/weather-space#meteor-lrpt-and-noaa-apt"
     },
     {
       "type_id": "morse",
@@ -984,7 +1011,7 @@
       "summary": "One Morse signal to text",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": []
     },
     {
@@ -993,21 +1020,22 @@
       "summary": "MPT 1327 trunked radio signalling",
       "family": "analog_voice",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/voice#mpt-1327"
     },
     {
       "type_id": "msk144",
@@ -1015,33 +1043,34 @@
       "summary": "MSK144 meteor scatter pings",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 50257000.0,
-          "high": 50263000.0
+          "low": 50257000,
+          "high": 50263000
         },
         {
-          "low": 50277000.0,
-          "high": 50283000.0
+          "low": 50277000,
+          "high": 50283000
         },
         {
-          "low": 144147000.0,
-          "high": 144153000.0
+          "low": 144147000,
+          "high": 144153000
         },
         {
-          "low": 144357000.0,
-          "high": 144363000.0
+          "low": 144357000,
+          "high": 144363000
         },
         {
-          "low": 222062000.0,
-          "high": 222068000.0
+          "low": 222062000,
+          "high": 222068000
         },
         {
-          "low": 432062000.0,
-          "high": 432068000.0
+          "low": 432062000,
+          "high": 432068000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/amateur-hf#msk144-q65-and-fst4"
     },
     {
       "type_id": "navtex",
@@ -1049,19 +1078,19 @@
       "summary": "Maritime safety text broadcasts",
       "family": "marine",
       "verification": "own_modulator",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": [
         {
-          "low": 489000.0,
-          "high": 491000.0
+          "low": 489000,
+          "high": 491000
         },
         {
-          "low": 517000.0,
-          "high": 519000.0
+          "low": 517000,
+          "high": 519000
         },
         {
-          "low": 4208500.0,
-          "high": 4210500.0
+          "low": 4208500,
+          "high": 4210500
         }
       ]
     },
@@ -1071,15 +1100,15 @@
       "summary": "Narrowband FM voice with CTCSS and DCS",
       "family": "analog_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 156000000.0,
-          "high": 162050000.0
+          "low": 156000000,
+          "high": 162050000
         },
         {
-          "low": 446000000.0,
-          "high": 446200000.0
+          "low": 446000000,
+          "high": 446200000
         }
       ]
     },
@@ -1089,8 +1118,9 @@
       "summary": "NOAA weather satellite pictures",
       "family": "weather",
       "verification": "own_modulator",
-      "input_rate_hz": 60000.0,
-      "bands": []
+      "input_rate_hz": 60000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/weather-space#meteor-lrpt-and-noaa-apt"
     },
     {
       "type_id": "noise_figure",
@@ -1098,8 +1128,9 @@
       "summary": "Receiver noise figure by the Y-factor method",
       "family": "utility",
       "verification": "own_modulator",
-      "input_rate_hz": 500000.0,
-      "bands": []
+      "input_rate_hz": 500000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#noise-figure-per-tester-and-sid-monitor"
     },
     {
       "type_id": "nxdn",
@@ -1107,19 +1138,19 @@
       "summary": "NXDN two-way radio voice",
       "family": "digital_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
       ]
     },
@@ -1129,19 +1160,19 @@
       "summary": "P25 public safety voice",
       "family": "digital_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
       ]
     },
@@ -1151,21 +1182,22 @@
       "summary": "P25 two-slot TDMA voice",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         },
         {
-          "low": 769000000.0,
-          "high": 870000000.0
+          "low": 769000000,
+          "high": 870000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/voice#p25-phase-2"
     },
     {
       "type_id": "per",
@@ -1173,8 +1205,9 @@
       "summary": "Packet and bit error rate of a test frame stream",
       "family": "utility",
       "verification": "own_modulator",
-      "input_rate_hz": 96000.0,
-      "bands": []
+      "input_rate_hz": 96000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#noise-figure-per-tester-and-sid-monitor"
     },
     {
       "type_id": "pocsag",
@@ -1182,19 +1215,19 @@
       "summary": "POCSAG pager messages",
       "family": "paging",
       "verification": "own_modulator",
-      "input_rate_hz": 24000.0,
+      "input_rate_hz": 24000,
       "bands": [
         {
-          "low": 148000000.0,
-          "high": 175000000.0
+          "low": 148000000,
+          "high": 175000000
         },
         {
-          "low": 426000000.0,
-          "high": 470000000.0
+          "low": 426000000,
+          "high": 470000000
         },
         {
-          "low": 929000000.0,
-          "high": 932000000.0
+          "low": 929000000,
+          "high": 932000000
         }
       ]
     },
@@ -1204,43 +1237,43 @@
       "summary": "PSK31 to PSK250 keyboard chat",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": [
         {
-          "low": 3577000.0,
-          "high": 3583000.0
+          "low": 3577000,
+          "high": 3583000
         },
         {
-          "low": 7037000.0,
-          "high": 7043000.0
+          "low": 7037000,
+          "high": 7043000
         },
         {
-          "low": 7067000.0,
-          "high": 7073000.0
+          "low": 7067000,
+          "high": 7073000
         },
         {
-          "low": 10139000.0,
-          "high": 10145000.0
+          "low": 10139000,
+          "high": 10145000
         },
         {
-          "low": 14067000.0,
-          "high": 14073000.0
+          "low": 14067000,
+          "high": 14073000
         },
         {
-          "low": 18097000.0,
-          "high": 18103000.0
+          "low": 18097000,
+          "high": 18103000
         },
         {
-          "low": 21067000.0,
-          "high": 21073000.0
+          "low": 21067000,
+          "high": 21073000
         },
         {
-          "low": 24917000.0,
-          "high": 24923000.0
+          "low": 24917000,
+          "high": 24923000
         },
         {
-          "low": 28117000.0,
-          "high": 28123000.0
+          "low": 28117000,
+          "high": 28123000
         }
       ]
     },
@@ -1250,8 +1283,9 @@
       "summary": "Q65 EME and scatter contacts",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 12000.0,
-      "bands": []
+      "input_rate_hz": 12000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/amateur-hf#msk144-q65-and-fst4"
     },
     {
       "type_id": "radio_clock",
@@ -1259,27 +1293,27 @@
       "summary": "Time from DCF77, WWVB, MSF or JJY",
       "family": "paging",
       "verification": "on_air",
-      "input_rate_hz": 2000.0,
+      "input_rate_hz": 2000,
       "bands": [
         {
-          "low": 39500.0,
-          "high": 40500.0
+          "low": 39500,
+          "high": 40500
         },
         {
-          "low": 59500.0,
-          "high": 60500.0
+          "low": 59500,
+          "high": 60500
         },
         {
-          "low": 68000.0,
-          "high": 69000.0
+          "low": 68000,
+          "high": 69000
         },
         {
-          "low": 77000.0,
-          "high": 78000.0
+          "low": 77000,
+          "high": 78000
         },
         {
-          "low": 161500.0,
-          "high": 162500.0
+          "low": 161500,
+          "high": 162500
         }
       ]
     },
@@ -1289,7 +1323,7 @@
       "summary": "Weather balloon telemetry",
       "family": "weather",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": []
     },
     {
@@ -1298,7 +1332,7 @@
       "summary": "Radioteletype text",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 8000.0,
+      "input_rate_hz": 8000,
       "bands": []
     },
     {
@@ -1307,13 +1341,14 @@
       "summary": "NOAA Weather Radio and EAS alert headers",
       "family": "weather",
       "verification": "own_modulator",
-      "input_rate_hz": 50000.0,
+      "input_rate_hz": 50000,
       "bands": [
         {
-          "low": 162400000.0,
-          "high": 162560000.0
+          "low": 162400000,
+          "high": 162560000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/weather-space#same-alerts"
     },
     {
       "type_id": "selcall",
@@ -1321,15 +1356,15 @@
       "summary": "Selective calling tone sequences",
       "family": "paging",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 136000000.0,
-          "high": 174000000.0
+          "low": 136000000,
+          "high": 174000000
         },
         {
-          "low": 400000000.0,
-          "high": 470000000.0
+          "low": 400000000,
+          "high": 470000000
         }
       ]
     },
@@ -1339,8 +1374,9 @@
       "summary": "Solar flares in VLF transmitter levels",
       "family": "utility",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
-      "bands": []
+      "input_rate_hz": 48000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#noise-figure-per-tester-and-sid-monitor"
     },
     {
       "type_id": "ident",
@@ -1348,7 +1384,7 @@
       "summary": "Guesses what an unknown signal is",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 240000.0,
+      "input_rate_hz": 240000,
       "bands": []
     },
     {
@@ -1357,7 +1393,7 @@
       "summary": "Single sideband voice, USB or LSB",
       "family": "analog_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": []
     },
     {
@@ -1366,33 +1402,34 @@
       "summary": "Slow scan TV pictures",
       "family": "video",
       "verification": "own_modulator",
-      "input_rate_hz": 16000.0,
+      "input_rate_hz": 16000,
       "bands": [
         {
-          "low": 3727000.0,
-          "high": 3733000.0
+          "low": 3727000,
+          "high": 3733000
         },
         {
-          "low": 7168000.0,
-          "high": 7174000.0
+          "low": 7168000,
+          "high": 7174000
         },
         {
-          "low": 14227000.0,
-          "high": 14233000.0
+          "low": 14227000,
+          "high": 14233000
         },
         {
-          "low": 21337000.0,
-          "high": 21343000.0
+          "low": 21337000,
+          "high": 21343000
         },
         {
-          "low": 28677000.0,
-          "high": 28683000.0
+          "low": 28677000,
+          "high": 28683000
         },
         {
-          "low": 145490000.0,
-          "high": 145510000.0
+          "low": 145490000,
+          "high": 145510000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/broadcast-video#sstv"
     },
     {
       "type_id": "stanag",
@@ -1400,8 +1437,9 @@
       "summary": "Names HF military modems",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 9600.0,
-      "bands": []
+      "input_rate_hz": 9600,
+      "bands": [],
+      "doc": "/docs/operate/decoders/amateur-hf#stanag-modem-identifier"
     },
     {
       "type_id": "ysf",
@@ -1409,15 +1447,15 @@
       "summary": "Yaesu System Fusion voice",
       "family": "digital_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 144000000.0,
-          "high": 148000000.0
+          "low": 144000000,
+          "high": 148000000
         },
         {
-          "low": 430000000.0,
-          "high": 450000000.0
+          "low": 430000000,
+          "high": 450000000
         }
       ]
     },
@@ -1427,29 +1465,30 @@
       "summary": "TETRA downlink control and calls",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 72000.0,
+      "input_rate_hz": 72000,
       "bands": [
         {
-          "low": 380000000.0,
-          "high": 400000000.0
+          "low": 380000000,
+          "high": 400000000
         },
         {
-          "low": 410000000.0,
-          "high": 430000000.0
+          "low": 410000000,
+          "high": 430000000
         },
         {
-          "low": 450000000.0,
-          "high": 470000000.0
+          "low": 450000000,
+          "high": 470000000
         },
         {
-          "low": 870000000.0,
-          "high": 876000000.0
+          "low": 870000000,
+          "high": 876000000
         },
         {
-          "low": 915000000.0,
-          "high": 921000000.0
+          "low": 915000000,
+          "high": 921000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/voice#tetra"
     },
     {
       "type_id": "tetrapol",
@@ -1457,21 +1496,22 @@
       "summary": "Tetrapol PMR control and traffic channels",
       "family": "digital_voice",
       "verification": "on_air",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 70000000.0,
-          "high": 87500000.0
+          "low": 70000000,
+          "high": 87500000
         },
         {
-          "low": 380000000.0,
-          "high": 400000000.0
+          "low": 380000000,
+          "high": 400000000
         },
         {
-          "low": 410000000.0,
-          "high": 430000000.0
+          "low": 410000000,
+          "high": 430000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/voice#tetrapol"
     },
     {
       "type_id": "uat",
@@ -1479,13 +1519,14 @@
       "summary": "US aircraft positions and FIS-B weather on 978 MHz",
       "family": "aviation",
       "verification": "reference_fixture",
-      "input_rate_hz": 2083334.0,
+      "input_rate_hz": 2083334,
       "bands": [
         {
-          "low": 977000000.0,
-          "high": 979000000.0
+          "low": 977000000,
+          "high": 979000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/aviation-marine#uat"
     },
     {
       "type_id": "vdl2",
@@ -1493,11 +1534,11 @@
       "summary": "Aircraft datalink on VHF",
       "family": "aviation",
       "verification": "own_modulator",
-      "input_rate_hz": 100000.0,
+      "input_rate_hz": 100000,
       "bands": [
         {
-          "low": 136700000.0,
-          "high": 137000000.0
+          "low": 136700000,
+          "high": 137000000
         }
       ]
     },
@@ -1507,11 +1548,11 @@
       "summary": "Bearing to a VOR beacon",
       "family": "aviation",
       "verification": "experimental",
-      "input_rate_hz": 48000.0,
+      "input_rate_hz": 48000,
       "bands": [
         {
-          "low": 108000000.0,
-          "high": 118000000.0
+          "low": 108000000,
+          "high": 118000000
         }
       ]
     },
@@ -1521,8 +1562,9 @@
       "summary": "HF weather fax charts",
       "family": "weather",
       "verification": "own_modulator",
-      "input_rate_hz": 12000.0,
-      "bands": []
+      "input_rate_hz": 12000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/weather-space#wefax"
     },
     {
       "type_id": "wenet",
@@ -1530,13 +1572,14 @@
       "summary": "Balloon pictures and telemetry",
       "family": "amateur",
       "verification": "on_air",
-      "input_rate_hz": 921416.0,
+      "input_rate_hz": 921416,
       "bands": [
         {
-          "low": 430000000.0,
-          "high": 450000000.0
+          "low": 430000000,
+          "high": 450000000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/weather-space#wenet"
     },
     {
       "type_id": "wfm",
@@ -1544,11 +1587,11 @@
       "summary": "FM broadcast radio with stereo and RDS",
       "family": "analog_voice",
       "verification": "own_modulator",
-      "input_rate_hz": 240000.0,
+      "input_rate_hz": 240000,
       "bands": [
         {
-          "low": 76000000.0,
-          "high": 108000000.0
+          "low": 76000000,
+          "high": 108000000
         }
       ]
     },
@@ -1558,8 +1601,9 @@
       "summary": "Busy time of each Wi-Fi channel, energy only",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 20000000.0,
-      "bands": []
+      "input_rate_hz": 20000000,
+      "bands": [],
+      "doc": "/docs/operate/decoders/utility-iot#24-ghz-survey-and-wi-fi-occupancy"
     },
     {
       "type_id": "wmbus",
@@ -1567,17 +1611,18 @@
       "summary": "Water, heat and energy meters in modes S, T and C",
       "family": "utility",
       "verification": "on_air",
-      "input_rate_hz": 400000.0,
+      "input_rate_hz": 400000,
       "bands": [
         {
-          "low": 868200000.0,
-          "high": 868400000.0
+          "low": 868200000,
+          "high": 868400000
         },
         {
-          "low": 868850000.0,
-          "high": 869050000.0
+          "low": 868850000,
+          "high": 869050000
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/utility-iot#wireless-m-bus"
     },
     {
       "type_id": "wspr",
@@ -1585,45 +1630,46 @@
       "summary": "WSPR propagation beacons",
       "family": "amateur",
       "verification": "own_modulator",
-      "input_rate_hz": 12000.0,
+      "input_rate_hz": 12000,
       "bands": [
         {
-          "low": 1835600.0,
-          "high": 1837600.0
+          "low": 1835600,
+          "high": 1837600
         },
         {
-          "low": 3567600.0,
-          "high": 3569600.0
+          "low": 3567600,
+          "high": 3569600
         },
         {
-          "low": 7037600.0,
-          "high": 7039600.0
+          "low": 7037600,
+          "high": 7039600
         },
         {
-          "low": 10137700.0,
-          "high": 10139700.0
+          "low": 10137700,
+          "high": 10139700
         },
         {
-          "low": 14094600.0,
-          "high": 14096600.0
+          "low": 14094600,
+          "high": 14096600
         },
         {
-          "low": 18103600.0,
-          "high": 18105600.0
+          "low": 18103600,
+          "high": 18105600
         },
         {
-          "low": 21093600.0,
-          "high": 21095600.0
+          "low": 21093600,
+          "high": 21095600
         },
         {
-          "low": 24923600.0,
-          "high": 24925600.0
+          "low": 24923600,
+          "high": 24925600
         },
         {
-          "low": 28123600.0,
-          "high": 28125600.0
+          "low": 28123600,
+          "high": 28125600
         }
-      ]
+      ],
+      "doc": "/docs/operate/decoders/amateur-hf#ft8-ft4-and-wspr"
     }
   ]
 }

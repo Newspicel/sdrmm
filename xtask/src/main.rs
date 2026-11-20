@@ -653,7 +653,7 @@ fn check_cef_pin(root: &Path) -> Result<()> {
 
 const ANDROID_PROPERTIES: &str = "apps/android/gradle.properties";
 const NDK_PACKAGE_PIN: &str = "xtask/src/mobile.rs";
-const NDK_DOCS_PIN: &str = "docs/src/development/phone-apps.md";
+const NDK_DOCS_PIN: &str = "docs/develop/phone-apps.md";
 
 fn check_ndk_pin(root: &Path) -> Result<()> {
     let read = |rel: &str| -> Result<String> {
@@ -1325,7 +1325,9 @@ fn screenshots(root: &Path) -> Result<()> {
     ensure_web_deps(root)?;
     build_smoke_server(root)?;
     let out = root.join("assets/screenshots");
+    let docs_out = root.join("site/public/docs/screens");
     std::fs::create_dir_all(&out).context("create screenshot directory")?;
+    std::fs::create_dir_all(&docs_out).context("create docs screenshot directory")?;
     run_with_env(
         PNPM,
         &[
@@ -1340,7 +1342,17 @@ fn screenshots(root: &Path) -> Result<()> {
         root,
         &[NO_SOAPY_RUNTIME],
     )?;
-    println!("wrote {}", out.display());
+    for entry in std::fs::read_dir(&out).context("read screenshot directory")? {
+        let path = entry?.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if name.ends_with("-dark.png") {
+            std::fs::copy(&path, docs_out.join(name))
+                .with_context(|| format!("copy {} into docs screens", path.display()))?;
+        }
+    }
+    println!("wrote {} and {}", out.display(), docs_out.display());
     Ok(())
 }
 

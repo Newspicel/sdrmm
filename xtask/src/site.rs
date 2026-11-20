@@ -75,8 +75,14 @@ fn source_of(root: &Path, path: &str) -> PathBuf {
     {
         Some(doc) => {
             let doc = doc.trim_matches('/');
-            let doc = if doc.is_empty() { "index" } else { doc };
-            root.join("docs/src").join(format!("{doc}.md"))
+            if doc.is_empty() {
+                return root.join("docs/index.md");
+            }
+            let direct = root.join("docs").join(format!("{doc}.md"));
+            if direct.is_file() {
+                return direct;
+            }
+            root.join("docs").join(doc).join("index.md")
         }
         None => root.join("site/src/pages").join(format!("{path}.astro")),
     }
@@ -91,9 +97,13 @@ fn clean_links_resolve_to_pages_and_docs() {
     );
     assert_eq!(
         source_of(&root, "docs/server/tunnels"),
-        root.join("docs/src/server/tunnels.md")
+        root.join("docs/server/tunnels.md")
     );
-    assert_eq!(source_of(&root, "docs/"), root.join("docs/src/index.md"));
+    assert_eq!(source_of(&root, "docs/"), root.join("docs/index.md"));
+    assert_eq!(
+        source_of(&root, "docs/radios"),
+        root.join("docs/radios/index.md")
+    );
     assert_eq!(
         source_of(&root, "favicon.ico"),
         root.join("site/public/favicon.ico")
@@ -134,25 +144,11 @@ fn every_local_reference_resolves_to_a_file_the_build_publishes() {
 fn the_published_host_matches_the_site_astro_builds() {
     let root = root();
     let site = host(&read(&root.join("site/src/seo.ts")), "SITE = \"https://");
-    let published = [
-        (
-            "site/wrangler.jsonc",
-            host(&read(&root.join("site/wrangler.jsonc")), "\"pattern\": \""),
-        ),
-        (
-            "docs/theme/head.hbs",
-            host(
-                &read(&root.join("docs/theme/head.hbs")),
-                "content=\"https://",
-            ),
-        ),
-    ];
-    for (file, published) in published {
-        assert_eq!(
-            site, published,
-            "site/src/seo.ts and {file} name different hosts"
-        );
-    }
+    let published = host(&read(&root.join("site/wrangler.jsonc")), "\"pattern\": \"");
+    assert_eq!(
+        site, published,
+        "site/src/seo.ts and site/wrangler.jsonc name different hosts"
+    );
 }
 
 #[test]

@@ -1,0 +1,133 @@
+---
+import { getCollection, render } from "astro:content";
+import DecoderCatalog from "../../components/DecoderCatalog.astro";
+import RadioCompare from "../../components/RadioCompare.astro";
+import Shells from "../../components/Shells.astro";
+import { INSTALLS } from "../../installs";
+import DocsLayout from "../../layouts/DocsLayout.astro";
+
+export async function getStaticPaths() {
+  const entries = await getCollection("docs");
+  return entries
+    .filter((entry) => entry.id !== "index")
+    .map((entry) => ({
+      params: { slug: entry.id },
+      props: { entry },
+    }));
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const editPath = entry.filePath
+  ? entry.filePath.replace(/^.*?\/docs\//, "docs/").replace(/^\.\.\/docs\//, "docs/")
+  : `docs/${entry.id}.md`;
+const showInstallTabs = entry.id === "start/install";
+const showRadioCompare = entry.id === "radios";
+const showDecoderCatalog = entry.id === "operate/decoders";
+const pageHeadings = showRadioCompare
+  ? [{ depth: 2, slug: "compare-radios", text: "Compare radios" }, ...headings]
+  : showDecoderCatalog
+    ? [{ depth: 2, slug: "catalog", text: "Catalog" }, ...headings]
+    : headings;
+---
+
+<DocsLayout
+  slug={entry.id}
+  title={entry.data.title}
+  description={entry.data.description}
+  editPath={editPath}
+  headings={pageHeadings}
+  wide={showRadioCompare || showDecoderCatalog}
+>
+  {
+    showRadioCompare && (
+      <>
+        <h2 id="compare-radios">Compare radios</h2>
+        <RadioCompare />
+      </>
+    )
+  }
+  {
+    showDecoderCatalog && (
+      <>
+        <h2 id="catalog">Catalog</h2>
+        <DecoderCatalog />
+      </>
+    )
+  }
+  {
+    showInstallTabs && (
+      <div class="docs-install-tabs">
+        <div class="tabs" role="tablist" aria-label="Quick install">
+          {INSTALLS.map((install, index) => (
+            <button
+              type="button"
+              role="tab"
+              id={`doc-tab-${install.id}`}
+              aria-controls={`doc-panel-${install.id}`}
+              aria-selected={index === 0 ? "true" : "false"}
+              tabindex={index === 0 ? undefined : -1}
+            >
+              {install.tab}
+            </button>
+          ))}
+        </div>
+        {INSTALLS.map((install, index) => (
+          <div
+            class="docs-install-panel"
+            role="tabpanel"
+            id={`doc-panel-${install.id}`}
+            aria-labelledby={`doc-tab-${install.id}`}
+            hidden={index > 0}
+          >
+            <p class="docs-install-note">{install.note}</p>
+            <Shells shells={install.shells} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  <Content />
+</DocsLayout>
+
+{
+  showInstallTabs && (
+    <>
+      <style>
+        .docs-install-tabs {
+          margin: 0 0 28px;
+          padding: 14px;
+          border: 1px solid var(--line);
+          border-radius: var(--radius-lg);
+          background: var(--panel);
+        }
+        .docs-install-panel {
+          margin-top: 12px;
+        }
+        .docs-install-note {
+          margin: 0 0 10px;
+          font-size: 14px;
+          color: var(--ink-dim);
+        }
+      </style>
+      <script>
+        import { installFor } from "../../installs";
+        import { tabs } from "../../tabs";
+
+        const tablist = document.querySelector<HTMLElement>(".docs-install-tabs .tabs");
+        if (tablist) {
+          const select = tabs(tablist, (tab) => {
+            for (const panel of document.querySelectorAll<HTMLElement>(".docs-install-panel")) {
+              panel.hidden = panel.id !== tab.getAttribute("aria-controls");
+            }
+          });
+          const mine = tablist.querySelector<HTMLButtonElement>(
+            `[aria-controls="doc-panel-${installFor(navigator.userAgent)}"]`,
+          );
+          if (mine) select(mine);
+        }
+      </script>
+    </>
+  )
+}
