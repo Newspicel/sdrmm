@@ -80,9 +80,22 @@ fn rotate_into(
         unsafe { avx::rotate_into(anchor, &steps.pairs[span], sources, targets) };
         return;
     }
-    let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
-    for ((source, target), (re, im)) in sources.iter().zip(targets).zip(steps) {
-        *target = rotate(anchor, re, im, source);
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::rotate_into(
+            anchor,
+            &steps.re[span.clone()],
+            &steps.im[span],
+            sources,
+            targets,
+        );
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
+        for ((source, target), (re, im)) in sources.iter().zip(targets).zip(steps) {
+            *target = rotate(anchor, re, im, source);
+        }
     }
 }
 
@@ -98,11 +111,24 @@ fn scale_into(
         unsafe { avx::scale_into(anchor, &steps.pairs[span], sources, targets) };
         return;
     }
-    const ONES: Block = [Complex::new(1.0, 0.0); LANES];
-    let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
-    for ((source, target), (re, im)) in sources.iter().zip(targets).zip(steps) {
-        let wave = rotate(anchor, re, im, &ONES);
-        *target = std::array::from_fn(|lane| scaled(source[lane], wave[lane]));
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::scale_into(
+            anchor,
+            &steps.re[span.clone()],
+            &steps.im[span],
+            sources,
+            targets,
+        );
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        const ONES: Block = [Complex::new(1.0, 0.0); LANES];
+        let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
+        for ((source, target), (re, im)) in sources.iter().zip(targets).zip(steps) {
+            let wave = rotate(anchor, re, im, &ONES);
+            *target = std::array::from_fn(|lane| scaled(source[lane], wave[lane]));
+        }
     }
 }
 
@@ -112,9 +138,16 @@ fn rotate_in_place(anchor: Complex<f32>, steps: &Steps, span: Range<usize>, bloc
         unsafe { avx::rotate_in_place(anchor, &steps.pairs[span], blocks) };
         return;
     }
-    let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
-    for (block, (re, im)) in blocks.iter_mut().zip(steps) {
-        *block = rotate(anchor, re, im, block);
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::rotate_in_place(anchor, &steps.re[span.clone()], &steps.im[span], blocks);
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let steps = steps.re[span.clone()].iter().zip(&steps.im[span]);
+        for (block, (re, im)) in blocks.iter_mut().zip(steps) {
+            *block = rotate(anchor, re, im, block);
+        }
     }
 }
 
@@ -204,24 +237,96 @@ pub(super) fn mix(nco: &mut Nco, samples: &mut [Complex<f32>]) {
 }
 
 #[cfg(target_arch = "aarch64")]
-#[inline(always)]
-fn rotate(anchor: Complex<f32>, step_re: &Quad, step_im: &Quad, source: &Block) -> Block {
+mod neon {
     use std::arch::aarch64::{
         float32x4x2_t, vfmaq_f32, vfmaq_n_f32, vfmsq_f32, vfmsq_n_f32, vld1q_f32, vld2q_f32,
         vmulq_f32, vmulq_n_f32, vst2q_f32,
     };
-    let mut target = [Complex::new(0.0, 0.0); LANES];
-    unsafe {
-        let step_re = vld1q_f32(step_re.as_ptr());
-        let step_im = vld1q_f32(step_im.as_ptr());
-        let wave_re = vfmsq_n_f32(vmulq_n_f32(step_re, anchor.re), step_im, anchor.im);
-        let wave_im = vfmaq_n_f32(vmulq_n_f32(step_re, anchor.im), step_im, anchor.re);
-        let x = vld2q_f32(source.as_ptr().cast());
-        let re = vfmsq_f32(vmulq_f32(x.0, wave_re), x.1, wave_im);
-        let im = vfmaq_f32(vmulq_f32(x.0, wave_im), x.1, wave_re);
-        vst2q_f32(target.as_mut_ptr().cast(), float32x4x2_t(re, im));
+
+    use num_complex::Complex;
+
+    use super::{Block, Quad};
+
+    #[inline(always)]
+    pub(super) fn rotate_into(
+        anchor: Complex<f32>,
+        step_re: &[Quad],
+        step_im: &[Quad],
+        sources: &[Block],
+        targets: &mut [Block],
+    ) {
+        let len = sources
+            .len()
+            .min(targets.len())
+            .min(step_re.len())
+            .min(step_im.len());
+        unsafe {
+            for i in 0..len {
+                let sr = vld1q_f32(step_re.get_unchecked(i).as_ptr());
+                let si = vld1q_f32(step_im.get_unchecked(i).as_ptr());
+                let wr = vfmsq_n_f32(vmulq_n_f32(sr, anchor.re), si, anchor.im);
+                let wi = vfmaq_n_f32(vmulq_n_f32(sr, anchor.im), si, anchor.re);
+                let x = vld2q_f32(sources.get_unchecked(i).as_ptr().cast());
+                let re = vfmsq_f32(vmulq_f32(x.0, wr), x.1, wi);
+                let im = vfmaq_f32(vmulq_f32(x.0, wi), x.1, wr);
+                vst2q_f32(
+                    targets.get_unchecked_mut(i).as_mut_ptr().cast(),
+                    float32x4x2_t(re, im),
+                );
+            }
+        }
     }
-    target
+
+    #[inline(always)]
+    pub(super) fn rotate_in_place(
+        anchor: Complex<f32>,
+        step_re: &[Quad],
+        step_im: &[Quad],
+        blocks: &mut [Block],
+    ) {
+        let len = blocks.len().min(step_re.len()).min(step_im.len());
+        unsafe {
+            for i in 0..len {
+                let sr = vld1q_f32(step_re.get_unchecked(i).as_ptr());
+                let si = vld1q_f32(step_im.get_unchecked(i).as_ptr());
+                let wr = vfmsq_n_f32(vmulq_n_f32(sr, anchor.re), si, anchor.im);
+                let wi = vfmaq_n_f32(vmulq_n_f32(sr, anchor.im), si, anchor.re);
+                let p = blocks.get_unchecked_mut(i).as_mut_ptr().cast::<f32>();
+                let x = vld2q_f32(p);
+                let re = vfmsq_f32(vmulq_f32(x.0, wr), x.1, wi);
+                let im = vfmaq_f32(vmulq_f32(x.0, wi), x.1, wr);
+                vst2q_f32(p, float32x4x2_t(re, im));
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub(super) fn scale_into(
+        anchor: Complex<f32>,
+        step_re: &[Quad],
+        step_im: &[Quad],
+        sources: &[Quad],
+        targets: &mut [Block],
+    ) {
+        let len = sources
+            .len()
+            .min(targets.len())
+            .min(step_re.len())
+            .min(step_im.len());
+        unsafe {
+            for i in 0..len {
+                let sr = vld1q_f32(step_re.get_unchecked(i).as_ptr());
+                let si = vld1q_f32(step_im.get_unchecked(i).as_ptr());
+                let wr = vfmsq_n_f32(vmulq_n_f32(sr, anchor.re), si, anchor.im);
+                let wi = vfmaq_n_f32(vmulq_n_f32(sr, anchor.im), si, anchor.re);
+                let x = vld1q_f32(sources.get_unchecked(i).as_ptr());
+                vst2q_f32(
+                    targets.get_unchecked_mut(i).as_mut_ptr().cast(),
+                    float32x4x2_t(vmulq_f32(x, wr), vmulq_f32(x, wi)),
+                );
+            }
+        }
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

@@ -5,12 +5,9 @@ use super::{
     hermitian::{set_mirrored, write_identity},
 };
 use crate::{
-    math::complex::widen,
+    math::complex::cross_sum,
     math::linalg::{CMat, LinalgError, MAX_ORDER},
 };
-
-/// Lanes summed four at a time so the products vectorise.
-const CROSS_LANES: usize = 4;
 
 pub struct SampleCovariance {
     order: usize,
@@ -101,32 +98,11 @@ impl SampleCovariance {
     }
 }
 
-fn cross_sum(left: &[Complex<f32>], right: &[Complex<f32>]) -> Complex<f64> {
-    let mut partial = [Complex::new(0.0f32, 0.0); CROSS_LANES];
-    let (left_blocks, left_tail) = left.as_chunks::<CROSS_LANES>();
-    let (right_blocks, right_tail) = right.as_chunks::<CROSS_LANES>();
-    for (a, b) in left_blocks.iter().zip(right_blocks) {
-        for ((sum, x), y) in partial.iter_mut().zip(a).zip(b) {
-            *sum += x * y.conj();
-        }
-    }
-    let tail: Complex<f32> = left_tail
-        .iter()
-        .zip(right_tail)
-        .map(|(a, b)| a * b.conj())
-        .sum();
-    partial
-        .iter()
-        .chain(std::iter::once(&tail))
-        .copied()
-        .map(widen)
-        .sum()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::array::covariance::testing::random_lanes;
+    use crate::math::complex::widen;
 
     #[test]
     fn upper_triangle_accumulation_matches_the_outer_product() {

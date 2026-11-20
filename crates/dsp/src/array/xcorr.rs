@@ -1,6 +1,11 @@
 use num_complex::Complex;
 
-use crate::{math::db::Decibels, math::fft::FftPair, math::special::parabolic_peak};
+use crate::{
+    math::complex::{magnitudes_into, mul_conj_in_place, sum_norm_sqr},
+    math::db::Decibels,
+    math::fft::FftPair,
+    math::special::parabolic_peak,
+};
 
 /// What one lane looks like measured against another: how far behind it runs, by how much its
 /// amplitude and phase differ, and how much of the two is genuinely the same signal.
@@ -75,39 +80,28 @@ impl XCorr {
     /// Fills `out` with `r[τ] = Σ b[n + τ] · conj(a[n])` for lags `-frame..frame`, in that order,
     /// so index `frame` is lag zero.
     pub fn correlate(&mut self, a: &[Complex<f32>], b: &[Complex<f32>], out: &mut Vec<f32>) {
-        let frame = self.frame as isize;
+        let frame = self.frame;
         let cross = self.cross(a, b);
+        let size = cross.len();
         out.clear();
-        out.reserve(2 * frame as usize);
-        let size = cross.len() as isize;
-        for lag in -frame..frame {
-            out.push(cross[lag.rem_euclid(size) as usize].norm());
-        }
+        out.reserve(2 * frame);
+        magnitudes_into(&cross[size - frame..size], out);
+        magnitudes_into(&cross[..frame], out);
     }
 
     /// The whole measurement in one pass: peak lag to a fraction of a sample, and the complex
     /// ratio and coherence at that lag.
     pub fn estimate(&mut self, a: &[Complex<f32>], b: &[Complex<f32>]) -> DelayEstimate {
-        let energy_a: f32 = a.iter().take(self.frame).map(Complex::norm_sqr).sum();
-        let energy_b: f32 = b.iter().take(self.frame).map(Complex::norm_sqr).sum();
+        let frame = self.frame;
+        let energy_a = sum_norm_sqr(&a[..a.len().min(frame)]);
+        let energy_b = sum_norm_sqr(&b[..b.len().min(frame)]);
         if energy_a <= f32::MIN_POSITIVE || energy_b <= f32::MIN_POSITIVE {
             return DelayEstimate::nothing();
         }
-        let frame = self.frame as isize;
         let cross = self.cross(a, b);
-        let size = cross.len() as isize;
-        let at = |lag: isize| cross[lag.rem_euclid(size) as usize];
-        let mut peak = 0isize;
-        let mut best = 0.0f32;
-        let mut total = 0.0f32;
-        for lag in -frame..frame {
-            let power = at(lag).norm_sqr();
-            total += power;
-            if power > best {
-                best = power;
-                peak = lag;
-            }
-        }
+        let size = cross.len();
+        let (peak, best, total) = scan_lags(cross, frame);
+        let at = |lag: isize| cross[lag.rem_euclid(size as isize) as usize];
         let value = at(peak);
         let (left, right) = (at(peak - 1).norm(), at(peak + 1).norm());
         let centre = value.norm();
@@ -117,27 +111,49 @@ impl XCorr {
             phase_rad: value.arg(),
             gain: centre / energy_a,
             coherence: straddled_coherence(centre, left.max(right), energy_a * energy_b),
-            peak_to_floor_db: peak_to_floor_db(best, total, 2 * self.frame),
+            peak_to_floor_db: peak_to_floor_db(best, total, 2 * frame),
         }
     }
 
     fn cross(&mut self, a: &[Complex<f32>], b: &[Complex<f32>]) -> &[Complex<f32>] {
         let size = self.fft.len();
         let frame = self.frame;
-        self.a.clear();
-        self.a.extend(a.iter().take(frame).copied());
-        self.a.resize(size, Complex::default());
-        self.b.clear();
-        self.b.extend(b.iter().take(frame).copied());
-        self.b.resize(size, Complex::default());
+        let na = a.len().min(frame);
+        self.a[..na].copy_from_slice(&a[..na]);
+        self.a[na..size].fill(Complex::default());
+        let nb = b.len().min(frame);
+        self.b[..nb].copy_from_slice(&b[..nb]);
+        self.b[nb..size].fill(Complex::default());
         self.fft.forward(&mut self.a);
         self.fft.forward(&mut self.b);
-        for (bin, reference) in self.b.iter_mut().zip(&self.a) {
-            *bin *= reference.conj();
-        }
+        mul_conj_in_place(&mut self.b, &self.a);
         self.fft.inverse_scaled(&mut self.b);
         &self.b
     }
+}
+
+fn scan_lags(cross: &[Complex<f32>], frame: usize) -> (isize, f32, f32) {
+    let size = cross.len();
+    let mut peak = 0isize;
+    let mut best = 0.0f32;
+    let mut total = 0.0f32;
+    for (idx, value) in cross[size - frame..size].iter().enumerate() {
+        let power = value.norm_sqr();
+        total += power;
+        if power > best {
+            best = power;
+            peak = idx as isize - frame as isize;
+        }
+    }
+    for (idx, value) in cross[..frame].iter().enumerate() {
+        let power = value.norm_sqr();
+        total += power;
+        if power > best {
+            best = power;
+            peak = idx as isize;
+        }
+    }
+    (peak, best, total)
 }
 
 #[cfg(test)]

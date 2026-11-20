@@ -3,28 +3,33 @@ use std::f64::consts::{FRAC_1_SQRT_2, TAU};
 use num_complex::Complex;
 
 use super::{
-    acquisition::{Acquisition, symbol_peak},
+    acquisition::{Acquisition, symbol_peak, symbol_peak_real},
     decisions::Decisions,
-    farrow::farrow,
+    farrow::{farrow, farrow_real},
 };
 use crate::demod::pll::loop_gains;
 
 const ZERO: Complex<f32> = Complex::new(0.0, 0.0);
 const TRACKING_RANGE: f64 = 0.05;
 const FREE_RUN_MEMORY_SYMBOLS: f64 = 1024.0;
+const INV_FREE_RUN_MEMORY: f64 = 1.0 / FREE_RUN_MEMORY_SYMBOLS;
+const INV_TAU: f64 = 1.0 / TAU;
 const SYMMETRY_TOLERANCE: f64 = 0.15;
 
 pub struct SymbolSync {
     nominal_sps: f64,
+    min_sps: f64,
+    max_sps: f64,
     sps: f64,
     free_run_sps: f64,
     step: f64,
-    alpha: f64,
-    beta: f64,
+    alpha_sps: f64,
+    beta_sps: f64,
     pos: usize,
     frac: f64,
     consumed: usize,
     buf: Vec<Complex<f32>>,
+    real_buf: Vec<f32>,
     at_symbol: bool,
     prev_symbol: Complex<f32>,
     mid: Complex<f32>,
@@ -47,15 +52,18 @@ impl SymbolSync {
         let (alpha, beta) = loop_gains(loop_bw, FRAC_1_SQRT_2);
         let mut sync = Self {
             nominal_sps: sps,
+            min_sps: sps * (1.0 - TRACKING_RANGE),
+            max_sps: sps * (1.0 + TRACKING_RANGE),
             sps,
             free_run_sps: sps,
             step: sps,
-            alpha,
-            beta,
+            alpha_sps: alpha * sps,
+            beta_sps: beta * sps,
             pos: 0,
             frac: 0.0,
             consumed: 0,
             buf: Vec::new(),
+            real_buf: Vec::new(),
             at_symbol: true,
             prev_symbol: ZERO,
             mid: ZERO,
@@ -99,6 +107,14 @@ impl SymbolSync {
         });
     }
 
+    pub fn process_real(&mut self, input: &[f32], out: &mut Vec<f32>) {
+        self.run_real(input, false, out);
+    }
+
+    pub fn process_real_held(&mut self, input: &[f32], out: &mut Vec<f32>) {
+        self.run_real(input, true, out);
+    }
+
     pub fn process_steered(
         &mut self,
         input: &[Complex<f32>],
@@ -134,6 +150,7 @@ impl SymbolSync {
         self.frac = 0.0;
         self.consumed = 0;
         self.buf.clear();
+        self.real_buf.clear();
         self.at_symbol = true;
         self.prev_symbol = ZERO;
         self.mid = ZERO;
@@ -153,23 +170,51 @@ impl SymbolSync {
         mut on_sample: impl FnMut(Complex<f32>, bool) -> Option<f64>,
     ) {
         if hold {
-            self.step_through(false, &mut on_sample);
+            self.step_through_buf(false, &mut on_sample);
         }
-        self.buf.extend_from_slice(input);
         if let Some(acquisition) = &mut self.acquisition {
             acquisition.armed |= hold;
         }
-        if let Some(span) = self
-            .acquisition
-            .filter(|a| a.armed && !hold)
-            .map(|a| a.span)
-        {
+        let needs_acquire = self.acquisition.is_some_and(|a| a.armed && !hold);
+        if needs_acquire {
+            self.buf.extend_from_slice(input);
+            let span = self.acquisition.map_or(0, |a| a.span);
             if self.ahead() < span {
                 return;
             }
             self.acquire(span);
+            self.step_through_buf(hold, &mut on_sample);
+            self.drain_buf();
+            return;
         }
-        self.step_through(hold, &mut on_sample);
+        self.step_through_split(input, hold, &mut on_sample);
+        self.retain_tail(input);
+    }
+
+    fn run_real(&mut self, input: &[f32], hold: bool, out: &mut Vec<f32>) {
+        if hold {
+            self.step_through_real_buf(false, out);
+        }
+        if let Some(acquisition) = &mut self.acquisition {
+            acquisition.armed |= hold;
+        }
+        let needs_acquire = self.acquisition.is_some_and(|a| a.armed && !hold);
+        if needs_acquire {
+            self.real_buf.extend_from_slice(input);
+            let span = self.acquisition.map_or(0, |a| a.span);
+            if (self.consumed + self.real_buf.len()).saturating_sub(self.pos) < span {
+                return;
+            }
+            self.acquire_real(span);
+            self.step_through_real_buf(hold, out);
+            self.drain_real_buf();
+            return;
+        }
+        self.step_through_real_split(input, hold, out);
+        self.retain_real_tail(input);
+    }
+
+    fn drain_buf(&mut self) {
         let reach = self.acquisition.map_or(0, |a| a.reach);
         let drain = (self.pos - 1)
             .saturating_sub(reach)
@@ -177,6 +222,52 @@ impl SymbolSync {
             .min(self.buf.len());
         self.buf.drain(..drain);
         self.consumed += drain;
+    }
+
+    fn drain_real_buf(&mut self) {
+        let reach = self.acquisition.map_or(0, |a| a.reach);
+        let drain = (self.pos - 1)
+            .saturating_sub(reach)
+            .saturating_sub(self.consumed)
+            .min(self.real_buf.len());
+        self.real_buf.drain(..drain);
+        self.consumed += drain;
+    }
+
+    fn retain_tail(&mut self, input: &[Complex<f32>]) {
+        let reach = self.acquisition.map_or(0, |a| a.reach);
+        let keep_from = (self.pos - 1).saturating_sub(reach);
+        let split = self.consumed + self.buf.len();
+        if keep_from >= split {
+            let skip = (keep_from - split).min(input.len());
+            self.buf.clear();
+            self.buf.extend_from_slice(&input[skip..]);
+            self.consumed = split + skip;
+        } else {
+            let drain = keep_from.saturating_sub(self.consumed).min(self.buf.len());
+            self.buf.drain(..drain);
+            self.consumed += drain;
+            self.buf.extend_from_slice(input);
+        }
+    }
+
+    fn retain_real_tail(&mut self, input: &[f32]) {
+        let reach = self.acquisition.map_or(0, |a| a.reach);
+        let keep_from = (self.pos - 1).saturating_sub(reach);
+        let split = self.consumed + self.real_buf.len();
+        if keep_from >= split {
+            let skip = (keep_from - split).min(input.len());
+            self.real_buf.clear();
+            self.real_buf.extend_from_slice(&input[skip..]);
+            self.consumed = split + skip;
+        } else {
+            let drain = keep_from
+                .saturating_sub(self.consumed)
+                .min(self.real_buf.len());
+            self.real_buf.drain(..drain);
+            self.consumed += drain;
+            self.real_buf.extend_from_slice(input);
+        }
     }
 
     fn ahead(&self) -> usize {
@@ -195,6 +286,22 @@ impl SymbolSync {
         let Some(peak) = symbol_peak(window, self.sps) else {
             return;
         };
+        self.apply_peak(peak, start);
+    }
+
+    fn acquire_real(&mut self, span: usize) {
+        if let Some(acquisition) = &mut self.acquisition {
+            acquisition.armed = false;
+        }
+        let start = self.pos - self.consumed;
+        let window = &self.real_buf[start..(start + span).min(self.real_buf.len())];
+        let Some(peak) = symbol_peak_real(window, self.sps) else {
+            return;
+        };
+        self.apply_peak(peak, start);
+    }
+
+    fn apply_peak(&mut self, peak: f64, start: usize) {
         let next = if self.at_symbol {
             self.frac
         } else {
@@ -214,7 +321,7 @@ impl SymbolSync {
         self.step = self.sps;
     }
 
-    fn step_through(
+    fn step_through_buf(
         &mut self,
         hold: bool,
         on_sample: &mut impl FnMut(Complex<f32>, bool) -> Option<f64>,
@@ -222,34 +329,177 @@ impl SymbolSync {
         while self.pos + 3 <= self.consumed + self.buf.len() {
             let base = self.pos - self.consumed;
             let y = farrow(&self.buf[base - 1..base + 3], self.frac as f32);
-            if self.at_symbol {
-                let steered = on_sample(y, true);
-                if hold {
-                    self.step = self.free_run_sps;
-                    if let Some(decisions) = &mut self.decisions {
-                        decisions.hold();
-                    }
-                } else if let Some(err) = steered.filter(|_| self.primed) {
-                    self.steer(err);
-                } else if self.primed {
-                    self.retime(y);
-                }
-                self.prev_symbol = y;
-                self.primed = true;
-            } else {
-                self.mid = y;
-                let _ = on_sample(y, false);
-            }
-            self.at_symbol = !self.at_symbol;
-            self.advance();
+            self.consume_sample(y, hold, on_sample);
         }
     }
 
+    fn step_through_split(
+        &mut self,
+        input: &[Complex<f32>],
+        hold: bool,
+        on_sample: &mut impl FnMut(Complex<f32>, bool) -> Option<f64>,
+    ) {
+        let buf_len = self.buf.len();
+        let split = self.consumed + buf_len;
+        let total = split + input.len();
+        while self.pos <= split && self.pos + 3 <= total {
+            let base = self.pos - self.consumed;
+            let y = if base + 3 <= buf_len {
+                farrow(&self.buf[base - 1..base + 3], self.frac as f32)
+            } else {
+                let w: [Complex<f32>; 4] = std::array::from_fn(|k| {
+                    let at = base - 1 + k;
+                    if at < buf_len {
+                        self.buf[at]
+                    } else {
+                        input[at - buf_len]
+                    }
+                });
+                farrow(&w, self.frac as f32)
+            };
+            self.consume_sample(y, hold, on_sample);
+        }
+        while self.pos + 3 <= total {
+            let idx = self.pos - split;
+            let y = farrow(&input[idx - 1..idx + 3], self.frac as f32);
+            self.consume_sample(y, hold, on_sample);
+        }
+    }
+
+    #[inline(always)]
+    fn consume_sample(
+        &mut self,
+        y: Complex<f32>,
+        hold: bool,
+        on_sample: &mut impl FnMut(Complex<f32>, bool) -> Option<f64>,
+    ) {
+        if self.at_symbol {
+            let steered = on_sample(y, true);
+            if hold {
+                self.step = self.free_run_sps;
+                if let Some(decisions) = &mut self.decisions {
+                    decisions.hold();
+                }
+            } else if let Some(err) = steered.filter(|_| self.primed) {
+                self.steer(err);
+            } else if self.primed {
+                self.retime(y);
+            }
+            self.prev_symbol = y;
+            self.primed = true;
+        } else {
+            self.mid = y;
+            let _ = on_sample(y, false);
+        }
+        self.at_symbol = !self.at_symbol;
+        self.advance();
+    }
+
+    fn step_through_real_buf(&mut self, hold: bool, out: &mut Vec<f32>) {
+        while self.pos + 3 <= self.consumed + self.real_buf.len() {
+            let base = self.pos - self.consumed;
+            let y = farrow_real(&self.real_buf[base - 1..base + 3], self.frac as f32);
+            self.consume_real_sample(y, hold, out);
+        }
+    }
+
+    fn step_through_real_split(&mut self, input: &[f32], hold: bool, out: &mut Vec<f32>) {
+        let buf_len = self.real_buf.len();
+        let split = self.consumed + buf_len;
+        let total = split + input.len();
+        while self.pos <= split && self.pos + 3 <= total {
+            let base = self.pos - self.consumed;
+            let y = if base + 3 <= buf_len {
+                farrow_real(&self.real_buf[base - 1..base + 3], self.frac as f32)
+            } else {
+                let w: [f32; 4] = std::array::from_fn(|k| {
+                    let at = base - 1 + k;
+                    if at < buf_len {
+                        self.real_buf[at]
+                    } else {
+                        input[at - buf_len]
+                    }
+                });
+                farrow_real(&w, self.frac as f32)
+            };
+            self.consume_real_sample(y, hold, out);
+        }
+        while self.pos + 3 <= total {
+            let idx = self.pos - split;
+            let y = farrow_real(&input[idx - 1..idx + 3], self.frac as f32);
+            self.consume_real_sample(y, hold, out);
+        }
+    }
+
+    #[inline(always)]
+    fn consume_real_sample(&mut self, y: f32, hold: bool, out: &mut Vec<f32>) {
+        if self.at_symbol {
+            out.push(y);
+            if hold {
+                self.step = self.free_run_sps;
+                if let Some(decisions) = &mut self.decisions {
+                    decisions.hold();
+                }
+            } else if self.primed {
+                self.retime_real(y);
+            }
+            self.prev_symbol = Complex::new(y, 0.0);
+            self.primed = true;
+        } else {
+            self.mid = Complex::new(y, 0.0);
+        }
+        self.at_symbol = !self.at_symbol;
+        self.advance();
+    }
+
+    #[inline(always)]
     fn advance(&mut self) {
         self.frac += 0.5 * self.step;
         let whole = self.frac.floor();
         self.frac -= whole;
         self.pos += whole as usize;
+    }
+
+    fn retime_real(&mut self, symbol: f32) {
+        let prev = self.prev_symbol.re;
+        if let Some(decisions) = &mut self.decisions {
+            let decided = decisions.error(symbol, prev);
+            if decisions.trusted() {
+                decisions.mark_acquired();
+                match decided {
+                    Some(err) => self.steer(err),
+                    None => self.step = self.free_run_sps,
+                }
+                return;
+            }
+        }
+        let (before, after) = (prev * prev, symbol * symbol);
+        if before <= 0.0 || after <= 0.0 {
+            self.step = self.free_run_sps;
+            return;
+        }
+        let sum = symbol + prev;
+        let diff = symbol - prev;
+        let centre = if !self.decisions.as_ref().is_some_and(Decisions::acquiring) {
+            if f64::from(sum * sum) <= SYMMETRY_TOLERANCE * f64::from(diff * diff) {
+                0.0
+            } else {
+                self.step = self.sps;
+                return;
+            }
+        } else if symbol * prev < 0.0 {
+            sum * 0.5
+        } else {
+            self.step = self.sps;
+            return;
+        };
+        let raw = diff * (self.mid.re - centre);
+        let err = f64::from(raw) * (INV_TAU / f64::from(f32::midpoint(before, after)));
+        if !err.is_finite() {
+            self.step = self.free_run_sps;
+            return;
+        }
+        self.steer(err);
     }
 
     fn retime(&mut self, symbol: Complex<f32>) {
@@ -274,7 +524,7 @@ impl SymbolSync {
             return;
         };
         let raw = ((symbol - self.prev_symbol) * (self.mid - centre).conj()).re;
-        let err = f64::from(raw) / (f64::from(f32::midpoint(before, after)) * TAU);
+        let err = f64::from(raw) * (INV_TAU / f64::from(f32::midpoint(before, after)));
         if !err.is_finite() {
             self.step = self.free_run_sps;
             return;
@@ -292,14 +542,12 @@ impl SymbolSync {
         crossing.then(|| (symbol + self.prev_symbol) * 0.5)
     }
 
+    #[inline(always)]
     fn steer(&mut self, err: f64) {
         let err = err.clamp(-0.5, 0.5);
-        self.sps = (self.sps - self.beta * err * self.nominal_sps).clamp(
-            self.nominal_sps * (1.0 - TRACKING_RANGE),
-            self.nominal_sps * (1.0 + TRACKING_RANGE),
-        );
-        self.free_run_sps += (self.sps - self.free_run_sps) / FREE_RUN_MEMORY_SYMBOLS;
-        self.step = self.sps - self.alpha * err * self.nominal_sps;
+        self.sps = (self.sps - self.beta_sps * err).clamp(self.min_sps, self.max_sps);
+        self.free_run_sps += (self.sps - self.free_run_sps) * INV_FREE_RUN_MEMORY;
+        self.step = self.sps - self.alpha_sps * err;
     }
 }
 

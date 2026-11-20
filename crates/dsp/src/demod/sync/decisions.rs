@@ -1,6 +1,8 @@
 use std::f64::consts::PI;
 
 const AMPLITUDE_SYMBOLS: f32 = 64.0;
+const INV_AMPLITUDE_SYMBOLS: f32 = 1.0 / AMPLITUDE_SYMBOLS;
+const AMPLITUDE_DECAY: f32 = 1.0 - INV_AMPLITUDE_SYMBOLS;
 const SETTLE_SYMBOLS: f32 = 2.0 * AMPLITUDE_SYMBOLS;
 const HOLD_SYMBOLS: f32 = 4.0 * AMPLITUDE_SYMBOLS;
 const TRUST_MISFIT: f32 = 0.05;
@@ -12,14 +14,14 @@ const ACQUIRE_SYMBOLS: f32 = 256.0;
 #[derive(Clone, Debug)]
 pub(super) struct Decisions {
     levels: Vec<f32>,
-    outer: f32,
+    inv_outer: f32,
     outer_edge: f32,
-    mean_square: f32,
+    inv_mean_square_pi: f64,
     amplitude: f32,
     previous: f32,
     seen: f32,
     since_outer: f32,
-    spacing: f32,
+    inv_spacing: f32,
     misfit: f32,
     trusted: bool,
     acquired: bool,
@@ -42,16 +44,17 @@ impl Decisions {
             .flat_map(|a| levels.iter().map(move |b| (a - b).abs()))
             .filter(|&d| d > 0.0)
             .fold(f32::INFINITY, f32::min);
+        let spacing = if spacing.is_finite() { spacing } else { outer };
         Self {
             levels: levels.to_vec(),
-            outer,
+            inv_outer: outer.recip(),
             outer_edge: f32::midpoint(outer, inner) / outer,
-            mean_square,
+            inv_mean_square_pi: (f64::from(mean_square) * PI).recip(),
             amplitude: 0.0,
             previous: 0.0,
             seen: 0.0,
             since_outer: 0.0,
-            spacing: if spacing.is_finite() { spacing } else { outer },
+            inv_spacing: spacing.recip(),
             misfit: 1.0,
             trusted: false,
             acquired: false,
@@ -79,15 +82,17 @@ impl Decisions {
 
     pub(super) fn error(&mut self, symbol: f32, previous: f32) -> Option<f64> {
         self.track_amplitude(symbol.abs());
-        let scale = self.amplitude / self.outer;
+        let scale = self.amplitude * self.inv_outer;
         if scale <= 0.0 || !scale.is_finite() {
             return None;
         }
-        let decision = self.nearest(symbol / scale);
-        self.judge(symbol / scale, decision);
+        let inv_scale = scale.recip();
+        let normalised = symbol * inv_scale;
+        let decision = self.nearest(normalised);
+        self.judge(normalised, decision);
         let raw = decision * previous - self.previous * symbol;
         self.previous = decision;
-        let err = f64::from(raw) / (f64::from(scale * self.mean_square) * PI);
+        let err = f64::from(raw) * (f64::from(inv_scale) * self.inv_mean_square_pi);
         err.is_finite().then_some(err)
     }
 
@@ -103,8 +108,8 @@ impl Decisions {
     }
 
     fn judge(&mut self, normalised: f32, decision: f32) {
-        let miss = (normalised - decision) / self.spacing;
-        self.misfit += (miss * miss - self.misfit) / AMPLITUDE_SYMBOLS;
+        let miss = (normalised - decision) * self.inv_spacing;
+        self.misfit += (miss * miss - self.misfit) * INV_AMPLITUDE_SYMBOLS;
         self.trusted = if self.trusted {
             self.misfit < DISTRUST_MISFIT
         } else {
@@ -112,12 +117,18 @@ impl Decisions {
         };
     }
 
+    #[inline]
     fn nearest(&self, x: f32) -> f32 {
-        self.levels
-            .iter()
-            .copied()
-            .min_by(|a, b| (a - x).abs().total_cmp(&(b - x).abs()))
-            .unwrap_or(0.0)
+        let mut best = self.levels[0];
+        let mut best_dist = (best - x).abs();
+        for &level in &self.levels[1..] {
+            let dist = (level - x).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best = level;
+            }
+        }
+        best
     }
 
     fn track_amplitude(&mut self, magnitude: f32) {
@@ -126,12 +137,17 @@ impl Decisions {
         if self.seen <= 1.0 {
             self.amplitude = magnitude;
         } else if magnitude >= self.outer_edge * self.amplitude {
-            self.amplitude += (magnitude - self.amplitude) / self.seen.min(AMPLITUDE_SYMBOLS);
+            let gain = if self.seen >= AMPLITUDE_SYMBOLS {
+                INV_AMPLITUDE_SYMBOLS
+            } else {
+                self.seen.recip()
+            };
+            self.amplitude += (magnitude - self.amplitude) * gain;
             self.since_outer = 0.0;
         } else {
             self.since_outer += 1.0;
             if self.since_outer > HOLD_SYMBOLS {
-                self.amplitude *= 1.0 - 1.0 / AMPLITUDE_SYMBOLS;
+                self.amplitude *= AMPLITUDE_DECAY;
             }
         }
     }

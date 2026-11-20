@@ -67,18 +67,6 @@ impl<T: Sample> DelayLine<T> {
         self.filled += chunk.len();
     }
 
-    pub(crate) fn push_with<S>(&mut self, chunk: &[S], value: impl Fn(&S) -> T) {
-        debug_assert_eq!(self.phases, 1, "mapped pushes fill a single row");
-        if self.filled + chunk.len() > self.capacity {
-            self.compact();
-        }
-        let slots = &mut self.samples[self.filled..self.filled + chunk.len()];
-        for (slot, sample) in slots.iter_mut().zip(chunk) {
-            *slot = value(sample);
-        }
-        self.filled += chunk.len();
-    }
-
     fn scatter(&mut self, chunk: &[T]) {
         let lead = (self.phases - self.filled % self.phases) % self.phases;
         let (head, body) = chunk.split_at(lead.min(chunk.len()));
@@ -89,9 +77,9 @@ impl<T: Sample> DelayLine<T> {
         }
         let index = filled / self.phases;
         let aligned = match self.phases {
-            2 => self.transpose::<2>(index, body),
+            2 => self.transpose_2(index, body),
             3 => self.transpose::<3>(index, body),
-            4 => self.transpose::<4>(index, body),
+            4 => self.transpose_4(index, body),
             5 => self.transpose::<5>(index, body),
             6 => self.transpose::<6>(index, body),
             7 => self.transpose::<7>(index, body),
@@ -112,6 +100,39 @@ impl<T: Sample> DelayLine<T> {
             self.put(filled, sample);
             filled += 1;
         }
+    }
+
+    fn transpose_2(&mut self, index: usize, body: &[T]) -> usize {
+        let (groups, _) = body.as_chunks::<2>();
+        let (row0, rest) = self.samples.split_at_mut(self.stride);
+        let r0 = &mut row0[index..index + groups.len()];
+        let r1 = &mut rest[index..index + groups.len()];
+        let done = T::deinterleave_2(groups, r0, r1);
+        for (i, group) in groups[done..].iter().enumerate() {
+            r0[done + i] = group[0];
+            r1[done + i] = group[1];
+        }
+        groups.len() * 2
+    }
+
+    fn transpose_4(&mut self, index: usize, body: &[T]) -> usize {
+        let (groups, _) = body.as_chunks::<4>();
+        let stride = self.stride;
+        let (row0, rest) = self.samples.split_at_mut(stride);
+        let (row1, rest) = rest.split_at_mut(stride);
+        let (row2, row3) = rest.split_at_mut(stride);
+        let r0 = &mut row0[index..index + groups.len()];
+        let r1 = &mut row1[index..index + groups.len()];
+        let r2 = &mut row2[index..index + groups.len()];
+        let r3 = &mut row3[index..index + groups.len()];
+        let done = T::deinterleave_4(groups, r0, r1, r2, r3);
+        for (i, group) in groups[done..].iter().enumerate() {
+            r0[done + i] = group[0];
+            r1[done + i] = group[1];
+            r2[done + i] = group[2];
+            r3[done + i] = group[3];
+        }
+        groups.len() * 4
     }
 
     fn transpose<const PHASES: usize>(&mut self, index: usize, body: &[T]) -> usize {
@@ -167,6 +188,52 @@ impl<T: Sample> DelayLine<T> {
 
     pub(crate) fn consume(&mut self, windows: usize) {
         self.start += windows.min(self.len() / self.phases);
+    }
+}
+
+impl DelayLine<f32> {
+    pub(crate) fn push_complex_planes(
+        re: &mut Self,
+        im: &mut Self,
+        chunk: &[num_complex::Complex<f32>],
+    ) {
+        debug_assert_eq!(re.phases, 1);
+        debug_assert_eq!(im.phases, 1);
+        if re.filled + chunk.len() > re.capacity {
+            re.compact();
+        }
+        if im.filled + chunk.len() > im.capacity {
+            im.compact();
+        }
+        let re_dst = &mut re.samples[re.filled..re.filled + chunk.len()];
+        let im_dst = &mut im.samples[im.filled..im.filled + chunk.len()];
+        let mut done = 0;
+        #[cfg(target_arch = "aarch64")]
+        {
+            use std::arch::aarch64::{vld2q_f32, vst1q_f32};
+            let n = chunk.len() & !3;
+            unsafe {
+                let sp = chunk.as_ptr().cast::<f32>();
+                let rp = re_dst.as_mut_ptr();
+                let ip = im_dst.as_mut_ptr();
+                while done < n {
+                    let v = vld2q_f32(sp.add(done * 2));
+                    vst1q_f32(rp.add(done), v.0);
+                    vst1q_f32(ip.add(done), v.1);
+                    done += 4;
+                }
+            }
+        }
+        for ((r, i), sample) in re_dst[done..]
+            .iter_mut()
+            .zip(&mut im_dst[done..])
+            .zip(&chunk[done..])
+        {
+            *r = sample.re;
+            *i = sample.im;
+        }
+        re.filled += chunk.len();
+        im.filled += chunk.len();
     }
 }
 

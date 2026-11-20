@@ -3,7 +3,7 @@ use std::ops::Range;
 use num_complex::Complex;
 
 use super::{GroupPlan, GroupSums, WeightTable, rotation};
-use crate::math::complex::{narrow, widen};
+use crate::math::complex::{add_rotated_f64, narrow};
 use crate::math::fft::FftPair;
 use crate::math::linalg::{MAX_SOLVE_ORDER, cholesky_c64, cholesky_solve_c64};
 use crate::radar::RadarDspError;
@@ -317,13 +317,5 @@ impl WienerSolver {
 }
 
 fn add_rotated(sum: &mut [C64], source: &[C32], turn: C64) {
-    if turn == C64::new(1.0, 0.0) {
-        for (out, value) in sum.iter_mut().zip(source) {
-            *out += widen(*value);
-        }
-    } else {
-        for (out, value) in sum.iter_mut().zip(source) {
-            *out += turn * widen(*value);
-        }
-    }
+    add_rotated_f64(sum, source, turn);
 }

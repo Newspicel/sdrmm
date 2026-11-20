@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{Soft, math::fft::Transform};
+use sdrmm_dsp::{Nco, Soft, math::fft::Transform};
 
 use super::{
     acquire::{self, Timing},
@@ -21,6 +21,8 @@ const STEER_LIMIT: isize = 8;
 pub struct Receiver {
     maps: [Mapping; 2],
     transforms: [Transform; 2],
+    cfo_nco: Nco,
+    ramp_nco: Nco,
     pending: Vec<Complex<f32>>,
     spectrum: Vec<Complex<f32>>,
     estimators: [ChannelEstimator; 2],
@@ -49,6 +51,8 @@ impl Receiver {
         Self {
             maps: [Mapping::new(2048), Mapping::new(8192)],
             transforms: [Transform::forward(2048), Transform::forward(8192)],
+            cfo_nco: Nco::new(0.0, 1.0),
+            ramp_nco: Nco::new(0.0, 1.0),
             pending: Vec::with_capacity(65536),
             spectrum: vec![Complex::new(0.0, 0.0); 8192],
             estimators: [ChannelEstimator::new(1705), ChannelEstimator::new(6817)],
@@ -161,20 +165,18 @@ impl Receiver {
         self.snr = (-10.0 * ((1.0 - quality) / quality.max(1e-6)).max(1e-6).log10()).max(0.0);
         let early = timing.guard / 4;
         let window = at + timing.guard - early;
-        for (i, value) in self.spectrum[..timing.fft].iter_mut().enumerate() {
-            *value = self.pending[window + i] * Complex::from_polar(1.0, -timing.offset * i as f32);
-        }
+        self.cfo_nco
+            .set_turns(-f64::from(timing.offset) / std::f64::consts::TAU);
+        self.cfo_nco.reset();
+        self.cfo_nco.mix_into(
+            &self.pending[window..window + timing.fft],
+            &mut self.spectrum[..timing.fft],
+        );
         self.transforms[index].process(&mut self.spectrum[..timing.fft]);
-        for (bin, value) in self.spectrum[..timing.fft].iter_mut().enumerate() {
-            let carrier = if bin < timing.fft / 2 {
-                bin as isize
-            } else {
-                bin as isize - timing.fft as isize
-            };
-            *value *= Complex::from_polar(
-                1.0,
-                std::f32::consts::TAU * carrier as f32 * early as f32 / timing.fft as f32,
-            );
+        if early > 0 {
+            self.ramp_nco.set_turns(early as f64 / timing.fft as f64);
+            self.ramp_nco.reset();
+            self.ramp_nco.mix(&mut self.spectrum[..timing.fft]);
         }
         if self.integer_offset.is_none() {
             self.integer_offset = Some(self.carrier_offset(index));

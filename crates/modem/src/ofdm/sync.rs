@@ -1,7 +1,7 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::math::complex::widen;
+use sdrmm_dsp::math::complex::{cross_sum, narrow};
 
 use super::{modulator::long_training_time, params::OfdmParams};
 use crate::framesync::{RepetitionDetector, conj_product, rotor};
@@ -63,8 +63,26 @@ impl PreambleSync {
 
     #[must_use]
     pub fn acquire(&self, x: &[Complex<f32>], search: usize) -> Option<Acquisition> {
+        let mut derotated = Vec::new();
+        let mut scores = Vec::new();
+        self.acquire_into(x, search, &mut derotated, &mut scores)
+    }
+
+    pub(super) fn scratch_sizes(&self) -> (usize, usize) {
+        let span = self.short_samples + self.long_guard + self.period;
+        (span + 2 * self.fft, span + 1 + self.fft)
+    }
+
+    #[must_use]
+    pub(super) fn acquire_into(
+        &self,
+        x: &[Complex<f32>],
+        search: usize,
+        derotated: &mut Vec<Complex<f32>>,
+        scores: &mut Vec<f64>,
+    ) -> Option<Acquisition> {
         let (plateau, coarse, metric) = self.detect(x, search)?;
-        let long_start = self.locate_long(x, plateau, coarse)?;
+        let long_start = self.locate_long(x, plateau, coarse, derotated, scores)?;
         let cfo = self.fine_cfo(x, long_start, coarse);
         Some(Acquisition {
             long_start,
@@ -74,21 +92,50 @@ impl PreambleSync {
         })
     }
 
-    fn locate_long(&self, x: &[Complex<f32>], from: usize, cfo: f64) -> Option<usize> {
+    fn locate_long(
+        &self,
+        x: &[Complex<f32>],
+        from: usize,
+        cfo: f64,
+        derotated: &mut Vec<Complex<f32>>,
+        scores: &mut Vec<f64>,
+    ) -> Option<usize> {
         let span = self.short_samples + self.long_guard + self.period;
         let last = (from + span).min(x.len().checked_sub(2 * self.fft)?);
-        let mut best = (from, f64::NEG_INFINITY);
-        for t in from..=last {
-            let score =
-                self.correlate(x, t, cfo).norm() + self.correlate(x, t + self.fft, cfo).norm();
+        let search_count = last - from + 1;
+        let total = search_count + 2 * self.fft - 1;
+        let slice = &x[from..from + total];
+        derotated.clear();
+        let signal = if cfo == 0.0 {
+            slice
+        } else {
+            derotated.reserve(total);
+            let (mut rot, step) = rotor(cfo, from);
+            for &s in slice {
+                derotated.push(s * narrow(rot));
+                rot *= step;
+            }
+            derotated.as_slice()
+        };
+        let score_count = search_count + self.fft;
+        scores.clear();
+        scores.reserve(score_count);
+        for offset in 0..score_count {
+            scores.push(cross_sum(&signal[offset..offset + self.fft], &self.ltf).norm());
+        }
+        let mut best = (0usize, f64::NEG_INFINITY);
+        for i in 0..search_count {
+            let score = scores[i] + scores[i + self.fft];
             if score > best.1 {
-                best = (t, score);
+                best = (i, score);
             }
         }
-        Some(best.0)
+        Some(from + best.0)
     }
 
+    #[cfg(test)]
     fn correlate(&self, x: &[Complex<f32>], t: usize, cfo: f64) -> Complex<f64> {
+        use sdrmm_dsp::math::complex::widen;
         let mut acc = Complex::new(0.0f64, 0.0);
         let (mut rot, step) = rotor(cfo, t);
         for (n, &tap) in self.ltf.iter().enumerate() {

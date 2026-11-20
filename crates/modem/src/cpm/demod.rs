@@ -96,6 +96,7 @@ pub struct CpmDemod<F = IqFront> {
     matched: RealDecimator,
     sync: SymbolSync,
     level_max: f32,
+    inv_level_max: f32,
     swing_centre: f32,
     swing_alpha: f32,
     centre: f32,
@@ -114,8 +115,8 @@ pub struct CpmDemod<F = IqFront> {
     filtered: Vec<f32>,
     carrier_run: Vec<bool>,
     settled_run: Vec<bool>,
-    centred: Vec<Complex<f32>>,
-    retimed: Vec<Complex<f32>>,
+    centred: Vec<f32>,
+    retimed: Vec<f32>,
     retimed_carrier: Vec<bool>,
     retimed_settled: Vec<bool>,
 }
@@ -257,19 +258,13 @@ impl CpmDemod<RealFront> {
                     mixed,
                     baseband,
                 } = analytic.as_mut();
-                mixed.clear();
-                mixed.extend(
-                    audio
-                        .iter()
-                        .map(|&s| Complex::new(s, 0.0) * mixer.next_sample()),
-                );
+                mixed.resize(audio.len(), Complex::new(0.0, 0.0));
+                mixer.mix_real_into(audio, mixed);
                 image.process(mixed, baseband);
                 demod.process(baseband, &mut self.demod_buf);
             }
             RealKind::Filterbank { plus, minus } => {
-                self.demod_buf.clear();
-                self.demod_buf
-                    .extend(audio.iter().map(|&s| plus.push(s) - minus.push(s)));
+                ToneCorrelator::process_pair_diff(plus, minus, audio, &mut self.demod_buf);
             }
         }
         self.finish(out);
@@ -313,6 +308,7 @@ impl<F> CpmDemod<F> {
             swing_centre: 0.0,
             swing_alpha: one_pole_coeff(sps, SWING_TAU_SYMBOLS),
             level_max,
+            inv_level_max: level_max.recip(),
             centre: 0.0,
             centre_scale: params.h() / (2.0 * sps),
             peak: level_max,
@@ -353,6 +349,9 @@ impl<F> CpmDemod<F> {
     }
 
     fn gate_run(&mut self, powers: impl Iterator<Item = (f32, Option<bool>)>) {
+        let (low, _) = powers.size_hint();
+        self.carrier_run.reserve(low);
+        self.settled_run.reserve(low);
         let mut gate = self.gate;
         for (power, wild) in powers {
             let (keyed, settled) = gate.step(power, wild);
@@ -370,13 +369,18 @@ impl<F> CpmDemod<F> {
     }
 
     fn centre_run(&mut self) {
+        let len = self.filtered.len().min(self.settled_run.len());
         self.centred.clear();
-        for (&sample, &settled) in self.filtered.iter().zip(&self.settled_run) {
+        self.centred.reserve(len);
+        let mut centre = self.centre;
+        let alpha = self.centre_alpha;
+        for (&sample, &settled) in self.filtered[..len].iter().zip(&self.settled_run[..len]) {
             if settled {
-                self.centre += self.centre_alpha * (sample - self.centre);
+                centre += alpha * (sample - centre);
             }
-            self.centred.push(Complex::new(sample - self.centre, 0.0));
+            self.centred.push(sample - centre);
         }
+        self.centre = centre;
     }
 
     /// Retimes each run of samples that share one gate state, holding the clock while unsettled.
@@ -396,9 +400,9 @@ impl<F> CpmDemod<F> {
             }
             let run = &self.centred[start..end];
             if settled {
-                self.sync.process(run, &mut self.retimed);
+                self.sync.process_real(run, &mut self.retimed);
             } else {
-                self.sync.process_held(run, &mut self.retimed);
+                self.sync.process_real_held(run, &mut self.retimed);
             }
             self.retimed_carrier.resize(self.retimed.len(), carrier);
             self.retimed_settled.resize(self.retimed.len(), settled);
@@ -407,22 +411,27 @@ impl<F> CpmDemod<F> {
     }
 
     fn normalise(&mut self, out: &mut Vec<f32>) {
+        const INV_PEAK_SYMBOLS: f32 = 1.0 / PEAK_SYMBOLS;
+        const INV_OFFSET_SYMBOLS: f32 = 1.0 / OFFSET_SYMBOLS;
+        out.reserve(self.retimed.len());
         let (mut peak, mut idle) = (self.peak, self.idle_peak);
+        let inv_level_max = self.inv_level_max;
+        let wild_bound = WILD_LEVELS * self.level_max;
         let carriers = self.retimed_carrier.iter().zip(&self.retimed_settled);
-        for (symbol, (&carrier, &settled)) in self.retimed.iter().zip(carriers) {
-            let value = symbol.re - self.offset;
+        for (&symbol, (&carrier, &settled)) in self.retimed.iter().zip(carriers) {
+            let value = symbol - self.offset;
             let magnitude = value.abs();
             if carrier {
-                if settled && (self.levels.is_none() || magnitude <= WILD_LEVELS * self.level_max) {
+                if settled && (self.levels.is_none() || magnitude <= wild_bound) {
                     self.since_outer += 1;
                     if magnitude > peak {
                         peak += PEAK_ATTACK * (magnitude - peak);
                         self.since_outer = 0;
                     } else if magnitude > peak * self.outer_region {
-                        peak += (magnitude - peak) / PEAK_SYMBOLS;
+                        peak += (magnitude - peak) * INV_PEAK_SYMBOLS;
                         self.since_outer = 0;
                     } else if let Some(scaled) = self.inner_scale(magnitude, peak) {
-                        peak += (scaled - peak) / PEAK_SYMBOLS;
+                        peak += (scaled - peak) * INV_PEAK_SYMBOLS;
                     } else {
                         peak *= self.peak_hold_decay;
                     }
@@ -432,8 +441,8 @@ impl<F> CpmDemod<F> {
             } else {
                 idle *= self.peak_decay;
             }
-            let level = if carrier { &peak } else { &idle };
-            let unit = *level / self.level_max;
+            let level = if carrier { peak } else { idle };
+            let unit = level * inv_level_max;
             let normalised = if unit > MIN_UNIT { value / unit } else { 0.0 };
             if carrier
                 && settled
@@ -441,7 +450,8 @@ impl<F> CpmDemod<F> {
             {
                 let miss = normalised - levels.level(levels.slice(normalised));
                 if miss.abs() < OFFSET_TRUST {
-                    self.offset = (self.offset + miss * unit / OFFSET_SYMBOLS).clamp(-unit, unit);
+                    self.offset =
+                        (self.offset + miss * unit * INV_OFFSET_SYMBOLS).clamp(-unit, unit);
                 }
             }
             out.push(normalised);
@@ -451,12 +461,13 @@ impl<F> CpmDemod<F> {
 
     fn inner_scale(&self, magnitude: f32, peak: f32) -> Option<f32> {
         let levels = self.levels.as_ref()?;
-        let unit = peak / self.level_max;
+        let unit = peak * self.inv_level_max;
         if self.since_outer < INNER_RUN_SYMBOLS || unit <= MIN_UNIT {
             return None;
         }
-        let decision = levels.level(levels.slice(magnitude / unit)).abs();
-        let reliable = (magnitude / unit - decision).abs() < OFFSET_TRUST;
+        let scaled_mag = magnitude / unit;
+        let decision = levels.level(levels.slice(scaled_mag)).abs();
+        let reliable = (scaled_mag - decision).abs() < OFFSET_TRUST;
         (reliable && decision > 0.0 && decision < self.level_max)
             .then(|| magnitude * self.level_max / decision)
     }

@@ -4,7 +4,7 @@ use super::range::fill_prefix;
 use super::{CfarSpec, MAX_GUARD, MAX_PAD, MAX_TRAIN_DOPPLER, MAX_TRAIN_RANGE};
 use crate::radar::RadarDspError;
 use crate::radar::strongest::Strongest;
-use crate::radar::threshold::os_order;
+use crate::radar::threshold::{CfarStatistic, os_order};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Hit {
@@ -74,7 +74,8 @@ impl Cfar {
         }
         out.reserve(capacity);
         let mut keep = Strongest::new(capacity);
-        if self.spec.plane {
+        let plane_os = self.spec.plane && matches!(self.spec.stat, CfarStatistic::Os { .. });
+        if self.spec.plane && !plane_os {
             self.build_table(power);
         }
         let rows = report_rows.start.min(self.rows)..report_rows.end.min(self.rows);
@@ -82,18 +83,19 @@ impl Cfar {
             if self.spec.is_clutter(row, self.rows) {
                 continue;
             }
+            if plane_os {
+                self.detect_plane_os_row(power, row, out, &mut keep);
+                continue;
+            }
             let line = &power[row * self.gates..(row + 1) * self.gates];
             if !self.spec.plane {
                 fill_prefix(&mut self.prefix, line);
+                self.detect_range_row(line, row, out, &mut keep);
+                continue;
             }
-            for gate in self.spec.min_gate..self.gates {
-                let (noise, factor) = if self.spec.plane {
-                    self.plane_noise(power, row, gate)
-                } else {
-                    self.range_noise(line, gate)
-                };
-                let cell = line[gate];
-                if noise > 0.0 && cell > factor * noise && cell >= self.spec.min_snr * noise {
+            for (gate, &cell) in line.iter().enumerate().skip(self.spec.min_gate) {
+                let (noise, factor) = self.plane_noise(power, row, gate);
+                if is_hit(cell, noise, factor, self.spec.min_snr) {
                     let hit = Hit {
                         row: row as u32,
                         gate: gate as u32,
@@ -106,6 +108,41 @@ impl Cfar {
         }
         out.sort_unstable_by_key(|hit| (hit.row, hit.gate));
         Ok(keep.dropped())
+    }
+}
+
+#[inline]
+pub(super) fn is_hit(cell: f32, noise: f32, factor: f32, min_snr: f32) -> bool {
+    noise > 0.0 && cell > factor * noise && cell >= min_snr * noise
+}
+
+#[inline]
+pub(super) fn os_probe(cell: f32, alpha: f32, min_snr: f32) -> f32 {
+    let divisor = alpha.max(min_snr);
+    (cell / divisor).next_up().next_up()
+}
+
+pub(super) fn count_gt(values: &[f32], threshold: f32) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vaddvq_u32, vcgtq_f32, vdupq_n_f32, vdupq_n_u32, vld1q_f32, vsubq_u32,
+        };
+        let (quads, tail) = values.as_chunks::<4>();
+        let vec_count = unsafe {
+            let limit = vdupq_n_f32(threshold);
+            let mut acc = vdupq_n_u32(0);
+            for quad in quads {
+                let mask = vcgtq_f32(vld1q_f32(quad.as_ptr()), limit);
+                acc = vsubq_u32(acc, mask);
+            }
+            vaddvq_u32(acc) as usize
+        };
+        vec_count + tail.iter().filter(|&&v| v > threshold).count()
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        values.iter().filter(|&&v| v > threshold).count()
     }
 }
 

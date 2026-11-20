@@ -20,7 +20,7 @@ pub use design::{
     rrc_pulse,
 };
 pub(crate) use design::{blackman_taps, reversed_branch};
-pub(crate) use kernel::{Accumulate, Isa, plane_dot, plane_interpolated};
+pub(crate) use kernel::{Accumulate, Isa, plane_interpolated};
 pub(crate) use line::DelayLine;
 #[cfg(test)]
 pub(crate) use ragged::in_ragged_blocks;

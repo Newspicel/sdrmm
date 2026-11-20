@@ -1,6 +1,7 @@
 use num_complex::Complex;
 
 use super::{BeamError, ZERO};
+use crate::math::complex::axpy_norm_sqr;
 use crate::math::linalg::MAX_ORDER;
 
 /// Smoothing of the running input power that scales the NLMS regulariser.
@@ -74,11 +75,7 @@ pub(super) fn nlms_update(
     limit: f32,
 ) -> bool {
     let gain = y.conj() * (step / denominator);
-    let mut norm = 0.0f32;
-    for (h, u) in h.iter_mut().zip(u) {
-        *h += u * gain;
-        norm += h.norm_sqr();
-    }
+    let norm = axpy_norm_sqr(h, u, gain);
     norm.is_finite() && norm <= limit * limit
 }
 

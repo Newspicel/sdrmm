@@ -4,12 +4,12 @@ use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use num_complex::Complex;
-use sdrmm_channels::AdsbParams;
 use sdrmm_channels::{
-    Dvbs2Rate,
+    AdsbParams, Dvbs2Rate, DvbtChannel, DvbtParams, WfmChannel, WfmParams,
     synth::{
         adsb::{me_identification, squitter, transmission},
         datv::{Ldpc, LdpcFrame},
+        dvbt as dvbt_synth, rds as rds_synth,
     },
 };
 use sdrmm_decoder::NativeChannel;
@@ -109,5 +109,85 @@ fn adsb_decode(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, ldpc_normal_half, adsb_decode);
+fn wfm_stereo_rds(c: &mut Criterion) {
+    const RATE: f64 = 240_000.0;
+    let station = rds_synth::Station {
+        pi: 0xD3C2,
+        ps: "SDRMM   ".to_owned(),
+        radiotext: "benchmark".to_owned(),
+        pty: 10,
+        tp: true,
+        ta: false,
+        music: true,
+        alt_freqs_hz: vec![89_800_000.0],
+    };
+    let iq = rds_synth::transmission(&station, 0.25, Some(1_000.0), RATE);
+    let settings = ChannelSettings {
+        frequency_hz: 0.0,
+        squelch: Squelch::Off,
+        params: ChannelParams::of(&WfmParams::default()).expect("wfm settings"),
+        blanker: Default::default(),
+        if_filter: Default::default(),
+    };
+    let ctx = ChannelCtx { input_rate: RATE };
+    let mut channel = WfmChannel::new(ctx, settings).expect("wfm channel");
+    let mut out = ChannelOutputs::default();
+    let mut group = c.benchmark_group("wfm_stereo_rds");
+    group.throughput(Throughput::Elements(iq.len() as u64));
+    group.bench_function("quarter_second_240k", |b| {
+        b.iter(|| {
+            let mut audio = 0;
+            for block in iq.chunks(4_800) {
+                out.reset();
+                channel.process(black_box(block), &mut out);
+                audio += out.audio_pcm.len();
+            }
+            black_box(audio)
+        });
+    });
+    group.finish();
+}
+
+fn dvbt_8k(c: &mut Criterion) {
+    let mut params = dvbt_synth::defaults();
+    params.fft = 8192;
+    params.guard = 1024;
+    let iq = dvbt_synth::waveform(params, 80);
+    let dvbt_params = DvbtParams::default();
+    let settings = ChannelSettings {
+        frequency_hz: 0.0,
+        squelch: Squelch::Off,
+        params: ChannelParams::of(&dvbt_params).expect("dvbt settings"),
+        blanker: Default::default(),
+        if_filter: Default::default(),
+    };
+    let ctx = ChannelCtx {
+        input_rate: dvbt_params.sample_rate_hz(),
+    };
+    let mut out = ChannelOutputs::default();
+    let mut group = c.benchmark_group("dvbt_8k");
+    group.throughput(Throughput::Elements(iq.len() as u64));
+    group.sample_size(20);
+    group.bench_function("80_symbols", |b| {
+        b.iter(|| {
+            let mut channel = DvbtChannel::new(ctx, settings.clone()).expect("dvbt channel");
+            let mut events = 0;
+            for block in iq.chunks(8_192) {
+                out.reset();
+                channel.process(black_box(block), &mut out);
+                events += out.events.len();
+            }
+            black_box(events)
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    ldpc_normal_half,
+    adsb_decode,
+    wfm_stereo_rds,
+    dvbt_8k
+);
 criterion_main!(benches);

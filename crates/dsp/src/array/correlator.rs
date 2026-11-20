@@ -3,7 +3,7 @@ use core::ops::Range;
 use num_complex::Complex;
 
 use crate::{
-    math::complex::{narrow, widen},
+    math::complex::{add_cross_f64, add_norm_sqr_f64, narrow, scale_real_into},
     math::db::Decibels,
     math::fft::FftPair,
     math::linalg::MAX_ORDER,
@@ -152,7 +152,7 @@ impl FxCorrelator {
         if baseline >= self.pairs.len() || bin >= self.fft_size || self.count == 0 {
             return None;
         }
-        Some(self.cross[baseline * self.fft_size + bin] / self.count as f64)
+        Some(self.cross[baseline * self.fft_size + self.raw_bin(bin)] / self.count as f64)
     }
 
     #[must_use]
@@ -160,7 +160,7 @@ impl FxCorrelator {
         if lane >= self.lanes || bin >= self.fft_size || self.count == 0 {
             return None;
         }
-        Some(self.auto[lane * self.fft_size + bin] / self.count as f64)
+        Some(self.auto[lane * self.fft_size + self.raw_bin(bin)] / self.count as f64)
     }
 
     pub fn band(
@@ -203,7 +203,7 @@ impl FxCorrelator {
         self.lag.fill(ZERO);
         for bin in bins {
             let slot = (bin as i64 - (f / 2) as i64).rem_euclid(padded) as usize;
-            let value = self.cross[baseline * f + bin].conj() / norm;
+            let value = self.cross[baseline * f + self.raw_bin(bin)].conj() / norm;
             self.lag[slot] = narrow(value);
         }
         self.lag_fft.inverse(&mut self.lag);
@@ -235,43 +235,42 @@ impl FxCorrelator {
         Ok(pair)
     }
 
+    #[inline]
+    const fn raw_bin(&self, bin: usize) -> usize {
+        (bin + self.fft_size / 2) & (self.fft_size - 1)
+    }
+
     fn cross_sum(&self, baseline: usize, bins: &Range<usize>) -> C64 {
         let base = baseline * self.fft_size;
-        self.cross[base + bins.start..base + bins.end].iter().sum()
+        bins.clone()
+            .map(|bin| self.cross[base + self.raw_bin(bin)])
+            .sum()
     }
 
     fn power_norm(&self, a: usize, b: usize, bins: &Range<usize>) -> f64 {
         let f = self.fft_size;
         let power = |lane: usize| -> f64 {
-            self.auto[lane * f + bins.start..lane * f + bins.end]
-                .iter()
+            bins.clone()
+                .map(|bin| self.auto[lane * f + self.raw_bin(bin)])
                 .sum()
         };
         (power(a) * power(b)).sqrt()
     }
 
     fn transform(&mut self) {
-        let half = self.fft_size / 2;
         for (spectrum, frame) in self.spectra.iter_mut().zip(&self.frames) {
-            for ((slot, sample), weight) in spectrum.iter_mut().zip(frame).zip(&self.window) {
-                *slot = sample * weight;
-            }
+            scale_real_into(spectrum, frame, &self.window);
             self.fft.forward(spectrum);
-            spectrum.rotate_left(half);
         }
     }
 
     fn accumulate(&mut self) {
         let f = self.fft_size;
         for (sums, &(a, b)) in self.cross.chunks_exact_mut(f).zip(&self.pairs) {
-            for ((sum, x), y) in sums.iter_mut().zip(&self.spectra[a]).zip(&self.spectra[b]) {
-                *sum += widen(*x) * widen(*y).conj();
-            }
+            add_cross_f64(sums, &self.spectra[a], &self.spectra[b]);
         }
         for (sums, spectrum) in self.auto.chunks_exact_mut(f).zip(&self.spectra) {
-            for (sum, x) in sums.iter_mut().zip(spectrum) {
-                *sum += widen(*x).norm_sqr();
-            }
+            add_norm_sqr_f64(sums, spectrum);
         }
         self.count += 1;
     }

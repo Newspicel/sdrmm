@@ -1,4 +1,5 @@
 use num_complex::Complex;
+use sdrmm_dsp::math::complex::dot_f64;
 
 use super::params::MfskParams;
 
@@ -48,14 +49,8 @@ impl ToneBank {
         };
         for (k, slot) in out.iter_mut().enumerate() {
             let rotors = &self.rotors[k * self.window..(k + 1) * self.window];
-            let mut re = 0.0f64;
-            let mut im = 0.0f64;
-            for (x, rotor) in window.iter().zip(rotors) {
-                let product = x * rotor;
-                re += f64::from(product.re);
-                im += f64::from(product.im);
-            }
-            *slot = ((re * re + im * im) * self.scale) as f32;
+            let acc = dot_f64(window, rotors);
+            *slot = ((acc.re * acc.re + acc.im * acc.im) * self.scale) as f32;
         }
         true
     }

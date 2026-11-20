@@ -11,7 +11,8 @@ pub use floor::{NoiseFloor, SpanFloor};
 pub use scale::{DbWindowSmoother, adaptive_db_window, quantize_db};
 
 use crate::{
-    math::fastmath::fast_power_db,
+    math::complex::scale_real_into,
+    math::fastmath::fast_power_db_normal,
     math::fft::Transform,
     math::window::{coherent_gain, hann},
 };
@@ -76,9 +77,7 @@ impl SpectrumAnalyzer {
     }
 
     fn transform(&mut self, input: &[Complex<f32>]) {
-        for ((dst, &s), &w) in self.buf.iter_mut().zip(input).zip(&self.window) {
-            *dst = s * w;
-        }
+        scale_real_into(&mut self.buf, input, &self.window);
         self.fft.process(&mut self.buf);
     }
 
@@ -94,8 +93,17 @@ impl SpectrumAnalyzer {
 }
 
 fn bins_db(bins: &[Complex<f32>], scale: f32, out: &mut [f32]) {
-    for (slot, bin) in out.iter_mut().zip(bins) {
-        *slot = fast_power_db(bin.norm_sqr() * scale + POWER_EPSILON);
+    let (out_blocks, out_tail) = out.as_chunks_mut::<8>();
+    let (bin_blocks, bin_tail) = bins.as_chunks::<8>();
+    for (dst, src) in out_blocks.iter_mut().zip(bin_blocks) {
+        for i in 0..8 {
+            let b = src[i];
+            let p = b.re.mul_add(b.re, b.im * b.im);
+            dst[i] = fast_power_db_normal(p.mul_add(scale, POWER_EPSILON));
+        }
+    }
+    for (slot, bin) in out_tail.iter_mut().zip(bin_tail) {
+        *slot = fast_power_db_normal(bin.norm_sqr() * scale + POWER_EPSILON);
     }
 }
 

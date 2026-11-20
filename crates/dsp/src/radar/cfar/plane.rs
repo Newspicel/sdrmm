@@ -1,8 +1,16 @@
 use std::ops::Range;
 
-use super::detector::order_statistic;
-use super::{CLUTTER_FILL, Cfar};
-use crate::radar::threshold::CfarStatistic;
+use super::detector::{Hit, count_gt, is_hit, order_statistic, os_probe};
+use super::{CLUTTER_FILL, Cfar, MAX_PAD};
+use crate::radar::strongest::Strongest;
+use crate::radar::threshold::{CfarStatistic, os_order};
+
+#[derive(Clone, Copy, Default)]
+struct PlaneRow {
+    base: usize,
+    clutter: bool,
+    guarded: bool,
+}
 
 impl Cfar {
     pub(super) fn build_table(&mut self, power: &[f32]) {
@@ -73,6 +81,117 @@ impl Cfar {
         }
     }
 
+    pub(super) fn detect_plane_os_row(
+        &mut self,
+        power: &[f32],
+        row: usize,
+        out: &mut Vec<Hit>,
+        keep: &mut Strongest,
+    ) {
+        let spec = self.spec;
+        let CfarStatistic::Os { rank } = spec.stat else {
+            return;
+        };
+        let pad = spec.pad();
+        let row_count = 2 * pad + 1;
+        let guard_doppler = spec.guard_doppler as i64;
+        let mut plane_rows = [PlaneRow::default(); 2 * MAX_PAD + 1];
+        for (slot, offset) in plane_rows[..row_count]
+            .iter_mut()
+            .zip(-(pad as i64)..=pad as i64)
+        {
+            let source = (row as i64 + offset).rem_euclid(self.rows as i64) as usize;
+            *slot = PlaneRow {
+                base: source * self.gates,
+                clutter: spec.is_clutter(source, self.rows),
+                guarded: offset.abs() <= guard_doppler,
+            };
+        }
+        let rows = &plane_rows[..row_count];
+        let reach = spec.guard_range + spec.train_range;
+        let width = (2 * reach + 1).min(self.gates);
+        let guard_row_count = 2 * spec.guard_doppler + 1;
+        let line = &power[row * self.gates..(row + 1) * self.gates];
+        for (gate, &cell) in line.iter().enumerate().skip(self.spec.min_gate) {
+            if cell <= 0.0 || cell.is_nan() {
+                continue;
+            }
+            let start = gate.saturating_sub(reach).min(self.gates - width);
+            let outer = start..start + width;
+            let guard = gate.saturating_sub(spec.guard_range).max(start)
+                ..(gate + spec.guard_range + 1).min(outer.end);
+            let count = row_count * outer.len() - guard_row_count * guard.len();
+            if count == 0 {
+                continue;
+            }
+            let left = outer.start..guard.start;
+            let right = guard.end..outer.end;
+            let edge = left.len() < spec.train_range || right.len() < spec.train_range;
+            let noise = if edge {
+                let mean = plane_mean(power, rows, &outer, &left, &right, count);
+                if !is_hit(cell, mean, spec.alpha_edge, spec.min_snr) {
+                    continue;
+                }
+                mean
+            } else {
+                let probe = os_probe(cell, spec.alpha, spec.min_snr);
+                let max_gt = count - os_order(rank, count);
+                if exceeds_gt(power, rows, &outer, &left, &right, probe, max_gt) {
+                    continue;
+                }
+                self.gather_plane_rows(power, rows, &outer, &left, &right);
+                let noise = order_statistic(&mut self.scratch, rank);
+                if !is_hit(cell, noise, spec.alpha, spec.min_snr) {
+                    continue;
+                }
+                noise
+            };
+            keep.offer(
+                out,
+                Hit {
+                    row: row as u32,
+                    gate: gate as u32,
+                    power: cell,
+                    noise,
+                },
+                |hit| hit.power,
+            );
+        }
+    }
+
+    fn gather_plane_rows(
+        &mut self,
+        power: &[f32],
+        rows: &[PlaneRow],
+        outer: &Range<usize>,
+        left: &Range<usize>,
+        right: &Range<usize>,
+    ) {
+        self.scratch.clear();
+        for &plane_row in rows {
+            if plane_row.clutter {
+                let cells = if plane_row.guarded {
+                    left.len() + right.len()
+                } else {
+                    outer.len()
+                };
+                self.scratch
+                    .extend(std::iter::repeat_n(CLUTTER_FILL, cells));
+            } else if plane_row.guarded {
+                self.scratch.extend_from_slice(
+                    &power[plane_row.base + left.start..plane_row.base + left.end],
+                );
+                self.scratch.extend_from_slice(
+                    &power[plane_row.base + right.start..plane_row.base + right.end],
+                );
+            } else {
+                self.scratch.extend_from_slice(
+                    &power[plane_row.base + outer.start..plane_row.base + outer.end],
+                );
+            }
+        }
+    }
+
     fn gather_plane(
         &mut self,
         power: &[f32],
@@ -97,4 +216,79 @@ impl Cfar {
             }
         }
     }
+}
+
+fn plane_mean(
+    power: &[f32],
+    rows: &[PlaneRow],
+    outer: &Range<usize>,
+    left: &Range<usize>,
+    right: &Range<usize>,
+    count: usize,
+) -> f32 {
+    let mut sum = 0.0f64;
+    for &plane_row in rows {
+        if plane_row.clutter {
+            let cells = if plane_row.guarded {
+                left.len() + right.len()
+            } else {
+                outer.len()
+            };
+            sum += f64::from(CLUTTER_FILL) * cells as f64;
+        } else if plane_row.guarded {
+            for &v in &power[plane_row.base + left.start..plane_row.base + left.end] {
+                sum += f64::from(v);
+            }
+            for &v in &power[plane_row.base + right.start..plane_row.base + right.end] {
+                sum += f64::from(v);
+            }
+        } else {
+            for &v in &power[plane_row.base + outer.start..plane_row.base + outer.end] {
+                sum += f64::from(v);
+            }
+        }
+    }
+    (sum / count as f64) as f32
+}
+
+fn exceeds_gt(
+    power: &[f32],
+    rows: &[PlaneRow],
+    outer: &Range<usize>,
+    left: &Range<usize>,
+    right: &Range<usize>,
+    probe: f32,
+    max_gt: usize,
+) -> bool {
+    let mut gt = 0;
+    let clutter_gt = CLUTTER_FILL > probe;
+    for &plane_row in rows {
+        if plane_row.clutter {
+            if clutter_gt {
+                gt += if plane_row.guarded {
+                    left.len() + right.len()
+                } else {
+                    outer.len()
+                };
+            }
+        } else if plane_row.guarded {
+            gt += count_gt(
+                &power[plane_row.base + left.start..plane_row.base + left.end],
+                probe,
+            );
+            gt += count_gt(
+                &power[plane_row.base + right.start..plane_row.base + right.end],
+                probe,
+            );
+        } else {
+            gt += count_gt(
+                &power[plane_row.base + outer.start..plane_row.base + outer.end],
+                probe,
+            );
+        }
+        if gt > max_gt {
+            return true;
+        }
+    }
+    false
 }

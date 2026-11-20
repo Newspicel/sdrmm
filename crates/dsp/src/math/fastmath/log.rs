@@ -1,4 +1,4 @@
-use super::MANTISSA_BITS;
+use super::{MANTISSA_BITS, madd};
 
 const SQRT_HALF_BITS: u32 = 0x3F35_04F3;
 const SUBNORMAL_SCALE: f32 = 16_777_216.0;
@@ -13,6 +13,16 @@ const LOG2_SERIES: [f32; 6] = [
 ];
 const POWER_DB_PER_OCTAVE: f32 = 10.0 * std::f32::consts::LOG10_2;
 
+#[inline(always)]
+fn log2_series(t: f32) -> f32 {
+    let [c0, c1, c2, c3, c4, c5] = LOG2_SERIES;
+    let p01 = madd(t, c1, c0);
+    let p23 = madd(t, c3, c2);
+    let p45 = madd(t, c5, c4);
+    let t2 = t * t;
+    madd(t2, madd(t2, p45, p23), p01)
+}
+
 #[must_use]
 #[inline(always)]
 pub fn fast_log2(x: f32) -> f32 {
@@ -22,10 +32,8 @@ pub fn fast_log2(x: f32) -> f32 {
     let exponent = (bits.wrapping_sub(SQRT_HALF_BITS) as i32) >> MANTISSA_BITS;
     let mantissa = f32::from_bits(bits.wrapping_sub((exponent as u32) << MANTISSA_BITS));
     let t = mantissa - 1.0;
-    let [c0, c1, c2, c3, c4, c5] = LOG2_SERIES;
-    let series = c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * c5))));
     let octaves = exponent as f32 - if subnormal { SUBNORMAL_OCTAVES } else { 0.0 };
-    let log = octaves + t * series;
+    let log = madd(t, log2_series(t), octaves);
     let log = if x == f32::INFINITY { x } else { log };
     if x > 0.0 {
         log
@@ -34,6 +42,17 @@ pub fn fast_log2(x: f32) -> f32 {
     } else {
         f32::NAN
     }
+}
+
+/// Fast `10 * log10(power)` for normal positive finite inputs (`power >= f32::MIN_POSITIVE`).
+#[must_use]
+#[inline(always)]
+pub fn fast_power_db_normal(power: f32) -> f32 {
+    let bits = power.to_bits();
+    let exponent = (bits.wrapping_sub(SQRT_HALF_BITS) as i32) >> MANTISSA_BITS;
+    let mantissa = f32::from_bits(bits.wrapping_sub((exponent as u32) << MANTISSA_BITS));
+    let t = mantissa - 1.0;
+    madd(t, log2_series(t), exponent as f32) * POWER_DB_PER_OCTAVE
 }
 
 #[must_use]

@@ -84,8 +84,8 @@ fn scalar(stride: usize, gathered: &mut [i16], extrinsic: &mut [i16], messages: 
 #[cfg(target_arch = "aarch64")]
 fn vector(stride: usize, gathered: &mut [i16], extrinsic: &mut [i16], messages: &mut [i16]) -> u32 {
     use std::arch::aarch64::{
-        vaddvq_s16, vbslq_s16, vceqq_s16, vdupq_n_s16, veorq_s16, vld1q_s16, vmaxq_s16, vminq_s16,
-        vqabsq_s16, vqsubq_s16, vshrq_n_s16, vst1q_s16, vsubq_s16,
+        vaddq_s16, vaddvq_s16, vbslq_s16, vceqq_s16, vdupq_n_s16, veorq_s16, vld1q_s16, vmaxq_s16,
+        vminq_s16, vqabsq_s16, vqsubq_s16, vshrq_n_s16, vst1q_s16, vsubq_s16,
     };
     let rows = messages.len();
     let gathered = gathered.as_mut_ptr();
@@ -93,8 +93,61 @@ fn vector(stride: usize, gathered: &mut [i16], extrinsic: &mut [i16], messages: 
     let messages = messages.as_mut_ptr();
     unsafe {
         let limit = vdupq_n_s16(LIMIT);
-        let mut count = vdupq_n_s16(0);
-        for lane in (0..stride).step_by(8) {
+        let mut count0 = vdupq_n_s16(0);
+        let mut count1 = vdupq_n_s16(0);
+        let mut lane = 0;
+        while lane + 16 <= stride {
+            let mut first0 = vdupq_n_s16(i16::MAX);
+            let mut second0 = first0;
+            let mut sign0 = vdupq_n_s16(0);
+            let mut parity0 = sign0;
+            let mut first1 = first0;
+            let mut second1 = first0;
+            let mut sign1 = sign0;
+            let mut parity1 = sign0;
+            for at in (lane..rows).step_by(stride) {
+                let total0 = vld1q_s16(gathered.add(at));
+                let total1 = vld1q_s16(gathered.add(at + 8));
+                let value0 = vqsubq_s16(total0, vld1q_s16(messages.add(at)));
+                let value1 = vqsubq_s16(total1, vld1q_s16(messages.add(at + 8)));
+                vst1q_s16(extrinsic.add(at), value0);
+                vst1q_s16(extrinsic.add(at + 8), value1);
+                sign0 = veorq_s16(sign0, value0);
+                sign1 = veorq_s16(sign1, value1);
+                parity0 = veorq_s16(parity0, total0);
+                parity1 = veorq_s16(parity1, total1);
+                let mag0 = vqabsq_s16(value0);
+                let mag1 = vqabsq_s16(value1);
+                second0 = vminq_s16(second0, vmaxq_s16(first0, mag0));
+                first0 = vminq_s16(first0, mag0);
+                second1 = vminq_s16(second1, vmaxq_s16(first1, mag1));
+                first1 = vminq_s16(first1, mag1);
+            }
+            count0 = vsubq_s16(count0, vshrq_n_s16::<15>(parity0));
+            count1 = vsubq_s16(count1, vshrq_n_s16::<15>(parity1));
+            let near0 = vminq_s16(vsubq_s16(first0, vshrq_n_s16::<3>(first0)), limit);
+            let far0 = vminq_s16(vsubq_s16(second0, vshrq_n_s16::<3>(second0)), limit);
+            let near1 = vminq_s16(vsubq_s16(first1, vshrq_n_s16::<3>(first1)), limit);
+            let far1 = vminq_s16(vsubq_s16(second1, vshrq_n_s16::<3>(second1)), limit);
+            for at in (lane..rows).step_by(stride) {
+                let value0 = vld1q_s16(extrinsic.add(at));
+                let value1 = vld1q_s16(extrinsic.add(at + 8));
+                let mag0 = vbslq_s16(vceqq_s16(vqabsq_s16(value0), first0), far0, near0);
+                let mag1 = vbslq_s16(vceqq_s16(vqabsq_s16(value1), first1), far1, near1);
+                let flip0 = vshrq_n_s16::<15>(veorq_s16(sign0, value0));
+                let flip1 = vshrq_n_s16::<15>(veorq_s16(sign1, value1));
+                let msg0 = vsubq_s16(veorq_s16(mag0, flip0), flip0);
+                let msg1 = vsubq_s16(veorq_s16(mag1, flip1), flip1);
+                let prev0 = vld1q_s16(messages.add(at));
+                let prev1 = vld1q_s16(messages.add(at + 8));
+                vst1q_s16(gathered.add(at), vqsubq_s16(msg0, prev0));
+                vst1q_s16(gathered.add(at + 8), vqsubq_s16(msg1, prev1));
+                vst1q_s16(messages.add(at), msg0);
+                vst1q_s16(messages.add(at + 8), msg1);
+            }
+            lane += 16;
+        }
+        while lane + 8 <= stride {
             let mut first = vdupq_n_s16(i16::MAX);
             let mut second = first;
             let mut sign = vdupq_n_s16(0);
@@ -109,7 +162,7 @@ fn vector(stride: usize, gathered: &mut [i16], extrinsic: &mut [i16], messages: 
                 second = vminq_s16(second, vmaxq_s16(first, magnitude));
                 first = vminq_s16(first, magnitude);
             }
-            count = vsubq_s16(count, vshrq_n_s16::<15>(parity));
+            count0 = vsubq_s16(count0, vshrq_n_s16::<15>(parity));
             let near = vminq_s16(vsubq_s16(first, vshrq_n_s16::<3>(first)), limit);
             let far = vminq_s16(vsubq_s16(second, vshrq_n_s16::<3>(second)), limit);
             for at in (lane..rows).step_by(stride) {
@@ -121,8 +174,9 @@ fn vector(stride: usize, gathered: &mut [i16], extrinsic: &mut [i16], messages: 
                 vst1q_s16(gathered.add(at), vqsubq_s16(message, previous));
                 vst1q_s16(messages.add(at), message);
             }
+            lane += 8;
         }
-        u32::from(vaddvq_s16(count).unsigned_abs())
+        u32::from(vaddvq_s16(vaddq_s16(count0, count1)).unsigned_abs())
     }
 }
 

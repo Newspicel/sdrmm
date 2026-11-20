@@ -36,16 +36,51 @@ impl Acquisition {
 /// rolloff from throwing the estimate half a symbol out. `None` when the line is too weak.
 pub(super) fn symbol_peak(window: &[Complex<f32>], sps: f64) -> Option<f64> {
     let offset = carrier_offset(window, window.len() as f32 / sps as f32);
-    let line: Complex<f64> = window
-        .iter()
-        .enumerate()
-        .map(|(i, s)| Complex::from_polar(f64::from((s - offset).norm()), -TAU * i as f64 / sps))
-        .sum();
-    let total: f64 = window.iter().map(|s| f64::from((s - offset).norm())).sum();
+    let step = Complex::from_polar(1.0, -TAU / sps);
+    let mut rot = Complex::new(1.0f64, 0.0);
+    let mut line = Complex::new(0.0f64, 0.0);
+    let mut total = 0.0f64;
+    for s in window {
+        let mag = f64::from((s - offset).norm());
+        line += rot * mag;
+        total += mag;
+        rot *= step;
+    }
     if !(line.norm() > MIN_LINE_SHARE * total && line.arg().is_finite()) {
         return None;
     }
     Some((-line.arg() / TAU).rem_euclid(1.0) * sps)
+}
+
+pub(super) fn symbol_peak_real(window: &[f32], sps: f64) -> Option<f64> {
+    let offset = carrier_offset_real(window, window.len() as f32 / sps as f32);
+    let step = Complex::from_polar(1.0, -TAU / sps);
+    let mut rot = Complex::new(1.0f64, 0.0);
+    let mut line = Complex::new(0.0f64, 0.0);
+    let mut total = 0.0f64;
+    for &s in window {
+        let mag = f64::from((s - offset).abs());
+        line += rot * mag;
+        total += mag;
+        rot *= step;
+    }
+    if !(line.norm() > MIN_LINE_SHARE * total && line.arg().is_finite()) {
+        return None;
+    }
+    Some((-line.arg() / TAU).rem_euclid(1.0) * sps)
+}
+
+fn carrier_offset_real(window: &[f32], symbols: f32) -> f32 {
+    let n = window.len().max(1) as f32;
+    let mean = window.iter().copied().sum::<f32>() / n;
+    let rms = (window.iter().map(|&s| (s - mean) * (s - mean)).sum::<f32>() / n).sqrt();
+    let imbalance = IMBALANCE_SPREADS * rms / symbols.max(1.0).sqrt();
+    let size = mean.abs();
+    if size <= imbalance {
+        0.0
+    } else {
+        mean * ((size - imbalance) / size)
+    }
 }
 
 /// The carrier offset under `window`: its mean, less the part a run of unbalanced symbols could

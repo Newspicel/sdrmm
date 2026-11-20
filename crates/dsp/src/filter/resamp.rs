@@ -5,7 +5,7 @@ use clock::{Clock, FREE_PHASES};
 use num_complex::Complex;
 pub(crate) use prototype::{Prototype, taps_per_phase};
 
-use crate::filter::fir::{DelayLine, Isa, plane_dot, plane_interpolated, reversed_branch};
+use crate::filter::fir::{DelayLine, Isa, plane_interpolated, reversed_branch};
 
 /// Branch lengths round up to this, a whole number of kernel lanes.
 const TAP_MULTIPLE: usize = 8;
@@ -105,8 +105,7 @@ impl FracResampler {
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
         out.clear();
         for chunk in input.chunks(self.re.room()) {
-            self.re.push_with(chunk, |sample| sample.re);
-            self.im.push_with(chunk, |sample| sample.im);
+            DelayLine::push_complex_planes(&mut self.re, &mut self.im, chunk);
             match self.clock {
                 Clock::Exact { .. } => self.emit_exact(out),
                 Clock::Free { .. } => self.emit_free(out),
@@ -135,16 +134,20 @@ impl FracResampler {
             .saturating_sub(ticks)
             .div_ceil(advance);
         let first = out.len();
-        out.resize(first + count, Complex::new(0.0, 0.0));
+        out.reserve(count);
+        let dst = &mut out.spare_capacity_mut()[..count];
         for lead in 0..phases.min(count) {
             let mut sequence = Sequence {
                 ticks: ticks + lead * advance,
                 stride: advance,
                 outputs: (count - lead).div_ceil(phases),
-                slots: out[first + lead..].iter_mut().step_by(phases),
+                slots: lead,
             };
-            self.fill::<BATCH>(&mut sequence, phases);
-            self.fill::<1>(&mut sequence, phases);
+            self.fill::<BATCH>(&mut sequence, phases, dst);
+            self.fill::<1>(&mut sequence, phases, dst);
+        }
+        unsafe {
+            out.set_len(first + count);
         }
         let ticks = ticks + count * advance;
         self.position = ticks / phases;
@@ -156,25 +159,49 @@ impl FracResampler {
         };
     }
 
-    fn fill<'a, const N: usize>(
+    fn fill<const N: usize>(
         &self,
-        sequence: &mut Sequence<impl Iterator<Item = &'a mut Complex<f32>>>,
+        sequence: &mut Sequence<usize>,
         phases: usize,
+        out: &mut [std::mem::MaybeUninit<Complex<f32>>],
     ) {
+        let batches = sequence.outputs / N;
+        if batches == 0 {
+            return;
+        }
         let tpp = self.taps_per_phase;
         let row = sequence.ticks % phases;
         let taps = &self.rows[row * tpp..(row + 1) * tpp];
         let (re, im) = (self.re.rows_from(0), self.im.rows_from(0));
-        while sequence.outputs >= N {
-            let window = sequence.ticks / phases + 1 - tpp;
-            let starts: [usize; N] = std::array::from_fn(|index| window + index * sequence.stride);
-            let values = plane_dot(self.isa, re, im, starts, taps);
-            for (value, slot) in values.into_iter().zip(sequence.slots.by_ref()) {
-                *slot = value;
+        let mut slot = sequence.slots;
+        let mut window = sequence.ticks / phases + 1 - tpp;
+        let stride = sequence.stride;
+        let step_window = N * stride;
+        let last_window = window + (batches * N - 1) * stride;
+        let last_slot = slot + (batches * N - 1) * phases;
+        assert!(last_window + tpp <= re.len().min(im.len()));
+        assert!(last_slot < out.len());
+        let re_ptr = re.as_ptr();
+        let im_ptr = im.as_ptr();
+        for _ in 0..batches {
+            let values = unsafe {
+                let re_ptrs: [*const f32; N] =
+                    std::array::from_fn(|i| re_ptr.add(window + i * stride));
+                let im_ptrs: [*const f32; N] =
+                    std::array::from_fn(|i| im_ptr.add(window + i * stride));
+                self.isa.plane_dot(re_ptrs, im_ptrs, taps)
+            };
+            for value in values {
+                unsafe {
+                    out.get_unchecked_mut(slot).write(value);
+                }
+                slot += phases;
             }
-            sequence.ticks += N * sequence.stride * phases;
-            sequence.outputs -= N;
+            window += step_window;
         }
+        sequence.ticks += batches * step_window * phases;
+        sequence.outputs -= batches * N;
+        sequence.slots = slot;
     }
 
     fn emit_free(&mut self, out: &mut Vec<Complex<f32>>) {

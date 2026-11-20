@@ -14,7 +14,9 @@ pub(crate) struct Row {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Plan<C> {
+    #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
     pub(super) runs: Vec<Run>,
+    #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
     pub(super) values: Vec<C>,
     #[cfg(target_arch = "aarch64")]
     pub(super) rows: Vec<Row>,

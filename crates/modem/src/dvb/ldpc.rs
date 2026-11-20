@@ -321,8 +321,8 @@ impl Ldpc {
         if llrs.len() != self.length {
             return None;
         }
-        let layout = self.layout;
-        self.decoder.load(llrs, |bit| layout.position(bit));
+        self.decoder
+            .load_column_parity(llrs, self.information, self.layout.layers);
         let converged = self.decoder.run(limit);
         self.decoder.harden(&mut self.hard);
         let iterations = converged?;

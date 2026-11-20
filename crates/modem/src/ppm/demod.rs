@@ -183,10 +183,7 @@ impl PpmDemod {
 }
 
 pub fn magnitudes(iq: &[Complex<f32>], out: &mut Vec<f32>) {
-    out.extend(
-        iq.iter()
-            .map(|s| sdrmm_dsp::madd(s.re, s.re, s.im * s.im).sqrt()),
-    );
+    sdrmm_dsp::math::complex::magnitudes_into(iq, out);
 }
 
 fn assert_slots(m: usize) {

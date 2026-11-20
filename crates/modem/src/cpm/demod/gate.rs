@@ -40,6 +40,8 @@ pub(super) struct Gate {
     mean_square: f32,
     envelope_alpha: f32,
     floor_alpha: f32,
+    one_minus_floor_alpha: f32,
+    noise_floor_alpha: f32,
     settling: usize,
     pub(super) settle_samples: usize,
     keyed: usize,
@@ -57,6 +59,7 @@ pub(super) struct Gate {
 impl Gate {
     pub(super) fn new(sps: f64, support: usize) -> Self {
         let settle = (FLOOR_SETTLE * FLOOR_TAU_SYMBOLS * sps) as usize;
+        let floor_alpha = one_pole_coeff(sps, FLOOR_TAU_SYMBOLS);
         Self {
             envelope: 0.0,
             floor: 0.0,
@@ -64,7 +67,9 @@ impl Gate {
             mean: 0.0,
             mean_square: 0.0,
             envelope_alpha: one_pole_coeff(sps, ENVELOPE_TAU_SYMBOLS),
-            floor_alpha: one_pole_coeff(sps, FLOOR_TAU_SYMBOLS),
+            floor_alpha,
+            one_minus_floor_alpha: 1.0 - floor_alpha,
+            noise_floor_alpha: NOISE_FLOOR_SPEED * floor_alpha,
             settling: settle,
             settle_samples: settle,
             keyed: 0,
@@ -103,7 +108,7 @@ impl Gate {
         }
         self.carrier_level = if keyed && !noisy {
             self.envelope
-                .max(self.carrier_level * (1.0 - self.floor_alpha))
+                .max(self.carrier_level * self.one_minus_floor_alpha)
         } else {
             0.0
         };
@@ -111,10 +116,10 @@ impl Gate {
             self.floor = self.mean;
             self.steady_level = 0.0;
         } else if self.carrier_level > 0.0 && self.envelope * CARRIER_DROP < self.carrier_level {
-            self.floor = self.floor.max(self.envelope / CARRIER_RISE);
+            self.floor = self.floor.max(self.envelope * (1.0 / CARRIER_RISE));
             self.carrier_level = 0.0;
         } else if noisy {
-            self.floor += NOISE_FLOOR_SPEED * self.floor_alpha * (self.envelope - self.floor);
+            self.floor += self.noise_floor_alpha * (self.envelope - self.floor);
         } else if !keyed && !steady {
             self.floor += self.floor_alpha * (self.envelope - self.floor);
         }

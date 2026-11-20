@@ -5,12 +5,13 @@ use num_complex::Complex;
 
 use super::{
     BeamError, ZERO,
-    adaptive::{self, Adaptive, POWER_EMA, REGULARISE, nlms_update},
+    adaptive::{self, Adaptive, POWER_EMA, REGULARISE},
     lanes::equal_len,
     weights::check_references,
 };
+use crate::math::complex::{axpy_norm_sqr, conj_dot, sum_norm_sqr};
 use crate::math::db::Decibels;
-use crate::math::linalg::{MAX_ORDER, norm_sqr};
+use crate::math::linalg::MAX_ORDER;
 
 pub use adaptation::{Adaptation, tdl_cmac_per_sample};
 
@@ -19,6 +20,7 @@ pub const TDL_MAX_CMAC_PER_S: f64 = 2.0e8;
 
 const DIVERGE_NORM: f32 = 1e6;
 const SUPPRESSION_CAP_DB: f32 = 120.0;
+const ENERGY_RESYNC_SAMPLES: u32 = 4096;
 
 pub struct TdlCanceller {
     primary: usize,
@@ -37,6 +39,8 @@ pub struct TdlCanceller {
     adaptation: Adaptation,
     primed: bool,
     since_symmetrise: u32,
+    ref_energy: f64,
+    energy_age: u32,
     power_in: f32,
     power_out: f32,
     power_ref: f32,
@@ -77,6 +81,8 @@ impl TdlCanceller {
             adaptation,
             primed: false,
             since_symmetrise: 0,
+            ref_energy: 0.0,
+            energy_age: 0,
             power_in: 0.0,
             power_out: 0.0,
             power_ref: 0.0,
@@ -101,6 +107,8 @@ impl TdlCanceller {
         self.primary_cursor = 0;
         self.primed = false;
         self.since_symmetrise = 0;
+        self.ref_energy = 0.0;
+        self.energy_age = 0;
         self.power_in = 0.0;
         self.power_out = 0.0;
         self.power_ref = 0.0;
@@ -158,32 +166,48 @@ impl TdlCanceller {
 
     fn sample(&mut self, lanes: &[&[Complex<f32>]], t: usize) -> Option<Complex<f32>> {
         let taps = self.taps;
+        let old_cursor = self.cursor;
+        let mut next_cursor = old_cursor + 1;
+        if next_cursor == taps {
+            next_cursor = 0;
+        }
+        let mut delta_energy = 0.0f64;
         for (k, &lane) in self.references[..self.refs].iter().enumerate() {
             let value = lanes[lane][t];
             let ring = &mut self.history[k * 2 * taps..(k + 1) * 2 * taps];
-            ring[self.cursor] = value;
-            ring[self.cursor + taps] = value;
+            let leaving = ring[old_cursor];
+            ring[old_cursor] = value;
+            ring[old_cursor + taps] = value;
+            delta_energy += f64::from(value.norm_sqr()) - f64::from(leaving.norm_sqr());
         }
-        self.cursor = (self.cursor + 1) % taps;
-        for k in 0..self.refs {
-            let start = k * 2 * taps + self.cursor;
-            self.regressor[k * taps..(k + 1) * taps]
-                .copy_from_slice(&self.history[start..start + taps]);
+        self.cursor = next_cursor;
+        self.ref_energy += delta_energy;
+        self.energy_age += 1;
+        if self.energy_age >= ENERGY_RESYNC_SAMPLES || self.ref_energy < 0.0 {
+            self.resync_energy();
         }
         let d = self.delayed_primary(lanes[self.primary][t]);
-        let estimate: Complex<f32> = self
-            .h
-            .iter()
-            .zip(&self.regressor)
-            .map(|(h, u)| h.conj() * u)
-            .sum();
+        let mut estimate = ZERO;
+        for k in 0..self.refs {
+            let start = k * 2 * taps + self.cursor;
+            let u = &self.history[start..start + taps];
+            let h = &self.h[k * taps..(k + 1) * taps];
+            estimate += conj_dot(h, u);
+        }
         let y = d - estimate;
         if !y.is_finite() {
             return None;
         }
         let adapted = match self.adaptation {
             Adaptation::Nlms { step } => self.nlms(step, y),
-            Adaptation::Rls { forget } => self.rls(forget, y),
+            Adaptation::Rls { forget } => {
+                for k in 0..self.refs {
+                    let start = k * 2 * taps + self.cursor;
+                    self.regressor[k * taps..(k + 1) * taps]
+                        .copy_from_slice(&self.history[start..start + taps]);
+                }
+                self.rls(forget, y)
+            }
         };
         if !adapted {
             return None;
@@ -193,18 +217,32 @@ impl TdlCanceller {
         Some(y)
     }
 
+    fn resync_energy(&mut self) {
+        let taps = self.taps;
+        let mut total = 0.0f64;
+        for k in 0..self.refs {
+            let start = k * 2 * taps + self.cursor;
+            total += f64::from(sum_norm_sqr(&self.history[start..start + taps]));
+        }
+        self.ref_energy = total;
+        self.energy_age = 0;
+    }
+
     fn delayed_primary(&mut self, value: Complex<f32>) -> Complex<f32> {
         if self.delay == 0 {
             return value;
         }
         let out = self.primary_delay[self.primary_cursor];
         self.primary_delay[self.primary_cursor] = value;
-        self.primary_cursor = (self.primary_cursor + 1) % self.delay;
+        self.primary_cursor += 1;
+        if self.primary_cursor == self.delay {
+            self.primary_cursor = 0;
+        }
         out
     }
 
     fn nlms(&mut self, step: f32, y: Complex<f32>) -> bool {
-        let energy = norm_sqr(&self.regressor);
+        let energy = self.ref_energy as f32;
         if !energy.is_finite() {
             return false;
         }
@@ -213,14 +251,16 @@ impl TdlCanceller {
         if denominator <= 0.0 {
             return true;
         }
-        nlms_update(
-            &mut self.h,
-            &self.regressor,
-            y,
-            step,
-            denominator,
-            DIVERGE_NORM,
-        )
+        let gain = y.conj() * (step / denominator);
+        let taps = self.taps;
+        let mut norm = 0.0f32;
+        for k in 0..self.refs {
+            let start = k * 2 * taps + self.cursor;
+            let u = &self.history[start..start + taps];
+            let h = &mut self.h[k * taps..(k + 1) * taps];
+            norm += axpy_norm_sqr(h, u, gain);
+        }
+        norm.is_finite() && norm <= DIVERGE_NORM * DIVERGE_NORM
     }
 }
 

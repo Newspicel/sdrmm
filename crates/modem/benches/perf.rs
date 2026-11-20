@@ -160,6 +160,37 @@ fn ofdm64_20m(c: &mut Criterion) {
     );
 }
 
+fn wifi_ofdm_20m(c: &mut Criterion) {
+    use sdrmm_modem::wifi::{Frame, Sink, ofdm::Ofdm, transmit};
+
+    struct Count(usize);
+    impl Sink for Count {
+        fn accepts(&self, _: u8) -> bool {
+            true
+        }
+        fn frame(&mut self, _: Frame<'_>) {
+            self.0 += 1;
+        }
+    }
+
+    let mpdu = vec![0x80u8; 256];
+    let mut wave = vec![Complex::new(0.0, 0.0); 128];
+    wave.extend_from_slice(&transmit::ofdm(&mpdu, 54));
+    wave.resize(wave.len() + 2_048, Complex::new(0.0, 0.0));
+    let mut ofdm = Ofdm::new();
+    let mut group = c.benchmark_group("wifi_ofdm_20m");
+    group.throughput(Throughput::Elements(wave.len() as u64));
+    group.bench_function("decode_54m", |b| {
+        b.iter(|| {
+            ofdm.reset();
+            let mut sink = Count(0);
+            ofdm.process(black_box(&wave), &mut sink);
+            black_box(sink.0)
+        });
+    });
+    group.finish();
+}
+
 /// Times `run` filling a cleared buffer, counted in `elements` input samples per call.
 fn bench_block<T>(
     c: &mut Criterion,
@@ -210,6 +241,7 @@ criterion_group!(
     afsk_filterbank_12k,
     mfsk4_filterbank_48k,
     ppm2_matched_8m,
-    ofdm64_20m
+    ofdm64_20m,
+    wifi_ofdm_20m
 );
 criterion_main!(benches);

@@ -81,14 +81,16 @@ impl RealToIq {
         }
         self.filter.process(&self.in_phase, &mut self.filtered);
         let centre_tap = self.centre_tap;
+        let len = self.filtered.len().min(self.quadrature.len());
         out.clear();
-        out.extend(
-            self.filtered
-                .iter()
-                .zip(&self.quadrature)
-                .map(|(&in_phase, &quadrature)| Complex::new(in_phase, centre_tap * quadrature)),
+        out.reserve(len);
+        interleave_scaled(
+            &self.filtered[..len],
+            &self.quadrature[..len],
+            centre_tap,
+            out,
         );
-        self.quadrature.drain(..out.len());
+        self.quadrature.drain(..len);
     }
 
     fn rotate(&mut self, sample: f32) {
@@ -103,26 +105,89 @@ impl RealToIq {
 
     fn rotate_quads(&mut self, quads: &[[f32; 4]]) {
         let sign = self.quadrature_sign;
-        let in_phase = self.in_phase.len();
-        self.in_phase.resize(in_phase + 2 * quads.len(), 0.0);
-        for (pair, quad) in self.in_phase[in_phase..]
-            .as_chunks_mut::<2>()
-            .0
-            .iter_mut()
-            .zip(quads)
+        let add = 2 * quads.len();
+        let i_base = self.in_phase.len();
+        let q_base = self.quadrature.len();
+        self.in_phase.reserve(add);
+        self.quadrature.reserve(add);
+        let i_dst = self
+            .in_phase
+            .spare_capacity_mut()
+            .as_mut_ptr()
+            .cast::<f32>();
+        let q_dst = self
+            .quadrature
+            .spare_capacity_mut()
+            .as_mut_ptr()
+            .cast::<f32>();
+        let mut done = 0;
+        #[cfg(target_arch = "aarch64")]
         {
-            *pair = [quad[0], -quad[2]];
+            use std::arch::aarch64::{
+                float32x4x2_t, vdupq_n_f32, vld4q_f32, vmulq_f32, vnegq_f32, vst2q_f32,
+            };
+            let n = quads.len() & !3;
+            unsafe {
+                let sp = quads.as_ptr().cast::<f32>();
+                let v_sign = vdupq_n_f32(sign);
+                let v_neg_sign = vdupq_n_f32(-sign);
+                while done < n {
+                    let v = vld4q_f32(sp.add(done * 4));
+                    vst2q_f32(i_dst.add(done * 2), float32x4x2_t(v.0, vnegq_f32(v.2)));
+                    vst2q_f32(
+                        q_dst.add(done * 2),
+                        float32x4x2_t(vmulq_f32(v.1, v_sign), vmulq_f32(v.3, v_neg_sign)),
+                    );
+                    done += 4;
+                }
+            }
         }
-        let quadrature = self.quadrature.len();
-        self.quadrature.resize(quadrature + 2 * quads.len(), 0.0);
-        for (pair, quad) in self.quadrature[quadrature..]
-            .as_chunks_mut::<2>()
-            .0
-            .iter_mut()
-            .zip(quads)
-        {
-            *pair = [sign * quad[1], -sign * quad[3]];
+        for quad in &quads[done..] {
+            unsafe {
+                i_dst.add(done * 2).write(quad[0]);
+                i_dst.add(done * 2 + 1).write(-quad[2]);
+                q_dst.add(done * 2).write(sign * quad[1]);
+                q_dst.add(done * 2 + 1).write(-sign * quad[3]);
+            }
+            done += 1;
         }
+        unsafe {
+            self.in_phase.set_len(i_base + add);
+            self.quadrature.set_len(q_base + add);
+        }
+    }
+}
+
+fn interleave_scaled(re: &[f32], im: &[f32], scale: f32, out: &mut Vec<Complex<f32>>) {
+    let len = re.len().min(im.len());
+    let base = out.len();
+    let dst = out.spare_capacity_mut().as_mut_ptr().cast::<f32>();
+    let mut done = 0;
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{float32x4x2_t, vdupq_n_f32, vld1q_f32, vmulq_f32, vst2q_f32};
+        let n = len & !3;
+        unsafe {
+            let rp = re.as_ptr();
+            let ip = im.as_ptr();
+            let vs = vdupq_n_f32(scale);
+            while done < n {
+                let vr = vld1q_f32(rp.add(done));
+                let vi = vmulq_f32(vld1q_f32(ip.add(done)), vs);
+                vst2q_f32(dst.add(done * 2), float32x4x2_t(vr, vi));
+                done += 4;
+            }
+        }
+    }
+    while done < len {
+        unsafe {
+            dst.add(done * 2).write(re[done]);
+            dst.add(done * 2 + 1).write(scale * im[done]);
+        }
+        done += 1;
+    }
+    unsafe {
+        out.set_len(base + len);
     }
 }
 

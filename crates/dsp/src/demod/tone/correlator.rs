@@ -45,6 +45,71 @@ impl ToneCorrelator<f32> {
         );
         Self::build(sample_rate, freq_hz, window, 2.0)
     }
+
+    /// Computes `plus.push(s) - minus.push(s)` across `input`, batching the square roots.
+    pub fn process_pair_diff(plus: &mut Self, minus: &mut Self, input: &[f32], out: &mut Vec<f32>) {
+        out.clear();
+        out.reserve(input.len());
+        let p_norm = plus.norm;
+        let m_norm = minus.norm;
+        let mut idx = 0;
+        let mut p_sq = [0.0f32; 4];
+        let mut m_sq = [0.0f32; 4];
+        while idx + 4 <= input.len() {
+            for k in 0..4 {
+                let s = input[idx + k];
+                p_sq[k] = plus.step_norm_sqr(s) as f32;
+                m_sq[k] = minus.step_norm_sqr(s) as f32;
+            }
+            let diff = sqrt_diff_4(p_sq, p_norm, m_sq, m_norm);
+            out.extend_from_slice(&diff);
+            idx += 4;
+        }
+        for &s in &input[idx..] {
+            out.push(plus.push(s) - minus.push(s));
+        }
+    }
+
+    #[inline(always)]
+    fn step_norm_sqr(&mut self, sample: f32) -> f64 {
+        let leaving = self.buf[self.pos];
+        self.buf[self.pos] = sample;
+        self.pos += 1;
+        if self.pos == self.buf.len() {
+            self.pos = 0;
+        }
+        let s = f64::from(sample);
+        let l = f64::from(leaving);
+        let re = self.acc.re * self.rot.re - self.acc.im * self.rot.im + s - self.exit.re * l;
+        let im = self.acc.re * self.rot.im + self.acc.im * self.rot.re - self.exit.im * l;
+        self.acc = Complex::new(re, im);
+        self.since_rebuild += 1;
+        if self.since_rebuild >= self.rebuild_every {
+            self.rebuild();
+        }
+        self.acc.norm_sqr()
+    }
+}
+
+#[inline(always)]
+fn sqrt_diff_4(p_sq: [f32; 4], p_norm: f32, m_sq: [f32; 4], m_norm: f32) -> [f32; 4] {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vdupq_n_f32, vld1q_f32, vmulq_f32, vsqrtq_f32, vst1q_f32, vsubq_f32,
+        };
+        let mut out = [0.0f32; 4];
+        unsafe {
+            let p = vmulq_f32(vsqrtq_f32(vld1q_f32(p_sq.as_ptr())), vdupq_n_f32(p_norm));
+            let m = vmulq_f32(vsqrtq_f32(vld1q_f32(m_sq.as_ptr())), vdupq_n_f32(m_norm));
+            vst1q_f32(out.as_mut_ptr(), vsubq_f32(p, m));
+        }
+        out
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        std::array::from_fn(|k| p_sq[k].sqrt() * p_norm - m_sq[k].sqrt() * m_norm)
+    }
 }
 
 impl ToneCorrelator<Complex<f32>> {

@@ -21,31 +21,100 @@ impl Stream {
         let samples = mag.get(from..from + len + self.weights.len().saturating_sub(1))?;
         let values = self.values.get_mut(..len)?;
         match *self.weights.as_slice() {
-            [w0, w1] => {
-                for ((v, &x0), &x1) in values.iter_mut().zip(samples).zip(&samples[1..]) {
-                    *v = w0 * x0 + w1 * x1;
-                }
-            }
-            [w0, w1, w2] => {
-                for (((v, &x0), &x1), &x2) in values
-                    .iter_mut()
-                    .zip(samples)
-                    .zip(&samples[1..])
-                    .zip(&samples[2..])
-                {
-                    *v = w0 * x0 + w1 * x1 + w2 * x2;
-                }
-            }
+            [w0, w1] => fill_2(values, samples, w0, w1),
+            [w0, w1, w2] => fill_3(values, samples, w0, w1, w2),
             _ => {
                 values.fill(0.0);
                 for (k, &w) in self.weights.iter().enumerate() {
                     for (v, &x) in values.iter_mut().zip(&samples[k..]) {
-                        *v += w * x;
+                        *v = sdrmm_dsp::madd(w, x, *v);
                     }
                 }
             }
         }
         Some(())
+    }
+}
+
+fn fill_2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32) {
+    let mut done = 0;
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{vdupq_n_f32, vfmaq_f32, vld1q_f32, vmulq_f32, vst1q_f32};
+        let n = values.len() & !7;
+        unsafe {
+            let sp = samples.as_ptr();
+            let dp = values.as_mut_ptr();
+            let vw0 = vdupq_n_f32(w0);
+            let vw1 = vdupq_n_f32(w1);
+            while done < n {
+                let x0 = vld1q_f32(sp.add(done));
+                let x1 = vld1q_f32(sp.add(done + 1));
+                let x2 = vld1q_f32(sp.add(done + 4));
+                let x3 = vld1q_f32(sp.add(done + 5));
+                vst1q_f32(dp.add(done), vfmaq_f32(vmulq_f32(x0, vw0), x1, vw1));
+                vst1q_f32(dp.add(done + 4), vfmaq_f32(vmulq_f32(x2, vw0), x3, vw1));
+                done += 8;
+            }
+            while done + 4 <= values.len() {
+                let x0 = vld1q_f32(sp.add(done));
+                let x1 = vld1q_f32(sp.add(done + 1));
+                vst1q_f32(dp.add(done), vfmaq_f32(vmulq_f32(x0, vw0), x1, vw1));
+                done += 4;
+            }
+        }
+    }
+    for ((v, &x0), &x1) in values[done..]
+        .iter_mut()
+        .zip(&samples[done..])
+        .zip(&samples[done + 1..])
+    {
+        *v = sdrmm_dsp::madd(w1, x1, w0 * x0);
+    }
+}
+
+fn fill_3(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) {
+    let mut done = 0;
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{vdupq_n_f32, vfmaq_f32, vld1q_f32, vmulq_f32, vst1q_f32};
+        let n = values.len() & !7;
+        unsafe {
+            let sp = samples.as_ptr();
+            let dp = values.as_mut_ptr();
+            let vw0 = vdupq_n_f32(w0);
+            let vw1 = vdupq_n_f32(w1);
+            let vw2 = vdupq_n_f32(w2);
+            while done < n {
+                let a0 = vld1q_f32(sp.add(done));
+                let a1 = vld1q_f32(sp.add(done + 1));
+                let a2 = vld1q_f32(sp.add(done + 2));
+                let b0 = vld1q_f32(sp.add(done + 4));
+                let b1 = vld1q_f32(sp.add(done + 5));
+                let b2 = vld1q_f32(sp.add(done + 6));
+                let r0 = vfmaq_f32(vfmaq_f32(vmulq_f32(a0, vw0), a1, vw1), a2, vw2);
+                let r1 = vfmaq_f32(vfmaq_f32(vmulq_f32(b0, vw0), b1, vw1), b2, vw2);
+                vst1q_f32(dp.add(done), r0);
+                vst1q_f32(dp.add(done + 4), r1);
+                done += 8;
+            }
+            while done + 4 <= values.len() {
+                let a0 = vld1q_f32(sp.add(done));
+                let a1 = vld1q_f32(sp.add(done + 1));
+                let a2 = vld1q_f32(sp.add(done + 2));
+                let r = vfmaq_f32(vfmaq_f32(vmulq_f32(a0, vw0), a1, vw1), a2, vw2);
+                vst1q_f32(dp.add(done), r);
+                done += 4;
+            }
+        }
+    }
+    for (((v, &x0), &x1), &x2) in values[done..]
+        .iter_mut()
+        .zip(&samples[done..])
+        .zip(&samples[done + 1..])
+        .zip(&samples[done + 2..])
+    {
+        *v = sdrmm_dsp::madd(w2, x2, sdrmm_dsp::madd(w1, x1, w0 * x0));
     }
 }
 
@@ -62,46 +131,91 @@ struct PhaseChips {
 
 impl PhaseChips {
     fn mark(&self, streams: &[Stream], phase: usize, hits: &mut [Phases]) {
-        let (Some(p), Some(g)) = (tiles(&self.pulses, streams), tiles(&self.gaps, streams)) else {
+        let len = hits.len();
+        let (Some(p), Some(g)) = (
+            slices(&self.pulses, streams, len),
+            slices(&self.gaps, streams, len),
+        ) else {
             for hit in &mut *hits {
                 *hit |= 1 << phase;
             }
             return;
         };
-        let mut passed = [0; TILE];
-        for (i, pass) in passed.iter_mut().enumerate() {
-            let level = |chip: &[f32; TILE]| chip[i].to_bits();
-            let weakest = level(p[0])
-                .min(level(p[1]))
-                .min(level(p[2]))
-                .min(level(p[3]));
-            let loudest_gap = level(g[0])
-                .max(level(g[1]))
-                .max(level(g[2]))
-                .max(level(g[3]));
-            let [weakest, loudest_gap] = [weakest, loudest_gap].map(f32::from_bits);
-            let threshold = (p[0][i] + p[1][i] + p[2][i] + p[3][i]) * 0.25 * 0.5;
-            let preamble = weakest > threshold && loudest_gap < threshold;
-            *pass = Phases::from(preamble) << phase;
+        let bit = 1u8 << phase;
+        let mut i = 0;
+        #[cfg(target_arch = "aarch64")]
+        {
+            use std::arch::aarch64::{
+                vaddq_f32, vandq_u32, vcgtq_f32, vcltq_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32,
+                vmaxvq_u32, vminq_f32, vmulq_f32, vorrq_u32, vst1q_u32,
+            };
+            let n16 = len & !15;
+            unsafe {
+                let scale = vdupq_n_f32(0.125);
+                let (p0, p1, p2, p3) = (p[0].as_ptr(), p[1].as_ptr(), p[2].as_ptr(), p[3].as_ptr());
+                let (g0, g1, g2, g3) = (g[0].as_ptr(), g[1].as_ptr(), g[2].as_ptr(), g[3].as_ptr());
+                let check = |at: usize| {
+                    let vp0 = vld1q_f32(p0.add(at));
+                    let vp1 = vld1q_f32(p1.add(at));
+                    let vp2 = vld1q_f32(p2.add(at));
+                    let vp3 = vld1q_f32(p3.add(at));
+                    let weakest = vminq_f32(vminq_f32(vp0, vp1), vminq_f32(vp2, vp3));
+                    let threshold =
+                        vmulq_f32(vaddq_f32(vaddq_f32(vp0, vp1), vaddq_f32(vp2, vp3)), scale);
+                    let vg0 = vld1q_f32(g0.add(at));
+                    let vg1 = vld1q_f32(g1.add(at));
+                    let vg2 = vld1q_f32(g2.add(at));
+                    let vg3 = vld1q_f32(g3.add(at));
+                    let loudest = vmaxq_f32(vmaxq_f32(vg0, vg1), vmaxq_f32(vg2, vg3));
+                    vandq_u32(vcgtq_f32(weakest, threshold), vcltq_f32(loudest, threshold))
+                };
+                while i < n16 {
+                    let m0 = check(i);
+                    let m1 = check(i + 4);
+                    let m2 = check(i + 8);
+                    let m3 = check(i + 12);
+                    let any = vorrq_u32(vorrq_u32(m0, m1), vorrq_u32(m2, m3));
+                    if vmaxvq_u32(any) != 0 {
+                        let mut lanes = [0u32; 16];
+                        vst1q_u32(lanes.as_mut_ptr(), m0);
+                        vst1q_u32(lanes.as_mut_ptr().add(4), m1);
+                        vst1q_u32(lanes.as_mut_ptr().add(8), m2);
+                        vst1q_u32(lanes.as_mut_ptr().add(12), m3);
+                        for (k, &lane) in lanes.iter().enumerate() {
+                            if lane != 0 {
+                                hits[i + k] |= bit;
+                            }
+                        }
+                    }
+                    i += 16;
+                }
+            }
         }
-        for (hit, pass) in hits.iter_mut().zip(passed) {
-            *hit |= pass;
+        while i < len {
+            let weakest = p[0][i].min(p[1][i]).min(p[2][i]).min(p[3][i]);
+            let threshold = (p[0][i] + p[1][i] + p[2][i] + p[3][i]) * 0.125;
+            if weakest > threshold {
+                let loudest_gap = g[0][i].max(g[1][i]).max(g[2][i]).max(g[3][i]);
+                if loudest_gap < threshold {
+                    hits[i] |= bit;
+                }
+            }
+            i += 1;
         }
     }
 }
 
-fn tiles<'a, const N: usize>(
+fn slices<'a, const N: usize>(
     chips: &[ChipRef; N],
     streams: &'a [Stream],
-) -> Option<[&'a [f32; TILE]; N]> {
-    let mut out = [&[0.0; TILE]; N];
+    len: usize,
+) -> Option<[&'a [f32]; N]> {
+    let mut out: [&'a [f32]; N] = [&[]; N];
     for (tile, chip) in out.iter_mut().zip(chips) {
         *tile = streams
             .get(chip.stream)?
             .values
-            .get(chip.start..chip.start + TILE)?
-            .try_into()
-            .ok()?;
+            .get(chip.start..chip.start + len)?;
     }
     Some(out)
 }

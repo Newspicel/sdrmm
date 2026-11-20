@@ -3,11 +3,13 @@ mod atan;
 mod avx;
 mod exp;
 mod log;
+#[cfg(target_arch = "aarch64")]
+mod neon;
 mod phase_diff;
 
 pub use atan::{fast_arg, fast_atan2};
 pub use exp::{fast_db_to_power, fast_exp2};
-pub use log::{fast_log2, fast_log10, fast_power_db};
+pub use log::{fast_log2, fast_log10, fast_power_db, fast_power_db_normal};
 pub use phase_diff::phase_diff_into;
 
 /// Whether the target fuses a multiply and an add in one instruction.

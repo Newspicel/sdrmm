@@ -1,4 +1,12 @@
+mod simd;
+
 use num_complex::Complex;
+
+pub use simd::{
+    add_cross_f64, add_norm_sqr_f64, add_rotated_f64, axpy_norm_sqr, conj_dot, cross_sum,
+    decay_cross_add, dot, dot_f64, magnitudes_into, mul_conj_in_place, scale_real_into,
+    sum_norm_sqr,
+};
 
 #[must_use]
 pub fn widen(value: Complex<f32>) -> Complex<f64> {

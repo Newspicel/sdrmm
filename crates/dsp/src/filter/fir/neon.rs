@@ -8,7 +8,6 @@ use num_complex::Complex;
 use super::{
     kernel::{BLOCK_FLOATS, interpolated_plane_tail, plane_tail},
     plan::{Plan, reach_of},
-    run::Run,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,7 +30,7 @@ impl Isa {
         plan: &Plan<f32>,
         out: &mut [f32],
     ) {
-        unsafe { blocks(floats, plan, out, real_sliding_block) }
+        unsafe { blocks(floats, plan, out, |p, plan| real_sliding_block(p, plan)) }
     }
 
     pub(crate) fn complex_real_blocks<const FOLD: bool>(
@@ -40,7 +39,7 @@ impl Isa {
         plan: &Plan<f32>,
         out: &mut [f32],
     ) {
-        unsafe { blocks(floats, plan, out, sliding_block) }
+        unsafe { blocks(floats, plan, out, |p, plan| sliding_block(p, plan)) }
     }
 
     pub(crate) fn complex_blocks<const FOLD: bool>(
@@ -49,7 +48,7 @@ impl Isa {
         plan: &Plan<Complex<f32>>,
         out: &mut [f32],
     ) {
-        unsafe { blocks(floats, plan, out, complex_sum::<FOLD>) }
+        unsafe { blocks(floats, plan, out, |p, plan| complex_sliding_block(p, plan)) }
     }
 
     pub(crate) unsafe fn plane_dot<const N: usize>(
@@ -110,7 +109,7 @@ unsafe fn blocks<C>(
     floats: &[f32],
     plan: &Plan<C>,
     out: &mut [f32],
-    sum: unsafe fn(*const f32, &Plan<C>) -> Block,
+    sum: impl Fn(*const f32, &Plan<C>) -> Block,
 ) {
     let Some(floats) = reach_of(floats, plan, out) else {
         return;
@@ -142,17 +141,6 @@ fn add_product(sum: Block, samples: Block, tap: f32) -> Block {
 }
 
 #[target_feature(enable = "neon")]
-unsafe fn samples<const FOLD: bool>(floats: *const f32, run: &Run, at: usize) -> Block {
-    let (front, back) = run.offsets(at);
-    let front = unsafe { load_block(floats, front) };
-    if FOLD {
-        add(front, unsafe { load_block(floats, back) })
-    } else {
-        front
-    }
-}
-
-#[target_feature(enable = "neon")]
 unsafe fn slid(window: Block, floats: *const f32, offset: usize) -> Block {
     [window[1], window[2], window[3], unsafe {
         vld1q_f32(floats.add(offset))
@@ -160,6 +148,7 @@ unsafe fn slid(window: Block, floats: *const f32, offset: usize) -> Block {
 }
 
 #[target_feature(enable = "neon")]
+#[inline]
 unsafe fn sliding_block(floats: *const f32, plan: &Plan<f32>) -> Block {
     let mut sums = [zero(); SETS];
     for row in &plan.rows {
@@ -213,6 +202,7 @@ unsafe fn sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f32]) 
 }
 
 #[target_feature(enable = "neon")]
+#[inline]
 unsafe fn real_sliding_block(floats: *const f32, plan: &Plan<f32>) -> Block {
     let mut sums = [zero(); SETS];
     for row in &plan.rows {
@@ -254,26 +244,12 @@ fn rotated(by_re: float32x4_t, by_im: float32x4_t) -> float32x4_t {
 }
 
 #[target_feature(enable = "neon")]
-unsafe fn complex_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<Complex<f32>>) -> Block {
-    let mut sets = [[zero(); 2]; SETS / 2];
-    for run in &plan.runs {
-        let (groups, rest) = plan.values[run.range()].as_chunks::<{ SETS / 2 }>();
-        for (index, group) in groups.iter().enumerate() {
-            for (lane, (set, value)) in sets.iter_mut().zip(group).enumerate() {
-                let samples = unsafe { samples::<FOLD>(floats, run, SETS / 2 * index + lane) };
-                *set = [
-                    add_product(set[0], samples, value.re),
-                    add_product(set[1], samples, value.im),
-                ];
-            }
-        }
-        for (lane, (set, value)) in sets.iter_mut().zip(rest).enumerate() {
-            let samples = unsafe { samples::<FOLD>(floats, run, SETS / 2 * groups.len() + lane) };
-            *set = [
-                add_product(set[0], samples, value.re),
-                add_product(set[1], samples, value.im),
-            ];
-        }
+#[inline]
+unsafe fn complex_sliding_block(floats: *const f32, plan: &Plan<Complex<f32>>) -> Block {
+    let mut sets = [[zero(); 2]; 2];
+    for row in &plan.rows {
+        let taps = &plan.row_taps[row.taps.clone()];
+        unsafe { complex_sliding_row(&mut sets, floats.add(row.offset), taps) };
     }
     let by_re = add(sets[0][0], sets[1][0]);
     let by_im = add(sets[0][1], sets[1][1]);
@@ -283,6 +259,37 @@ unsafe fn complex_sum<const FOLD: bool>(floats: *const f32, plan: &Plan<Complex<
         rotated(by_re[2], by_im[2]),
         rotated(by_re[3], by_im[3]),
     ]
+}
+
+#[target_feature(enable = "neon")]
+#[inline]
+unsafe fn complex_sliding_row(sets: &mut [[Block; 2]; 2], base: *const f32, taps: &[Complex<f32>]) {
+    let mut even = unsafe { load_block(base, 0) };
+    let mut odd = if taps.len() > 1 {
+        unsafe { load_block(base, 2) }
+    } else {
+        zero()
+    };
+    let (pairs, rest) = taps.as_chunks::<2>();
+    for (index, pair) in pairs.iter().enumerate() {
+        if index > 0 {
+            let at = 4 * index;
+            even = unsafe { slid(even, base, at + 12) };
+            odd = unsafe { slid(odd, base, at + 14) };
+        }
+        sets[0][0] = add_product(sets[0][0], even, pair[0].re);
+        sets[0][1] = add_product(sets[0][1], even, pair[0].im);
+        sets[1][0] = add_product(sets[1][0], odd, pair[1].re);
+        sets[1][1] = add_product(sets[1][1], odd, pair[1].im);
+    }
+    if let Some(&tap) = rest.first() {
+        if !pairs.is_empty() {
+            let at = 4 * pairs.len();
+            even = unsafe { slid(even, base, at + 12) };
+        }
+        sets[0][0] = add_product(sets[0][0], even, tap.re);
+        sets[0][1] = add_product(sets[0][1], even, tap.im);
+    }
 }
 
 #[target_feature(enable = "neon")]

@@ -5,7 +5,10 @@ pub mod tables;
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::{ConvCode, Soft, ViterbiK7, depuncture, math::fft::FftPair};
+use sdrmm_dsp::{
+    ConvCode, Soft, ViterbiK7, depuncture,
+    math::{complex::cross_sum, fft::FftPair},
+};
 
 use self::{
     plateau::{PLATEAU_SAMPLES, PROBE, Plateau, Probe, WINDOW},
@@ -53,6 +56,7 @@ enum Outcome {
 }
 
 struct Scratch {
+    derotated: [Complex<f32>; LTF_SEARCH + 2 * FFT],
     scores: [f32; LTF_SEARCH + FFT],
     received: [f32; MAX_CODED_BITS],
     coded: Vec<Soft>,
@@ -65,6 +69,7 @@ struct Scratch {
 impl Scratch {
     fn new() -> Self {
         Self {
+            derotated: [Complex::new(0.0, 0.0); LTF_SEARCH + 2 * FFT],
             scores: [0.0; LTF_SEARCH + FFT],
             received: [0.0; MAX_CODED_BITS],
             coded: Vec::with_capacity(MAX_CODED_STREAM),
@@ -97,6 +102,8 @@ struct Lock {
     cfo: f32,
     signal: usize,
     channel: [Complex<f32>; FFT],
+    channel_inv: [Complex<f32>; FFT],
+    channel_power: [f32; FFT],
     gain: f32,
 }
 
@@ -230,36 +237,40 @@ impl Ofdm {
         true
     }
 
-    fn sample(&self, origin: usize, cfo: f32, at: usize) -> Complex<f32> {
-        let phase = -TAU * cfo * (at as f32 - origin as f32);
-        self.history[at] * Complex::from_polar(1.0, phase)
-    }
-
     fn lock(&mut self, origin: usize) -> Option<Lock> {
-        let coarse: Complex<f32> = (0..WINDOW)
-            .map(|k| self.history[origin + k] * self.history[origin + k + SHORT].conj())
-            .sum();
-        let coarse_cfo = -coarse.arg() / (TAU * SHORT as f32);
+        let coarse = cross_sum(
+            &self.history[origin..origin + WINDOW],
+            &self.history[origin + SHORT..origin + SHORT + WINDOW],
+        );
+        let coarse_cfo = -coarse.arg() as f32 / (TAU * SHORT as f32);
+        let step = Complex::from_polar(1.0f32, -TAU * coarse_cfo);
+        let mut rot = Complex::new(1.0f32, 0.0);
+        for (dst, &sample) in self
+            .scratch
+            .derotated
+            .iter_mut()
+            .zip(&self.history[origin..origin + LTF_SEARCH + 2 * FFT])
+        {
+            *dst = sample * rot;
+            rot *= step;
+        }
         for offset in 0..LTF_SEARCH + FFT {
-            self.scratch.scores[offset] = (0..FFT)
-                .map(|k| {
-                    self.sample(origin, coarse_cfo, origin + offset + k) * self.reference[k].conj()
-                })
-                .sum::<Complex<f32>>()
-                .norm();
+            self.scratch.scores[offset] = cross_sum(
+                &self.scratch.derotated[offset..offset + FFT],
+                &self.reference,
+            )
+            .norm() as f32;
         }
         let scores = &self.scratch.scores;
         let first = (0..LTF_SEARCH).max_by(|&a, &b| {
             (scores[a] + scores[a + FFT]).total_cmp(&(scores[b] + scores[b + FFT]))
         })?;
         let ltf = origin + first;
-        let fine: Complex<f32> = (0..FFT)
-            .map(|k| {
-                self.sample(origin, coarse_cfo, ltf + k)
-                    * self.sample(origin, coarse_cfo, ltf + FFT + k).conj()
-            })
-            .sum();
-        let cfo = coarse_cfo - fine.arg() / (TAU * FFT as f32);
+        let fine = cross_sum(
+            &self.scratch.derotated[first..first + FFT],
+            &self.scratch.derotated[first + FFT..first + 2 * FFT],
+        );
+        let cfo = coarse_cfo - fine.arg() as f32 / (TAU * FFT as f32);
         let mut channel = [Complex::new(0.0, 0.0); FFT];
         for repeat in 0..LONG_TRAINING_REPEATS {
             let spectrum = self.spectrum(origin, cfo, ltf + repeat * FFT - BACKOFF);
@@ -267,8 +278,17 @@ impl Ofdm {
                 channel[bin(carrier)] += spectrum[bin(carrier)] * 0.5 * long_training(carrier);
             }
         }
+        let mut channel_inv = [Complex::new(0.0, 0.0); FFT];
+        let mut channel_power = [0.0f32; FFT];
+        for k in 0..FFT {
+            let p = channel[k].norm_sqr();
+            channel_power[k] = p;
+            if p > 0.0 {
+                channel_inv[k] = channel[k].conj() / p;
+            }
+        }
         let gain = occupied_carriers()
-            .map(|carrier| channel[bin(carrier)].norm_sqr())
+            .map(|carrier| channel_power[bin(carrier)])
             .sum::<f32>()
             / OCCUPIED as f32;
         (gain > 0.0).then_some(Lock {
@@ -276,13 +296,21 @@ impl Ofdm {
             cfo,
             signal: ltf + LONG_TRAINING_REPEATS * FFT,
             channel,
+            channel_inv,
+            channel_power,
             gain,
         })
     }
 
     fn spectrum(&mut self, origin: usize, cfo: f32, at: usize) -> [Complex<f32>; FFT] {
-        let mut buffer: [Complex<f32>; FFT] =
-            std::array::from_fn(|k| self.sample(origin, cfo, at + k));
+        let mut buffer = [Complex::new(0.0f32, 0.0); FFT];
+        let phase0 = -TAU * cfo * (at as f32 - origin as f32);
+        let mut rot = Complex::from_polar(1.0f32, phase0);
+        let step = Complex::from_polar(1.0f32, -TAU * cfo);
+        for (dst, &sample) in buffer.iter_mut().zip(&self.history[at..at + FFT]) {
+            *dst = sample * rot;
+            rot *= step;
+        }
         self.fft.forward(&mut buffer);
         buffer
     }
@@ -290,16 +318,12 @@ impl Ofdm {
     fn equalized(&mut self, lock: &Lock, index: usize) -> [Complex<f32>; FFT] {
         let at = lock.signal + index * SYMBOL + CP - BACKOFF;
         let mut points = self.spectrum(lock.origin, lock.cfo, at);
-        for (point, h) in points.iter_mut().zip(&lock.channel) {
-            *point = if h.norm_sqr() > 0.0 {
-                *point / h
-            } else {
-                Complex::default()
-            };
+        for (point, &h_inv) in points.iter_mut().zip(&lock.channel_inv) {
+            *point *= h_inv;
         }
         let sign = self.polarity[index % self.polarity.len()];
         let pilot = |carrier: i32, value: f32| {
-            points[bin(carrier)] * (value * sign) * lock.channel[bin(carrier)].norm_sqr()
+            points[bin(carrier)] * (value * sign) * lock.channel_power[bin(carrier)]
         };
         let pilots: [Complex<f32>; 4] =
             std::array::from_fn(|i| pilot(PILOT_CARRIERS[i], PILOT_VALUES[i]));
@@ -308,8 +332,11 @@ impl Ofdm {
         let outer = unit(pilots[3] * pilots[0].conj());
         let inner = unit(pilots[2] * pilots[1].conj()).powi(PILOT_SPAN_RATIO);
         let slope = (outer + inner).arg() / (PILOT_CARRIERS[3] - PILOT_CARRIERS[0]) as f32;
+        let mut rot = Complex::from_polar(1.0f32, -(common - slope * EDGE as f32));
+        let step = Complex::from_polar(1.0f32, -slope);
         for carrier in -EDGE..=EDGE {
-            points[bin(carrier)] *= Complex::from_polar(1.0, -(common + slope * carrier as f32));
+            points[bin(carrier)] *= rot;
+            rot *= step;
         }
         points
     }

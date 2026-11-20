@@ -169,6 +169,24 @@ impl QuasiCyclic {
         self.messages.fill(0);
     }
 
+    /// Starts a new word whose first `information` bits sit linearly and whose parity bits are
+    /// stored column-wise across `layers` rows of `layout.size()` lanes.
+    pub fn load_column_parity(&mut self, llrs: &[f32], information: usize, layers: usize) {
+        let scale = scale(llrs);
+        let group = self.layout.size;
+        quantize_slice(&llrs[..information], scale, &mut self.totals[..information]);
+        let parity_llrs = &llrs[information..];
+        let parity_totals = &mut self.totals[information..];
+        let mut cursor = 0;
+        for lane in 0..group {
+            for layer in 0..layers {
+                parity_totals[layer * group + lane] = quantize(parity_llrs[cursor], scale);
+                cursor += 1;
+            }
+        }
+        self.messages.fill(0);
+    }
+
     /// Sweeps every layer until a sweep finds every check holding and flips no total, at most
     /// `limit + 1` sweeps. Returns the sweeps that changed something.
     pub fn run(&mut self, limit: usize) -> Option<usize> {
@@ -230,13 +248,83 @@ impl QuasiCyclic {
 }
 
 fn scale(llrs: &[f32]) -> f32 {
-    let sum: f32 = llrs.iter().map(|llr| llr.abs().min(CEILING)).sum();
+    #[cfg(target_arch = "aarch64")]
+    let sum = {
+        use std::arch::aarch64::{
+            vabsq_f32, vaddq_f32, vaddvq_f32, vdupq_n_f32, vld1q_f32, vminq_f32,
+        };
+        let (blocks, rest) = llrs.as_chunks::<16>();
+        unsafe {
+            let cap = vdupq_n_f32(CEILING);
+            let mut s0 = vdupq_n_f32(0.0);
+            let mut s1 = vdupq_n_f32(0.0);
+            let mut s2 = vdupq_n_f32(0.0);
+            let mut s3 = vdupq_n_f32(0.0);
+            for block in blocks {
+                let p = block.as_ptr();
+                s0 = vaddq_f32(s0, vminq_f32(vabsq_f32(vld1q_f32(p)), cap));
+                s1 = vaddq_f32(s1, vminq_f32(vabsq_f32(vld1q_f32(p.add(4))), cap));
+                s2 = vaddq_f32(s2, vminq_f32(vabsq_f32(vld1q_f32(p.add(8))), cap));
+                s3 = vaddq_f32(s3, vminq_f32(vabsq_f32(vld1q_f32(p.add(12))), cap));
+            }
+            let tail: f32 = rest.iter().map(|llr| llr.abs().min(CEILING)).sum();
+            vaddvq_f32(vaddq_f32(vaddq_f32(s0, s1), vaddq_f32(s2, s3))) + tail
+        }
+    };
+    #[cfg(not(target_arch = "aarch64"))]
+    let sum: f32 = {
+        let mut acc = [0.0f32; 4];
+        let (quads, tail) = llrs.as_chunks::<4>();
+        for q in quads {
+            for k in 0..4 {
+                acc[k] += q[k].abs().min(CEILING);
+            }
+        }
+        acc.iter().sum::<f32>() + tail.iter().map(|llr| llr.abs().min(CEILING)).sum::<f32>()
+    };
     let mean = sum / llrs.len().max(1) as f32;
     if mean.is_normal() { TARGET / mean } else { 1.0 }
 }
 
+#[inline(always)]
 fn quantize(llr: f32, scale: f32) -> i16 {
     (llr * scale).round().clamp(-CEILING, CEILING) as i16
+}
+
+fn quantize_slice(llrs: &[f32], scale: f32, out: &mut [i16]) {
+    let len = llrs.len().min(out.len());
+    let mut done = 0;
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vcombine_s16, vcvtq_s32_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32, vminq_f32, vmovn_s32,
+            vmulq_f32, vrndaq_f32, vst1q_s16,
+        };
+        let n = len & !7;
+        unsafe {
+            let sp = llrs.as_ptr();
+            let dp = out.as_mut_ptr();
+            let vs = vdupq_n_f32(scale);
+            let hi = vdupq_n_f32(CEILING);
+            let lo = vdupq_n_f32(-CEILING);
+            while done < n {
+                let a = vminq_f32(
+                    vmaxq_f32(vrndaq_f32(vmulq_f32(vld1q_f32(sp.add(done)), vs)), lo),
+                    hi,
+                );
+                let b = vminq_f32(
+                    vmaxq_f32(vrndaq_f32(vmulq_f32(vld1q_f32(sp.add(done + 4)), vs)), lo),
+                    hi,
+                );
+                let packed = vcombine_s16(vmovn_s32(vcvtq_s32_f32(a)), vmovn_s32(vcvtq_s32_f32(b)));
+                vst1q_s16(dp.add(done), packed);
+                done += 8;
+            }
+        }
+    }
+    for (dst, &llr) in out[done..len].iter_mut().zip(&llrs[done..len]) {
+        *dst = quantize(llr, scale);
+    }
 }
 
 fn gather(totals: &[i16], circulant: Circulant, size: usize, row: &mut [i16]) {
@@ -271,8 +359,47 @@ fn scatter(
 }
 
 fn accumulate(target: &mut [i16], delta: &[i16]) -> i16 {
+    let len = target.len().min(delta.len());
     let mut flips = 0i16;
-    for (total, &change) in target.iter_mut().zip(delta) {
+    let mut done = 0;
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vdupq_n_s16, veorq_s16, vld1q_s16, vorrq_s16, vqaddq_s16, vst1q_s16,
+        };
+        let n = len & !15;
+        unsafe {
+            let tp = target.as_mut_ptr();
+            let dp = delta.as_ptr();
+            let mut f0 = vdupq_n_s16(0);
+            let mut f1 = vdupq_n_s16(0);
+            while done < n {
+                let t0 = vld1q_s16(tp.add(done));
+                let t1 = vld1q_s16(tp.add(done + 8));
+                let u0 = vqaddq_s16(t0, vld1q_s16(dp.add(done)));
+                let u1 = vqaddq_s16(t1, vld1q_s16(dp.add(done + 8)));
+                f0 = vorrq_s16(f0, veorq_s16(t0, u0));
+                f1 = vorrq_s16(f1, veorq_s16(t1, u1));
+                vst1q_s16(tp.add(done), u0);
+                vst1q_s16(tp.add(done + 8), u1);
+                done += 16;
+            }
+            while done + 8 <= len {
+                let t = vld1q_s16(tp.add(done));
+                let u = vqaddq_s16(t, vld1q_s16(dp.add(done)));
+                f0 = vorrq_s16(f0, veorq_s16(t, u));
+                vst1q_s16(tp.add(done), u);
+                done += 8;
+            }
+            let combined = vorrq_s16(f0, f1);
+            let mut lanes = [0i16; 8];
+            vst1q_s16(lanes.as_mut_ptr(), combined);
+            for lane in lanes {
+                flips |= lane;
+            }
+        }
+    }
+    for (total, &change) in target[done..len].iter_mut().zip(&delta[done..len]) {
         let updated = total.saturating_add(change);
         flips |= *total ^ updated;
         *total = updated;

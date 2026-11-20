@@ -16,6 +16,7 @@ pub struct SlotGrid {
     span: usize,
     samples_per_slot: f64,
     phase: f64,
+    uniform_unit: bool,
 }
 
 impl SlotGrid {
@@ -37,12 +38,14 @@ impl SlotGrid {
             }
             table.push(Slot { start, at, taps });
         }
+        let uniform_unit = weights.iter().all(|&w| w == 1.0);
         Self {
             table,
             weights,
             span: (slots as f64 * samples_per_slot + phase).ceil() as usize,
             samples_per_slot,
             phase,
+            uniform_unit,
         }
     }
 
@@ -98,41 +101,59 @@ impl SlotGrid {
 
     #[must_use]
     pub fn energy(&self, window: &[f32], slot: usize) -> f32 {
-        self.weighted(window, slot, 0.0, |acc, w, x| acc + w * x)
+        let Some(&Slot { start, at, taps }) = self.table.get(slot) else {
+            return 0.0;
+        };
+        let Some(slice) = window.get(start..) else {
+            return 0.0;
+        };
+        let n = taps.min(slice.len());
+        if self.uniform_unit {
+            slice[..n].iter().copied().sum()
+        } else {
+            self.weights[at..at + n]
+                .iter()
+                .zip(&slice[..n])
+                .fold(0.0f32, |acc, (&w, &x)| acc + w * x)
+        }
     }
 
     #[must_use]
     pub fn envelope(&self, window: &[Complex<f32>], slot: usize) -> f32 {
-        self.weighted(window, slot, Complex::new(0.0, 0.0), |acc, w, x| {
-            acc + Complex::new(w * x.norm(), 0.0)
-        })
-        .re
+        let Some(&Slot { start, at, taps }) = self.table.get(slot) else {
+            return 0.0;
+        };
+        let Some(slice) = window.get(start..) else {
+            return 0.0;
+        };
+        let n = taps.min(slice.len());
+        if self.uniform_unit {
+            slice[..n].iter().map(|x| x.norm()).sum()
+        } else {
+            self.weights[at..at + n]
+                .iter()
+                .zip(&slice[..n])
+                .fold(0.0f32, |acc, (&w, x)| acc + w * x.norm())
+        }
     }
 
     #[must_use]
     pub fn integrate(&self, window: &[Complex<f32>], slot: usize) -> Complex<f32> {
-        self.weighted(window, slot, Complex::new(0.0, 0.0), |acc, w, x| {
-            acc + x * w
-        })
-    }
-
-    fn weighted<T: Copy>(
-        &self,
-        window: &[T],
-        slot: usize,
-        zero: T,
-        add: impl Fn(T, f32, T) -> T,
-    ) -> T {
         let Some(&Slot { start, at, taps }) = self.table.get(slot) else {
-            return zero;
+            return Complex::new(0.0, 0.0);
         };
-        let mut acc = zero;
-        for i in 0..taps {
-            let w = self.weights[at + i];
-            let x = window.get(start + i).copied().unwrap_or(zero);
-            acc = add(acc, w, x);
+        let Some(slice) = window.get(start..) else {
+            return Complex::new(0.0, 0.0);
+        };
+        let n = taps.min(slice.len());
+        if self.uniform_unit {
+            slice[..n].iter().copied().sum()
+        } else {
+            self.weights[at..at + n]
+                .iter()
+                .zip(&slice[..n])
+                .fold(Complex::new(0.0, 0.0), |acc, (&w, &x)| acc + x * w)
         }
-        acc
     }
 }
 

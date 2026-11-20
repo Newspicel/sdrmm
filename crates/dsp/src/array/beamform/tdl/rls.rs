@@ -2,6 +2,7 @@ use num_complex::Complex;
 
 use super::TdlCanceller;
 use crate::array::beamform::ZERO;
+use crate::math::complex::{axpy_norm_sqr, conj_dot, dot};
 
 /// Initial inverse correlation is the identity over this share of the reference power.
 const RLS_SEED: f32 = 1e-2;
@@ -40,14 +41,11 @@ impl TdlCanceller {
             return true;
         }
         let m = self.h.len();
-        let mut quad = 0.0f32;
         for (row, pi) in self.gain.iter_mut().enumerate() {
             let line = &self.p[row * m..(row + 1) * m];
-            *pi = line.iter().zip(&self.regressor).map(|(p, u)| p * u).sum();
+            *pi = dot(line, &self.regressor);
         }
-        for (u, pi) in self.regressor.iter().zip(&self.gain) {
-            quad += (u.conj() * pi).re;
-        }
+        let quad = conj_dot(&self.regressor, &self.gain).re;
         let denominator = forget + quad;
         if !(denominator.is_finite() && denominator > 0.0) {
             return false;
@@ -60,9 +58,7 @@ impl TdlCanceller {
                 *p = (*p - k * pi.conj()) * inverse_forget;
             }
         }
-        for (h, pi) in self.h.iter_mut().zip(&self.gain) {
-            *h += pi * (y.conj() / denominator);
-        }
+        let _ = axpy_norm_sqr(&mut self.h, &self.gain, y.conj() / denominator);
         self.since_symmetrise += 1;
         if self.since_symmetrise >= SYMMETRISE_EVERY {
             self.since_symmetrise = 0;

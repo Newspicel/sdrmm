@@ -43,6 +43,93 @@ impl Inverse25 {
             }
         }
     }
+
+    #[cfg(target_arch = "aarch64")]
+    pub(super) fn process_4(
+        &self,
+        re: &mut [std::arch::aarch64::float32x4_t; LEN],
+        im: &mut [std::arch::aarch64::float32x4_t; LEN],
+    ) {
+        use std::arch::aarch64::{float32x4_t, vdupq_n_f32, vfmaq_n_f32, vfmsq_n_f32, vmulq_n_f32};
+        let zero = unsafe { vdupq_n_f32(0.0) };
+        let mut col_re = [[zero; RADIX]; RADIX];
+        let mut col_im = [[zero; RADIX]; RADIX];
+        for row in 0..RADIX {
+            let in_re = std::array::from_fn(|i| re[RADIX * i + row]);
+            let in_im = std::array::from_fn(|i| im[RADIX * i + row]);
+            let (mut out_re, mut out_im) = inverse5_neon(in_re, in_im);
+            if row > 0 {
+                for (k, twiddle) in self.twiddles[row - 1].iter().enumerate() {
+                    let r = out_re[k + 1];
+                    let i = out_im[k + 1];
+                    unsafe {
+                        out_re[k + 1] = vfmsq_n_f32(vmulq_n_f32(r, twiddle.re), i, twiddle.im);
+                        out_im[k + 1] = vfmaq_n_f32(vmulq_n_f32(r, twiddle.im), i, twiddle.re);
+                    }
+                }
+            }
+            col_re[row] = out_re;
+            col_im[row] = out_im;
+        }
+        for column in 0..RADIX {
+            let in_re: [float32x4_t; RADIX] = std::array::from_fn(|row| col_re[row][column]);
+            let in_im: [float32x4_t; RADIX] = std::array::from_fn(|row| col_im[row][column]);
+            let (out_re, out_im) = inverse5_neon(in_re, in_im);
+            for row in 0..RADIX {
+                re[RADIX * row + column] = out_re[row];
+                im[RADIX * row + column] = out_im[row];
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn inverse5_neon(
+    re: [std::arch::aarch64::float32x4_t; RADIX],
+    im: [std::arch::aarch64::float32x4_t; RADIX],
+) -> (
+    [std::arch::aarch64::float32x4_t; RADIX],
+    [std::arch::aarch64::float32x4_t; RADIX],
+) {
+    use std::arch::aarch64::{vaddq_f32, vfmaq_n_f32, vfmsq_n_f32, vmulq_n_f32, vsubq_f32};
+    unsafe {
+        let p1_re = vaddq_f32(re[1], re[4]);
+        let p1_im = vaddq_f32(im[1], im[4]);
+        let p2_re = vaddq_f32(re[2], re[3]);
+        let p2_im = vaddq_f32(im[2], im[3]);
+        let d1_re = vsubq_f32(re[1], re[4]);
+        let d1_im = vsubq_f32(im[1], im[4]);
+        let d2_re = vsubq_f32(re[2], re[3]);
+        let d2_im = vsubq_f32(im[2], im[3]);
+
+        let e1_re = vfmsq_n_f32(vfmaq_n_f32(re[0], p1_re, COS_1), p2_re, NEG_COS_2);
+        let e1_im = vfmsq_n_f32(vfmaq_n_f32(im[0], p1_im, COS_1), p2_im, NEG_COS_2);
+        let e2_re = vfmaq_n_f32(vfmsq_n_f32(re[0], p1_re, NEG_COS_2), p2_re, COS_1);
+        let e2_im = vfmaq_n_f32(vfmsq_n_f32(im[0], p1_im, NEG_COS_2), p2_im, COS_1);
+
+        let o1_re = vfmaq_n_f32(vmulq_n_f32(d1_re, SIN_1), d2_re, SIN_2);
+        let o1_im = vfmaq_n_f32(vmulq_n_f32(d1_im, SIN_1), d2_im, SIN_2);
+        let o2_re = vfmsq_n_f32(vmulq_n_f32(d1_re, SIN_2), d2_re, SIN_1);
+        let o2_im = vfmsq_n_f32(vmulq_n_f32(d1_im, SIN_2), d2_im, SIN_1);
+
+        (
+            [
+                vaddq_f32(re[0], vaddq_f32(p1_re, p2_re)),
+                vsubq_f32(e1_re, o1_im),
+                vsubq_f32(e2_re, o2_im),
+                vaddq_f32(e2_re, o2_im),
+                vaddq_f32(e1_re, o1_im),
+            ],
+            [
+                vaddq_f32(im[0], vaddq_f32(p1_im, p2_im)),
+                vaddq_f32(e1_im, o1_re),
+                vaddq_f32(e2_im, o2_re),
+                vsubq_f32(e2_im, o2_re),
+                vsubq_f32(e1_im, o1_re),
+            ],
+        )
+    }
 }
 
 fn inverse5(input: [Complex<f32>; RADIX]) -> [Complex<f32>; RADIX] {

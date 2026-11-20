@@ -53,6 +53,7 @@ impl Layout {
         layer + self.layers * lane
     }
 
+    #[cfg(test)]
     /// Where transmitted bit `bit` sits among the decoder's variables.
     pub(super) const fn position(self, bit: usize) -> usize {
         if bit < self.information {

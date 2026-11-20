@@ -4,7 +4,7 @@ use super::{
     CovarianceError,
     hermitian::{set_mirrored, write_identity},
 };
-use crate::math::complex::widen;
+use crate::math::complex::{decay_cross_add, scale_real_into, widen};
 use crate::math::fft::FftPair;
 use crate::math::linalg::{CMat, LinalgError, MAX_ORDER};
 use crate::math::window::hann;
@@ -115,13 +115,15 @@ impl CovarianceBank {
             write_identity(out);
             return Ok(false);
         }
-        let tri = triangle(n);
+        let half = self.fft_size / 2;
+        let mask = self.fft_size - 1;
         let scale = 1.0 / (self.weight * bins as f64);
         let mut index = 0;
         for i in 0..n {
             for j in i..n {
+                let row = &self.sums[index * self.fft_size..(index + 1) * self.fft_size];
                 let sum: Complex<f64> = (first_bin..end)
-                    .map(|bin| widen(self.sums[bin * tri + index]))
+                    .map(|bin| widen(row[(bin + half) & mask]))
                     .sum();
                 set_mirrored(out, i, j, sum * scale);
                 index += 1;
@@ -136,11 +138,11 @@ impl CovarianceBank {
             return 0.0;
         }
         let n = self.lanes;
-        let tri = triangle(n);
+        let raw = (bin + self.fft_size / 2) & (self.fft_size - 1);
         let mut index = 0;
         let mut trace = 0.0f64;
         for i in 0..n {
-            trace += f64::from(self.sums[bin * tri + index].re);
+            trace += f64::from(self.sums[index * self.fft_size + raw].re);
             index += n - i;
         }
         (trace / (n as f64 * self.weight)) as f32
@@ -154,23 +156,18 @@ impl CovarianceBank {
 
     fn complete_frame(&mut self, decay: f32) {
         for (spectrum, frame) in self.spectra.iter_mut().zip(&self.frames) {
-            for ((out, sample), weight) in spectrum.iter_mut().zip(frame).zip(&self.window) {
-                *out = sample * weight;
-            }
+            scale_real_into(spectrum, frame, &self.window);
             self.fft.forward(spectrum);
         }
         let n = self.lanes;
-        let tri = triangle(n);
-        let half = self.fft_size / 2;
-        for (bin, row) in self.sums.chunks_exact_mut(tri).enumerate() {
-            let raw = (bin + half) % self.fft_size;
-            let mut index = 0;
-            for i in 0..n {
-                let left = self.spectra[i][raw];
-                for right in &self.spectra[i..] {
-                    row[index] = row[index] * decay + left * right[raw].conj();
-                    index += 1;
-                }
+        let bins = self.fft_size;
+        let mut index = 0;
+        for i in 0..n {
+            let left = &self.spectra[i];
+            for right in &self.spectra[i..] {
+                let row = &mut self.sums[index * bins..(index + 1) * bins];
+                decay_cross_add(row, decay, left, right);
+                index += 1;
             }
         }
         self.weight = self.weight * f64::from(decay) + 1.0;

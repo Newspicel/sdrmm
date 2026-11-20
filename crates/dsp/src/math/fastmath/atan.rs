@@ -15,14 +15,29 @@ pub(super) const ATAN_UNIT: [f32; 7] = [
 #[inline(always)]
 fn atan_unit(ratio: f32) -> f32 {
     let square = ratio * ratio;
-    let mut poly = ATAN_UNIT[6];
-    poly = poly * square + ATAN_UNIT[5];
-    poly = poly * square + ATAN_UNIT[4];
-    poly = poly * square + ATAN_UNIT[3];
-    poly = poly * square + ATAN_UNIT[2];
-    poly = poly * square + ATAN_UNIT[1];
-    poly = poly * square + ATAN_UNIT[0];
-    poly * ratio
+    #[cfg(target_arch = "aarch64")]
+    {
+        let [c0, c1, c2, c3, c4, c5, c6] = ATAN_UNIT;
+        let s2 = square * square;
+        let s4 = s2 * s2;
+        let p01 = square.mul_add(c1, c0);
+        let p23 = square.mul_add(c3, c2);
+        let p45 = square.mul_add(c5, c4);
+        let p03 = s2.mul_add(p23, p01);
+        let p46 = s2.mul_add(c6, p45);
+        s4.mul_add(p46, p03) * ratio
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut poly = ATAN_UNIT[6];
+        poly = poly * square + ATAN_UNIT[5];
+        poly = poly * square + ATAN_UNIT[4];
+        poly = poly * square + ATAN_UNIT[3];
+        poly = poly * square + ATAN_UNIT[2];
+        poly = poly * square + ATAN_UNIT[1];
+        poly = poly * square + ATAN_UNIT[0];
+        poly * ratio
+    }
 }
 
 #[inline(always)]

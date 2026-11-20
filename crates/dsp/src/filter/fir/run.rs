@@ -10,6 +10,7 @@ pub(crate) struct Run {
 }
 
 impl Run {
+    #[cfg_attr(target_arch = "aarch64", allow(dead_code))]
     pub(super) fn range(&self) -> std::ops::Range<usize> {
         self.start..self.start + self.len
     }

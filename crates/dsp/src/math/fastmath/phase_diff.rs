@@ -3,6 +3,8 @@ use num_complex::Complex;
 use super::atan::fast_arg;
 #[cfg(target_arch = "x86_64")]
 use super::avx;
+#[cfg(target_arch = "aarch64")]
+use super::neon;
 
 pub fn phase_diff_into(
     iq: &[Complex<f32>],
@@ -30,30 +32,38 @@ fn phase_diff_body(iq: &[Complex<f32>], prev: &mut Complex<f32>, scale: f32, out
     let (Some(&first), Some(&last)) = (iq.first(), iq.last()) else {
         return;
     };
-    out.resize(iq.len(), 0.0);
-    out[0] = fast_arg(first * prev.conj()) * scale;
-    let done = vector_phase_diffs(iq, scale, &mut out[1..]);
-    for ((slot, &now), &before) in out[1 + done..]
-        .iter_mut()
-        .zip(&iq[1 + done..])
-        .zip(&iq[done..])
-    {
-        *slot = fast_arg(now * before.conj()) * scale;
+    let len = iq.len();
+    out.reserve(len);
+    let dst = out.spare_capacity_mut().as_mut_ptr().cast::<f32>();
+    unsafe {
+        dst.write(fast_arg(first * prev.conj()) * scale);
+        let done = vector_phase_diffs(iq, scale, dst.add(1), len - 1);
+        for k in done..len - 1 {
+            let value = fast_arg(iq[k + 1] * iq[k].conj()) * scale;
+            dst.add(1 + k).write(value);
+        }
+        out.set_len(len);
     }
     *prev = last;
 }
 
 #[cfg(target_arch = "x86_64")]
-fn vector_phase_diffs(iq: &[Complex<f32>], scale: f32, out: &mut [f32]) -> usize {
+unsafe fn vector_phase_diffs(iq: &[Complex<f32>], scale: f32, dst: *mut f32, len: usize) -> usize {
     if std::arch::is_x86_feature_detected!("avx2") {
-        unsafe { avx::phase_diffs(iq, scale, out) }
+        let slice = unsafe { std::slice::from_raw_parts_mut(dst, len) };
+        unsafe { avx::phase_diffs(iq, scale, slice) }
     } else {
         0
     }
 }
 
-#[cfg(not(target_arch = "x86_64"))]
-fn vector_phase_diffs(_: &[Complex<f32>], _: f32, _: &mut [f32]) -> usize {
+#[cfg(target_arch = "aarch64")]
+unsafe fn vector_phase_diffs(iq: &[Complex<f32>], scale: f32, dst: *mut f32, len: usize) -> usize {
+    unsafe { neon::phase_diffs(iq, scale, dst, len) }
+}
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+unsafe fn vector_phase_diffs(_: &[Complex<f32>], _: f32, _: *mut f32, _: usize) -> usize {
     0
 }
 
