@@ -49,6 +49,9 @@ Microphone: the transmitter then sends whatever that channel hears, keyed by its
 Turn on **VOX** to key by voice. The Microphone then listens all the time and sends while you are
 louder than the threshold, and for the hang time after you stop.
 
+A voice encoder has the same **Audio** section as a decoder, see [Channels](channels.md#audio). It
+cleans your audio before it goes on the air, and the header shows **FX** while it is on.
+
 ## Send a channel
 
 Wire a channel's `baseband` into a Transmitter to send that channel's filtered IQ again, on

@@ -37,6 +37,7 @@ fn nfm_request() -> TransmitRequest {
         node: "tx".to_owned(),
         source: TransmitSource::Encoder(EncoderParams::bare("nfm")),
         settings: TransmitSettings::default(),
+        audio: Default::default(),
     }
 }
 

@@ -1,6 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { AudioControls } from "../../components/AudioControls";
 import { Button } from "../../components/BaseControls";
+import { audioChainActive } from "../../components/channelSettings";
 import { FACE_BTN } from "../../components/controls";
 import { Chips } from "../../components/face/Chips";
 import { formatHz } from "../../components/format";
@@ -10,7 +12,13 @@ import { settingsSummary } from "../../components/settingsSummary";
 import { nodeAction } from "../../lib/api";
 import { clearAction, failAction } from "../../lib/refusals";
 import type { Settings } from "../../lib/settingsForm";
-import type { EncoderDescriptor, ParamChoice, PatchNode, PatchNodeOf } from "../../lib/types";
+import type {
+  AudioProcessing,
+  EncoderDescriptor,
+  ParamChoice,
+  PatchNode,
+  PatchNodeOf,
+} from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { nodeOf, patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
@@ -41,6 +49,8 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
   const settings = encoderSettings(node.data.settings, descriptor);
   const [message, setMessage] = useState<Settings>(NO_MESSAGE);
   const form = descriptor?.message ?? [];
+  const audio = node.data.audio ?? {};
+  const voice = descriptor !== undefined && (descriptor.input ?? "audio") === "audio";
   const widthHz = encoderWidthHz(settings, descriptor);
   const transmitter = transmitterOf(workspace.resolved, workspace.graph.nodes, node.id);
   const air = airOf(
@@ -51,6 +61,10 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, change),
     }));
+  const editAudio = (next: AudioProcessing) =>
+    edit((current) =>
+      current.kind === "encoder" ? { ...current, data: { ...current.data, audio: next } } : current,
+    );
   const send = useMutation({
     mutationFn: () => nodeAction(node.id, { action: "send", with: { message } }),
     onSuccess: () => clearAction(node.id, SEND_ACTION),
@@ -64,7 +78,10 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
       subtitle={air === null ? "Encoder" : <AirLabel air={air} />}
       category="encoder"
       badge={
-        widthHz === null ? undefined : <span title="Signal bandwidth">{formatHz(widthHz)}</span>
+        <span className="flex gap-1.5">
+          {widthHz !== null && <span title="Signal bandwidth">{formatHz(widthHz)}</span>}
+          {audioChainActive(audio) && <span title="Audio processing on">FX</span>}
+        </span>
       }
     >
       <FaceBody>
@@ -85,6 +102,13 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
                 choices={NO_CHOICES}
                 onSettings={(next) => edit((current) => withEncoderSettings(current, next))}
               />
+            </Chips>
+          </InspectSection>
+        )}
+        {voice && (
+          <InspectSection label="Audio">
+            <Chips inset="none">
+              <AudioControls audio={audio} onAudio={editAudio} />
             </Chips>
           </InspectSection>
         )}

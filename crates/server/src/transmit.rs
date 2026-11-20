@@ -9,8 +9,8 @@ use std::{
 use sdrmm_decoder::encoder::EncoderParams;
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload, TransmitRequest, TransmitSource};
 use sdrmm_wire::{
-    AUDIO_PORT, BASEBAND_PORT, IQ_PORT, NodeBody, NodeProblem, ProblemSource, TRANSMIT_PORT,
-    TransmitStatus,
+    AUDIO_PORT, AudioProcessing, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeProblem,
+    ProblemSource, TRANSMIT_PORT, TransmitStatus,
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -21,8 +21,7 @@ use crate::{AppState, resolved::Resolved, rest::AppError};
 struct Link {
     radio: u32,
     transmitter: String,
-    device_set: u32,
-    channel: u32,
+    route: AudioRoute,
 }
 
 /// The audio wires that key transmitters: one forwarding thread per wired channel.
@@ -93,6 +92,18 @@ fn source(resolved: &Resolved, node: &str) -> Result<TransmitSource, String> {
     }
 }
 
+/// What the encoder feeding `node` runs its audio through.
+fn encoder_audio(resolved: &Resolved, node: &str) -> AudioProcessing {
+    let feeder = wired_into(resolved, node, BASEBAND_PORT);
+    match feeder
+        .and_then(|id| resolved.graph.node(id))
+        .map(|found| &found.body)
+    {
+        Some(NodeBody::Encoder(encoder)) => encoder.audio.clone(),
+        _ => AudioProcessing::default(),
+    }
+}
+
 pub(crate) fn wired(resolved: &Resolved, node: &str) -> Result<Wired, String> {
     let Some(NodeBody::Transmit(body)) = resolved.graph.node(node).map(|found| &found.body) else {
         return Err(format!("{node} is not a transmitter"));
@@ -110,6 +121,7 @@ pub(crate) fn wired(resolved: &Resolved, node: &str) -> Result<Wired, String> {
             node: node.to_owned(),
             source: source(resolved, node)?,
             settings: body.settings.clone(),
+            audio: encoder_audio(resolved, node),
         },
     })
 }
@@ -217,7 +229,12 @@ pub(crate) fn reconcile(state: &AppState) {
             Ok(now) if now.device_set == device_set && now.request == armed => Ok(()),
             Ok(now) if now.device_set == device_set && now.request.source == armed.source => state
                 .engine
-                .patch_transmitter(device_set, &armed.node, now.request.settings)
+                .patch_transmitter(
+                    device_set,
+                    &armed.node,
+                    now.request.settings,
+                    now.request.audio,
+                )
                 .map(drop),
             Ok(now) if now.device_set == device_set => state
                 .engine
@@ -277,8 +294,10 @@ fn wanted_links(engine: &Engine, resolved: &Resolved) -> Vec<Link> {
                 links.push(Link {
                     radio,
                     transmitter: armed.node.clone(),
-                    device_set: addr.device_set,
-                    channel: addr.channel,
+                    route: AudioRoute {
+                        fx: resolved.graph.audio_fx(&feed.source),
+                        ..AudioRoute::channel(addr.device_set, addr.channel)
+                    },
                 });
             }
         }
@@ -301,7 +320,7 @@ fn mono(block: &PcmBlock) -> Option<Vec<f32>> {
 
 fn forward(engine: &Arc<Engine>, link: &Link) -> Result<Arc<AtomicBool>, String> {
     let mut audio = engine
-        .subscribe_pcm(link.device_set, link.channel)
+        .subscribe_route_pcm(&link.route)
         .map_err(|error| error.to_string())?;
     let stop = Arc::new(AtomicBool::new(false));
     let (engine, link, halted) = (engine.clone(), link.clone(), stop.clone());

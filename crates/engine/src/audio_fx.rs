@@ -195,7 +195,8 @@ fn spawn(
     })
 }
 
-struct Stage {
+/// One audio chain following its settings and the loaded denoise models.
+pub(crate) struct Stage {
     settings: watch::Receiver<AudioProcessing>,
     models: Arc<DenoiseModels>,
     generation: u64,
@@ -203,7 +204,10 @@ struct Stage {
 }
 
 impl Stage {
-    fn new(settings: watch::Receiver<AudioProcessing>, models: Arc<DenoiseModels>) -> Self {
+    pub(crate) fn new(
+        settings: watch::Receiver<AudioProcessing>,
+        models: Arc<DenoiseModels>,
+    ) -> Self {
         Self {
             settings,
             generation: models.generation(),
@@ -212,7 +216,12 @@ impl Stage {
         }
     }
 
-    fn prepare(&mut self, channels: u8, profile: ClickProfile) -> Result<bool, NeuralDenoiseError> {
+    /// Rebuilds the chain when its settings or models moved. False once the settings are gone.
+    pub(crate) fn prepare(
+        &mut self,
+        channels: u8,
+        profile: ClickProfile,
+    ) -> Result<bool, NeuralDenoiseError> {
         let Ok(changed) = self.settings.has_changed() else {
             return Ok(false);
         };
@@ -235,6 +244,12 @@ impl Stage {
             }
         }
         Ok(true)
+    }
+
+    pub(crate) fn process(&mut self, pcm: &mut [f32]) -> Result<(), NeuralDenoiseError> {
+        self.chain
+            .as_mut()
+            .map_or(Ok(()), |chain| chain.process_audio(pcm))
     }
 }
 
@@ -299,12 +314,8 @@ impl Worker {
             PcmPayload::Silence(frames) => PcmPayload::Silence(frames),
             PcmPayload::Samples(samples) => {
                 let mut pcm = samples.to_vec();
-                for chain in self
-                    .stages
-                    .iter_mut()
-                    .filter_map(|stage| stage.chain.as_mut())
-                {
-                    if let Err(error) = chain.process_audio(&mut pcm) {
+                for stage in &mut self.stages {
+                    if let Err(error) = stage.process(&mut pcm) {
                         report(&mut self.failed, &error);
                     }
                 }
@@ -315,7 +326,7 @@ impl Worker {
     }
 }
 
-fn report(failed: &mut bool, error: &NeuralDenoiseError) {
+pub(crate) fn report(failed: &mut bool, error: &NeuralDenoiseError) {
     if !*failed {
         tracing::error!(%error, "audio FX stage failed; its audio passes unprocessed");
         *failed = true;

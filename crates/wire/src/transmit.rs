@@ -69,6 +69,9 @@ pub struct EncoderNode {
     #[serde(default, skip_serializing_if = "Value::is_null")]
     #[schema(value_type = std::collections::BTreeMap<String, Value>)]
     pub settings: Value,
+    /// What a voice encoder's audio runs through before it is modulated.
+    #[serde(default, skip_serializing_if = "crate::AudioProcessing::is_off")]
+    pub audio: crate::AudioProcessing,
 }
 
 pub const DEFAULT_VOX_THRESHOLD_DB: f64 = -35.0;

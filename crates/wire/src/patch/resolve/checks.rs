@@ -107,6 +107,7 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::Scanner(scanner) => scanner.settings.problem().is_none(),
         NodeBody::Microphone(microphone) => microphone.valid(),
         NodeBody::Transmit(transmit) => transmit.settings.problem().is_none(),
+        NodeBody::Encoder(encoder) => encoder.audio.validate().is_ok(),
         body => body.processor_params().is_none_or(|params| params.valid()),
     }
 }

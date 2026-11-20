@@ -13109,6 +13109,10 @@
           "encoder_type"
         ],
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AudioProcessing",
+            "description": "What a voice encoder's audio runs through before it is modulated."
+          },
           "encoder_type": {
             "type": "string"
           },

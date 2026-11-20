@@ -61,6 +61,7 @@ fn request(node: &str, source: TransmitSource, frequency_hz: Option<f64>) -> Tra
             frequency_hz,
             ..TransmitSettings::default()
         },
+        audio: Default::default(),
     }
 }
 
@@ -388,6 +389,7 @@ fn what_cannot_be_sent_is_refused_with_its_reason() {
                 frequency_hz: Some(105_000_000.0),
                 ..TransmitSettings::default()
             },
+            Default::default(),
         )
         .expect("the setting is taken");
     assert_eq!(far.settings.frequency_hz, Some(105_000_000.0));

@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use sdrmm_wire::{
-    EncoderNode, MicrophoneNode, NodeActed, NodeBody, PatchEdge, PatchNode, PortRef, Position,
-    RadioActivity, RadioUse, TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus,
-    WorkspaceSnapshot,
+    AudioProcessing, EncoderNode, MicrophoneNode, NodeActed, NodeBody, PatchEdge, PatchNode,
+    PortRef, Position, RadioActivity, RadioUse, TransmitNode, TransmitPhase, TransmitSettings,
+    TransmitStatus, WorkspaceSnapshot,
 };
 
 use super::*;
@@ -33,6 +33,7 @@ fn encoder(encoder_type: &str) -> NodeBody {
     NodeBody::Encoder(EncoderNode {
         encoder_type: encoder_type.to_owned(),
         settings: serde_json::Value::Null,
+        audio: Default::default(),
     })
 }
 
@@ -238,6 +239,35 @@ async fn an_armed_transmitter_follows_the_patch() {
 }
 
 #[tokio::test]
+async fn an_encoders_audio_settings_follow_into_its_armed_transmitter() {
+    let (app, state) = test_router_with_state();
+    let mut snapshot = station("nfm");
+    on_the_bench(&app, &snapshot).await;
+    acted(&app, "tx", arm()).await;
+    let notched = AudioProcessing {
+        auto_notch: true,
+        ..AudioProcessing::default()
+    };
+    for held in &mut snapshot.graph.nodes {
+        if let NodeBody::Encoder(body) = &mut held.body {
+            body.audio = notched.clone();
+        }
+    }
+    put_active_workspace(&app, &snapshot).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while state.engine.transmitters()[0].1.audio != notched {
+        assert!(
+            Instant::now() < deadline,
+            "the audio settings never arrived"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(crate::transmit::speak(&state, "mic", &vec![0.1; 4_800]), 1);
+    let keyed = until(&app, "keyed through the chain", |status| status.bursts == 1).await;
+    assert_eq!(keyed.error, None);
+}
+
+#[tokio::test]
 async fn a_radio_set_to_receive_keeps_its_transmitter_off_the_air() {
     let app = test_router();
     let mut snapshot = station("nfm");
@@ -272,9 +302,27 @@ async fn a_radio_set_to_receive_keeps_its_transmitter_off_the_air() {
 
 #[tokio::test]
 async fn a_channels_audio_keys_the_transmitter_it_is_wired_to() {
+    channel_keys(AudioProcessing::default()).await;
+}
+
+#[tokio::test]
+async fn a_channels_processed_audio_keys_the_transmitter_it_is_wired_to() {
+    channel_keys(AudioProcessing {
+        auto_notch: true,
+        ..AudioProcessing::default()
+    })
+    .await;
+}
+
+async fn channel_keys(audio: AudioProcessing) {
     let app = test_router();
     let mut snapshot = virtual_snapshot("transceiver", &[("ear", "nfm", "iq")]);
     used_for(&mut snapshot, RadioUse::Both);
+    for held in &mut snapshot.graph.nodes {
+        if let NodeBody::Channel(channel) = &mut held.body {
+            channel.audio = audio.clone();
+        }
+    }
     snapshot.graph.nodes.extend([
         node("mod", encoder("nfm")),
         node("tx", NodeBody::Transmit(TransmitNode::default())),

@@ -2246,6 +2246,7 @@ fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {
                 NodeBody::Encoder(EncoderNode {
                     encoder_type: "nfm".to_owned(),
                     settings: serde_json::Value::Null,
+                    audio: Default::default(),
                 }),
             ),
             node("tx", NodeBody::Transmit(TransmitNode::default())),
@@ -2268,6 +2269,19 @@ fn a_radio_may_send_what_it_hears_because_the_antenna_closes_no_loop() {
     repeater(reordered)
         .validate()
         .expect("the same patch whichever wire came first");
+}
+
+#[test]
+fn an_encoder_with_audio_settings_out_of_range_is_refused() {
+    let mut graph = repeater(Vec::new());
+    let NodeBody::Encoder(encoder) = &mut graph.nodes[2].body else {
+        panic!("mod is an encoder");
+    };
+    encoder.audio.denoise.strength = 3.0;
+    assert_eq!(
+        graph.validate(),
+        Err(PatchError::NodeSettings("mod".to_owned()))
+    );
 }
 
 #[test]

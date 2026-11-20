@@ -3733,6 +3733,8 @@ export interface components {
             };
         };
         EncoderNode: {
+            /** @description What a voice encoder's audio runs through before it is modulated. */
+            audio?: components["schemas"]["AudioProcessing"];
             encoder_type: string;
             /** @description The encoder's own settings object, absent fields taking its defaults. */
             settings?: {
