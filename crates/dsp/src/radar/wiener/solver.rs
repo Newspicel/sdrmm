@@ -5,7 +5,7 @@ use num_complex::Complex;
 use super::{GroupPlan, GroupSums, WeightTable, rotation};
 use crate::math::complex::{add_rotated_f64, narrow};
 use crate::math::fft::FftPair;
-use crate::math::linalg::{MAX_SOLVE_ORDER, cholesky_c64, cholesky_solve_c64};
+use crate::math::linalg::{MAX_SOLVE_ORDER, Toeplitz, cholesky_c64, cholesky_solve_c64};
 use crate::radar::RadarDspError;
 use crate::radar::batch::{BatchShape, MAX_SURVEILLANCE};
 use crate::radar::ratio::ratio_db;
@@ -33,6 +33,8 @@ pub struct WienerSolver {
     factor: Vec<C64>,
     rhs: Vec<C64>,
     solution: Vec<C64>,
+    /// With one Doppler tap the Gram matrix is Hermitian Toeplitz, solved by Levinson.
+    toeplitz: Option<Toeplitz>,
 }
 
 impl WienerSolver {
@@ -60,6 +62,7 @@ impl WienerSolver {
             factor: vec![C64::default(); unknowns * unknowns],
             rhs: vec![C64::default(); unknowns],
             solution: vec![C64::default(); unknowns],
+            toeplitz: (groups.taps() == 1).then(|| Toeplitz::new(unknowns)),
         })
     }
 
@@ -241,6 +244,12 @@ impl WienerSolver {
 
     fn build_gram(&mut self) {
         let order = self.shape.order();
+        if self.toeplitz.is_some() {
+            for (m, value) in self.gram[..self.unknowns].iter_mut().enumerate() {
+                *value = self.lags[order - 1 - m];
+            }
+            return;
+        }
         let span = 2 * order - 1;
         let n = self.unknowns;
         for row in 0..n {
@@ -257,6 +266,13 @@ impl WienerSolver {
 
     fn factor_loaded(&mut self) -> bool {
         let n = self.unknowns;
+        if let Some(toeplitz) = &mut self.toeplitz {
+            let row = &self.gram[..n];
+            let base = self.loading * row[0].re;
+            return [base, RETRY_LOADING * base]
+                .into_iter()
+                .any(|loading| toeplitz.factor(row, loading).is_ok());
+        }
         let mean = (0..n).map(|i| self.gram[i * n + i].re).sum::<f64>() / n as f64;
         let base = self.loading * mean;
         for loading in [base, RETRY_LOADING * base] {
@@ -285,7 +301,10 @@ impl WienerSolver {
         }
         let n = self.unknowns;
         self.solution[..n].copy_from_slice(&self.rhs[..n]);
-        cholesky_solve_c64(&self.factor, n, &mut self.solution);
+        match &self.toeplitz {
+            Some(toeplitz) => toeplitz.solve(&mut self.solution[..n]),
+            None => cholesky_solve_c64(&self.factor, n, &mut self.solution),
+        }
         let explained: f64 = self
             .solution
             .iter()

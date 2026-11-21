@@ -9,11 +9,14 @@ use sdrmm_dsp::{PowerAverage, SpectrumAnalyzer, tuning::subband::SubbandPlan};
 
 use super::{
     Context,
+    compute::Transfer,
     spectrum::{Batch, Stream, batch_for},
 };
 use crate::spectrum::{Cadence, Tuning, display_window};
 
 mod compute;
+mod fft;
+mod profile;
 mod radar;
 mod wideband;
 
@@ -50,6 +53,11 @@ pub(crate) fn measure(name: &str, mut run: impl FnMut()) {
 }
 
 const FRAME: usize = 64;
+
+fn transfers(context: &Context) -> impl Iterator<Item = Transfer> + use<> {
+    let direct = context.unified().then_some(Transfer::Direct);
+    std::iter::once(Transfer::Staged).chain(direct)
+}
 
 fn hardware() -> Arc<Context> {
     let context = Arc::new(Context::new().expect("hardware GPU required"));
@@ -90,17 +98,21 @@ fn benchmark_spectrum_frame() {
             average.take_db(&mut db);
         });
         let default = batch_for(size);
-        for chunk in [4, 8, 16, 32, 64].into_iter().filter(|&c| c <= default) {
-            let mut batch = Batch::new(context.clone(), size, chunk).unwrap();
-            measure(&format!("frame/{size}/gpu_batch{chunk}"), || {
-                let mut done = 0;
-                while done < FRAME {
-                    let count = batch.fitting(hop).min(FRAME - done);
-                    batch.add(&input[done * hop..], hop, count).unwrap();
-                    done += count;
-                }
-                batch.take_db(FRAME as u32, &mut db).unwrap();
-            });
+        let chunks = [4, 8, 16, 32, 64].into_iter().filter(|&c| c <= default);
+        for (chunk, transfer) in chunks.flat_map(|c| transfers(&context).map(move |t| (c, t))) {
+            let mut batch = Batch::with_transfer(context.clone(), size, chunk, transfer).unwrap();
+            measure(
+                &format!("frame/{size}/gpu_batch{chunk}/{transfer:?}"),
+                || {
+                    let mut done = 0;
+                    while done < FRAME {
+                        let count = batch.fitting(hop).min(FRAME - done);
+                        batch.add(&input[done * hop..], hop, count).unwrap();
+                        done += count;
+                    }
+                    batch.take_db(FRAME as u32, &mut db).unwrap();
+                },
+            );
         }
     }
 }
@@ -187,5 +199,64 @@ fn benchmark_wideband() {
             gpu.process(black_box(&input), &mut actual);
             black_box(&actual);
         });
+    }
+}
+
+/// Splits one spectrum frame into upload, GPU work and readback, to see what bounds it.
+#[test]
+#[ignore = "hardware benchmark"]
+fn benchmark_spectrum_frame_parts() {
+    let context = hardware();
+    for (size, chunk) in [(4_096, 64), (65_536, 8), (262_144, 4)] {
+        let hop = size / 2;
+        let span = (chunk - 1) * hop + size;
+        let input = samples(span, 0x1234567);
+        let staging = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (span * 8) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let wait = || {
+            context
+                .device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("GPU finished");
+        };
+        measure(
+            &format!("parts/{size}/write_buffer_x{}", FRAME / chunk),
+            || {
+                for _ in 0..FRAME / chunk {
+                    context
+                        .queue
+                        .write_buffer(&staging, 0, bytemuck::cast_slice(&input));
+                    context.queue.submit([]);
+                }
+                wait();
+            },
+        );
+        measure(&format!("parts/{size}/memcpy_x{}", FRAME / chunk), || {
+            let mut copy = vec![Complex::<f32>::default(); span];
+            for _ in 0..FRAME / chunk {
+                copy.copy_from_slice(black_box(&input));
+                black_box(&copy);
+            }
+        });
+        for transfer in transfers(&context) {
+            let mut batch = Batch::with_transfer(context.clone(), size, chunk, transfer).unwrap();
+            let mut db = vec![0.0; size];
+            measure(
+                &format!("parts/{size}/add_x{}/{transfer:?}", FRAME / chunk),
+                || {
+                    for _ in 0..FRAME / chunk {
+                        batch.add(&input, hop, chunk).unwrap();
+                    }
+                    wait();
+                },
+            );
+            measure(&format!("parts/{size}/take_db/{transfer:?}"), || {
+                batch.take_db(FRAME as u32, &mut db).unwrap();
+            });
+        }
     }
 }

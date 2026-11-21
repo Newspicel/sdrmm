@@ -16,6 +16,11 @@ const PATIENCE: Duration = Duration::from_secs(2);
 pub(crate) const PENDING: u8 = 0;
 pub(crate) const MAPPED: u8 = 1;
 pub(crate) const FAILED: u8 = 2;
+const WRITTEN: u8 = 3;
+
+/// A named piece of GPU work, for profiling it on its own.
+#[cfg(test)]
+pub(crate) type Stage<'a> = (&'static str, Box<dyn Fn(&mut wgpu::ComputePass<'_>) + 'a>);
 
 pub(crate) struct Kernel {
     pipeline: wgpu::ComputePipeline,
@@ -77,6 +82,8 @@ pub(crate) fn module(context: &Context, source: &str, label: &str) -> wgpu::Shad
         })
 }
 
+/// Leaves workgroup memory uninitialized: naga zeroes it from one thread per workgroup,
+/// which made a 32 KiB FFT tile 70x slower. Every kernel writes shared memory before reading it.
 pub(crate) fn compile(
     context: &Context,
     module: &wgpu::ShaderModule,
@@ -89,7 +96,10 @@ pub(crate) fn compile(
             layout: None,
             module,
             entry_point: Some(entry),
-            compilation_options: Default::default(),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                zero_initialize_workgroup_memory: false,
+                ..Default::default()
+            },
             cache: None,
         })
 }
@@ -177,6 +187,149 @@ impl Readback {
         self.buffer.unmap();
         result
     }
+}
+
+/// How samples reach the GPU: through a staging copy, or written in place into buffers the
+/// kernels read, where the GPU shares memory with the CPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Transfer {
+    Staged,
+    Direct,
+}
+
+impl Transfer {
+    pub(crate) const fn fitting(context: &Context) -> Self {
+        if context.unified() {
+            Self::Direct
+        } else {
+            Self::Staged
+        }
+    }
+}
+
+/// A ring of persistently mapped buffers, so an upload costs one memcpy instead of a fresh
+/// wgpu staging allocation per write. Staged, each is copied into one storage buffer;
+/// direct, kernels read the ring buffers themselves.
+pub(crate) struct Upload {
+    slots: Vec<(wgpu::Buffer, Arc<AtomicU8>)>,
+    target: Option<wgpu::Buffer>,
+    next: usize,
+}
+
+impl Upload {
+    pub(crate) fn new(
+        context: &Context,
+        label: &str,
+        bytes: u64,
+        slots: usize,
+        transfer: Transfer,
+    ) -> Self {
+        let usage = match transfer {
+            Transfer::Staged => wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
+            Transfer::Direct => wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::STORAGE,
+        };
+        let slots = (0..slots.max(1))
+            .map(|_| {
+                let buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(label),
+                    size: bytes,
+                    usage,
+                    mapped_at_creation: true,
+                });
+                (buffer, Arc::new(AtomicU8::new(MAPPED)))
+            })
+            .collect();
+        let target = (transfer == Transfer::Staged).then(|| {
+            buffer(
+                &context.device,
+                label,
+                bytes,
+                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            )
+        });
+        Self {
+            slots,
+            target,
+            next: 0,
+        }
+    }
+
+    /// The buffers kernels read; [`Self::write`] says which one holds the latest upload.
+    pub(crate) fn inputs(&self) -> Vec<&wgpu::Buffer> {
+        match &self.target {
+            Some(target) => vec![target],
+            None => self.slots.iter().map(|(buffer, _)| buffer).collect(),
+        }
+    }
+
+    /// Writes `parts` back to back into the next ring buffer and returns the index of the
+    /// input that holds them. Call [`Self::submitted`] once the encoder is submitted.
+    pub(crate) fn write(
+        &self,
+        context: &Context,
+        encoder: &mut wgpu::CommandEncoder,
+        parts: &[&[u8]],
+    ) -> Result<usize, String> {
+        let (buffer, state) = &self.slots[self.next];
+        let len: u64 = parts.iter().map(|part| part.len() as u64).sum();
+        if len > buffer.size() {
+            return Err(format!("{len} upload bytes exceed the upload buffer"));
+        }
+        rearm(buffer, state);
+        settle(context, state)?;
+        let mut at = 0;
+        let filled = parts
+            .iter()
+            .filter(|part| !part.is_empty())
+            .try_for_each(|part| {
+                let end = at + part.len() as u64;
+                let mut view = buffer
+                    .get_mapped_range_mut(at..end)
+                    .map_err(|error| format!("write GPU input: {error}"))?;
+                view.copy_from_slice(part);
+                at = end;
+                Ok::<_, String>(())
+            });
+        buffer.unmap();
+        state.store(WRITTEN, Ordering::Release);
+        filled?;
+        match &self.target {
+            Some(target) => {
+                encoder.copy_buffer_to_buffer(buffer, 0, target, 0, len);
+                Ok(0)
+            }
+            None => Ok(self.next),
+        }
+    }
+
+    /// Maps the buffer just written again for when the GPU is done with it, and moves on to
+    /// the next one. Without a write since the last call it does nothing.
+    pub(crate) fn submitted(&mut self) {
+        let (buffer, state) = &self.slots[self.next];
+        if state.load(Ordering::Acquire) != WRITTEN {
+            return;
+        }
+        rearm(buffer, state);
+        self.next = (self.next + 1) % self.slots.len();
+    }
+
+    pub(crate) fn bytes(&self) -> u64 {
+        self.slots.first().map_or(0, |(buffer, _)| buffer.size())
+    }
+}
+
+/// Maps a buffer written since its last mapping, so a write never meets an unmapped buffer
+/// even when an error skipped [`Upload::submitted`].
+fn rearm(buffer: &wgpu::Buffer, state: &Arc<AtomicU8>) {
+    if state.load(Ordering::Acquire) != WRITTEN {
+        return;
+    }
+    state.store(PENDING, Ordering::Release);
+    let state = Arc::clone(state);
+    buffer.map_async(wgpu::MapMode::Write, .., move |result| {
+        let outcome = if result.is_ok() { MAPPED } else { FAILED };
+        state.store(outcome, Ordering::Release);
+    });
 }
 
 pub(crate) fn settle(context: &Context, state: &AtomicU8) -> Result<(), String> {

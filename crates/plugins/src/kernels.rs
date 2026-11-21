@@ -18,7 +18,7 @@ const MAX_FFT: usize = 1 << 22;
 enum Kernel {
     Fir(Decimator),
     Fft(Transform),
-    Resampler(FracResampler),
+    Resampler(Box<FracResampler>),
 }
 
 /// What a plugin instance holds on the host side.
@@ -178,7 +178,7 @@ fn resampler_new(mut caller: Caller<'_, HostState>, ratio: f64) -> i32 {
     }
     caller
         .data_mut()
-        .add(Kernel::Resampler(FracResampler::new(ratio)))
+        .add(Kernel::Resampler(Box::new(FracResampler::new(ratio))))
 }
 
 fn kernel_drop(mut caller: Caller<'_, HostState>, handle: i32) {

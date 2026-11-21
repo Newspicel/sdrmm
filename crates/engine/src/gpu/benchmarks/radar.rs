@@ -9,9 +9,9 @@ use super::{super::caf::GpuCaf, samples};
 
 const KRAKEN_RATE: f64 = 2_400_000.0;
 const ELEMENTS: usize = 5;
-const RUNS: usize = 5;
+const RUNS: usize = 11;
 
-fn kraken(center_hz: f64, illuminator: Illuminator) -> RadarPlan {
+pub(super) fn kraken(center_hz: f64, illuminator: Illuminator) -> RadarPlan {
     let params = PassiveRadarParams {
         illuminator,
         reference: ReferenceCleaning::Off,
@@ -29,7 +29,7 @@ fn kraken(center_hz: f64, illuminator: Illuminator) -> RadarPlan {
     plan(&ctx, &params).unwrap()
 }
 
-fn job(stage: &RadarPlan) -> CpiJob {
+pub(super) fn job(stage: &RadarPlan) -> CpiJob {
     let mut job = CpiJob::new(stage.shape.lanes + 1, stage.shape.window());
     job.samples = samples(job.samples.len(), 0x5EED);
     job

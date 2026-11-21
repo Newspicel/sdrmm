@@ -1,9 +1,13 @@
 use num_complex::Complex;
 
 use super::{MAX_FFT, MAX_SURVEILLANCE, MIN_FFT};
-use crate::radar::RadarDspError;
+use crate::{math::complex::sum_norm_sqr, radar::RadarDspError};
 
 type C32 = Complex<f32>;
+
+/// Samples summed in f32 by SIMD before the running total moves to f64, so long batches keep
+/// their precision.
+const ENERGY_BLOCK: usize = 256;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BatchShape {
@@ -104,7 +108,10 @@ impl BatchShape {
         window
             .get(start..start + self.batch_len)
             .map_or(0.0, |samples| {
-                samples.iter().map(|x| f64::from(x.norm_sqr())).sum()
+                samples
+                    .chunks(ENERGY_BLOCK)
+                    .map(|block| f64::from(sum_norm_sqr(block)))
+                    .sum()
             })
     }
 }

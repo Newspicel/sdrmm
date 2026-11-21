@@ -8,11 +8,13 @@ use sdrmm_dsp::coherent_gain;
 
 use super::{
     Context, buffer, bytes_for,
-    compute::{Kernel, Readback, compile, grid, initialized, module},
-    fft::{FftBatch, check_size},
+    compute::{Kernel, Readback, Transfer, Upload, compile, grid, initialized, module},
+    fft::{FftBatch, Loader, Transforms, check_size},
 };
 
 mod stream;
+#[cfg(test)]
+mod tests;
 
 pub(crate) use stream::Stream;
 
@@ -25,8 +27,12 @@ const MAX_BATCH: usize = 64;
 /// Share of the GPU the display may take, so rendering and other work keep the rest.
 const GPU_SHARE: f64 = 0.25;
 const CPU_PROBE: u32 = 8;
-const HOP_WORD: u64 = 8;
-const AVERAGED_WORD: u64 = 16;
+/// Staging buffers in flight, so filling one never waits on the GPU reading another.
+const UPLOADS: usize = 3;
+const AVERAGED_WORD: u64 = 8;
+/// One complex value ahead of the samples carries the hop and transform count, as floats.
+const HEADER: usize = 1;
+const EXACT_FLOAT: usize = 1 << f32::MANTISSA_DIGITS;
 
 /// Windows, transforms and sums the power of up to `chunk` overlapping transforms per
 /// submission, then reads back one averaged spectrum in dB.
@@ -34,10 +40,9 @@ pub(crate) struct Batch {
     context: Arc<Context>,
     size: usize,
     chunk: usize,
-    input: wgpu::Buffer,
+    upload: Upload,
     params: wgpu::Buffer,
     levels: wgpu::Buffer,
-    prepare: Kernel,
     fft: FftBatch,
     accumulate: Kernel,
     finalize: Kernel,
@@ -50,6 +55,16 @@ pub(crate) fn batch_for(size: usize) -> usize {
 
 impl Batch {
     pub(crate) fn new(context: Arc<Context>, size: usize, chunk: usize) -> Result<Self, String> {
+        let transfer = Transfer::fitting(&context);
+        Self::with_transfer(context, size, chunk, transfer)
+    }
+
+    pub(crate) fn with_transfer(
+        context: Arc<Context>,
+        size: usize,
+        chunk: usize,
+        transfer: Transfer,
+    ) -> Result<Self, String> {
         check_size(size)?;
         let chunk = chunk.max(1);
         let elements = size
@@ -69,12 +84,6 @@ impl Batch {
         let scale = (inv_gain * inv_gain).to_bits();
         let device = &context.device;
         let storage = wgpu::BufferUsages::STORAGE;
-        let input = buffer(
-            device,
-            "SDRmm spectrum input",
-            complex_bytes,
-            storage | wgpu::BufferUsages::COPY_DST,
-        );
         let data = buffer(device, "SDRmm spectrum transforms", complex_bytes, storage);
         let levels = buffer(
             device,
@@ -82,10 +91,7 @@ impl Batch {
             bytes_for::<f32>(size)?,
             storage | wgpu::BufferUsages::COPY_SRC,
         );
-        let params = initialized(
-            &context,
-            &[narrow(size)?, size.trailing_zeros(), 0, 0, 0, scale],
-        );
+        let params = initialized(&context, &[narrow(size)?, narrow(chunk)?, 0, scale]);
         let window = initialized(&context, &window);
         let power = initialized(&context, &vec![0.0f32; size]);
         let shader = module(&context, include_str!("spectrum.wgsl"), "spectrum");
@@ -98,23 +104,42 @@ impl Batch {
                 grid(threads as u64, THREADS)?,
             ))
         };
-        let prepare = kernel(
-            "prepare",
-            &[(0, &input), (1, &data), (2, &params), (3, &window)],
-            elements,
-        )?;
         let accumulate = kernel("accumulate", &[(1, &data), (2, &params), (4, &power)], size)?;
         let finalize = kernel("finalize", &[(2, &params), (4, &power), (5, &levels)], size)?;
-        let fft = FftBatch::new(&context, &data, size, chunk, false)?;
+        let upload = Upload::new(
+            &context,
+            "SDRmm spectrum upload",
+            complex_bytes + bytes_for::<[f32; 2]>(HEADER)?,
+            UPLOADS,
+            transfer,
+        );
+        let fft = FftBatch::loaded(
+            &context,
+            &data,
+            Transforms {
+                size,
+                offset: 0,
+                batches: chunk,
+                inverse: false,
+            },
+            &Loader {
+                wgsl: include_str!("spectrum_load.wgsl"),
+                bindings: upload
+                    .inputs()
+                    .into_iter()
+                    .map(|input| vec![(3, input), (4, &window)])
+                    .collect(),
+                in_place: false,
+            },
+        )?;
         let readback = Readback::new(&context, "SDRmm spectrum readback", bytes_for::<f32>(size)?);
         Ok(Self {
             context,
             size,
             chunk,
-            input,
+            upload,
             params,
             levels,
-            prepare,
             fft,
             accumulate,
             finalize,
@@ -151,15 +176,29 @@ impl Batch {
         let span_samples = samples
             .get(..span)
             .ok_or_else(|| format!("{} samples cannot fill {span}", samples.len()))?;
-        let words = [hop.min(span), count].map(|value| value as u32);
-        let queue = &self.context.queue;
-        queue.write_buffer(&self.params, HOP_WORD, bytemuck::cast_slice(&words));
-        queue.write_buffer(&self.input, 0, bytemuck::cast_slice(span_samples));
-        self.submit(|pass, batch| {
-            batch.prepare.dispatch(pass);
-            batch.fft.dispatch(pass);
-            batch.accumulate.dispatch(pass);
-        });
+        let hop = hop.min(span);
+        if hop > EXACT_FLOAT {
+            return Err(format!(
+                "a hop of {hop} samples is too long for the GPU header"
+            ));
+        }
+        let header = [hop as f32, count as f32];
+        let mut encoder = self
+            .context
+            .device
+            .create_command_encoder(&Default::default());
+        let parts = [
+            bytemuck::bytes_of(&header),
+            bytemuck::cast_slice(span_samples),
+        ];
+        let input = self.upload.write(&self.context, &mut encoder, &parts)?;
+        {
+            let mut pass = encoder.begin_compute_pass(&Default::default());
+            self.fft.dispatch_from(&mut pass, input);
+            self.accumulate.dispatch(&mut pass);
+        }
+        self.context.queue.submit([encoder.finish()]);
+        self.upload.submitted();
         Ok(())
     }
 
@@ -192,6 +231,24 @@ impl Batch {
             out.copy_from_slice(levels);
             Ok(())
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stages(&self) -> Vec<super::compute::Stage<'_>> {
+        vec![
+            (
+                "fft",
+                Box::new(|pass: &mut wgpu::ComputePass<'_>| self.fft.dispatch(pass)),
+            ),
+            (
+                "accumulate",
+                Box::new(|pass: &mut wgpu::ComputePass<'_>| self.accumulate.dispatch(pass)),
+            ),
+            (
+                "finalize",
+                Box::new(|pass: &mut wgpu::ComputePass<'_>| self.finalize.dispatch(pass)),
+            ),
+        ]
     }
 
     /// Drops a partial sum without reading it back.

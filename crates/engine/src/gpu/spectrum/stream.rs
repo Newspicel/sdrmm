@@ -16,7 +16,9 @@ use crate::spectrum::{Cadence, SpectrumFrame, Tuning};
 /// Batches of samples the ring holds while the GPU works on earlier ones.
 const RING_BATCHES: usize = 4;
 const MARKERS: usize = 64;
-const FRAMES: usize = 3;
+/// Finished frames waiting for the DSP thread. The GPU can finish a backlog in one burst,
+/// so a few frames of slack keep a briefly late consumer from losing any.
+const FRAMES: usize = 8;
 const IDLE: Duration = Duration::from_millis(1);
 const DROP_LOG_INTERVAL: Duration = Duration::from_secs(5);
 

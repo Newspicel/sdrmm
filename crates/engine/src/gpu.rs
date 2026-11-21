@@ -12,6 +12,7 @@ pub(crate) struct Context {
     device: wgpu::Device,
     queue: wgpu::Queue,
     adapter_name: String,
+    unified: bool,
 }
 
 impl Context {
@@ -24,7 +25,16 @@ impl Context {
         Self::new_inner(true)
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_profiling() -> Result<Self, String> {
+        Self::with_features(false, wgpu::Features::TIMESTAMP_QUERY)
+    }
+
     fn new_inner(allow_cpu_adapter: bool) -> Result<Self, String> {
+        Self::with_features(allow_cpu_adapter, wgpu::Features::empty())
+    }
+
+    fn with_features(allow_cpu_adapter: bool, wanted: wgpu::Features) -> Result<Self, String> {
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -39,22 +49,38 @@ impl Context {
             ));
         }
         tracing::info!(adapter = %info.name, backend = ?info.backend, "GPU compute adapter");
+        let shared = if info.device_type == wgpu::DeviceType::IntegratedGpu {
+            wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+        } else {
+            wgpu::Features::empty()
+        };
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("SDRmm GPU compute"),
+            required_features: adapter.features() & (wanted | shared),
             required_limits: adapter.limits(),
             ..Default::default()
         }))
         .map_err(|error| format!("request device: {error}"))?;
 
+        let unified = device
+            .features()
+            .contains(wgpu::Features::MAPPABLE_PRIMARY_BUFFERS);
         Ok(Self {
             device,
             queue,
             adapter_name: info.name,
+            unified,
         })
     }
 
     pub(crate) fn adapter_name(&self) -> &str {
         &self.adapter_name
+    }
+
+    /// Whether the GPU shares memory with the CPU, so kernels can read buffers the CPU
+    /// writes in place instead of copies of them.
+    pub(crate) const fn unified(&self) -> bool {
+        self.unified
     }
 }
 

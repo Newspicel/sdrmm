@@ -68,19 +68,19 @@ fn subdir_headings(dir: &Path) -> Result<Vec<HeadingRef>> {
             std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         found.extend(page_headings(
             &text,
-            Some(format!("decoders/{stem}.md")),
+            Some(&format!("decoders/{stem}.md")),
             &format!("/docs/operate/decoders/{stem}"),
         ));
     }
     Ok(found)
 }
 
-fn page_headings(page: &str, rel_file: Option<String>, site_slug: &str) -> Vec<HeadingRef> {
+fn page_headings(page: &str, rel_file: Option<&str>, site_slug: &str) -> Vec<HeadingRef> {
     page.lines()
         .filter_map(|line| line.strip_prefix("## "))
         .map(|text| HeadingRef {
             text: text.to_owned(),
-            rel_file: rel_file.clone(),
+            rel_file: rel_file.map(str::to_owned),
             site_slug: site_slug.to_owned(),
         })
         .collect()

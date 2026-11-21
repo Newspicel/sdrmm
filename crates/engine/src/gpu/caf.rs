@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU8, Ordering},
-};
+use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
 use num_complex::Complex;
@@ -14,26 +11,23 @@ use wgpu::util::DeviceExt;
 
 use super::{
     Context, buffer,
-    compute::{
-        FAILED, Kernel, MAPPED, PENDING, Readback, compile, grid, initialized, module, settle,
-    },
-    fft::{FftBatch, Transforms, check_size},
+    compute::{Kernel, Readback, Transfer, Upload, compile, grid, initialized, module},
+    fft::{FftBatch, Loader, Transforms, check_size},
 };
+
+const SHAPE_WGSL: &str = include_str!("caf_shape.wgsl");
 
 type C32 = Complex<f32>;
 
 pub(crate) const MAX_GPU_BYTES: u64 = 512 << 20;
 const THREADS: u64 = 256;
 const COMPLEX_BYTES: u64 = 8;
-const IDLE: u8 = 3;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 struct Layout {
     fft_len: u32,
-    fft_bits: u32,
     batches: u32,
-    batch_bits: u32,
     batch_len: u32,
     gates: u32,
     lead: u32,
@@ -125,55 +119,6 @@ impl Footprint {
 
 const fn slots(shape: &BatchShape) -> usize {
     1 + shape.eca() as usize + shape.lanes
-}
-
-struct Staging {
-    buffer: wgpu::Buffer,
-    state: Arc<AtomicU8>,
-}
-
-impl Staging {
-    fn new(context: &Context, bytes: u64) -> Self {
-        Self {
-            buffer: context.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("SDRmm CAF window staging"),
-                size: bytes,
-                usage: wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: true,
-            }),
-            state: Arc::new(AtomicU8::new(MAPPED)),
-        }
-    }
-
-    fn fill<'a>(
-        &self,
-        context: &Context,
-        parts: impl Iterator<Item = &'a [C32]>,
-    ) -> Result<(), String> {
-        self.rearm();
-        settle(context, &self.state)?;
-        let result = self
-            .buffer
-            .get_mapped_range_mut(..)
-            .map_err(|error| format!("write GPU input: {error}"))
-            .and_then(|mut view| pack(view.slice(..), parts));
-        self.buffer.unmap();
-        self.state.store(IDLE, Ordering::Release);
-        result
-    }
-
-    fn rearm(&self) {
-        if self.state.load(Ordering::Acquire) != IDLE {
-            return;
-        }
-        self.state.store(PENDING, Ordering::Release);
-        let state = Arc::clone(&self.state);
-        self.buffer
-            .map_async(wgpu::MapMode::Write, .., move |result| {
-                let outcome = if result.is_ok() { MAPPED } else { FAILED };
-                state.store(outcome, Ordering::Release);
-            });
-    }
 }
 
 struct Eca {
@@ -281,10 +226,7 @@ struct Bound<'a> {
 }
 
 struct Stages {
-    scatter: Kernel,
     forward: FftBatch,
-    products: Kernel,
-    residual: Kernel,
     inverse: FftBatch,
     gather: Kernel,
     doppler: FftBatch,
@@ -294,8 +236,7 @@ struct Stages {
 pub(crate) struct GpuCaf {
     context: Arc<Context>,
     shape: BatchShape,
-    staging: Staging,
-    window: wgpu::Buffer,
+    upload: Upload,
     cube: wgpu::Buffer,
     readback: Readback,
     stages: Stages,
@@ -310,6 +251,15 @@ impl CafKernel for GpuCaf {
 
 impl GpuCaf {
     pub(crate) fn new(context: Arc<Context>, plan: &CafPlan<'_>) -> Result<Self, String> {
+        let transfer = Transfer::fitting(&context);
+        Self::with_transfer(context, plan, transfer)
+    }
+
+    pub(crate) fn with_transfer(
+        context: Arc<Context>,
+        plan: &CafPlan<'_>,
+        transfer: Transfer,
+    ) -> Result<Self, String> {
         let shape = plan.shape;
         check_size(shape.fft_len)?;
         check_size(shape.batches)?;
@@ -320,22 +270,17 @@ impl GpuCaf {
         let footprint = Footprint::of(&shape, groups)?;
         footprint.fits(&context.device.limits())?;
         let device = context.device.clone();
-        guarded(&device, || Self::build(context, plan, footprint))
+        guarded(&device, || Self::build(context, plan, footprint, transfer))
     }
 
     fn build(
         context: Arc<Context>,
         plan: &CafPlan<'_>,
         footprint: Footprint,
+        transfer: Transfer,
     ) -> Result<Self, String> {
         let shape = plan.shape;
         let storage = wgpu::BufferUsages::STORAGE;
-        let window = buffer(
-            &context.device,
-            "SDRmm CAF window",
-            footprint.window,
-            storage | wgpu::BufferUsages::COPY_DST,
-        );
         let spectra = buffer(
             &context.device,
             "SDRmm CAF spectra",
@@ -349,7 +294,8 @@ impl GpuCaf {
             storage | wgpu::BufferUsages::COPY_SRC,
         );
         let taper = initialized(&context, plan.window);
-        let module = module(&context, include_str!("caf_batch.wgsl"), "caf batch");
+        let source = [SHAPE_WGSL, include_str!("caf_batch.wgsl")].concat();
+        let module = module(&context, &source, "caf batch");
         let pipeline = |entry: &str| compile(&context, &module, entry);
         let groups = plan.groups.filter(|_| shape.eca());
         let layout = layout_of(&shape, groups)?;
@@ -377,16 +323,11 @@ impl GpuCaf {
             ),
         };
         let (m, nb, k, r) = (shape.fft_len, shape.batches, shape.lanes, shape.gates);
+        let upload = Upload::new(&context, "SDRmm CAF samples", footprint.window, 1, transfer);
         let first_lane = 1 + usize::from(shape.eca());
         let count = |factors: &[usize]| factors.iter().product::<usize>() as u64;
         let stages = Stages {
-            scatter: Kernel::bind(
-                &context,
-                &pipeline("scatter"),
-                &[(0, &layout), (1, &window), (2, &spectra)],
-                grid(count(&[slots(&shape), nb, m]), THREADS)?,
-            ),
-            forward: FftBatch::over(
+            forward: FftBatch::loaded(
                 &context,
                 &spectra,
                 Transforms {
@@ -395,20 +336,17 @@ impl GpuCaf {
                     batches: slots(&shape) * nb,
                     inverse: false,
                 },
+                &Loader {
+                    wgsl: &[SHAPE_WGSL, include_str!("caf_load.wgsl")].concat(),
+                    bindings: upload
+                        .inputs()
+                        .into_iter()
+                        .map(|input| vec![(3, &layout), (4, input)])
+                        .collect(),
+                    in_place: false,
+                },
             )?,
-            products: Kernel::bind(
-                &context,
-                &pipeline("products"),
-                &[(0, &layout), (2, &spectra)],
-                grid(count(&[nb, m]), THREADS)?,
-            ),
-            residual: Kernel::bind(
-                &context,
-                &pipeline("residual"),
-                &[(0, &layout), (2, &spectra), (6, &weights), (7, &terms)],
-                grid(count(&[k, nb, m]), THREADS)?,
-            ),
-            inverse: FftBatch::over(
+            inverse: FftBatch::loaded(
                 &context,
                 &spectra,
                 Transforms {
@@ -416,6 +354,11 @@ impl GpuCaf {
                     offset: first_lane * nb * m,
                     batches: k * nb,
                     inverse: true,
+                },
+                &Loader {
+                    wgsl: &[SHAPE_WGSL, include_str!("caf_residual.wgsl")].concat(),
+                    bindings: vec![vec![(3, &layout), (4, &weights), (5, &terms)]],
+                    in_place: true,
                 },
             )?,
             gather: Kernel::bind(
@@ -442,12 +385,10 @@ impl GpuCaf {
             ),
         };
         let readback = Readback::new(&context, "SDRmm CAF cube readback", footprint.cube);
-        let staging = Staging::new(&context, footprint.window);
         Ok(Self {
             context,
             shape,
-            staging,
-            window,
+            upload,
             cube,
             readback,
             stages,
@@ -469,14 +410,11 @@ impl GpuCaf {
     }
 
     fn compute(&mut self, job: &CpiJob, out: &mut CubeOut) -> Result<(), String> {
-        self.upload(job)?;
         let mut encoder = self.encoder();
-        encoder.copy_buffer_to_buffer(&self.staging.buffer, 0, &self.window, 0, self.window.size());
+        let input = self.write_samples(job, &mut encoder)?;
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            self.stages.scatter.dispatch(&mut pass);
-            self.stages.forward.dispatch(&mut pass);
-            self.stages.products.dispatch(&mut pass);
+            self.stages.forward.dispatch_from(&mut pass, input);
             if let Some(eca) = &self.eca {
                 eca.kernel.dispatch(&mut pass);
             }
@@ -484,7 +422,7 @@ impl GpuCaf {
         let encoder = if let Some(eca) = self.eca.as_mut() {
             eca.readback.copy(&mut encoder, &eca.totals);
             let submission = self.context.queue.submit([encoder.finish()]);
-            self.staging.rearm();
+            self.upload.submitted();
             eca.energies(&self.shape, job)?;
             eca.readback.wait(&self.context, submission)?;
             eca.load()?;
@@ -502,14 +440,13 @@ impl GpuCaf {
             encoder
         };
         self.finish(encoder, out)?;
-        self.staging.rearm();
+        self.upload.submitted();
         Ok(())
     }
 
     fn finish(&self, mut encoder: wgpu::CommandEncoder, out: &mut CubeOut) -> Result<(), String> {
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            self.stages.residual.dispatch(&mut pass);
             self.stages.inverse.dispatch(&mut pass);
             self.stages.gather.dispatch(&mut pass);
             self.stages.doppler.dispatch(&mut pass);
@@ -527,10 +464,20 @@ impl GpuCaf {
         })
     }
 
-    fn upload(&self, job: &CpiJob) -> Result<(), String> {
+    fn write_samples(
+        &self,
+        job: &CpiJob,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<usize, String> {
         let width = self.shape.window();
-        let lanes = (0..job.lanes).map(|lane| job.lane(lane).get(..width).unwrap_or_default());
-        self.staging.fill(&self.context, lanes)
+        let lanes: Vec<&[u8]> = (0..job.lanes)
+            .map(|lane| bytemuck::cast_slice(job.lane(lane).get(..width).unwrap_or_default()))
+            .collect();
+        let bytes: usize = lanes.iter().map(|lane| lane.len()).sum();
+        if bytes as u64 != self.upload.bytes() {
+            return Err("GPU upload is short".to_owned());
+        }
+        self.upload.write(&self.context, encoder, &lanes)
     }
 
     fn encoder(&self) -> wgpu::CommandEncoder {
@@ -544,6 +491,56 @@ impl GpuCaf {
     #[cfg(test)]
     pub(crate) fn sabotage(&self) {
         self.cube.destroy();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stages(&self) -> Vec<super::compute::Stage<'_>> {
+        fn stage<'a>(
+            name: &'static str,
+            run: impl Fn(&mut wgpu::ComputePass<'_>) + 'a,
+        ) -> super::compute::Stage<'a> {
+            (name, Box::new(run))
+        }
+        let s = &self.stages;
+        let mut out = vec![stage("forward fft", |pass| s.forward.dispatch(pass))];
+        if let Some(eca) = &self.eca {
+            out.push(stage("clutter sums", |pass| eca.kernel.dispatch(pass)));
+        }
+        out.extend([
+            stage("residual + inverse fft", |pass| s.inverse.dispatch(pass)),
+            stage("gather", |pass| s.gather.dispatch(pass)),
+            stage("doppler fft", |pass| s.doppler.dispatch(pass)),
+            stage("shift", |pass| s.shift.dispatch(pass)),
+        ]);
+        out
+    }
+
+    /// CPU time of writing one CPI's samples into the upload buffer.
+    #[cfg(test)]
+    pub(crate) fn time_upload(&mut self, job: &CpiJob) -> Result<std::time::Duration, String> {
+        let mut encoder = self.encoder();
+        let start = std::time::Instant::now();
+        self.write_samples(job, &mut encoder)?;
+        let elapsed = start.elapsed();
+        self.context.queue.submit([encoder.finish()]);
+        self.upload.submitted();
+        Ok(elapsed)
+    }
+
+    /// CPU time of the clutter energies and of the Wiener solve over the sums the last run left.
+    #[cfg(test)]
+    pub(crate) fn time_clutter(
+        &mut self,
+        job: &CpiJob,
+    ) -> Option<(std::time::Duration, std::time::Duration)> {
+        let shape = self.shape;
+        let eca = self.eca.as_mut()?;
+        let start = std::time::Instant::now();
+        eca.solver.solve(&eca.sums, &mut eca.table).ok()?;
+        let solve = start.elapsed();
+        let start = std::time::Instant::now();
+        eca.energies(&shape, job).ok()?;
+        Some((start.elapsed(), solve))
     }
 }
 
@@ -613,9 +610,7 @@ fn layout_of(shape: &BatchShape, groups: Option<&GroupPlan>) -> Result<Layout, S
     });
     Ok(Layout {
         fft_len: narrow(shape.fft_len)?,
-        fft_bits: shape.fft_len.trailing_zeros(),
         batches: narrow(shape.batches)?,
-        batch_bits: shape.batches.trailing_zeros(),
         batch_len: narrow(shape.batch_len)?,
         gates: narrow(shape.gates)?,
         lead: narrow(shape.lead)?,
