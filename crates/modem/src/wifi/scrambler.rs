@@ -34,16 +34,43 @@ impl Scrambler {
     }
 }
 
+const PERIOD: usize = 127;
+
+const fn build_tables() -> ([bool; 2 * PERIOD], [u8; 128]) {
+    let mut stream = [false; 2 * PERIOD];
+    let mut start = [0u8; 128];
+    let mut reg = 1u8;
+    let mut i = 0;
+    while i < PERIOD {
+        start[reg as usize] = i as u8;
+        let next = ((reg >> (SCRAMBLER_TAPS[1] - 1)) ^ (reg >> (SCRAMBLER_TAPS[0] - 1))) & 1;
+        stream[i] = next == 1;
+        stream[i + PERIOD] = next == 1;
+        reg = (reg << 1 | next) & REGISTER_MASK;
+        i += 1;
+    }
+    (stream, start)
+}
+
+const TABLES: ([bool; 2 * PERIOD], [u8; 128]) = build_tables();
+
 /// Descrambles an OFDM data field in place. Its first seven bits are zeros on air, so they hand
 /// over the transmitter's register; they read back as zeros.
 pub(crate) fn descramble(bits: &mut [bool]) {
     let seed = bits.len().min(REGISTER_BITS);
-    let mut register = bits[..seed]
+    let register = bits[..seed]
         .iter()
         .fold(0u8, |acc, &bit| acc << 1 | u8::from(bit));
     bits[..seed].fill(false);
-    for bit in bits.iter_mut().skip(seed) {
-        *bit ^= keystream(&mut register);
+    if register == 0 {
+        return;
+    }
+    let pos = usize::from(TABLES.1[usize::from(register)]);
+    let pattern = &TABLES.0[pos..pos + PERIOD];
+    for chunk in bits[seed..].chunks_mut(PERIOD) {
+        for (bit, &mask) in chunk.iter_mut().zip(pattern) {
+            *bit ^= mask;
+        }
     }
 }
 

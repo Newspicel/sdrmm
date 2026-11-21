@@ -102,6 +102,73 @@ impl Sample for f32 {
         }
         n
     }
+
+    #[cfg(target_arch = "x86_64")]
+    fn deinterleave_2(src: &[[Self; 2]], r0: &mut [Self], r1: &mut [Self]) -> usize {
+        use std::arch::x86_64::{_mm_loadu_ps, _mm_shuffle_ps, _mm_storeu_ps};
+        let n = src.len().min(r0.len()).min(r1.len()) & !3;
+        unsafe {
+            let sp = src.as_ptr().cast::<f32>();
+            let d0 = r0.as_mut_ptr();
+            let d1 = r1.as_mut_ptr();
+            let mut i = 0;
+            while i < n {
+                let a = _mm_loadu_ps(sp.add(i * 2));
+                let b = _mm_loadu_ps(sp.add(i * 2 + 4));
+                _mm_storeu_ps(d0.add(i), _mm_shuffle_ps::<0x88>(a, b));
+                _mm_storeu_ps(d1.add(i), _mm_shuffle_ps::<0xDD>(a, b));
+                i += 4;
+            }
+        }
+        n
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn deinterleave_4(
+        src: &[[Self; 4]],
+        r0: &mut [Self],
+        r1: &mut [Self],
+        r2: &mut [Self],
+        r3: &mut [Self],
+    ) -> usize {
+        use std::arch::x86_64::{
+            _mm_loadu_ps, _mm_movehl_ps, _mm_movelh_ps, _mm_storeu_ps, _mm_unpackhi_ps,
+            _mm_unpacklo_ps,
+        };
+        let n = src
+            .len()
+            .min(r0.len())
+            .min(r1.len())
+            .min(r2.len())
+            .min(r3.len())
+            & !3;
+        unsafe {
+            let sp = src.as_ptr().cast::<f32>();
+            let (d0, d1, d2, d3) = (
+                r0.as_mut_ptr(),
+                r1.as_mut_ptr(),
+                r2.as_mut_ptr(),
+                r3.as_mut_ptr(),
+            );
+            let mut i = 0;
+            while i < n {
+                let v0 = _mm_loadu_ps(sp.add(i * 4));
+                let v1 = _mm_loadu_ps(sp.add(i * 4 + 4));
+                let v2 = _mm_loadu_ps(sp.add(i * 4 + 8));
+                let v3 = _mm_loadu_ps(sp.add(i * 4 + 12));
+                let t0 = _mm_unpacklo_ps(v0, v1);
+                let t1 = _mm_unpackhi_ps(v0, v1);
+                let t2 = _mm_unpacklo_ps(v2, v3);
+                let t3 = _mm_unpackhi_ps(v2, v3);
+                _mm_storeu_ps(d0.add(i), _mm_movelh_ps(t0, t2));
+                _mm_storeu_ps(d1.add(i), _mm_movehl_ps(t2, t0));
+                _mm_storeu_ps(d2.add(i), _mm_movelh_ps(t1, t3));
+                _mm_storeu_ps(d3.add(i), _mm_movehl_ps(t3, t1));
+                i += 4;
+            }
+        }
+        n
+    }
 }
 
 impl Sample for Complex<f32> {
@@ -172,6 +239,66 @@ impl Sample for Complex<f32> {
                 vst1q_f32(d1.add(i * 2), vreinterpretq_f32_u64(vuzp2q_u64(a0, b0)));
                 vst1q_f32(d2.add(i * 2), vreinterpretq_f32_u64(vuzp1q_u64(a1, b1)));
                 vst1q_f32(d3.add(i * 2), vreinterpretq_f32_u64(vuzp2q_u64(a1, b1)));
+                i += 2;
+            }
+        }
+        n
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn deinterleave_2(src: &[[Self; 2]], r0: &mut [Self], r1: &mut [Self]) -> usize {
+        use std::arch::x86_64::{_mm_loadu_ps, _mm_movehl_ps, _mm_movelh_ps, _mm_storeu_ps};
+        let n = src.len().min(r0.len()).min(r1.len()) & !1;
+        unsafe {
+            let sp = src.as_ptr().cast::<f32>();
+            let d0 = r0.as_mut_ptr().cast::<f32>();
+            let d1 = r1.as_mut_ptr().cast::<f32>();
+            let mut i = 0;
+            while i < n {
+                let a = _mm_loadu_ps(sp.add(i * 4));
+                let b = _mm_loadu_ps(sp.add(i * 4 + 4));
+                _mm_storeu_ps(d0.add(i * 2), _mm_movelh_ps(a, b));
+                _mm_storeu_ps(d1.add(i * 2), _mm_movehl_ps(b, a));
+                i += 2;
+            }
+        }
+        n
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn deinterleave_4(
+        src: &[[Self; 4]],
+        r0: &mut [Self],
+        r1: &mut [Self],
+        r2: &mut [Self],
+        r3: &mut [Self],
+    ) -> usize {
+        use std::arch::x86_64::{_mm_loadu_ps, _mm_movehl_ps, _mm_movelh_ps, _mm_storeu_ps};
+        let n = src
+            .len()
+            .min(r0.len())
+            .min(r1.len())
+            .min(r2.len())
+            .min(r3.len())
+            & !1;
+        unsafe {
+            let sp = src.as_ptr().cast::<f32>();
+            let (d0, d1, d2, d3) = (
+                r0.as_mut_ptr().cast::<f32>(),
+                r1.as_mut_ptr().cast::<f32>(),
+                r2.as_mut_ptr().cast::<f32>(),
+                r3.as_mut_ptr().cast::<f32>(),
+            );
+            let mut i = 0;
+            while i < n {
+                let a0 = _mm_loadu_ps(sp.add(i * 8));
+                let a1 = _mm_loadu_ps(sp.add(i * 8 + 4));
+                let b0 = _mm_loadu_ps(sp.add(i * 8 + 8));
+                let b1 = _mm_loadu_ps(sp.add(i * 8 + 12));
+                _mm_storeu_ps(d0.add(i * 2), _mm_movelh_ps(a0, b0));
+                _mm_storeu_ps(d1.add(i * 2), _mm_movehl_ps(b0, a0));
+                _mm_storeu_ps(d2.add(i * 2), _mm_movelh_ps(a1, b1));
+                _mm_storeu_ps(d3.add(i * 2), _mm_movehl_ps(b1, a1));
                 i += 2;
             }
         }

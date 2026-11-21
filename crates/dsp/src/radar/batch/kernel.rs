@@ -1,6 +1,7 @@
 use num_complex::Complex;
 
 use super::BatchShape;
+use crate::math::complex::{mul_conj_in_place, scale_real_in_place, sub_mul_into};
 use crate::math::fft::FftPair;
 use crate::radar::RadarDspError;
 use crate::radar::wiener::WeightTable;
@@ -80,9 +81,7 @@ impl BatchKernel {
             let len = shape.batch_len + shape.span() + shape.order() - 2;
             load(model, &window[from..from + len]);
             self.fft.forward(model);
-            for (value, r) in model.iter_mut().zip(spectrum.iter()) {
-                *value *= r.conj();
-            }
+            mul_conj_in_place(model, spectrum);
         }
         Ok(())
     }
@@ -104,9 +103,7 @@ impl BatchKernel {
         let len = shape.batch_len + shape.span() - 1;
         load(product, &window[start..start + len]);
         self.fft.forward(product);
-        for (value, r) in product.iter_mut().zip(spectrum) {
-            *value *= r.conj();
-        }
+        mul_conj_in_place(product, spectrum);
         Ok(())
     }
 
@@ -132,15 +129,7 @@ impl BatchKernel {
             _ => false,
         };
         if combined {
-            for (((out, q), w), p) in self
-                .work
-                .iter_mut()
-                .zip(product)
-                .zip(&self.kernel)
-                .zip(model)
-            {
-                *out = q - w * p;
-            }
+            sub_mul_into(&mut self.work, product, &self.kernel, model);
         } else {
             self.work.copy_from_slice(&product[..m]);
         }
@@ -156,9 +145,7 @@ impl BatchKernel {
             return Err(RadarDspError::Shape);
         }
         let series = &mut series[..batches];
-        for (value, weight) in series.iter_mut().zip(window) {
-            *value *= *weight;
-        }
+        scale_real_in_place(series, &window[..batches]);
         self.doppler.forward(series);
         series.rotate_right(batches / 2);
         Ok(())

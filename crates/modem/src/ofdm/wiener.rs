@@ -36,7 +36,8 @@ impl Design {
 
 pub struct FrequencyFilter {
     design: Option<Design>,
-    weights: Box<[[Complex<f32>; TAPS]; CLASSES]>,
+    weights_re: Box<[[f32; TAPS]; CLASSES]>,
+    weights_im: Box<[[f32; TAPS]; CLASSES]>,
 }
 
 impl Default for FrequencyFilter {
@@ -50,7 +51,8 @@ impl FrequencyFilter {
     pub fn new() -> Self {
         Self {
             design: None,
-            weights: Box::new([[Complex::new(0.0, 0.0); TAPS]; CLASSES]),
+            weights_re: Box::new([[0.0; TAPS]; CLASSES]),
+            weights_im: Box::new([[0.0; TAPS]; CLASSES]),
         }
     }
 
@@ -60,11 +62,13 @@ impl FrequencyFilter {
             return;
         }
         let gram = gram(design);
-        for (class, weights) in self.weights.iter_mut().enumerate() {
-            if class > design.spacing * (TAPS - 1) {
-                break;
+        let max_class = design.spacing * (TAPS - 1);
+        for class in 0..=max_class.min(CLASSES - 1) {
+            let w = unbiased(design, class, solve(&gram, &rhs(design, class)));
+            for i in 0..TAPS {
+                self.weights_re[class][i] = w[i].re;
+                self.weights_im[class][i] = w[i].im;
             }
-            *weights = unbiased(design, class, solve(&gram, &rhs(design, class)));
         }
         self.design = Some(design);
     }
@@ -89,11 +93,14 @@ impl FrequencyFilter {
         let start = (nearest + 1).saturating_sub(TAPS / 2).min(count - TAPS);
         let class = (k as isize - (first + start * spacing) as isize)
             .clamp(0, (spacing * (TAPS - 1)) as isize) as usize;
-        self.weights[class]
-            .iter()
-            .enumerate()
-            .map(|(i, &w)| w * anchors(start + i))
-            .sum()
+        let mut ar = [0.0f32; TAPS];
+        let mut ai = [0.0f32; TAPS];
+        for i in 0..TAPS {
+            let a = anchors(start + i);
+            ar[i] = a.re;
+            ai[i] = a.im;
+        }
+        dot8(&self.weights_re[class], &self.weights_im[class], &ar, &ai)
     }
 
     pub fn apply(
@@ -103,10 +110,76 @@ impl FrequencyFilter {
         count: usize,
         out: &mut [Complex<f32>],
     ) {
+        let Some(design) = self.design else {
+            out.fill(Complex::new(0.0, 0.0));
+            return;
+        };
+        if count < TAPS {
+            out.fill(Complex::new(0.0, 0.0));
+            return;
+        }
+        let spacing = design.spacing;
+        let max_start = count - TAPS;
+        let max_class = spacing * (TAPS - 1);
+        let mut start = 0usize;
+        let mut ar = [0.0f32; TAPS];
+        let mut ai = [0.0f32; TAPS];
+        for i in 0..TAPS {
+            let a = anchors(i);
+            ar[i] = a.re;
+            ai[i] = a.im;
+        }
+        let mut nearest = 0usize;
+        let mut rem = 0usize;
         for (k, slot) in out.iter_mut().enumerate() {
-            *slot = self.at(&anchors, first, count, k);
+            if k >= first {
+                if k > first {
+                    rem += 1;
+                    if rem == spacing {
+                        rem = 0;
+                        nearest += 1;
+                    }
+                }
+                let next_start = (nearest + 1).saturating_sub(TAPS / 2).min(max_start);
+                if next_start != start {
+                    if next_start == start + 1 {
+                        ar.copy_within(1.., 0);
+                        ai.copy_within(1.., 0);
+                        let a = anchors(next_start + TAPS - 1);
+                        ar[TAPS - 1] = a.re;
+                        ai[TAPS - 1] = a.im;
+                    } else {
+                        for i in 0..TAPS {
+                            let a = anchors(next_start + i);
+                            ar[i] = a.re;
+                            ai[i] = a.im;
+                        }
+                    }
+                    start = next_start;
+                }
+            }
+            let base = first + start * spacing;
+            let class = if k <= base {
+                0
+            } else {
+                (k - base).min(max_class)
+            };
+            *slot = dot8(&self.weights_re[class], &self.weights_im[class], &ar, &ai);
         }
     }
+}
+
+#[inline(always)]
+fn dot8(wr: &[f32; TAPS], wi: &[f32; TAPS], ar: &[f32; TAPS], ai: &[f32; TAPS]) -> Complex<f32> {
+    let mut re = 0.0f32;
+    let mut im = 0.0f32;
+    for i in 0..TAPS {
+        re = sdrmm_dsp::madd(wr[i], ar[i], re);
+        re = sdrmm_dsp::madd(-wi[i], ai[i], re);
+        im = sdrmm_dsp::madd(wr[i], ai[i], im);
+        im = sdrmm_dsp::madd(wi[i], ar[i], im);
+    }
+    Complex::new(re, im)
 }
 
 /// The first and last path delay of a pilot response, `None` for silence.
@@ -119,10 +192,19 @@ pub fn measure_span(
     guard: usize,
 ) -> Option<(f32, f32)> {
     profile.fill(Complex::new(0.0, 0.0));
-    let taper =
-        |m: usize| 0.5 - 0.5 * (std::f32::consts::TAU * (m as f32 + 0.5) / count as f32).cos();
-    for (m, slot) in profile.iter_mut().take(count).enumerate() {
-        *slot = values(m) * taper(m);
+    if count > 0 {
+        let step_angle = TAU / count as f64;
+        let (sin_s, cos_s) = step_angle.sin_cos();
+        let (sin_0, cos_0) = (0.5 * step_angle).sin_cos();
+        let mut cr = cos_0;
+        let mut ci = sin_0;
+        for (m, slot) in profile.iter_mut().take(count).enumerate() {
+            let taper = 0.5 - 0.5 * cr as f32;
+            *slot = values(m) * taper;
+            let next_r = cr * cos_s - ci * sin_s;
+            ci = cr * sin_s + ci * cos_s;
+            cr = next_r;
+        }
     }
     inverse.process(profile);
     let strongest = profile.iter().map(Complex::norm_sqr).fold(0.0f32, f32::max);

@@ -108,6 +108,8 @@ impl Cfar {
             };
         }
         let rows = &plane_rows[..row_count];
+        let outer_rows = row..row + row_count;
+        let guard_rows = row + pad - spec.guard_doppler..row + pad + spec.guard_doppler + 1;
         let reach = spec.guard_range + spec.train_range;
         let width = (2 * reach + 1).min(self.gates);
         let guard_row_count = 2 * spec.guard_doppler + 1;
@@ -128,7 +130,9 @@ impl Cfar {
             let right = guard.end..outer.end;
             let edge = left.len() < spec.train_range || right.len() < spec.train_range;
             let noise = if edge {
-                let mean = plane_mean(power, rows, &outer, &left, &right, count);
+                let total = self.rect(outer_rows.clone(), outer.clone())
+                    - self.rect(guard_rows.clone(), guard.clone());
+                let mean = (total / count as f64) as f32;
                 if !is_hit(cell, mean, spec.alpha_edge, spec.min_snr) {
                     continue;
                 }
@@ -216,39 +220,6 @@ impl Cfar {
             }
         }
     }
-}
-
-fn plane_mean(
-    power: &[f32],
-    rows: &[PlaneRow],
-    outer: &Range<usize>,
-    left: &Range<usize>,
-    right: &Range<usize>,
-    count: usize,
-) -> f32 {
-    let mut sum = 0.0f64;
-    for &plane_row in rows {
-        if plane_row.clutter {
-            let cells = if plane_row.guarded {
-                left.len() + right.len()
-            } else {
-                outer.len()
-            };
-            sum += f64::from(CLUTTER_FILL) * cells as f64;
-        } else if plane_row.guarded {
-            for &v in &power[plane_row.base + left.start..plane_row.base + left.end] {
-                sum += f64::from(v);
-            }
-            for &v in &power[plane_row.base + right.start..plane_row.base + right.end] {
-                sum += f64::from(v);
-            }
-        } else {
-            for &v in &power[plane_row.base + outer.start..plane_row.base + outer.end] {
-                sum += f64::from(v);
-            }
-        }
-    }
-    (sum / count as f64) as f32
 }
 
 fn exceeds_gt(

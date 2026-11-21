@@ -75,13 +75,31 @@ impl ChannelEstimate {
     }
 
     fn rotate(&mut self, map: &SubcarrierMap, cycles_per_bin: f64) {
-        for c in map.occupied() {
-            let phase = std::f64::consts::TAU * cycles_per_bin * f64::from(c.offset);
-            let (sin, cos) = phase.sin_cos();
+        let occupied = map.occupied();
+        let Some(first) = occupied.first() else {
+            return;
+        };
+        let step_angle = std::f64::consts::TAU * cycles_per_bin;
+        let (sin_s, cos_s) = step_angle.sin_cos();
+        let step = Complex::new(cos_s, sin_s);
+        let mut offset = first.offset;
+        let mut rot = Complex::from_polar(1.0, step_angle * f64::from(offset));
+        for c in occupied {
+            let delta = c.offset - offset;
+            if delta == 1 {
+                rot *= step;
+                offset = c.offset;
+            } else if delta == 2 {
+                rot *= step * step;
+                offset = c.offset;
+            } else if delta != 0 {
+                offset = c.offset;
+                rot = Complex::from_polar(1.0, step_angle * f64::from(offset));
+            }
             let h = self.h[c.bin];
             self.h[c.bin] = Complex::new(
-                (f64::from(h.re) * cos - f64::from(h.im) * sin) as f32,
-                (f64::from(h.re) * sin + f64::from(h.im) * cos) as f32,
+                (f64::from(h.re) * rot.re - f64::from(h.im) * rot.im) as f32,
+                (f64::from(h.re) * rot.im + f64::from(h.im) * rot.re) as f32,
             );
         }
     }

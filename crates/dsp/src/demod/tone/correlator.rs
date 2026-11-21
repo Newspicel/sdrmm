@@ -106,7 +106,26 @@ fn sqrt_diff_4(p_sq: [f32; 4], p_norm: f32, m_sq: [f32; 4], m_norm: f32) -> [f32
         }
         out
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::{
+            _mm_loadu_ps, _mm_mul_ps, _mm_set1_ps, _mm_sqrt_ps, _mm_storeu_ps, _mm_sub_ps,
+        };
+        let mut out = [0.0f32; 4];
+        unsafe {
+            let p = _mm_mul_ps(
+                _mm_sqrt_ps(_mm_loadu_ps(p_sq.as_ptr())),
+                _mm_set1_ps(p_norm),
+            );
+            let m = _mm_mul_ps(
+                _mm_sqrt_ps(_mm_loadu_ps(m_sq.as_ptr())),
+                _mm_set1_ps(m_norm),
+            );
+            _mm_storeu_ps(out.as_mut_ptr(), _mm_sub_ps(p, m));
+        }
+        out
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         std::array::from_fn(|k| p_sq[k].sqrt() * p_norm - m_sq[k].sqrt() * m_norm)
     }

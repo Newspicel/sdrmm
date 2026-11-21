@@ -14,12 +14,12 @@ fn metric(correlation: Complex<f32>, power: f32) -> f32 {
 }
 
 pub fn correlation(iq: &[Complex<f32>], n: usize, g: usize, at: usize) -> (f32, f32) {
-    let mut sum = Complex::new(0.0, 0.0);
-    let mut power = 0.0;
-    for i in at..at + g {
-        sum += iq[i + n] * iq[i].conj();
-        power += iq[i].norm_sqr() + iq[i + n].norm_sqr();
-    }
+    let a = &iq[at..at + g];
+    let b = &iq[at + n..at + n + g];
+    let sum64 = sdrmm_dsp::math::complex::cross_sum(b, a);
+    let sum = Complex::new(sum64.re as f32, sum64.im as f32);
+    let power =
+        sdrmm_dsp::math::complex::sum_norm_sqr(a) + sdrmm_dsp::math::complex::sum_norm_sqr(b);
     (metric(sum, power), sum.arg() / n as f32)
 }
 

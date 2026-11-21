@@ -359,13 +359,15 @@ impl Ofdm {
         );
     }
 
-    fn decode(&mut self, lock: &Lock, rate: Rate, symbols: usize, first: usize) {
+    fn decode(&mut self, lock: &Lock, rate: Rate, symbols: usize, first: usize, already: usize) {
         let table = RATES
             .iter()
             .position(|candidate| candidate.code == rate.code)
             .unwrap_or(0);
-        self.scratch.coded.clear();
-        for index in first..first + symbols {
+        if already == 0 {
+            self.scratch.coded.clear();
+        }
+        for index in first + already..first + symbols {
             self.soft_symbol(lock, index, rate, table);
         }
         let scratch = &mut self.scratch;
@@ -377,7 +379,7 @@ impl Ofdm {
     }
 
     fn signal(&mut self, lock: &Lock) -> Option<(Rate, usize)> {
-        self.decode(lock, RATES[0], 1, 0);
+        self.decode(lock, RATES[0], 1, 0, 0);
         let bits = self.scratch.bits.get(..SIGNAL_BITS)?;
         let parity = bits[..PARITY_BITS].iter().filter(|&&bit| bit).count() % 2 == 0;
         let tail = bits[PARITY_BITS..].iter().all(|&bit| !bit);
@@ -411,7 +413,7 @@ impl Ofdm {
             return Outcome::Wait(end);
         }
         let peek = PEEK_BITS.div_ceil(rate.data_bits).min(symbols);
-        self.decode(&lock, rate, peek, 1);
+        self.decode(&lock, rate, peek, 1, 0);
         descramble(&mut self.scratch.bits);
         let frame_control = self
             .scratch
@@ -421,9 +423,11 @@ impl Ofdm {
         if !frame_control.is_some_and(|control| sink.accepts(control)) {
             return Outcome::Skip(end);
         }
-        self.decode(&lock, rate, symbols, 1);
+        if peek < symbols {
+            self.decode(&lock, rate, symbols, 1, peek);
+            descramble(&mut self.scratch.bits);
+        }
         let scratch = &mut self.scratch;
-        descramble(&mut scratch.bits);
         scratch.bytes.clear();
         scratch.bytes.extend(
             scratch.bits[SERVICE_BITS.min(scratch.bits.len())..]

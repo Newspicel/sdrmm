@@ -106,8 +106,8 @@ pub(super) fn real_blocks<const FOLD: bool>(floats: &[f32], plan: &Plan<f32>, ou
             store(
                 real_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
                 lanes,
-            )
-        };
+            );
+        }
     }
 }
 
@@ -153,8 +153,8 @@ pub(super) fn complex_blocks<const FOLD: bool>(
             store(
                 complex_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
                 lanes,
-            )
-        };
+            );
+        }
     }
 }
 

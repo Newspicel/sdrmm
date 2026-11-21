@@ -5,7 +5,7 @@ use super::{
     hermitian::{set_mirrored, write_identity},
 };
 use crate::{
-    math::complex::cross_sum,
+    math::complex::{cross_sum, sum_norm_sqr},
     math::linalg::{CMat, LinalgError, MAX_ORDER},
 };
 
@@ -56,7 +56,9 @@ impl SampleCovariance {
         let len = lanes.iter().map(|lane| lane.len()).min().unwrap_or(0);
         let n = self.order;
         for (i, left) in lanes.iter().enumerate() {
-            for (j, right) in lanes.iter().enumerate().skip(i) {
+            let diag = sum_norm_sqr(&left[..len]);
+            self.sum[i * n + i].re += f64::from(diag);
+            for (j, right) in lanes.iter().enumerate().skip(i + 1) {
                 self.sum[i * n + j] += cross_sum(&left[..len], &right[..len]);
             }
         }

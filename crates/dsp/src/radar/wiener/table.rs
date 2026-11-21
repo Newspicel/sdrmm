@@ -1,7 +1,7 @@
 use num_complex::Complex;
 
 use super::{GroupPlan, rotation};
-use crate::math::complex::narrow;
+use crate::math::complex::{axpy_in_place, narrow};
 use crate::radar::RadarDspError;
 use crate::radar::batch::{BatchShape, WeightsAt};
 
@@ -121,9 +121,7 @@ impl WeightTable {
         kernel.fill(C32::default());
         for term in mix.filter(|term| term.factor != C32::default()) {
             let spectrum = self.spectrum(term.group, lane, term.tap);
-            for (out, w) in kernel.iter_mut().zip(spectrum) {
-                *out += term.factor * w;
-            }
+            axpy_in_place(kernel, spectrum, term.factor);
         }
         Ok(true)
     }

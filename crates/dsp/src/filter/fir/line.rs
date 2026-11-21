@@ -158,12 +158,26 @@ impl<T: Sample> DelayLine<T> {
 
     #[inline(never)]
     fn transpose_any(&mut self, index: usize, body: &[T]) -> usize {
-        let groups = body.chunks_exact(self.phases);
-        let aligned = body.len() - groups.remainder().len();
+        let phases = self.phases;
+        let stride = self.stride;
+        let total_groups = body.len() / phases;
+        let aligned = total_groups * phases;
+        let blocks = total_groups / 8;
         let rows = &mut self.samples[index..];
-        for (offset, group) in groups.enumerate() {
+        for block in 0..blocks {
+            let g0 = block * 8;
+            let src = &body[g0 * phases..(g0 + 8) * phases];
+            for phase in 0..phases {
+                let dst = &mut rows[phase * stride + g0..phase * stride + g0 + 8];
+                for k in 0..8 {
+                    dst[k] = src[k * phases + phase];
+                }
+            }
+        }
+        for offset in blocks * 8..total_groups {
+            let group = &body[offset * phases..(offset + 1) * phases];
             for (phase, &sample) in group.iter().enumerate() {
-                rows[phase * self.stride + offset] = sample;
+                rows[phase * stride + offset] = sample;
             }
         }
         aligned
@@ -207,11 +221,11 @@ impl DelayLine<f32> {
         }
         let re_dst = &mut re.samples[re.filled..re.filled + chunk.len()];
         let im_dst = &mut im.samples[im.filled..im.filled + chunk.len()];
-        let mut done = 0;
         #[cfg(target_arch = "aarch64")]
-        {
+        let done = {
             use std::arch::aarch64::{vld2q_f32, vst1q_f32};
             let n = chunk.len() & !3;
+            let mut done = 0;
             unsafe {
                 let sp = chunk.as_ptr().cast::<f32>();
                 let rp = re_dst.as_mut_ptr();
@@ -223,7 +237,29 @@ impl DelayLine<f32> {
                     done += 4;
                 }
             }
-        }
+            done
+        };
+        #[cfg(target_arch = "x86_64")]
+        let done = {
+            use std::arch::x86_64::{_mm_loadu_ps, _mm_shuffle_ps, _mm_storeu_ps};
+            let n = chunk.len() & !3;
+            let mut done = 0;
+            unsafe {
+                let sp = chunk.as_ptr().cast::<f32>();
+                let rp = re_dst.as_mut_ptr();
+                let ip = im_dst.as_mut_ptr();
+                while done < n {
+                    let a = _mm_loadu_ps(sp.add(done * 2));
+                    let b = _mm_loadu_ps(sp.add(done * 2 + 4));
+                    _mm_storeu_ps(rp.add(done), _mm_shuffle_ps::<0x88>(a, b));
+                    _mm_storeu_ps(ip.add(done), _mm_shuffle_ps::<0xDD>(a, b));
+                    done += 4;
+                }
+            }
+            done
+        };
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+        let done = 0;
         for ((r, i), sample) in re_dst[done..]
             .iter_mut()
             .zip(&mut im_dst[done..])

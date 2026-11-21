@@ -166,8 +166,8 @@ pub(super) fn complex_blocks<const FOLD: bool>(
             store(
                 complex_sum::<FOLD>(base.add(index * BLOCK_FLOATS), plan),
                 lanes,
-            )
-        };
+            );
+        }
     }
 }
 

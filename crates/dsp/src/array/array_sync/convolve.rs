@@ -2,7 +2,10 @@ use std::f64::consts::TAU;
 
 use num_complex::Complex;
 
-use crate::{math::complex::narrow, math::fft::FftPair};
+use crate::{
+    math::complex::{mul_in_place, narrow},
+    math::fft::FftPair,
+};
 
 const DELAY_MATCH: f32 = 1e-5;
 
@@ -140,9 +143,7 @@ impl FastConvolver {
             return;
         }
         self.fft.forward(&mut self.work);
-        for (bin, response) in self.work.iter_mut().zip(&self.response) {
-            *bin *= response;
-        }
+        mul_in_place(&mut self.work, &self.response);
         self.fft.inverse(&mut self.work);
         out.extend_from_slice(&self.work[keep..]);
     }

@@ -35,6 +35,7 @@ impl Pll {
         }
     }
 
+    #[inline]
     #[must_use]
     pub fn process(&mut self, sample: Complex<f32>) -> Complex<f32> {
         self.phase = step_phase(self.phase, self.inc);
@@ -45,6 +46,7 @@ impl Pll {
         reference
     }
 
+    #[inline]
     #[must_use]
     pub fn harmonic(&self, n: f64) -> Complex<f32> {
         phasor(n * self.phase)

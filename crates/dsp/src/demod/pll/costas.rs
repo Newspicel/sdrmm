@@ -29,6 +29,7 @@ impl Costas {
         }
     }
 
+    #[inline]
     #[must_use]
     pub fn process(&mut self, sample: Complex<f32>) -> Complex<f32> {
         self.phase = step_phase(self.phase, self.inc);

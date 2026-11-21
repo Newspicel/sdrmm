@@ -12,7 +12,7 @@ pub use scale::{DbWindowSmoother, adaptive_db_window, quantize_db};
 
 use crate::{
     math::complex::scale_real_into,
-    math::fastmath::fast_power_db_normal,
+    math::fastmath::power_db_bins,
     math::fft::Transform,
     math::window::{coherent_gain, hann},
 };
@@ -93,18 +93,7 @@ impl SpectrumAnalyzer {
 }
 
 fn bins_db(bins: &[Complex<f32>], scale: f32, out: &mut [f32]) {
-    let (out_blocks, out_tail) = out.as_chunks_mut::<8>();
-    let (bin_blocks, bin_tail) = bins.as_chunks::<8>();
-    for (dst, src) in out_blocks.iter_mut().zip(bin_blocks) {
-        for i in 0..8 {
-            let b = src[i];
-            let p = b.re.mul_add(b.re, b.im * b.im);
-            dst[i] = fast_power_db_normal(p.mul_add(scale, POWER_EPSILON));
-        }
-    }
-    for (slot, bin) in out_tail.iter_mut().zip(bin_tail) {
-        *slot = fast_power_db_normal(bin.norm_sqr() * scale + POWER_EPSILON);
-    }
+    power_db_bins(bins, scale, POWER_EPSILON, out);
 }
 
 #[cfg(test)]

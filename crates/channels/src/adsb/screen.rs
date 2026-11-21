@@ -6,7 +6,7 @@ pub(super) type Phases = u8;
 
 const _: () = assert!(PHASE_TABLES <= Phases::BITS as usize);
 
-const TILE: usize = 512;
+const TILE: usize = 256;
 const SCREENED_GAPS: [usize; 4] = [4, 5, 12, 14];
 
 struct Stream {
@@ -37,24 +37,30 @@ impl Stream {
 }
 
 fn fill_2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32) {
-    let mut done = 0;
     #[cfg(target_arch = "aarch64")]
-    {
-        use std::arch::aarch64::{vdupq_n_f32, vfmaq_f32, vld1q_f32, vmulq_f32, vst1q_f32};
+    let done = {
+        use std::arch::aarch64::{
+            vdupq_n_f32, vextq_f32, vfmaq_f32, vld1q_f32, vmulq_f32, vst1q_f32,
+        };
         let n = values.len() & !7;
+        let mut done = 0;
         unsafe {
             let sp = samples.as_ptr();
             let dp = values.as_mut_ptr();
             let vw0 = vdupq_n_f32(w0);
             let vw1 = vdupq_n_f32(w1);
-            while done < n {
-                let x0 = vld1q_f32(sp.add(done));
-                let x1 = vld1q_f32(sp.add(done + 1));
-                let x2 = vld1q_f32(sp.add(done + 4));
-                let x3 = vld1q_f32(sp.add(done + 5));
-                vst1q_f32(dp.add(done), vfmaq_f32(vmulq_f32(x0, vw0), x1, vw1));
-                vst1q_f32(dp.add(done + 4), vfmaq_f32(vmulq_f32(x2, vw0), x3, vw1));
-                done += 8;
+            if n > 0 {
+                let mut cur = vld1q_f32(sp);
+                while done < n {
+                    let mid = vld1q_f32(sp.add(done + 4));
+                    let next = vld1q_f32(sp.add(done + 8));
+                    let s0 = vextq_f32::<1>(cur, mid);
+                    let s1 = vextq_f32::<1>(mid, next);
+                    vst1q_f32(dp.add(done), vfmaq_f32(vmulq_f32(cur, vw0), s0, vw1));
+                    vst1q_f32(dp.add(done + 4), vfmaq_f32(vmulq_f32(mid, vw0), s1, vw1));
+                    cur = next;
+                    done += 8;
+                }
             }
             while done + 4 <= values.len() {
                 let x0 = vld1q_f32(sp.add(done));
@@ -63,7 +69,18 @@ fn fill_2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32) {
                 done += 4;
             }
         }
-    }
+        done
+    };
+    #[cfg(target_arch = "x86_64")]
+    let done = if std::arch::is_x86_feature_detected!("avx2")
+        && std::arch::is_x86_feature_detected!("fma")
+    {
+        unsafe { fill_2_avx2(values, samples, w0, w1) }
+    } else {
+        fill_2_sse2(values, samples, w0, w1)
+    };
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    let done = 0;
     for ((v, &x0), &x1) in values[done..]
         .iter_mut()
         .zip(&samples[done..])
@@ -73,30 +90,102 @@ fn fill_2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32) {
     }
 }
 
-fn fill_3(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) {
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2", enable = "fma")]
+unsafe fn fill_2_avx2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32) -> usize {
+    use std::arch::x86_64::{
+        _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_set1_ps, _mm256_storeu_ps,
+    };
+    let n = values.len() & !15;
+    let sp = samples.as_ptr();
+    let dp = values.as_mut_ptr();
+    let vw0 = _mm256_set1_ps(w0);
+    let vw1 = _mm256_set1_ps(w1);
     let mut done = 0;
+    while done < n {
+        unsafe {
+            let a0 = _mm256_loadu_ps(sp.add(done));
+            let a1 = _mm256_loadu_ps(sp.add(done + 1));
+            let b0 = _mm256_loadu_ps(sp.add(done + 8));
+            let b1 = _mm256_loadu_ps(sp.add(done + 9));
+            _mm256_storeu_ps(
+                dp.add(done),
+                _mm256_fmadd_ps(a1, vw1, _mm256_mul_ps(a0, vw0)),
+            );
+            _mm256_storeu_ps(
+                dp.add(done + 8),
+                _mm256_fmadd_ps(b1, vw1, _mm256_mul_ps(b0, vw0)),
+            );
+        }
+        done += 16;
+    }
+    while done + 8 <= values.len() {
+        unsafe {
+            let a0 = _mm256_loadu_ps(sp.add(done));
+            let a1 = _mm256_loadu_ps(sp.add(done + 1));
+            _mm256_storeu_ps(
+                dp.add(done),
+                _mm256_fmadd_ps(a1, vw1, _mm256_mul_ps(a0, vw0)),
+            );
+        }
+        done += 8;
+    }
+    done
+}
+
+#[cfg(target_arch = "x86_64")]
+fn fill_2_sse2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32) -> usize {
+    use std::arch::x86_64::{_mm_add_ps, _mm_loadu_ps, _mm_mul_ps, _mm_set1_ps, _mm_storeu_ps};
+    let n = values.len() & !3;
+    let mut done = 0;
+    unsafe {
+        let sp = samples.as_ptr();
+        let dp = values.as_mut_ptr();
+        let vw0 = _mm_set1_ps(w0);
+        let vw1 = _mm_set1_ps(w1);
+        while done < n {
+            let a0 = _mm_loadu_ps(sp.add(done));
+            let a1 = _mm_loadu_ps(sp.add(done + 1));
+            _mm_storeu_ps(
+                dp.add(done),
+                _mm_add_ps(_mm_mul_ps(a0, vw0), _mm_mul_ps(a1, vw1)),
+            );
+            done += 4;
+        }
+    }
+    done
+}
+
+fn fill_3(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) {
     #[cfg(target_arch = "aarch64")]
-    {
-        use std::arch::aarch64::{vdupq_n_f32, vfmaq_f32, vld1q_f32, vmulq_f32, vst1q_f32};
+    let done = {
+        use std::arch::aarch64::{
+            vdupq_n_f32, vextq_f32, vfmaq_f32, vld1q_f32, vmulq_f32, vst1q_f32,
+        };
         let n = values.len() & !7;
+        let mut done = 0;
         unsafe {
             let sp = samples.as_ptr();
             let dp = values.as_mut_ptr();
             let vw0 = vdupq_n_f32(w0);
             let vw1 = vdupq_n_f32(w1);
             let vw2 = vdupq_n_f32(w2);
-            while done < n {
-                let a0 = vld1q_f32(sp.add(done));
-                let a1 = vld1q_f32(sp.add(done + 1));
-                let a2 = vld1q_f32(sp.add(done + 2));
-                let b0 = vld1q_f32(sp.add(done + 4));
-                let b1 = vld1q_f32(sp.add(done + 5));
-                let b2 = vld1q_f32(sp.add(done + 6));
-                let r0 = vfmaq_f32(vfmaq_f32(vmulq_f32(a0, vw0), a1, vw1), a2, vw2);
-                let r1 = vfmaq_f32(vfmaq_f32(vmulq_f32(b0, vw0), b1, vw1), b2, vw2);
-                vst1q_f32(dp.add(done), r0);
-                vst1q_f32(dp.add(done + 4), r1);
-                done += 8;
+            if n > 0 {
+                let mut cur = vld1q_f32(sp);
+                while done < n {
+                    let mid = vld1q_f32(sp.add(done + 4));
+                    let next = vld1q_f32(sp.add(done + 8));
+                    let a1 = vextq_f32::<1>(cur, mid);
+                    let a2 = vextq_f32::<2>(cur, mid);
+                    let b1 = vextq_f32::<1>(mid, next);
+                    let b2 = vextq_f32::<2>(mid, next);
+                    let r0 = vfmaq_f32(vfmaq_f32(vmulq_f32(cur, vw0), a1, vw1), a2, vw2);
+                    let r1 = vfmaq_f32(vfmaq_f32(vmulq_f32(mid, vw0), b1, vw1), b2, vw2);
+                    vst1q_f32(dp.add(done), r0);
+                    vst1q_f32(dp.add(done + 4), r1);
+                    cur = next;
+                    done += 8;
+                }
             }
             while done + 4 <= values.len() {
                 let a0 = vld1q_f32(sp.add(done));
@@ -107,7 +196,18 @@ fn fill_3(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) {
                 done += 4;
             }
         }
-    }
+        done
+    };
+    #[cfg(target_arch = "x86_64")]
+    let done = if std::arch::is_x86_feature_detected!("avx2")
+        && std::arch::is_x86_feature_detected!("fma")
+    {
+        unsafe { fill_3_avx2(values, samples, w0, w1, w2) }
+    } else {
+        fill_3_sse2(values, samples, w0, w1, w2)
+    };
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    let done = 0;
     for (((v, &x0), &x1), &x2) in values[done..]
         .iter_mut()
         .zip(&samples[done..])
@@ -116,6 +216,73 @@ fn fill_3(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) {
     {
         *v = sdrmm_dsp::madd(w2, x2, sdrmm_dsp::madd(w1, x1, w0 * x0));
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2", enable = "fma")]
+unsafe fn fill_3_avx2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) -> usize {
+    use std::arch::x86_64::{
+        _mm256_fmadd_ps, _mm256_loadu_ps, _mm256_mul_ps, _mm256_set1_ps, _mm256_storeu_ps,
+    };
+    let n = values.len() & !15;
+    let sp = samples.as_ptr();
+    let dp = values.as_mut_ptr();
+    let vw0 = _mm256_set1_ps(w0);
+    let vw1 = _mm256_set1_ps(w1);
+    let vw2 = _mm256_set1_ps(w2);
+    let mut done = 0;
+    while done < n {
+        unsafe {
+            let a0 = _mm256_loadu_ps(sp.add(done));
+            let a1 = _mm256_loadu_ps(sp.add(done + 1));
+            let a2 = _mm256_loadu_ps(sp.add(done + 2));
+            let b0 = _mm256_loadu_ps(sp.add(done + 8));
+            let b1 = _mm256_loadu_ps(sp.add(done + 9));
+            let b2 = _mm256_loadu_ps(sp.add(done + 10));
+            let r0 = _mm256_fmadd_ps(a2, vw2, _mm256_fmadd_ps(a1, vw1, _mm256_mul_ps(a0, vw0)));
+            let r1 = _mm256_fmadd_ps(b2, vw2, _mm256_fmadd_ps(b1, vw1, _mm256_mul_ps(b0, vw0)));
+            _mm256_storeu_ps(dp.add(done), r0);
+            _mm256_storeu_ps(dp.add(done + 8), r1);
+        }
+        done += 16;
+    }
+    while done + 8 <= values.len() {
+        unsafe {
+            let a0 = _mm256_loadu_ps(sp.add(done));
+            let a1 = _mm256_loadu_ps(sp.add(done + 1));
+            let a2 = _mm256_loadu_ps(sp.add(done + 2));
+            let r = _mm256_fmadd_ps(a2, vw2, _mm256_fmadd_ps(a1, vw1, _mm256_mul_ps(a0, vw0)));
+            _mm256_storeu_ps(dp.add(done), r);
+        }
+        done += 8;
+    }
+    done
+}
+
+#[cfg(target_arch = "x86_64")]
+fn fill_3_sse2(values: &mut [f32], samples: &[f32], w0: f32, w1: f32, w2: f32) -> usize {
+    use std::arch::x86_64::{_mm_add_ps, _mm_loadu_ps, _mm_mul_ps, _mm_set1_ps, _mm_storeu_ps};
+    let n = values.len() & !3;
+    let mut done = 0;
+    unsafe {
+        let sp = samples.as_ptr();
+        let dp = values.as_mut_ptr();
+        let vw0 = _mm_set1_ps(w0);
+        let vw1 = _mm_set1_ps(w1);
+        let vw2 = _mm_set1_ps(w2);
+        while done < n {
+            let a0 = _mm_loadu_ps(sp.add(done));
+            let a1 = _mm_loadu_ps(sp.add(done + 1));
+            let a2 = _mm_loadu_ps(sp.add(done + 2));
+            let r = _mm_add_ps(
+                _mm_add_ps(_mm_mul_ps(a0, vw0), _mm_mul_ps(a1, vw1)),
+                _mm_mul_ps(a2, vw2),
+            );
+            _mm_storeu_ps(dp.add(done), r);
+            done += 4;
+        }
+    }
+    done
 }
 
 #[derive(Clone, Copy)]
@@ -130,7 +297,7 @@ struct PhaseChips {
 }
 
 impl PhaseChips {
-    fn mark(&self, streams: &[Stream], phase: usize, hits: &mut [Phases]) {
+    fn mark(&self, streams: &[Stream], phase: usize, hits: &mut [Phases]) -> bool {
         let len = hits.len();
         let (Some(p), Some(g)) = (
             slices(&self.pulses, streams, len),
@@ -139,58 +306,81 @@ impl PhaseChips {
             for hit in &mut *hits {
                 *hit |= 1 << phase;
             }
-            return;
+            return !hits.is_empty();
         };
         let bit = 1u8 << phase;
-        let mut i = 0;
+        let mut any_hit = false;
         #[cfg(target_arch = "aarch64")]
-        {
+        let mut i = {
             use std::arch::aarch64::{
                 vaddq_f32, vandq_u32, vcgtq_f32, vcltq_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32,
                 vmaxvq_u32, vminq_f32, vmulq_f32, vorrq_u32, vst1q_u32,
             };
-            let n16 = len & !15;
+            let n8 = len & !7;
+            let mut i = 0;
             unsafe {
                 let scale = vdupq_n_f32(0.125);
                 let (p0, p1, p2, p3) = (p[0].as_ptr(), p[1].as_ptr(), p[2].as_ptr(), p[3].as_ptr());
                 let (g0, g1, g2, g3) = (g[0].as_ptr(), g[1].as_ptr(), g[2].as_ptr(), g[3].as_ptr());
-                let check = |at: usize| {
-                    let vp0 = vld1q_f32(p0.add(at));
-                    let vp1 = vld1q_f32(p1.add(at));
-                    let vp2 = vld1q_f32(p2.add(at));
-                    let vp3 = vld1q_f32(p3.add(at));
-                    let weakest = vminq_f32(vminq_f32(vp0, vp1), vminq_f32(vp2, vp3));
-                    let threshold =
-                        vmulq_f32(vaddq_f32(vaddq_f32(vp0, vp1), vaddq_f32(vp2, vp3)), scale);
-                    let vg0 = vld1q_f32(g0.add(at));
-                    let vg1 = vld1q_f32(g1.add(at));
-                    let vg2 = vld1q_f32(g2.add(at));
-                    let vg3 = vld1q_f32(g3.add(at));
-                    let loudest = vmaxq_f32(vmaxq_f32(vg0, vg1), vmaxq_f32(vg2, vg3));
-                    vandq_u32(vcgtq_f32(weakest, threshold), vcltq_f32(loudest, threshold))
-                };
-                while i < n16 {
-                    let m0 = check(i);
-                    let m1 = check(i + 4);
-                    let m2 = check(i + 8);
-                    let m3 = check(i + 12);
-                    let any = vorrq_u32(vorrq_u32(m0, m1), vorrq_u32(m2, m3));
-                    if vmaxvq_u32(any) != 0 {
-                        let mut lanes = [0u32; 16];
-                        vst1q_u32(lanes.as_mut_ptr(), m0);
-                        vst1q_u32(lanes.as_mut_ptr().add(4), m1);
-                        vst1q_u32(lanes.as_mut_ptr().add(8), m2);
-                        vst1q_u32(lanes.as_mut_ptr().add(12), m3);
-                        for (k, &lane) in lanes.iter().enumerate() {
-                            if lane != 0 {
-                                hits[i + k] |= bit;
+                while i < n8 {
+                    let vp0a = vld1q_f32(p0.add(i));
+                    let vp1a = vld1q_f32(p1.add(i));
+                    let vp2a = vld1q_f32(p2.add(i));
+                    let vp3a = vld1q_f32(p3.add(i));
+                    let weak_a = vminq_f32(vminq_f32(vp0a, vp1a), vminq_f32(vp2a, vp3a));
+                    let thresh_a = vmulq_f32(
+                        vaddq_f32(vaddq_f32(vp0a, vp1a), vaddq_f32(vp2a, vp3a)),
+                        scale,
+                    );
+                    let ga = vmaxq_f32(vld1q_f32(g0.add(i)), vld1q_f32(g1.add(i)));
+                    let ma = vandq_u32(vcgtq_f32(weak_a, thresh_a), vcltq_f32(ga, thresh_a));
+
+                    let vp0b = vld1q_f32(p0.add(i + 4));
+                    let vp1b = vld1q_f32(p1.add(i + 4));
+                    let vp2b = vld1q_f32(p2.add(i + 4));
+                    let vp3b = vld1q_f32(p3.add(i + 4));
+                    let weak_b = vminq_f32(vminq_f32(vp0b, vp1b), vminq_f32(vp2b, vp3b));
+                    let thresh_b = vmulq_f32(
+                        vaddq_f32(vaddq_f32(vp0b, vp1b), vaddq_f32(vp2b, vp3b)),
+                        scale,
+                    );
+                    let gb = vmaxq_f32(vld1q_f32(g0.add(i + 4)), vld1q_f32(g1.add(i + 4)));
+                    let mb = vandq_u32(vcgtq_f32(weak_b, thresh_b), vcltq_f32(gb, thresh_b));
+
+                    if vmaxvq_u32(vorrq_u32(ma, mb)) != 0 {
+                        let ga2 = vmaxq_f32(vld1q_f32(g2.add(i)), vld1q_f32(g3.add(i)));
+                        let gb2 = vmaxq_f32(vld1q_f32(g2.add(i + 4)), vld1q_f32(g3.add(i + 4)));
+                        let fa = vandq_u32(ma, vcltq_f32(ga2, thresh_a));
+                        let fb = vandq_u32(mb, vcltq_f32(gb2, thresh_b));
+                        if vmaxvq_u32(vorrq_u32(fa, fb)) != 0 {
+                            any_hit = true;
+                            let mut lanes = [0u32; 8];
+                            vst1q_u32(lanes.as_mut_ptr(), fa);
+                            vst1q_u32(lanes.as_mut_ptr().add(4), fb);
+                            for (k, &lane) in lanes.iter().enumerate() {
+                                if lane != 0 {
+                                    hits[i + k] |= bit;
+                                }
                             }
                         }
                     }
-                    i += 16;
+                    i += 8;
                 }
             }
-        }
+            i
+        };
+        #[cfg(target_arch = "x86_64")]
+        let mut i = if std::arch::is_x86_feature_detected!("avx2") {
+            let (done, found) = unsafe { mark_avx2(p, g, bit, hits) };
+            any_hit |= found;
+            done
+        } else {
+            let (done, found) = mark_sse2(p, g, bit, hits);
+            any_hit |= found;
+            done
+        };
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+        let mut i = 0;
         while i < len {
             let weakest = p[0][i].min(p[1][i]).min(p[2][i]).min(p[3][i]);
             let threshold = (p[0][i] + p[1][i] + p[2][i] + p[3][i]) * 0.125;
@@ -198,11 +388,115 @@ impl PhaseChips {
                 let loudest_gap = g[0][i].max(g[1][i]).max(g[2][i]).max(g[3][i]);
                 if loudest_gap < threshold {
                     hits[i] |= bit;
+                    any_hit = true;
                 }
             }
             i += 1;
         }
+        any_hit
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn mark_avx2(p: [&[f32]; 4], g: [&[f32]; 4], bit: u8, hits: &mut [Phases]) -> (usize, bool) {
+    use std::arch::x86_64::{
+        _CMP_GT_OQ, _CMP_LT_OQ, _mm256_add_ps, _mm256_and_ps, _mm256_cmp_ps, _mm256_loadu_ps,
+        _mm256_max_ps, _mm256_min_ps, _mm256_movemask_ps, _mm256_mul_ps, _mm256_set1_ps,
+    };
+    let len = hits.len();
+    let n8 = len & !7;
+    let scale = _mm256_set1_ps(0.125);
+    let (p0, p1, p2, p3) = (p[0].as_ptr(), p[1].as_ptr(), p[2].as_ptr(), p[3].as_ptr());
+    let (g0, g1, g2, g3) = (g[0].as_ptr(), g[1].as_ptr(), g[2].as_ptr(), g[3].as_ptr());
+    let mut i = 0;
+    let mut any_hit = false;
+    while i < n8 {
+        let (vp0, vp1, vp2, vp3, vg0, vg1) = unsafe {
+            (
+                _mm256_loadu_ps(p0.add(i)),
+                _mm256_loadu_ps(p1.add(i)),
+                _mm256_loadu_ps(p2.add(i)),
+                _mm256_loadu_ps(p3.add(i)),
+                _mm256_loadu_ps(g0.add(i)),
+                _mm256_loadu_ps(g1.add(i)),
+            )
+        };
+        let weakest = _mm256_min_ps(_mm256_min_ps(vp0, vp1), _mm256_min_ps(vp2, vp3));
+        let threshold = _mm256_mul_ps(
+            _mm256_add_ps(_mm256_add_ps(vp0, vp1), _mm256_add_ps(vp2, vp3)),
+            scale,
+        );
+        let g01 = _mm256_max_ps(vg0, vg1);
+        let m01 = _mm256_and_ps(
+            _mm256_cmp_ps::<_CMP_GT_OQ>(weakest, threshold),
+            _mm256_cmp_ps::<_CMP_LT_OQ>(g01, threshold),
+        );
+        if _mm256_movemask_ps(m01) != 0 {
+            let (vg2, vg3) = unsafe { (_mm256_loadu_ps(g2.add(i)), _mm256_loadu_ps(g3.add(i))) };
+            let g23 = _mm256_max_ps(vg2, vg3);
+            let m = _mm256_and_ps(m01, _mm256_cmp_ps::<_CMP_LT_OQ>(g23, threshold));
+            let mut mask = _mm256_movemask_ps(m) as u32;
+            if mask != 0 {
+                any_hit = true;
+                while mask != 0 {
+                    let lane = mask.trailing_zeros() as usize;
+                    hits[i + lane] |= bit;
+                    mask &= mask - 1;
+                }
+            }
+        }
+        i += 8;
+    }
+    (i, any_hit)
+}
+
+#[cfg(target_arch = "x86_64")]
+fn mark_sse2(p: [&[f32]; 4], g: [&[f32]; 4], bit: u8, hits: &mut [Phases]) -> (usize, bool) {
+    use std::arch::x86_64::{
+        _mm_add_ps, _mm_and_ps, _mm_cmpgt_ps, _mm_cmplt_ps, _mm_loadu_ps, _mm_max_ps, _mm_min_ps,
+        _mm_movemask_ps, _mm_mul_ps, _mm_set1_ps,
+    };
+    let len = hits.len();
+    let n4 = len & !3;
+    let mut i = 0;
+    let mut any_hit = false;
+    unsafe {
+        let scale = _mm_set1_ps(0.125);
+        let (p0, p1, p2, p3) = (p[0].as_ptr(), p[1].as_ptr(), p[2].as_ptr(), p[3].as_ptr());
+        let (g0, g1, g2, g3) = (g[0].as_ptr(), g[1].as_ptr(), g[2].as_ptr(), g[3].as_ptr());
+        while i < n4 {
+            let vp0 = _mm_loadu_ps(p0.add(i));
+            let vp1 = _mm_loadu_ps(p1.add(i));
+            let vp2 = _mm_loadu_ps(p2.add(i));
+            let vp3 = _mm_loadu_ps(p3.add(i));
+            let weakest = _mm_min_ps(_mm_min_ps(vp0, vp1), _mm_min_ps(vp2, vp3));
+            let threshold = _mm_mul_ps(
+                _mm_add_ps(_mm_add_ps(vp0, vp1), _mm_add_ps(vp2, vp3)),
+                scale,
+            );
+            let g01 = _mm_max_ps(_mm_loadu_ps(g0.add(i)), _mm_loadu_ps(g1.add(i)));
+            let m01 = _mm_and_ps(
+                _mm_cmpgt_ps(weakest, threshold),
+                _mm_cmplt_ps(g01, threshold),
+            );
+            if _mm_movemask_ps(m01) != 0 {
+                let g23 = _mm_max_ps(_mm_loadu_ps(g2.add(i)), _mm_loadu_ps(g3.add(i)));
+                let m = _mm_and_ps(m01, _mm_cmplt_ps(g23, threshold));
+                let mut mask = _mm_movemask_ps(m) as u32;
+                if mask != 0 {
+                    any_hit = true;
+                    while mask != 0 {
+                        let lane = mask.trailing_zeros() as usize;
+                        hits[i + lane] |= bit;
+                        mask &= mask - 1;
+                    }
+                }
+            }
+            i += 4;
+        }
+    }
+    (i, any_hit)
 }
 
 fn slices<'a, const N: usize>(
@@ -223,7 +517,7 @@ fn slices<'a, const N: usize>(
 pub(super) struct PreambleScreen {
     streams: Vec<Stream>,
     phases: Vec<PhaseChips>,
-    hits: Vec<Phases>,
+    hits: Vec<(usize, Phases)>,
 }
 
 impl PreambleScreen {
@@ -251,27 +545,41 @@ impl PreambleScreen {
 
     pub(super) fn scan(&mut self, mag: &[f32], positions: usize) {
         self.hits.clear();
-        self.hits.resize(positions, 0);
-        for (tile, hits) in self.hits.chunks_mut(TILE).enumerate() {
-            let from = tile * TILE;
+        let mut tile_hits = [0 as Phases; TILE];
+        let mut from = 0;
+        while from < positions {
+            let len = (positions - from).min(TILE);
             if self
                 .streams
                 .iter_mut()
-                .any(|stream| stream.fill(mag, from, hits.len()).is_none())
+                .any(|stream| stream.fill(mag, from, len).is_none())
             {
-                hits.fill(Phases::MAX);
+                for offset in 0..len {
+                    self.hits.push((from + offset, Phases::MAX));
+                }
+                from += len;
                 continue;
             }
+            let buf = &mut tile_hits[..len];
+            buf.fill(0);
+            let mut any = false;
             for (phase, chips) in self.phases.iter().enumerate() {
-                chips.mark(&self.streams, phase, hits);
+                any |= chips.mark(&self.streams, phase, buf);
             }
+            if any {
+                for (offset, &mask) in buf.iter().enumerate() {
+                    if mask != 0 {
+                        self.hits.push((from + offset, mask));
+                    }
+                }
+            }
+            from += len;
         }
     }
 
     pub(super) fn next(&self, from: usize) -> Option<(usize, Phases)> {
-        let hits = self.hits.get(from..)?;
-        let skip = hits.iter().position(|&hit| hit != 0)?;
-        Some((from + skip, hits[skip]))
+        let index = self.hits.partition_point(|&(pos, _)| pos < from);
+        self.hits.get(index).copied()
     }
 }
 

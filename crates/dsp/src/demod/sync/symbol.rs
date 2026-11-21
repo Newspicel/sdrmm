@@ -359,10 +359,44 @@ impl SymbolSync {
             };
             self.consume_sample(y, hold, on_sample);
         }
+        if !hold {
+            if (!self.at_symbol || !self.primed) && self.pos + 3 <= total {
+                let idx = self.pos - split;
+                let y = farrow(&input[idx - 1..idx + 3], self.frac as f32);
+                self.consume_sample(y, false, on_sample);
+            }
+            if !self.at_symbol && self.pos + 3 <= total {
+                let idx = self.pos - split;
+                let y = farrow(&input[idx - 1..idx + 3], self.frac as f32);
+                self.consume_sample(y, false, on_sample);
+            }
+            while self.pos + 3 <= total {
+                let idx = self.pos - split;
+                let y = farrow(&input[idx - 1..idx + 3], self.frac as f32);
+                let steered = on_sample(y, true);
+                if let Some(err) = steered {
+                    self.steer(err);
+                } else {
+                    self.retime(y);
+                }
+                self.prev_symbol = y;
+                self.advance();
+                if self.pos + 3 > total {
+                    self.at_symbol = false;
+                    break;
+                }
+                let idx = self.pos - split;
+                let m = farrow(&input[idx - 1..idx + 3], self.frac as f32);
+                self.mid = m;
+                let _ = on_sample(m, false);
+                self.advance();
+            }
+            return;
+        }
         while self.pos + 3 <= total {
             let idx = self.pos - split;
             let y = farrow(&input[idx - 1..idx + 3], self.frac as f32);
-            self.consume_sample(y, hold, on_sample);
+            self.consume_sample(y, true, on_sample);
         }
     }
 
@@ -424,10 +458,39 @@ impl SymbolSync {
             };
             self.consume_real_sample(y, hold, out);
         }
+        if !hold {
+            if (!self.at_symbol || !self.primed) && self.pos + 3 <= total {
+                let idx = self.pos - split;
+                let y = farrow_real(&input[idx - 1..idx + 3], self.frac as f32);
+                self.consume_real_sample(y, false, out);
+            }
+            if !self.at_symbol && self.pos + 3 <= total {
+                let idx = self.pos - split;
+                let y = farrow_real(&input[idx - 1..idx + 3], self.frac as f32);
+                self.consume_real_sample(y, false, out);
+            }
+            while self.pos + 3 <= total {
+                let idx = self.pos - split;
+                let y = farrow_real(&input[idx - 1..idx + 3], self.frac as f32);
+                out.push(y);
+                self.retime_real(y);
+                self.prev_symbol = Complex::new(y, 0.0);
+                self.advance();
+                if self.pos + 3 > total {
+                    self.at_symbol = false;
+                    break;
+                }
+                let idx = self.pos - split;
+                let m = farrow_real(&input[idx - 1..idx + 3], self.frac as f32);
+                self.mid = Complex::new(m, 0.0);
+                self.advance();
+            }
+            return;
+        }
         while self.pos + 3 <= total {
             let idx = self.pos - split;
             let y = farrow_real(&input[idx - 1..idx + 3], self.frac as f32);
-            self.consume_real_sample(y, hold, out);
+            self.consume_real_sample(y, true, out);
         }
     }
 

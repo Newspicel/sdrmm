@@ -57,6 +57,22 @@ impl Prbs {
     }
 
     pub fn apply_bytes(&mut self, data: &mut [u8]) {
+        if self.spec.stages >= 8
+            && self.spec.taps.count_ones() == 2
+            && self.spec.taps.trailing_zeros() >= 7
+        {
+            let lo = self.spec.taps.trailing_zeros() - 7;
+            let hi = (self.spec.taps & (self.spec.taps - 1)).trailing_zeros() - 7;
+            let mut reg = self.register;
+            let mask = self.mask;
+            for byte in data {
+                let scrambled = ((reg >> lo) ^ (reg >> hi)) & 0xFF;
+                reg = ((reg << 8) | scrambled) & mask;
+                *byte ^= scrambled as u8;
+            }
+            self.register = reg;
+            return;
+        }
         for byte in data {
             let mut scrambled = 0u8;
             for index in (0..8).rev() {
@@ -67,6 +83,21 @@ impl Prbs {
     }
 
     pub fn skip_bytes(&mut self, count: usize) {
+        if self.spec.stages >= 8
+            && self.spec.taps.count_ones() == 2
+            && self.spec.taps.trailing_zeros() >= 7
+        {
+            let lo = self.spec.taps.trailing_zeros() - 7;
+            let hi = (self.spec.taps & (self.spec.taps - 1)).trailing_zeros() - 7;
+            let mut reg = self.register;
+            let mask = self.mask;
+            for _ in 0..count {
+                let scrambled = ((reg >> lo) ^ (reg >> hi)) & 0xFF;
+                reg = ((reg << 8) | scrambled) & mask;
+            }
+            self.register = reg;
+            return;
+        }
         for _ in 0..count * 8 {
             self.next_bit();
         }
@@ -218,5 +249,25 @@ mod tests {
     fn the_x9_sequence_is_balanced_over_one_period() {
         let ones = sequence(X9_X5, 511).into_iter().filter(|&bit| bit).count();
         assert_eq!(ones, 256);
+    }
+
+    #[test]
+    fn apply_bytes_matches_bit_steps_for_fast_and_generic_generators() {
+        for spec in [X15_X14, X9_X5] {
+            let mut fast = Prbs::new(spec);
+            let mut bit = Prbs::new(spec);
+            let mut fast_buf: Vec<u8> = (0..512u16).map(|v| (v * 37 + 11) as u8).collect();
+            let mut bit_buf = fast_buf.clone();
+            fast.apply_bytes(&mut fast_buf);
+            for byte in &mut bit_buf {
+                let mut scrambled = 0u8;
+                for index in (0..8).rev() {
+                    scrambled |= u8::from(bit.next_bit()) << index;
+                }
+                *byte ^= scrambled;
+            }
+            assert_eq!(fast_buf, bit_buf);
+            assert_eq!(fast.register(), bit.register());
+        }
     }
 }

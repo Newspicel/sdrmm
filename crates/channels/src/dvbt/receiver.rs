@@ -23,13 +23,16 @@ pub struct Receiver {
     transforms: [Transform; 2],
     cfo_nco: Nco,
     ramp_nco: Nco,
+    ramp_turns: f64,
     pending: Vec<Complex<f32>>,
+    pending_start: usize,
     spectrum: Vec<Complex<f32>>,
     estimators: [ChannelEstimator; 2],
     noise: f32,
     steer: Option<isize>,
     previous_tps: Vec<Complex<f32>>,
     words: Vec<[Soft; 6]>,
+    reordered: Vec<[Soft; 6]>,
     soft: Vec<Soft>,
     tables: [Vec<Complex<f32>>; 9],
     tps: Tps,
@@ -53,13 +56,16 @@ impl Receiver {
             transforms: [Transform::forward(2048), Transform::forward(8192)],
             cfo_nco: Nco::new(0.0, 1.0),
             ramp_nco: Nco::new(0.0, 1.0),
-            pending: Vec::with_capacity(65536),
+            ramp_turns: 0.0,
+            pending: Vec::with_capacity(131_072),
+            pending_start: 0,
             spectrum: vec![Complex::new(0.0, 0.0); 8192],
             estimators: [ChannelEstimator::new(1705), ChannelEstimator::new(6817)],
             noise: 0.0,
             steer: None,
             previous_tps: vec![Complex::new(0.0, 0.0); 68],
             words: vec![[0; 6]; 6048],
+            reordered: vec![[0; 6]; 6048],
             soft: Vec::with_capacity(6048 * 6),
             tables: std::array::from_fn(|i| {
                 let bits = 2 + 2 * (i / 3);
@@ -85,6 +91,7 @@ impl Receiver {
 
     pub fn reset(&mut self) {
         self.pending.clear();
+        self.pending_start = 0;
         self.timing = None;
         self.integer_offset = None;
         self.parameters = None;
@@ -102,6 +109,19 @@ impl Receiver {
         }
     }
 
+    fn compact_pending(&mut self) {
+        if self.pending_start > 0 {
+            self.pending.copy_within(self.pending_start.., 0);
+            self.pending
+                .truncate(self.pending.len() - self.pending_start);
+            self.pending_start = 0;
+        }
+    }
+
+    fn pending_slice(&self) -> &[Complex<f32>] {
+        &self.pending[self.pending_start..]
+    }
+
     pub fn metrics(&self) -> DvbsMetrics {
         self.fec.metrics()
     }
@@ -111,15 +131,22 @@ impl Receiver {
 
     pub fn push(&mut self, iq: &[Complex<f32>], packets: &mut Vec<[u8; PACKET]>) {
         for block in iq.chunks(4096) {
+            if self.pending_start >= 65_536
+                || (self.pending_start > 0
+                    && self.pending.len() + block.len() > self.pending.capacity())
+            {
+                self.compact_pending();
+            }
             self.pending.extend_from_slice(block);
             if self.timing.is_none() {
-                if self.pending.len() < 51200 {
+                if self.pending_slice().len() < 51200 {
                     continue;
                 }
-                if let Some(timing) = acquire::acquire(&self.pending) {
+                if let Some(timing) = acquire::acquire(self.pending_slice()) {
                     if timing.at >= 16 {
-                        self.pending.drain(..timing.at - 16);
+                        self.pending_start += timing.at - 16;
                     } else {
+                        self.compact_pending();
                         self.pending.splice(
                             ..0,
                             std::iter::repeat_n(Complex::new(0.0, 0.0), 16 - timing.at),
@@ -127,12 +154,12 @@ impl Receiver {
                     }
                     self.timing = Some(Timing { at: 16, ..timing });
                 } else {
-                    self.pending.drain(..16384);
+                    self.pending_start += 16384;
                     continue;
                 }
             }
             while let Some(timing) = self.timing {
-                if self.pending.len() < timing.fft + timing.guard + 48 {
+                if self.pending_slice().len() < timing.fft + timing.guard + 48 {
                     break;
                 }
                 self.demodulate(timing, packets);
@@ -146,7 +173,7 @@ impl Receiver {
             Some(steer) => {
                 let at = (16 + steer).clamp(16 - STEER_LIMIT, 16 + STEER_LIMIT) as usize;
                 let (quality, frequency) =
-                    acquire::correlation(&self.pending, timing.fft, timing.guard, at);
+                    acquire::correlation(self.pending_slice(), timing.fft, timing.guard, at);
                 (quality, frequency, at)
             }
             None => self.best_correlation(timing),
@@ -164,7 +191,7 @@ impl Receiver {
         timing.offset += 0.1 * (frequency - timing.offset);
         self.snr = (-10.0 * ((1.0 - quality) / quality.max(1e-6)).max(1e-6).log10()).max(0.0);
         let early = timing.guard / 4;
-        let window = at + timing.guard - early;
+        let window = self.pending_start + at + timing.guard - early;
         self.cfo_nco
             .set_turns(-f64::from(timing.offset) / std::f64::consts::TAU);
         self.cfo_nco.reset();
@@ -174,7 +201,11 @@ impl Receiver {
         );
         self.transforms[index].process(&mut self.spectrum[..timing.fft]);
         if early > 0 {
-            self.ramp_nco.set_turns(early as f64 / timing.fft as f64);
+            let turns = early as f64 / timing.fft as f64;
+            if turns != self.ramp_turns {
+                self.ramp_nco.set_turns(turns);
+                self.ramp_turns = turns;
+            }
             self.ramp_nco.reset();
             self.ramp_nco.mix(&mut self.spectrum[..timing.fft]);
         }
@@ -209,15 +240,15 @@ impl Receiver {
         self.symbol = (self.symbol + 1) % 68;
         self.since_tps += 1;
         let period = timing.fft + timing.guard;
-        self.pending.drain(..period + at - 16);
+        self.pending_start += period + at - 16;
         self.timing = Some(timing);
     }
 
     fn best_correlation(&self, timing: Timing) -> (f32, f32, usize) {
+        let pending = self.pending_slice();
         let mut best = (0.0, 0.0, 16);
         for at in 8..=24 {
-            let (quality, frequency) =
-                acquire::correlation(&self.pending, timing.fft, timing.guard, at);
+            let (quality, frequency) = acquire::correlation(pending, timing.fft, timing.guard, at);
             if quality > best.0 {
                 best = (quality, frequency, at);
             }
@@ -293,10 +324,6 @@ impl Receiver {
         }
     }
 
-    #[expect(
-        clippy::large_stack_arrays,
-        reason = "symbol reorder on the stack, no allocation"
-    )]
     fn decode(
         &mut self,
         index: usize,
@@ -319,12 +346,13 @@ impl Receiver {
                 / carriers
                 * UNKNOWN_NOISE
         };
+        let inv_ref = LLR_SCALE / reference.max(1e-12);
         let mut noise = 0.0;
         for (i, &k) in map.data[phase].iter().enumerate() {
             let h = estimates[k];
             let gain = h.norm_sqr().max(1e-12);
             let point = self.spectrum[map.bin(k, offset)] * h.conj() / gain;
-            let scale = LLR_SCALE * gain / reference.max(1e-12);
+            let scale = gain * inv_ref;
             let (soft, nearest) = mapping::soften(point, table, params.bits, scale);
             self.words[i] = soft;
             noise += nearest * gain;
@@ -337,16 +365,17 @@ impl Receiver {
                 noise
             };
         }
-        let mut reordered = [[0; 6]; 6048];
-        for (i, &p) in map.permutation.iter().enumerate() {
-            if self.symbol.is_multiple_of(2) {
-                reordered[i] = self.words[p];
-            } else {
-                reordered[p] = self.words[i];
+        if self.symbol.is_multiple_of(2) {
+            for (i, &p) in map.permutation.iter().enumerate() {
+                self.reordered[i] = self.words[p];
+            }
+        } else {
+            for (i, &p) in map.permutation.iter().enumerate() {
+                self.reordered[p] = self.words[i];
             }
         }
         mapping::deinterleave(
-            &reordered[..map.permutation.len()],
+            &self.reordered[..map.permutation.len()],
             params.bits,
             params.hierarchical,
             self.low_priority,

@@ -348,15 +348,31 @@ impl<F> CpmDemod<F> {
         f64::from(self.centre + self.offset) * self.centre_scale
     }
 
-    fn gate_run(&mut self, powers: impl Iterator<Item = (f32, Option<bool>)>) {
-        let (low, _) = powers.size_hint();
-        self.carrier_run.reserve(low);
-        self.settled_run.reserve(low);
+    fn gate_run(&mut self, powers: impl ExactSizeIterator<Item = (f32, Option<bool>)>) {
+        let len = powers.len();
+        self.carrier_run.resize(len, false);
+        self.settled_run.resize(len, false);
+        if self.gate.always_keyed {
+            self.carrier_run.fill(true);
+            let need = self.gate.support.saturating_sub(self.gate.keyed);
+            if need == 0 {
+                self.settled_run.fill(true);
+            } else {
+                let unsettled = (need - 1).min(len);
+                self.settled_run[..unsettled].fill(false);
+                self.settled_run[unsettled..].fill(true);
+                self.gate.keyed = (self.gate.keyed + len).min(self.gate.support);
+            }
+            return;
+        }
         let mut gate = self.gate;
-        for (power, wild) in powers {
-            let (keyed, settled) = gate.step(power, wild);
-            self.carrier_run.push(keyed);
-            self.settled_run.push(settled);
+        for ((carrier, settled), (power, wild)) in self
+            .carrier_run
+            .iter_mut()
+            .zip(&mut self.settled_run)
+            .zip(powers)
+        {
+            (*carrier, *settled) = gate.step(power, wild);
         }
         self.gate = gate;
     }
@@ -370,15 +386,19 @@ impl<F> CpmDemod<F> {
 
     fn centre_run(&mut self) {
         let len = self.filtered.len().min(self.settled_run.len());
-        self.centred.clear();
-        self.centred.reserve(len);
+        self.centred.resize(len, 0.0);
         let mut centre = self.centre;
         let alpha = self.centre_alpha;
-        for (&sample, &settled) in self.filtered[..len].iter().zip(&self.settled_run[..len]) {
+        for ((dst, &sample), &settled) in self
+            .centred
+            .iter_mut()
+            .zip(&self.filtered[..len])
+            .zip(&self.settled_run[..len])
+        {
             if settled {
                 centre += alpha * (sample - centre);
             }
-            self.centred.push(sample - centre);
+            *dst = sample - centre;
         }
         self.centre = centre;
     }

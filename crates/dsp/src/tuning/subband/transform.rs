@@ -81,6 +81,104 @@ impl Inverse25 {
             }
         }
     }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2", enable = "fma")]
+    pub(super) unsafe fn process_8(
+        &self,
+        re: &mut [std::arch::x86_64::__m256; LEN],
+        im: &mut [std::arch::x86_64::__m256; LEN],
+    ) {
+        use std::arch::x86_64::{
+            __m256, _mm256_fmadd_ps, _mm256_fmsub_ps, _mm256_mul_ps, _mm256_set1_ps,
+            _mm256_setzero_ps,
+        };
+        let zero = _mm256_setzero_ps();
+        let mut col_re = [[zero; RADIX]; RADIX];
+        let mut col_im = [[zero; RADIX]; RADIX];
+        for row in 0..RADIX {
+            let in_re = std::array::from_fn(|i| re[RADIX * i + row]);
+            let in_im = std::array::from_fn(|i| im[RADIX * i + row]);
+            let (mut out_re, mut out_im) = unsafe { inverse5_avx2(in_re, in_im) };
+            if row > 0 {
+                for (k, twiddle) in self.twiddles[row - 1].iter().enumerate() {
+                    let r = out_re[k + 1];
+                    let i = out_im[k + 1];
+                    let tr = _mm256_set1_ps(twiddle.re);
+                    let ti = _mm256_set1_ps(twiddle.im);
+                    out_re[k + 1] = _mm256_fmsub_ps(r, tr, _mm256_mul_ps(i, ti));
+                    out_im[k + 1] = _mm256_fmadd_ps(r, ti, _mm256_mul_ps(i, tr));
+                }
+            }
+            col_re[row] = out_re;
+            col_im[row] = out_im;
+        }
+        for column in 0..RADIX {
+            let in_re: [__m256; RADIX] = std::array::from_fn(|row| col_re[row][column]);
+            let in_im: [__m256; RADIX] = std::array::from_fn(|row| col_im[row][column]);
+            let (out_re, out_im) = unsafe { inverse5_avx2(in_re, in_im) };
+            for row in 0..RADIX {
+                re[RADIX * row + column] = out_re[row];
+                im[RADIX * row + column] = out_im[row];
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2", enable = "fma")]
+#[inline]
+unsafe fn inverse5_avx2(
+    re: [std::arch::x86_64::__m256; RADIX],
+    im: [std::arch::x86_64::__m256; RADIX],
+) -> (
+    [std::arch::x86_64::__m256; RADIX],
+    [std::arch::x86_64::__m256; RADIX],
+) {
+    use std::arch::x86_64::{
+        _mm256_add_ps, _mm256_fmadd_ps, _mm256_fnmadd_ps, _mm256_mul_ps, _mm256_set1_ps,
+        _mm256_sub_ps,
+    };
+    let cos1 = _mm256_set1_ps(COS_1);
+    let ncos2 = _mm256_set1_ps(NEG_COS_2);
+    let sin1 = _mm256_set1_ps(SIN_1);
+    let sin2 = _mm256_set1_ps(SIN_2);
+
+    let p1_re = _mm256_add_ps(re[1], re[4]);
+    let p1_im = _mm256_add_ps(im[1], im[4]);
+    let p2_re = _mm256_add_ps(re[2], re[3]);
+    let p2_im = _mm256_add_ps(im[2], im[3]);
+    let d1_re = _mm256_sub_ps(re[1], re[4]);
+    let d1_im = _mm256_sub_ps(im[1], im[4]);
+    let d2_re = _mm256_sub_ps(re[2], re[3]);
+    let d2_im = _mm256_sub_ps(im[2], im[3]);
+
+    let e1_re = _mm256_fnmadd_ps(p2_re, ncos2, _mm256_fmadd_ps(p1_re, cos1, re[0]));
+    let e1_im = _mm256_fnmadd_ps(p2_im, ncos2, _mm256_fmadd_ps(p1_im, cos1, im[0]));
+    let e2_re = _mm256_fmadd_ps(p2_re, cos1, _mm256_fnmadd_ps(p1_re, ncos2, re[0]));
+    let e2_im = _mm256_fmadd_ps(p2_im, cos1, _mm256_fnmadd_ps(p1_im, ncos2, im[0]));
+
+    let o1_re = _mm256_fmadd_ps(d2_re, sin2, _mm256_mul_ps(d1_re, sin1));
+    let o1_im = _mm256_fmadd_ps(d2_im, sin2, _mm256_mul_ps(d1_im, sin1));
+    let o2_re = _mm256_fnmadd_ps(d2_re, sin1, _mm256_mul_ps(d1_re, sin2));
+    let o2_im = _mm256_fnmadd_ps(d2_im, sin1, _mm256_mul_ps(d1_im, sin2));
+
+    (
+        [
+            _mm256_add_ps(re[0], _mm256_add_ps(p1_re, p2_re)),
+            _mm256_sub_ps(e1_re, o1_im),
+            _mm256_sub_ps(e2_re, o2_im),
+            _mm256_add_ps(e2_re, o2_im),
+            _mm256_add_ps(e1_re, o1_im),
+        ],
+        [
+            _mm256_add_ps(im[0], _mm256_add_ps(p1_im, p2_im)),
+            _mm256_add_ps(e1_im, o1_re),
+            _mm256_add_ps(e2_im, o2_re),
+            _mm256_sub_ps(e2_im, o2_re),
+            _mm256_sub_ps(e1_im, o1_re),
+        ],
+    )
 }
 
 #[cfg(target_arch = "aarch64")]

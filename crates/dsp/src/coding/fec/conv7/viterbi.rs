@@ -80,11 +80,8 @@ impl ViterbiK7 {
         self.decisions.clear();
         self.decisions.reserve(steps);
         self.trellis.restart();
-        for symbol in coded[..steps * outputs].chunks_exact(outputs) {
-            let word = self.trellis.step(&self.code, symbol);
-            self.decisions.push(word);
-            self.trellis.normalize();
-        }
+        self.trellis
+            .push_steps(&self.code, &coded[..steps * outputs], &mut self.decisions);
         let state = end.unwrap_or_else(|| self.trellis.best_state());
         let metric = self.trellis.metrics()[state];
         let start = out.len();

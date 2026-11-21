@@ -75,7 +75,7 @@ impl Cfar {
         out.reserve(capacity);
         let mut keep = Strongest::new(capacity);
         let plane_os = self.spec.plane && matches!(self.spec.stat, CfarStatistic::Os { .. });
-        if self.spec.plane && !plane_os {
+        if self.spec.plane {
             self.build_table(power);
         }
         let rows = report_rows.start.min(self.rows)..report_rows.end.min(self.rows);
@@ -140,10 +140,64 @@ pub(super) fn count_gt(values: &[f32], threshold: f32) -> usize {
         };
         vec_count + tail.iter().filter(|&&v| v > threshold).count()
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            unsafe { count_gt_avx2(values, threshold) }
+        } else {
+            count_gt_sse2(values, threshold)
+        }
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         values.iter().filter(|&&v| v > threshold).count()
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn count_gt_avx2(values: &[f32], threshold: f32) -> usize {
+    use std::arch::x86_64::{
+        _CMP_GT_OQ, _mm_add_epi32, _mm_storeu_si128, _mm256_castps_si256, _mm256_castsi256_si128,
+        _mm256_cmp_ps, _mm256_extracti128_si256, _mm256_loadu_ps, _mm256_set1_ps,
+        _mm256_setzero_si256, _mm256_sub_epi32,
+    };
+    let (eights, tail) = values.as_chunks::<8>();
+    let limit = _mm256_set1_ps(threshold);
+    let mut acc = _mm256_setzero_si256();
+    for eight in eights {
+        let v = unsafe { _mm256_loadu_ps(eight.as_ptr()) };
+        let mask = _mm256_castps_si256(_mm256_cmp_ps::<_CMP_GT_OQ>(v, limit));
+        acc = _mm256_sub_epi32(acc, mask);
+    }
+    let hi = _mm256_extracti128_si256::<1>(acc);
+    let lo = _mm256_castsi256_si128(acc);
+    let sum = _mm_add_epi32(lo, hi);
+    let mut lanes = [0u32; 4];
+    unsafe { _mm_storeu_si128(lanes.as_mut_ptr().cast(), sum) };
+    let vec_count = (lanes[0] + lanes[1] + lanes[2] + lanes[3]) as usize;
+    vec_count + tail.iter().filter(|&&v| v > threshold).count()
+}
+
+#[cfg(target_arch = "x86_64")]
+fn count_gt_sse2(values: &[f32], threshold: f32) -> usize {
+    use std::arch::x86_64::{
+        _mm_castps_si128, _mm_cmpgt_ps, _mm_loadu_ps, _mm_set1_ps, _mm_setzero_si128,
+        _mm_storeu_si128, _mm_sub_epi32,
+    };
+    let (quads, tail) = values.as_chunks::<4>();
+    let vec_count = unsafe {
+        let limit = _mm_set1_ps(threshold);
+        let mut acc = _mm_setzero_si128();
+        for quad in quads {
+            let mask = _mm_castps_si128(_mm_cmpgt_ps(_mm_loadu_ps(quad.as_ptr()), limit));
+            acc = _mm_sub_epi32(acc, mask);
+        }
+        let mut lanes = [0u32; 4];
+        _mm_storeu_si128(lanes.as_mut_ptr().cast(), acc);
+        (lanes[0] + lanes[1] + lanes[2] + lanes[3]) as usize
+    };
+    vec_count + tail.iter().filter(|&&v| v > threshold).count()
 }
 
 pub(super) fn order_statistic(cells: &mut [f32], rank: f32) -> f32 {

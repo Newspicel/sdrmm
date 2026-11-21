@@ -123,54 +123,68 @@ impl HermitianEigen {
 
     fn off_and_frobenius(&self) -> (f32, f32) {
         let n = self.order;
+        let a = self.a.as_slice();
+        let mut diag = 0.0f32;
         let mut off = 0.0f32;
-        let mut frob = 0.0f32;
         for p in 0..n {
-            for q in 0..n {
-                let magnitude = self.a.get(p, q).norm_sqr();
-                frob += magnitude;
-                if q > p {
-                    off += magnitude;
-                }
+            let row = p * n;
+            let d = a[row + p].re;
+            diag += d * d;
+            for q in (p + 1)..n {
+                off += a[row + q].norm_sqr();
             }
         }
-        (off, frob)
+        (off, diag + 2.0 * off)
     }
 
     fn rotate(&mut self, p: usize, q: usize) {
-        let apq = self.a.get(p, q);
-        let magnitude = apq.norm();
-        if magnitude == 0.0 {
+        let n = self.order;
+        let a = self.a.as_mut_slice();
+        let apq = a[p * n + q];
+        let mag_sq = apq.norm_sqr();
+        if mag_sq == 0.0 {
             return;
         }
-        let n = self.order;
-        let app = self.a.get(p, p).re;
-        let aqq = self.a.get(q, q).re;
-        let theta = 0.5 * (2.0 * magnitude).atan2(app - aqq);
-        let (s, c) = theta.sin_cos();
+        let magnitude = mag_sq.sqrt();
+        let app = a[p * n + p].re;
+        let aqq = a[q * n + q].re;
+        let tau = (app - aqq) / (2.0 * magnitude);
+        let t = if tau.abs() > 1e15 {
+            0.5 / tau
+        } else if tau >= 0.0 {
+            (tau + (1.0 + tau * tau).sqrt()).recip()
+        } else {
+            -((-tau) + (1.0 + tau * tau).sqrt()).recip()
+        };
+        let c = (1.0 + t * t).sqrt().recip();
+        let s = t * c;
         let phase = apq / magnitude;
         let forward = phase * s;
         let backward = phase.conj() * s;
+        a[p * n + p] = Complex::new(app + t * magnitude, 0.0);
+        a[q * n + q] = Complex::new(aqq - t * magnitude, 0.0);
+        a[p * n + q] = Complex::new(0.0, 0.0);
+        a[q * n + p] = Complex::new(0.0, 0.0);
         for row in 0..n {
-            let ap = self.a.get(row, p);
-            let aq = self.a.get(row, q);
-            self.a.set(row, p, ap * c + aq * backward);
-            self.a.set(row, q, aq * c - ap * forward);
+            if row == p || row == q {
+                continue;
+            }
+            let ap = a[row * n + p];
+            let aq = a[row * n + q];
+            let np = ap * c + aq * backward;
+            let nq = aq * c - ap * forward;
+            a[row * n + p] = np;
+            a[row * n + q] = nq;
+            a[p * n + row] = np.conj();
+            a[q * n + row] = nq.conj();
         }
-        for col in 0..n {
-            let ap = self.a.get(p, col);
-            let aq = self.a.get(q, col);
-            self.a.set(p, col, ap * c + aq * forward);
-            self.a.set(q, col, aq * c - ap * backward);
-        }
+        let v = self.v.as_mut_slice();
         for row in 0..n {
-            let vp = self.v.get(row, p);
-            let vq = self.v.get(row, q);
-            self.v.set(row, p, vp * c + vq * backward);
-            self.v.set(row, q, vq * c - vp * forward);
+            let vp = v[row * n + p];
+            let vq = v[row * n + q];
+            v[row * n + p] = vp * c + vq * backward;
+            v[row * n + q] = vq * c - vp * forward;
         }
-        self.a.set(p, q, Complex::new(0.0, 0.0));
-        self.a.set(q, p, Complex::new(0.0, 0.0));
     }
 
     fn write_sorted(&self, scale: f32, sweeps: u32, out: &mut Eigen) {

@@ -100,12 +100,68 @@ impl Trellis {
         decisions
     }
 
+    pub(super) fn push_steps(&mut self, code: &ConvCode, coded: &[Soft], decisions: &mut Vec<u64>) {
+        let outputs = code.outputs();
+        let total_steps = coded.len() / outputs;
+        let mut done = 0;
+        while done < total_steps {
+            let until_norm = usize::from(NORMALIZE_EVERY - self.normalization_steps);
+            let run = (total_steps - done).min(until_norm);
+            let slice = &coded[done * outputs..(done + run) * outputs];
+            match (&code.signs, outputs) {
+                (Some(signs), 2) => {
+                    butterfly::run_steps::<2>(
+                        &mut self.survivors,
+                        &mut self.front,
+                        signs,
+                        slice,
+                        decisions,
+                    );
+                }
+                (Some(signs), 3) => {
+                    butterfly::run_steps::<3>(
+                        &mut self.survivors,
+                        &mut self.front,
+                        signs,
+                        slice,
+                        decisions,
+                    );
+                }
+                (Some(signs), 4) => {
+                    butterfly::run_steps::<4>(
+                        &mut self.survivors,
+                        &mut self.front,
+                        signs,
+                        slice,
+                        decisions,
+                    );
+                }
+                _ => {
+                    for symbol in slice.chunks_exact(outputs) {
+                        let word = self.step(code, symbol);
+                        decisions.push(word);
+                    }
+                }
+            }
+            done += run;
+            self.normalization_steps += run as u16;
+            if self.normalization_steps >= NORMALIZE_EVERY {
+                self.normalization_steps = 0;
+                self.rescale_if_high();
+            }
+        }
+    }
+
     pub(super) fn normalize(&mut self) {
         self.normalization_steps += 1;
         if self.normalization_steps < NORMALIZE_EVERY {
             return;
         }
         self.normalization_steps = 0;
+        self.rescale_if_high();
+    }
+
+    fn rescale_if_high(&mut self) {
         let peak = self.metrics().iter().copied().max().unwrap_or(0);
         if peak > Self::CEILING {
             for metric in &mut self.survivors[self.front] {

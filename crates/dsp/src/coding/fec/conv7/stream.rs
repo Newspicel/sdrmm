@@ -78,8 +78,19 @@ impl StreamViterbiK7 {
             self.step(&symbol[..outputs], out);
         }
         let usable = source.len() / outputs * outputs;
-        for index in (0..usable).step_by(outputs) {
-            self.step(&source[index..index + outputs], out);
+        let mut offset = 0;
+        while offset < usable {
+            let room = self.batch - self.decisions.len();
+            let take = ((usable - offset) / outputs).min(room) * outputs;
+            self.trellis.push_steps(
+                &self.code,
+                &source[offset..offset + take],
+                &mut self.decisions,
+            );
+            offset += take;
+            if self.decisions.len() >= self.batch {
+                self.release(out);
+            }
         }
         self.carried = source.len() - usable;
         self.carry[..self.carried].copy_from_slice(&source[usable..]);

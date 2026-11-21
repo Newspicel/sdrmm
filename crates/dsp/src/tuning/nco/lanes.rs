@@ -332,7 +332,10 @@ mod neon {
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn rotate(anchor: Complex<f32>, step_re: &Quad, step_im: &Quad, source: &Block) -> Block {
-    use std::arch::x86_64::*;
+    use std::arch::x86_64::{
+        _mm_add_ps, _mm_loadu_ps, _mm_mul_ps, _mm_set1_ps, _mm_shuffle_ps, _mm_storeu_ps,
+        _mm_sub_ps, _mm_unpackhi_ps, _mm_unpacklo_ps,
+    };
     let mut target = [Complex::new(0.0, 0.0); LANES];
     unsafe {
         let step_re = _mm_loadu_ps(step_re.as_ptr());

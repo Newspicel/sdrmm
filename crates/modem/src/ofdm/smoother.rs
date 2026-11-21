@@ -1,7 +1,10 @@
 use std::f64::consts::TAU;
 
 use num_complex::Complex;
-use sdrmm_dsp::math::linalg::{Cholesky, LinalgError};
+use sdrmm_dsp::math::{
+    complex::dot,
+    linalg::{Cholesky, LinalgError},
+};
 
 use super::subcarrier::SubcarrierMap;
 
@@ -13,8 +16,10 @@ const MIN_TRAINING_NSR: f64 = 1e-4;
 pub struct DelaySmoother {
     taps: usize,
     basis: Vec<Complex<f32>>,
+    basis_conj_t: Vec<Complex<f32>>,
     gram: Vec<Complex<f32>>,
     loaded: Vec<Complex<f32>>,
+    h_occ: Vec<Complex<f32>>,
     response: Vec<Complex<f32>>,
     solver: Cholesky,
 }
@@ -22,6 +27,7 @@ pub struct DelaySmoother {
 impl DelaySmoother {
     pub fn new(map: &SubcarrierMap, earliest: isize, taps: usize) -> Result<Self, LinalgError> {
         let fft = map.fft() as f64;
+        let occupied = map.occupied().len();
         let basis: Vec<Complex<f32>> = map
             .occupied()
             .iter()
@@ -33,6 +39,12 @@ impl DelaySmoother {
                 })
             })
             .collect();
+        let mut basis_conj_t = vec![Complex::new(0.0, 0.0); taps * occupied];
+        for (k, row) in basis.chunks_exact(taps).enumerate() {
+            for (t, &a) in row.iter().enumerate() {
+                basis_conj_t[t * occupied + k] = a.conj();
+            }
+        }
         let mut gram = vec![Complex::new(0.0, 0.0); taps * taps];
         for row in basis.chunks_exact(taps) {
             for (i, cell) in gram.chunks_exact_mut(taps).enumerate() {
@@ -46,6 +58,8 @@ impl DelaySmoother {
             loaded: gram.clone(),
             gram,
             basis,
+            basis_conj_t,
+            h_occ: vec![Complex::new(0.0, 0.0); occupied],
             response: vec![Complex::new(0.0, 0.0); taps],
             solver: Cholesky::new(taps)?,
         })
@@ -58,11 +72,13 @@ impl DelaySmoother {
 
     pub fn smooth(&mut self, map: &SubcarrierMap, h: &mut [Complex<f32>], estimate_var: f64) {
         let occupied = map.occupied();
-        let power = occupied
-            .iter()
-            .map(|c| f64::from(h[c.bin].norm_sqr()))
-            .sum::<f64>()
-            / occupied.len().max(1) as f64;
+        let mut sum_sq = 0.0f64;
+        for (slot, c) in self.h_occ.iter_mut().zip(occupied) {
+            let v = h[c.bin];
+            *slot = v;
+            sum_sq += f64::from(v.norm_sqr());
+        }
+        let power = sum_sq / occupied.len().max(1) as f64;
         let signal = (power - estimate_var).max(estimate_var);
         let ratio = (estimate_var / signal).max(MIN_TRAINING_NSR);
         if !ratio.is_finite() {
@@ -76,17 +92,19 @@ impl DelaySmoother {
         if self.solver.factor(&self.loaded).is_err() {
             return;
         }
-        self.response.fill(Complex::new(0.0, 0.0));
-        for (c, row) in occupied.iter().zip(self.basis.chunks_exact(self.taps)) {
-            for (slot, &a) in self.response.iter_mut().zip(row) {
-                *slot += a.conj() * h[c.bin];
-            }
+        let occ = occupied.len();
+        for (slot, row) in self
+            .response
+            .iter_mut()
+            .zip(self.basis_conj_t.chunks_exact(occ))
+        {
+            *slot = dot(row, &self.h_occ);
         }
         if self.solver.solve(&mut self.response).is_err() {
             return;
         }
         for (c, row) in occupied.iter().zip(self.basis.chunks_exact(self.taps)) {
-            h[c.bin] = row.iter().zip(&self.response).map(|(&a, &g)| a * g).sum();
+            h[c.bin] = dot(row, &self.response);
         }
     }
 }

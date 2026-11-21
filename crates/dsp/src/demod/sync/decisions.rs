@@ -62,14 +62,17 @@ impl Decisions {
         }
     }
 
+    #[inline]
     pub(super) fn trusted(&self) -> bool {
         self.trusted && self.seen >= SETTLE_SYMBOLS
     }
 
+    #[inline]
     pub(super) fn acquiring(&self) -> bool {
         !self.acquired && self.since_hold < ACQUIRE_SYMBOLS
     }
 
+    #[inline]
     pub(super) fn mark_acquired(&mut self) {
         self.acquired = true;
     }
@@ -80,6 +83,7 @@ impl Decisions {
         self.since_hold = 0.0;
     }
 
+    #[inline]
     pub(super) fn error(&mut self, symbol: f32, previous: f32) -> Option<f64> {
         self.track_amplitude(symbol.abs());
         let scale = self.amplitude * self.inv_outer;
@@ -107,6 +111,7 @@ impl Decisions {
         self.since_hold = 0.0;
     }
 
+    #[inline(always)]
     fn judge(&mut self, normalised: f32, decision: f32) {
         let miss = (normalised - decision) * self.inv_spacing;
         self.misfit += (miss * miss - self.misfit) * INV_AMPLITUDE_SYMBOLS;
@@ -117,20 +122,41 @@ impl Decisions {
         };
     }
 
-    #[inline]
+    #[inline(always)]
     fn nearest(&self, x: f32) -> f32 {
-        let mut best = self.levels[0];
-        let mut best_dist = (best - x).abs();
-        for &level in &self.levels[1..] {
-            let dist = (level - x).abs();
-            if dist < best_dist {
-                best_dist = dist;
-                best = level;
+        match self.levels.as_slice() {
+            [a, b] => {
+                if (b - x).abs() < (a - x).abs() {
+                    *b
+                } else {
+                    *a
+                }
+            }
+            [a, b, c, d] => {
+                let da = (a - x).abs();
+                let db = (b - x).abs();
+                let (v0, d0) = if db < da { (*b, db) } else { (*a, da) };
+                let dc = (c - x).abs();
+                let dd = (d - x).abs();
+                let (v1, d1) = if dd < dc { (*d, dd) } else { (*c, dc) };
+                if d1 < d0 { v1 } else { v0 }
+            }
+            levels => {
+                let mut best = levels[0];
+                let mut best_dist = (best - x).abs();
+                for &level in &levels[1..] {
+                    let dist = (level - x).abs();
+                    if dist < best_dist {
+                        best_dist = dist;
+                        best = level;
+                    }
+                }
+                best
             }
         }
-        best
     }
 
+    #[inline(always)]
     fn track_amplitude(&mut self, magnitude: f32) {
         self.seen += 1.0;
         self.since_hold += 1.0;

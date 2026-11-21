@@ -177,11 +177,22 @@ impl QuasiCyclic {
         quantize_slice(&llrs[..information], scale, &mut self.totals[..information]);
         let parity_llrs = &llrs[information..];
         let parity_totals = &mut self.totals[information..];
+        let mut buf = [0i16; 256];
         let mut cursor = 0;
         for lane in 0..group {
-            for layer in 0..layers {
-                parity_totals[layer * group + lane] = quantize(parity_llrs[cursor], scale);
-                cursor += 1;
+            let mut layer = 0;
+            while layer < layers {
+                let chunk = (layers - layer).min(buf.len());
+                quantize_slice(
+                    &parity_llrs[cursor..cursor + chunk],
+                    scale,
+                    &mut buf[..chunk],
+                );
+                for (offset, &value) in buf[..chunk].iter().enumerate() {
+                    parity_totals[(layer + offset) * group + lane] = value;
+                }
+                cursor += chunk;
+                layer += chunk;
             }
         }
         self.messages.fill(0);
@@ -271,19 +282,160 @@ fn scale(llrs: &[f32]) -> f32 {
             vaddvq_f32(vaddq_f32(vaddq_f32(s0, s1), vaddq_f32(s2, s3))) + tail
         }
     };
-    #[cfg(not(target_arch = "aarch64"))]
-    let sum: f32 = {
-        let mut acc = [0.0f32; 4];
-        let (quads, tail) = llrs.as_chunks::<4>();
-        for q in quads {
-            for k in 0..4 {
-                acc[k] += q[k].abs().min(CEILING);
-            }
-        }
-        acc.iter().sum::<f32>() + tail.iter().map(|llr| llr.abs().min(CEILING)).sum::<f32>()
+    #[cfg(target_arch = "x86_64")]
+    let sum: f32 = if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { scale_sum_avx2(llrs) }
+    } else {
+        scale_sum_scalar(llrs)
     };
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    let sum: f32 = scale_sum_scalar(llrs);
     let mean = sum / llrs.len().max(1) as f32;
     if mean.is_normal() { TARGET / mean } else { 1.0 }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+fn scale_sum_scalar(llrs: &[f32]) -> f32 {
+    let mut acc = [0.0f32; 4];
+    let (quads, tail) = llrs.as_chunks::<4>();
+    for q in quads {
+        for k in 0..4 {
+            acc[k] += q[k].abs().min(CEILING);
+        }
+    }
+    acc.iter().sum::<f32>() + tail.iter().map(|llr| llr.abs().min(CEILING)).sum::<f32>()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn scale_sum_avx2(llrs: &[f32]) -> f32 {
+    use std::arch::x86_64::{
+        _mm_add_ps, _mm_add_ss, _mm_cvtss_f32, _mm_movehdup_ps, _mm_movehl_ps, _mm256_add_ps,
+        _mm256_andnot_ps, _mm256_castps256_ps128, _mm256_extractf128_ps, _mm256_loadu_ps,
+        _mm256_min_ps, _mm256_set1_ps, _mm256_setzero_ps,
+    };
+    let (blocks, rest) = llrs.as_chunks::<32>();
+    let sign_mask = _mm256_set1_ps(-0.0);
+    let cap = _mm256_set1_ps(CEILING);
+    let mut s0 = _mm256_setzero_ps();
+    let mut s1 = _mm256_setzero_ps();
+    let mut s2 = _mm256_setzero_ps();
+    let mut s3 = _mm256_setzero_ps();
+    for block in blocks {
+        let p = block.as_ptr();
+        unsafe {
+            s0 = _mm256_add_ps(
+                s0,
+                _mm256_min_ps(_mm256_andnot_ps(sign_mask, _mm256_loadu_ps(p)), cap),
+            );
+            s1 = _mm256_add_ps(
+                s1,
+                _mm256_min_ps(_mm256_andnot_ps(sign_mask, _mm256_loadu_ps(p.add(8))), cap),
+            );
+            s2 = _mm256_add_ps(
+                s2,
+                _mm256_min_ps(_mm256_andnot_ps(sign_mask, _mm256_loadu_ps(p.add(16))), cap),
+            );
+            s3 = _mm256_add_ps(
+                s3,
+                _mm256_min_ps(_mm256_andnot_ps(sign_mask, _mm256_loadu_ps(p.add(24))), cap),
+            );
+        }
+    }
+    let (eights, tail) = rest.as_chunks::<8>();
+    for eight in eights {
+        let v = unsafe { _mm256_loadu_ps(eight.as_ptr()) };
+        s0 = _mm256_add_ps(s0, _mm256_min_ps(_mm256_andnot_ps(sign_mask, v), cap));
+    }
+    let sum = _mm256_add_ps(_mm256_add_ps(s0, s1), _mm256_add_ps(s2, s3));
+    let hi = _mm256_extractf128_ps::<1>(sum);
+    let lo = _mm256_castps256_ps128(sum);
+    let v = _mm_add_ps(lo, hi);
+    let shuf = _mm_movehdup_ps(v);
+    let sums = _mm_add_ps(v, shuf);
+    let total = _mm_cvtss_f32(_mm_add_ss(sums, _mm_movehl_ps(shuf, sums)));
+    total + tail.iter().map(|llr| llr.abs().min(CEILING)).sum::<f32>()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn quantize_slice_avx2(llrs: &[f32], scale: f32, out: &mut [i16]) -> usize {
+    use std::arch::x86_64::{
+        _mm256_cvtps_epi32, _mm256_loadu_ps, _mm256_max_ps, _mm256_min_ps, _mm256_mul_ps,
+        _mm256_packs_epi32, _mm256_permute4x64_epi64, _mm256_set1_ps, _mm256_storeu_si256,
+    };
+    let len = llrs.len().min(out.len());
+    let n = len & !15;
+    let sp = llrs.as_ptr();
+    let dp = out.as_mut_ptr();
+    let vs = _mm256_set1_ps(scale);
+    let hi = _mm256_set1_ps(CEILING);
+    let lo = _mm256_set1_ps(-CEILING);
+    let mut done = 0;
+    while done < n {
+        unsafe {
+            let a = _mm256_min_ps(
+                _mm256_max_ps(_mm256_mul_ps(_mm256_loadu_ps(sp.add(done)), vs), lo),
+                hi,
+            );
+            let b = _mm256_min_ps(
+                _mm256_max_ps(_mm256_mul_ps(_mm256_loadu_ps(sp.add(done + 8)), vs), lo),
+                hi,
+            );
+            let ia = _mm256_cvtps_epi32(a);
+            let ib = _mm256_cvtps_epi32(b);
+            let packed = _mm256_permute4x64_epi64::<0xD8>(_mm256_packs_epi32(ia, ib));
+            _mm256_storeu_si256(dp.add(done).cast(), packed);
+        }
+        done += 16;
+    }
+    done
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn accumulate_avx2(target: &mut [i16], delta: &[i16]) -> (usize, i16) {
+    use std::arch::x86_64::{
+        _mm256_adds_epi16, _mm256_loadu_si256, _mm256_or_si256, _mm256_setzero_si256,
+        _mm256_storeu_si256, _mm256_xor_si256,
+    };
+    let len = target.len().min(delta.len());
+    let n = len & !31;
+    let tp = target.as_mut_ptr();
+    let dp = delta.as_ptr();
+    let mut f0 = _mm256_setzero_si256();
+    let mut f1 = _mm256_setzero_si256();
+    let mut done = 0;
+    while done < n {
+        unsafe {
+            let t0 = _mm256_loadu_si256(tp.add(done).cast());
+            let t1 = _mm256_loadu_si256(tp.add(done + 16).cast());
+            let u0 = _mm256_adds_epi16(t0, _mm256_loadu_si256(dp.add(done).cast()));
+            let u1 = _mm256_adds_epi16(t1, _mm256_loadu_si256(dp.add(done + 16).cast()));
+            f0 = _mm256_or_si256(f0, _mm256_xor_si256(t0, u0));
+            f1 = _mm256_or_si256(f1, _mm256_xor_si256(t1, u1));
+            _mm256_storeu_si256(tp.add(done).cast(), u0);
+            _mm256_storeu_si256(tp.add(done + 16).cast(), u1);
+        }
+        done += 32;
+    }
+    while done + 16 <= len {
+        unsafe {
+            let t = _mm256_loadu_si256(tp.add(done).cast());
+            let u = _mm256_adds_epi16(t, _mm256_loadu_si256(dp.add(done).cast()));
+            f0 = _mm256_or_si256(f0, _mm256_xor_si256(t, u));
+            _mm256_storeu_si256(tp.add(done).cast(), u);
+        }
+        done += 16;
+    }
+    let combined = _mm256_or_si256(f0, f1);
+    let mut lanes = [0i16; 16];
+    unsafe { _mm256_storeu_si256(lanes.as_mut_ptr().cast(), combined) };
+    let mut flips = 0i16;
+    for lane in lanes {
+        flips |= lane;
+    }
+    (done, flips)
 }
 
 #[inline(always)]
@@ -293,14 +445,14 @@ fn quantize(llr: f32, scale: f32) -> i16 {
 
 fn quantize_slice(llrs: &[f32], scale: f32, out: &mut [i16]) {
     let len = llrs.len().min(out.len());
-    let mut done = 0;
     #[cfg(target_arch = "aarch64")]
-    {
+    let done = {
         use std::arch::aarch64::{
             vcombine_s16, vcvtq_s32_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32, vminq_f32, vmovn_s32,
             vmulq_f32, vrndaq_f32, vst1q_s16,
         };
         let n = len & !7;
+        let mut done = 0;
         unsafe {
             let sp = llrs.as_ptr();
             let dp = out.as_mut_ptr();
@@ -321,7 +473,16 @@ fn quantize_slice(llrs: &[f32], scale: f32, out: &mut [i16]) {
                 done += 8;
             }
         }
-    }
+        done
+    };
+    #[cfg(target_arch = "x86_64")]
+    let done = if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { quantize_slice_avx2(llrs, scale, out) }
+    } else {
+        0
+    };
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    let done = 0;
     for (dst, &llr) in out[done..len].iter_mut().zip(&llrs[done..len]) {
         *dst = quantize(llr, scale);
     }
@@ -360,14 +521,14 @@ fn scatter(
 
 fn accumulate(target: &mut [i16], delta: &[i16]) -> i16 {
     let len = target.len().min(delta.len());
-    let mut flips = 0i16;
-    let mut done = 0;
     #[cfg(target_arch = "aarch64")]
-    {
+    let (done, mut flips) = {
         use std::arch::aarch64::{
             vdupq_n_s16, veorq_s16, vld1q_s16, vorrq_s16, vqaddq_s16, vst1q_s16,
         };
         let n = len & !15;
+        let mut done = 0;
+        let mut flips = 0i16;
         unsafe {
             let tp = target.as_mut_ptr();
             let dp = delta.as_ptr();
@@ -398,7 +559,16 @@ fn accumulate(target: &mut [i16], delta: &[i16]) -> i16 {
                 flips |= lane;
             }
         }
-    }
+        (done, flips)
+    };
+    #[cfg(target_arch = "x86_64")]
+    let (done, mut flips) = if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { accumulate_avx2(target, delta) }
+    } else {
+        (0, 0i16)
+    };
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    let (done, mut flips) = (0, 0i16);
     for (total, &change) in target[done..len].iter_mut().zip(&delta[done..len]) {
         let updated = total.saturating_add(change);
         flips |= *total ^ updated;

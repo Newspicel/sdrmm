@@ -7,7 +7,7 @@ const MAX_COEFF: f64 = 0.5;
 pub(super) struct LockDetector {
     value: f64,
     coeff: f64,
-    range: f64,
+    scale: f64,
 }
 
 impl LockDetector {
@@ -15,12 +15,13 @@ impl LockDetector {
         Self {
             value: 0.0,
             coeff: loop_bw.clamp(MIN_COEFF, MAX_COEFF),
-            range,
+            scale: 2.0 / range,
         }
     }
 
+    #[inline]
     pub(super) fn update(&mut self, error: Option<f64>) {
-        let quality = error.map_or(0.0, |e| 1.0 - 2.0 * e.abs() / self.range);
+        let quality = error.map_or(0.0, |e| 1.0 - e.abs() * self.scale);
         self.value += self.coeff * (quality - self.value);
     }
 

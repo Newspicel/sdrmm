@@ -142,6 +142,12 @@ impl RealToIq {
                 }
             }
         }
+        #[cfg(target_arch = "x86_64")]
+        {
+            if std::arch::is_x86_feature_detected!("avx2") {
+                done = unsafe { rotate_quads_avx2(quads, sign, i_dst, q_dst) };
+            }
+        }
         for quad in &quads[done..] {
             unsafe {
                 i_dst.add(done * 2).write(quad[0]);
@@ -156,6 +162,69 @@ impl RealToIq {
             self.quadrature.set_len(q_base + add);
         }
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn rotate_quads_avx2(
+    quads: &[[f32; 4]],
+    sign: f32,
+    i_dst: *mut f32,
+    q_dst: *mut f32,
+) -> usize {
+    use std::arch::x86_64::{
+        _mm256_castpd_ps, _mm256_castps_pd, _mm256_loadu_ps, _mm256_mul_ps, _mm256_permute4x64_pd,
+        _mm256_setr_ps, _mm256_shuffle_ps, _mm256_storeu_ps, _mm256_xor_ps,
+    };
+    let n = quads.len() & !3;
+    let sp = quads.as_ptr().cast::<f32>();
+    let neg_odd = _mm256_setr_ps(0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0, -0.0);
+    let q_scale = _mm256_setr_ps(sign, -sign, sign, -sign, sign, -sign, sign, -sign);
+    let mut done = 0;
+    while done < n {
+        unsafe {
+            let v0 = _mm256_loadu_ps(sp.add(done * 4));
+            let v1 = _mm256_loadu_ps(sp.add(done * 4 + 8));
+            let i_shuf = _mm256_shuffle_ps::<0x88>(v0, v1);
+            let i_ord = _mm256_castpd_ps(_mm256_permute4x64_pd::<0xD8>(_mm256_castps_pd(i_shuf)));
+            _mm256_storeu_ps(i_dst.add(done * 2), _mm256_xor_ps(i_ord, neg_odd));
+            let q_shuf = _mm256_shuffle_ps::<0xDD>(v0, v1);
+            let q_ord = _mm256_castpd_ps(_mm256_permute4x64_pd::<0xD8>(_mm256_castps_pd(q_shuf)));
+            _mm256_storeu_ps(q_dst.add(done * 2), _mm256_mul_ps(q_ord, q_scale));
+        }
+        done += 4;
+    }
+    done
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn interleave_scaled_avx2(re: &[f32], im: &[f32], scale: f32, dst: *mut f32) -> usize {
+    use std::arch::x86_64::{
+        _mm256_loadu_ps, _mm256_mul_ps, _mm256_permute2f128_ps, _mm256_set1_ps, _mm256_storeu_ps,
+        _mm256_unpackhi_ps, _mm256_unpacklo_ps,
+    };
+    let len = re.len().min(im.len());
+    let n = len & !7;
+    let rp = re.as_ptr();
+    let ip = im.as_ptr();
+    let vs = _mm256_set1_ps(scale);
+    let mut done = 0;
+    while done < n {
+        unsafe {
+            let vr = _mm256_loadu_ps(rp.add(done));
+            let vi = _mm256_mul_ps(_mm256_loadu_ps(ip.add(done)), vs);
+            let lo = _mm256_unpacklo_ps(vr, vi);
+            let hi = _mm256_unpackhi_ps(vr, vi);
+            _mm256_storeu_ps(dst.add(done * 2), _mm256_permute2f128_ps::<0x20>(lo, hi));
+            _mm256_storeu_ps(
+                dst.add(done * 2 + 8),
+                _mm256_permute2f128_ps::<0x31>(lo, hi),
+            );
+        }
+        done += 8;
+    }
+    done
 }
 
 fn interleave_scaled(re: &[f32], im: &[f32], scale: f32, out: &mut Vec<Complex<f32>>) {
@@ -177,6 +246,12 @@ fn interleave_scaled(re: &[f32], im: &[f32], scale: f32, out: &mut Vec<Complex<f
                 vst2q_f32(dst.add(done * 2), float32x4x2_t(vr, vi));
                 done += 4;
             }
+        }
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            done = unsafe { interleave_scaled_avx2(re, im, scale, dst) };
         }
     }
     while done < len {

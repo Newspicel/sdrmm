@@ -210,6 +210,17 @@ fn noise_does_not_converge() {
 
 fn kernels() -> Vec<Kernel> {
     let mut kernels = vec![Kernel::Scalar, Kernel::Vector];
+    #[cfg(target_arch = "x86_64")]
+    {
+        if std::arch::is_x86_feature_detected!("avx2") {
+            kernels.push(Kernel::Wide);
+        }
+        if std::arch::is_x86_feature_detected!("avx512bw")
+            && std::arch::is_x86_feature_detected!("avx2")
+        {
+            kernels.push(Kernel::Wide512);
+        }
+    }
     if !kernels.contains(&Kernel::detect()) {
         kernels.push(Kernel::detect());
     }

@@ -44,7 +44,7 @@ pub(super) struct Gate {
     noise_floor_alpha: f32,
     settling: usize,
     pub(super) settle_samples: usize,
-    keyed: usize,
+    pub(super) keyed: usize,
     pub(super) support: usize,
     quiet: usize,
     hangover: usize,
@@ -132,6 +132,7 @@ impl Gate {
     }
 
     /// Whether an open gate's input swings like noise, learning noise's wild rate while closed.
+    #[inline(always)]
     fn hears_noise(&mut self, wild: bool, keyed: bool) -> bool {
         let wild = f32::from(u8::from(wild));
         if !keyed {

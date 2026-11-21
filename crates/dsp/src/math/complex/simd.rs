@@ -2,6 +2,9 @@ use num_complex::Complex;
 
 use super::widen;
 
+#[cfg(target_arch = "x86_64")]
+mod x86;
+
 const FOLD_CHUNK: usize = 2048;
 
 #[must_use]
@@ -12,7 +15,11 @@ pub fn cross_sum(left: &[Complex<f32>], right: &[Complex<f32>]) -> Complex<f64> 
     {
         neon::cross_sum(left, right)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::cross_sum(left, right)
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::cross_sum(left, right)
     }
@@ -26,7 +33,11 @@ pub fn conj_dot(left: &[Complex<f32>], right: &[Complex<f32>]) -> Complex<f32> {
     {
         neon::conj_dot(left, right)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::conj_dot(left, right)
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::conj_dot(left, right)
     }
@@ -40,7 +51,11 @@ pub fn dot(left: &[Complex<f32>], right: &[Complex<f32>]) -> Complex<f32> {
     {
         neon::dot(left, right)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::dot(left, right)
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::dot(left, right)
     }
@@ -54,7 +69,11 @@ pub fn dot_f64(left: &[Complex<f32>], right: &[Complex<f32>]) -> Complex<f64> {
     {
         neon::dot_f64(left, right)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::dot_f64(left, right)
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::dot_f64(left, right)
     }
@@ -72,7 +91,11 @@ pub fn decay_cross_add(
     {
         neon::decay_cross_add(acc, decay, left, right);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::decay_cross_add(acc, decay, left, right);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::decay_cross_add(acc, decay, left, right);
     }
@@ -85,7 +108,11 @@ pub fn add_cross_f64(acc: &mut [Complex<f64>], left: &[Complex<f32>], right: &[C
     {
         neon::add_cross_f64(acc, left, right);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::add_cross_f64(acc, left, right);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::add_cross_f64(acc, left, right);
     }
@@ -98,7 +125,11 @@ pub fn add_norm_sqr_f64(acc: &mut [f64], source: &[Complex<f32>]) {
     {
         neon::add_norm_sqr_f64(acc, source);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::add_norm_sqr_f64(acc, source);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::add_norm_sqr_f64(acc, source);
     }
@@ -111,7 +142,11 @@ pub fn add_rotated_f64(acc: &mut [Complex<f64>], source: &[Complex<f32>], turn: 
     {
         neon::add_rotated_f64(acc, source, turn);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::add_rotated_f64(acc, source, turn);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::add_rotated_f64(acc, source, turn);
     }
@@ -128,9 +163,30 @@ pub fn axpy_norm_sqr(
     {
         neon::axpy_norm_sqr(target, source, gain)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::axpy_norm_sqr(target, source, gain)
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::axpy_norm_sqr(target, source, gain)
+    }
+}
+
+pub fn axpy_in_place(target: &mut [Complex<f32>], source: &[Complex<f32>], gain: Complex<f32>) {
+    let len = target.len().min(source.len());
+    let (target, source) = (&mut target[..len], &source[..len]);
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::axpy_in_place(target, source, gain);
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::axpy_in_place(target, source, gain);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        scalar::axpy_in_place(target, source, gain);
     }
 }
 
@@ -141,9 +197,61 @@ pub fn mul_conj_in_place(target: &mut [Complex<f32>], reference: &[Complex<f32>]
     {
         neon::mul_conj_in_place(target, reference);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::mul_conj_in_place(target, reference);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::mul_conj_in_place(target, reference);
+    }
+}
+
+pub fn mul_in_place(target: &mut [Complex<f32>], reference: &[Complex<f32>]) {
+    let len = target.len().min(reference.len());
+    let (target, reference) = (&mut target[..len], &reference[..len]);
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::mul_in_place(target, reference);
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::mul_in_place(target, reference);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        scalar::mul_in_place(target, reference);
+    }
+}
+
+pub fn sub_mul_into(
+    target: &mut [Complex<f32>],
+    base: &[Complex<f32>],
+    left: &[Complex<f32>],
+    right: &[Complex<f32>],
+) {
+    let len = target
+        .len()
+        .min(base.len())
+        .min(left.len())
+        .min(right.len());
+    let (target, base, left, right) = (
+        &mut target[..len],
+        &base[..len],
+        &left[..len],
+        &right[..len],
+    );
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::sub_mul_into(target, base, left, right);
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::sub_mul_into(target, base, left, right);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        scalar::sub_mul_into(target, base, left, right);
     }
 }
 
@@ -153,7 +261,11 @@ pub fn sum_norm_sqr(samples: &[Complex<f32>]) -> f32 {
     {
         neon::sum_norm_sqr(samples)
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::sum_norm_sqr(samples)
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::sum_norm_sqr(samples)
     }
@@ -166,9 +278,30 @@ pub fn scale_real_into(target: &mut [Complex<f32>], source: &[Complex<f32>], wei
     {
         neon::scale_real_into(target, source, weights);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::scale_real_into(target, source, weights);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         scalar::scale_real_into(target, source, weights);
+    }
+}
+
+pub fn scale_real_in_place(target: &mut [Complex<f32>], weights: &[f32]) {
+    let len = target.len().min(weights.len());
+    let (target, weights) = (&mut target[..len], &weights[..len]);
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::scale_real_in_place(target, weights);
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        x86::scale_real_in_place(target, weights);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        scalar::scale_real_in_place(target, weights);
     }
 }
 
@@ -181,7 +314,11 @@ pub fn magnitudes_into(iq: &[Complex<f32>], out: &mut Vec<f32>) {
     unsafe {
         neon::magnitudes_raw(iq, dst);
     }
-    #[cfg(not(target_arch = "aarch64"))]
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        x86::magnitudes_raw(iq, dst);
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     unsafe {
         scalar::magnitudes_raw(iq, dst);
     }
@@ -238,9 +375,9 @@ mod scalar {
         let mut re = 0.0f64;
         let mut im = 0.0f64;
         for (a, b) in left.iter().zip(right) {
-            let p = a * b;
-            re += f64::from(p.re);
-            im += f64::from(p.im);
+            let p = widen(*a) * widen(*b);
+            re += p.re;
+            im += p.im;
         }
         Complex::new(re, im)
     }
@@ -307,9 +444,39 @@ mod scalar {
     }
 
     #[allow(dead_code)]
+    pub(super) fn axpy_in_place(
+        target: &mut [Complex<f32>],
+        source: &[Complex<f32>],
+        gain: Complex<f32>,
+    ) {
+        for (h, u) in target.iter_mut().zip(source) {
+            *h += u * gain;
+        }
+    }
+
+    #[allow(dead_code)]
     pub(super) fn mul_conj_in_place(target: &mut [Complex<f32>], reference: &[Complex<f32>]) {
         for (dst, src) in target.iter_mut().zip(reference) {
             *dst *= src.conj();
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn mul_in_place(target: &mut [Complex<f32>], reference: &[Complex<f32>]) {
+        for (dst, src) in target.iter_mut().zip(reference) {
+            *dst *= src;
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn sub_mul_into(
+        target: &mut [Complex<f32>],
+        base: &[Complex<f32>],
+        left: &[Complex<f32>],
+        right: &[Complex<f32>],
+    ) {
+        for (((dst, &q), &a), &b) in target.iter_mut().zip(base).zip(left).zip(right) {
+            *dst = q - a * b;
         }
     }
 
@@ -330,6 +497,13 @@ mod scalar {
     }
 
     #[allow(dead_code)]
+    pub(super) fn scale_real_in_place(target: &mut [Complex<f32>], weights: &[f32]) {
+        for (dst, &w) in target.iter_mut().zip(weights) {
+            *dst *= w;
+        }
+    }
+
+    #[allow(dead_code)]
     pub(super) unsafe fn magnitudes_raw(iq: &[Complex<f32>], dst: *mut f32) {
         for (i, s) in iq.iter().enumerate() {
             unsafe {
@@ -345,7 +519,7 @@ mod neon {
         float32x4x2_t, float64x2x2_t, vaddq_f32, vaddq_f64, vaddvq_f32, vaddvq_f64, vcvt_f64_f32,
         vcvt_high_f64_f32, vdupq_n_f32, vdupq_n_f64, vfmaq_f32, vfmaq_f64, vfmsq_f32, vfmsq_f64,
         vget_low_f32, vld1q_f32, vld1q_f64, vld2q_f32, vld2q_f64, vmulq_f32, vsqrtq_f32, vst1q_f32,
-        vst1q_f64, vst2q_f32, vst2q_f64,
+        vst1q_f64, vst2q_f32, vst2q_f64, vsubq_f32,
     };
 
     use num_complex::Complex;
@@ -590,22 +764,18 @@ mod neon {
         unsafe {
             if turn == Complex::new(1.0, 0.0) {
                 for (slot, src) in acc_blocks.iter_mut().zip(src_blocks) {
-                    let vs = vld2q_f32(src.as_ptr().cast());
+                    let xp = src.as_ptr().cast::<f32>();
                     let sp = slot.as_mut_ptr().cast::<f64>();
-                    let r0 = vcvt_f64_f32(vget_low_f32(vs.0));
-                    let i0 = vcvt_f64_f32(vget_low_f32(vs.1));
-                    let r1 = vcvt_high_f64_f32(vs.0);
-                    let i1 = vcvt_high_f64_f32(vs.1);
-                    let va0 = vld2q_f64(sp);
-                    let va1 = vld2q_f64(sp.add(4));
-                    vst2q_f64(
-                        sp,
-                        float64x2x2_t(vaddq_f64(va0.0, r0), vaddq_f64(va0.1, i0)),
-                    );
-                    vst2q_f64(
-                        sp.add(4),
-                        float64x2x2_t(vaddq_f64(va1.0, r1), vaddq_f64(va1.1, i1)),
-                    );
+                    let s0 = vld1q_f32(xp);
+                    let s1 = vld1q_f32(xp.add(4));
+                    let c0 = vcvt_f64_f32(vget_low_f32(s0));
+                    let c1 = vcvt_high_f64_f32(s0);
+                    let c2 = vcvt_f64_f32(vget_low_f32(s1));
+                    let c3 = vcvt_high_f64_f32(s1);
+                    vst1q_f64(sp, vaddq_f64(vld1q_f64(sp), c0));
+                    vst1q_f64(sp.add(2), vaddq_f64(vld1q_f64(sp.add(2)), c1));
+                    vst1q_f64(sp.add(4), vaddq_f64(vld1q_f64(sp.add(4)), c2));
+                    vst1q_f64(sp.add(6), vaddq_f64(vld1q_f64(sp.add(6)), c3));
                 }
             } else {
                 let tr = vdupq_n_f64(turn.re);
@@ -631,6 +801,86 @@ mod neon {
             }
         }
         scalar::add_rotated_f64(acc_tail, src_tail, turn);
+    }
+
+    pub(super) fn axpy_in_place(
+        target: &mut [Complex<f32>],
+        source: &[Complex<f32>],
+        gain: Complex<f32>,
+    ) {
+        let (h_blocks, h_tail) = target.as_chunks_mut::<4>();
+        let (u_blocks, u_tail) = source.as_chunks::<4>();
+        unsafe {
+            let gr = vdupq_n_f32(gain.re);
+            let gi = vdupq_n_f32(gain.im);
+            for (h, u) in h_blocks.iter_mut().zip(u_blocks) {
+                let hp = h.as_mut_ptr().cast::<f32>();
+                let vh = vld2q_f32(hp);
+                let vu = vld2q_f32(u.as_ptr().cast());
+                let re = vaddq_f32(vh.0, vsubq_f32(vmulq_f32(vu.0, gr), vmulq_f32(vu.1, gi)));
+                let im = vaddq_f32(vh.1, vaddq_f32(vmulq_f32(vu.0, gi), vmulq_f32(vu.1, gr)));
+                vst2q_f32(hp, float32x4x2_t(re, im));
+            }
+        }
+        scalar::axpy_in_place(h_tail, u_tail, gain);
+    }
+
+    pub(super) fn mul_in_place(target: &mut [Complex<f32>], reference: &[Complex<f32>]) {
+        let (dst_blocks, dst_tail) = target.as_chunks_mut::<4>();
+        let (ref_blocks, ref_tail) = reference.as_chunks::<4>();
+        unsafe {
+            for (dst, src) in dst_blocks.iter_mut().zip(ref_blocks) {
+                let dp = dst.as_mut_ptr().cast::<f32>();
+                let vd = vld2q_f32(dp);
+                let vs = vld2q_f32(src.as_ptr().cast());
+                let re = vfmsq_f32(vmulq_f32(vd.0, vs.0), vd.1, vs.1);
+                let im = vfmaq_f32(vmulq_f32(vd.1, vs.0), vd.0, vs.1);
+                vst2q_f32(dp, float32x4x2_t(re, im));
+            }
+        }
+        scalar::mul_in_place(dst_tail, ref_tail);
+    }
+
+    pub(super) fn sub_mul_into(
+        target: &mut [Complex<f32>],
+        base: &[Complex<f32>],
+        left: &[Complex<f32>],
+        right: &[Complex<f32>],
+    ) {
+        let (dst_blocks, dst_tail) = target.as_chunks_mut::<4>();
+        let (q_blocks, q_tail) = base.as_chunks::<4>();
+        let (a_blocks, a_tail) = left.as_chunks::<4>();
+        let (b_blocks, b_tail) = right.as_chunks::<4>();
+        unsafe {
+            for (((dst, q), a), b) in dst_blocks
+                .iter_mut()
+                .zip(q_blocks)
+                .zip(a_blocks)
+                .zip(b_blocks)
+            {
+                let vq = vld2q_f32(q.as_ptr().cast());
+                let va = vld2q_f32(a.as_ptr().cast());
+                let vb = vld2q_f32(b.as_ptr().cast());
+                let re = vfmaq_f32(vfmsq_f32(vq.0, va.0, vb.0), va.1, vb.1);
+                let im = vfmsq_f32(vfmsq_f32(vq.1, va.0, vb.1), va.1, vb.0);
+                vst2q_f32(dst.as_mut_ptr().cast(), float32x4x2_t(re, im));
+            }
+        }
+        scalar::sub_mul_into(dst_tail, q_tail, a_tail, b_tail);
+    }
+
+    pub(super) fn scale_real_in_place(target: &mut [Complex<f32>], weights: &[f32]) {
+        let (dst_blocks, dst_tail) = target.as_chunks_mut::<4>();
+        let (w_blocks, w_tail) = weights.as_chunks::<4>();
+        unsafe {
+            for (dst, w) in dst_blocks.iter_mut().zip(w_blocks) {
+                let dp = dst.as_mut_ptr().cast::<f32>();
+                let vd = vld2q_f32(dp);
+                let vw = vld1q_f32(w.as_ptr());
+                vst2q_f32(dp, float32x4x2_t(vmulq_f32(vd.0, vw), vmulq_f32(vd.1, vw)));
+            }
+        }
+        scalar::scale_real_in_place(dst_tail, w_tail);
     }
 
     pub(super) fn axpy_norm_sqr(
@@ -785,6 +1035,10 @@ mod tests {
             let d_ref = scalar::dot(&a, &b);
             assert!((d_got - d_ref).norm() <= 1e-4 * (len as f32 + 1.0));
 
+            let d64_got = dot_f64(&a, &b);
+            let d64_ref = scalar::dot_f64(&a, &b);
+            assert!((d64_got - d64_ref).norm() <= 1e-11 * (len as f64 + 1.0));
+
             let (mut acc_got, mut acc_ref) = (sample_vec(len, 3), sample_vec(len, 3));
             decay_cross_add(&mut acc_got, 0.85, &a, &b);
             scalar::decay_cross_add(&mut acc_ref, 0.85, &a, &b);
@@ -834,6 +1088,29 @@ mod tests {
                 assert!((g - r).norm() <= 1e-5);
             }
 
+            let (mut m_got, mut m_ref) = (a.clone(), a.clone());
+            mul_in_place(&mut m_got, &b);
+            scalar::mul_in_place(&mut m_ref, &b);
+            for (g, r) in m_got.iter().zip(&m_ref) {
+                assert!((g - r).norm() <= 1e-5);
+            }
+
+            let (mut ax_got, mut ax_ref) = (sample_vec(len, 5), sample_vec(len, 5));
+            axpy_in_place(&mut ax_got, &a, gain);
+            scalar::axpy_in_place(&mut ax_ref, &a, gain);
+            for (g, r) in ax_got.iter().zip(&ax_ref) {
+                assert!((g - r).norm() <= 1e-5);
+            }
+
+            let base = sample_vec(len, 6);
+            let (mut sm_got, mut sm_ref) =
+                (vec![Complex::default(); len], vec![Complex::default(); len]);
+            sub_mul_into(&mut sm_got, &base, &a, &b);
+            scalar::sub_mul_into(&mut sm_ref, &base, &a, &b);
+            for (g, r) in sm_got.iter().zip(&sm_ref) {
+                assert!((g - r).norm() <= 1e-5);
+            }
+
             let ns_got = sum_norm_sqr(&a);
             let ns_ref = scalar::sum_norm_sqr(&a);
             assert!((ns_got - ns_ref).abs() <= 1e-4 * (len as f32 + 1.0));
@@ -843,6 +1120,11 @@ mod tests {
             scale_real_into(&mut sc_got, &a, &w);
             scalar::scale_real_into(&mut sc_ref, &a, &w);
             assert_eq!(sc_got, sc_ref);
+
+            let (mut sci_got, mut sci_ref) = (a.clone(), a.clone());
+            scale_real_in_place(&mut sci_got, &w);
+            scalar::scale_real_in_place(&mut sci_ref, &w);
+            assert_eq!(sci_got, sci_ref);
 
             let mut mag_got = Vec::new();
             magnitudes_into(&a, &mut mag_got);
