@@ -1,5 +1,5 @@
 import type { DeviceSet, PatchGraph, PatchNode, RadioActivity, RadioUse } from "../../lib/types";
-import { type GraphContext, nodeOf, nodePorts, patchNode } from "../graph";
+import { dropEdges, type GraphContext, nodeOf, nodePorts, patchNode } from "../graph";
 
 export const USE_LABEL: Record<RadioUse, string> = {
   receive: "Receive",
@@ -40,10 +40,8 @@ export function withRadioUse(
     ...found,
     data: { ...found.data, radio_use: radioUse },
   }));
-  return {
-    ...used,
-    edges: (graph.edges ?? []).filter(
-      (edge) => !leftOut(edge.from.node, edge.from.port) && !leftOut(edge.to.node, edge.to.port),
-    ),
-  };
+  return dropEdges(
+    used,
+    (edge) => leftOut(edge.from.node, edge.from.port) || leftOut(edge.to.node, edge.to.port),
+  );
 }

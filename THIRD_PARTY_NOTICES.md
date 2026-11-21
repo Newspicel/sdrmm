@@ -4,7 +4,7 @@
 
 SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (710)
+## Rust crates (708)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -111,19 +111,19 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [cpp_demangle](https://github.com/gimli-rs/cpp_demangle) | 0.5.1 | MIT OR Apache-2.0 |
 | [cpufeatures](https://github.com/RustCrypto/utils) | 0.2.17 | MIT OR Apache-2.0 |
 | [cpufeatures](https://github.com/RustCrypto/utils) | 0.3.1 | MIT OR Apache-2.0 |
-| cranelift-assembler-x64 | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| cranelift-assembler-x64-meta | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-bforest](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-bitset](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-codegen](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-codegen-meta](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-codegen-shared](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-control](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-entity](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-frontend](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-isle](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift/isle) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-native](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
-| [cranelift-srcgen](https://github.com/bytecodealliance/wasmtime) | 0.137.1 | Apache-2.0 WITH LLVM-exception |
+| cranelift-assembler-x64 | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| cranelift-assembler-x64-meta | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-bforest](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-bitset](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-codegen](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-codegen-meta](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-codegen-shared](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-control](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-entity](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-frontend](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-isle](https://github.com/bytecodealliance/wasmtime/tree/main/cranelift/isle) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-native](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
+| [cranelift-srcgen](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
 | [crc32fast](https://github.com/srijs/rust-crc32fast) | 1.5.4 | MIT OR Apache-2.0 |
 | [crossbeam-deque](https://github.com/crossbeam-rs/crossbeam) | 0.8.8 | MIT OR Apache-2.0 |
 | [crossbeam-epoch](https://github.com/crossbeam-rs/crossbeam) | 0.9.21 | MIT OR Apache-2.0 |
@@ -395,8 +395,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [proc-macro-crate](https://github.com/bkchr/proc-macro-crate) | 3.5.0 | MIT OR Apache-2.0 |
 | [proc-macro2](https://github.com/dtolnay/proc-macro2) | 1.0.107 | MIT OR Apache-2.0 |
 | [profiling](https://github.com/aclysma/profiling) | 1.0.18 | MIT OR Apache-2.0 |
-| [pulley-interpreter](https://github.com/bytecodealliance/wasmtime/tree/main/pulley) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [pulley-macros](https://github.com/bytecodealliance/wasmtime/tree/main/pulley/macros) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
+| [pulley-interpreter](https://github.com/bytecodealliance/wasmtime/tree/main/pulley) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [pulley-macros](https://github.com/bytecodealliance/wasmtime/tree/main/pulley/macros) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
 | [qrcodegen](https://github.com/nayuki/QR-Code-generator) | 1.8.0 | MIT |
 | [quinn](https://github.com/quinn-rs/quinn) | 0.11.12 | MIT OR Apache-2.0 |
 | [quinn-proto](https://github.com/quinn-rs/quinn) | 0.11.19 | MIT OR Apache-2.0 |
@@ -605,22 +605,20 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [wasm-bindgen-macro](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro) | 0.2.130 | MIT OR Apache-2.0 |
 | [wasm-bindgen-macro-support](https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support) | 0.2.130 | MIT OR Apache-2.0 |
 | [wasm-bindgen-shared](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared) | 0.2.130 | MIT OR Apache-2.0 |
-| [wasm-encoder](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder) | 0.261.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wasm-encoder](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder) | 0.263.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wasm-streams](https://github.com/MattiasBuelens/wasm-streams/) | 0.4.2 | MIT OR Apache-2.0 |
-| [wasmparser](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser) | 0.261.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wasmparser](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser) | 0.263.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| [wasmprinter](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmprinter) | 0.261.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
-| [wasmtime](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-environ](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-component-util](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| wasmtime-internal-core | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-cranelift](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-fiber](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-jit-debug](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-jit-icache-coherence](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-unwinder](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
-| [wasmtime-internal-versioned-export-macros](https://github.com/bytecodealliance/wasmtime) | 50.0.1 | Apache-2.0 WITH LLVM-exception |
+| [wasmprinter](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmprinter) | 0.263.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| [wasmtime](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-environ](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-component-util](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| wasmtime-internal-core | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-cranelift](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-fiber](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-jit-debug](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-jit-icache-coherence](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-unwinder](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
+| [wasmtime-internal-versioned-export-macros](https://github.com/bytecodealliance/wasmtime) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
 | [wast](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wast) | 263.0.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wat](https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wat) | 1.263.0 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [wayland-sys](https://github.com/smithay/wayland-rs) | 0.31.11 | MIT |

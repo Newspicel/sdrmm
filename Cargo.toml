@@ -284,7 +284,7 @@ notify = "8.2.2"
 # Function spans for the `cargo xtask check` size report; xtask only.
 syn = { version = "3", default-features = false, features = ["full", "parsing", "visit"] }
 proc-macro2 = { version = "1", default-features = false, features = ["span-locations"] }
-wasmtime = { version = "50", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation"] }
+wasmtime = { version = "51", default-features = false, features = ["cranelift", "runtime", "std", "parallel-compilation"] }
 
 # Scoped temp dirs for filesystem tests (SigMF IO, recordings REST); dev-dependency only.
 tempfile = "3"

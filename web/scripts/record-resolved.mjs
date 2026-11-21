@@ -21,3 +21,7 @@ for (let round = 0; round < ROUNDS; round += 1) {
   }
   recorded = count;
 }
+execFileSync("pnpm", ["exec", "biome", "format", "--write", "src/test/resolved-inputs"], {
+  cwd: new URL("../", import.meta.url),
+  stdio: "inherit",
+});

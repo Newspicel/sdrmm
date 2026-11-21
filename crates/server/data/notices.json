@@ -1106,21 +1106,21 @@
     },
     {
       "name": "cranelift-assembler-x64",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "texts": []
     },
     {
       "name": "cranelift-assembler-x64-meta",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "texts": []
     },
     {
       "name": "cranelift-bforest",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1130,7 +1130,7 @@
     },
     {
       "name": "cranelift-bitset",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1138,7 +1138,7 @@
     },
     {
       "name": "cranelift-codegen",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1148,7 +1148,7 @@
     },
     {
       "name": "cranelift-codegen-meta",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1158,7 +1158,7 @@
     },
     {
       "name": "cranelift-codegen-shared",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1168,7 +1168,7 @@
     },
     {
       "name": "cranelift-control",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1178,7 +1178,7 @@
     },
     {
       "name": "cranelift-entity",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1188,7 +1188,7 @@
     },
     {
       "name": "cranelift-frontend",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1198,7 +1198,7 @@
     },
     {
       "name": "cranelift-isle",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime/tree/main/cranelift/isle",
@@ -1206,7 +1206,7 @@
     },
     {
       "name": "cranelift-native",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -1216,7 +1216,7 @@
     },
     {
       "name": "cranelift-srcgen",
-      "version": "0.137.1",
+      "version": "0.138.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -4070,7 +4070,7 @@
     },
     {
       "name": "pulley-interpreter",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime/tree/main/pulley",
@@ -4078,7 +4078,7 @@
     },
     {
       "name": "pulley-macros",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime/tree/main/pulley/macros",
@@ -6277,18 +6277,6 @@
     },
     {
       "name": "wasm-encoder",
-      "version": "0.261.0",
-      "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
-      "source": "rust",
-      "url": "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasm-encoder",
-      "texts": [
-        "23823edf263108ef",
-        "30fefc3a7d6a0041",
-        "769f80b5bcb42ed0"
-      ]
-    },
-    {
-      "name": "wasm-encoder",
       "version": "0.263.0",
       "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
       "source": "rust",
@@ -6312,18 +6300,6 @@
     },
     {
       "name": "wasmparser",
-      "version": "0.261.0",
-      "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
-      "source": "rust",
-      "url": "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmparser",
-      "texts": [
-        "23823edf263108ef",
-        "30fefc3a7d6a0041",
-        "769f80b5bcb42ed0"
-      ]
-    },
-    {
-      "name": "wasmparser",
       "version": "0.263.0",
       "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
       "source": "rust",
@@ -6336,7 +6312,7 @@
     },
     {
       "name": "wasmprinter",
-      "version": "0.261.0",
+      "version": "0.263.0",
       "license": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasm-tools/tree/main/crates/wasmprinter",
@@ -6348,7 +6324,7 @@
     },
     {
       "name": "wasmtime",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6358,7 +6334,7 @@
     },
     {
       "name": "wasmtime-environ",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6368,7 +6344,7 @@
     },
     {
       "name": "wasmtime-internal-component-util",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6376,14 +6352,14 @@
     },
     {
       "name": "wasmtime-internal-core",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "texts": []
     },
     {
       "name": "wasmtime-internal-cranelift",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6393,7 +6369,7 @@
     },
     {
       "name": "wasmtime-internal-fiber",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6403,7 +6379,7 @@
     },
     {
       "name": "wasmtime-internal-jit-debug",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6411,7 +6387,7 @@
     },
     {
       "name": "wasmtime-internal-jit-icache-coherence",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6419,7 +6395,7 @@
     },
     {
       "name": "wasmtime-internal-unwinder",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",
@@ -6429,7 +6405,7 @@
     },
     {
       "name": "wasmtime-internal-versioned-export-macros",
-      "version": "50.0.1",
+      "version": "51.0.0",
       "license": "Apache-2.0 WITH LLVM-exception",
       "source": "rust",
       "url": "https://github.com/bytecodealliance/wasmtime",

@@ -7,8 +7,11 @@ fn seconds(who: libc::c_int) -> Result<f64> {
     let status = unsafe { libc::getrusage(who, usage.as_mut_ptr()) };
     ensure!(status == 0, "getrusage failed");
     let usage = unsafe { usage.assume_init() };
-    let time = |t: libc::timeval| t.tv_sec as f64 + f64::from(t.tv_usec) * 1e-6;
-    Ok(time(usage.ru_utime) + time(usage.ru_stime))
+    let time = |t: libc::timeval| {
+        std::time::Duration::from_secs(t.tv_sec as u64)
+            + std::time::Duration::from_micros(t.tv_usec as u64)
+    };
+    Ok((time(usage.ru_utime) + time(usage.ru_stime)).as_secs_f64())
 }
 
 #[cfg(unix)]

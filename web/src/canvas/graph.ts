@@ -220,10 +220,11 @@ export function addEdge(graph: PatchGraph, edge: PatchEdge): PatchGraph {
 }
 
 export function removeEdge(graph: PatchGraph, key: string): PatchGraph {
-  return {
-    ...graph,
-    edges: (graph.edges ?? []).filter((edge) => edgeKey(edge) !== key),
-  };
+  return dropEdges(graph, (edge) => edgeKey(edge) === key);
+}
+
+export function dropEdges(graph: PatchGraph, drop: (edge: PatchEdge) => boolean): PatchGraph {
+  return { ...graph, edges: (graph.edges ?? []).filter((edge) => !drop(edge)) };
 }
 
 export function patchNode(

@@ -1,5 +1,5 @@
 import { Maximize2, Minimize2, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../components/BaseControls";
 import {
   addConstellation,
@@ -33,7 +33,7 @@ import { iqHub, symbolHub } from "../../lib/portTaps";
 import { spectrumHub } from "../../lib/spectrum";
 import { token } from "../../lib/tokens";
 import { Inspect, InspectSection } from "../inspector";
-import { measurements } from "./basebandMeasure";
+import { type Measurement, measurements } from "./basebandMeasure";
 import { drawPlot, GridBitmap, PLOT_FONT, prepareCanvas } from "./scopePlot";
 import {
   drawGraticule,
@@ -99,9 +99,7 @@ export function BasebandView({
 
   const [symbols, setSymbols] = useState<SymbolFrame | null>(() => symbolHub.latest(node, PORT));
   const symbolsRef = useRef<SymbolFrame | null>(symbols);
-  const merRef = useRef(new Trend(TREND_POINTS));
-  const marginRef = useRef(new Trend(TREND_POINTS));
-  const driftRef = useRef(new Trend(TREND_POINTS));
+  const [trends] = useState(newTrends);
 
   const insetRef = useRef<PlotInset>(PLOT_INSET);
   const gridRef = useRef<BasebandGrid | null>(null);
@@ -178,14 +176,10 @@ export function BasebandView({
 
   useEffect(() => {
     const blocks = { seen: 0 };
-    merRef.current.clear();
-    marginRef.current.clear();
-    driftRef.current.clear();
+    clearTrends(trends);
     return symbolHub.subscribe(node, PORT, (block) => {
       symbolsRef.current = block;
-      merRef.current.push(block.merDb);
-      marginRef.current.push(block.margin);
-      driftRef.current.push(block.freqErrorHz);
+      recordTrends(trends, block);
       const { view: mode } = settingsRef.current;
       if (mode === "constellation") {
         const grid = gridRef.current ?? createBasebandGrid(GRID, GRID);
@@ -201,23 +195,9 @@ export function BasebandView({
         setSymbols(block);
       }
     });
-  }, [node]);
+  }, [node, trends]);
 
-  const showsSpectrum = view === "spectrum";
-  useEffect(() => {
-    if (!showsSpectrum) {
-      return;
-    }
-    return spectrumHub.subscribe(
-      node,
-      PORT,
-      (row) => {
-        spectrumRef.current = row;
-        loopRef.current?.invalidate();
-      },
-      { bins: SPECTRUM_BINS },
-    );
-  }, [node, showsSpectrum]);
+  useSpectrumRows(node, view === "spectrum", spectrumRef, loopRef);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -225,7 +205,6 @@ export function BasebandView({
       return;
     }
     const scatter: Scatter = { grid: null, scale: 1 };
-    const trends = { mer: merRef.current, margin: marginRef.current, drift: driftRef.current };
     const loop = createDrawLoop(canvas, () => {
       scatter.grid = gridRef.current;
       scatter.scale = scaleRef.current;
@@ -250,7 +229,7 @@ export function BasebandView({
       loop.dispose();
       loopRef.current = null;
     };
-  }, []);
+  }, [trends]);
 
   const nyquist = frame === null ? Number.POSITIVE_INFINITY : frame.sampleRate / 2;
   const period = frame === null ? 0 : samplesPerSymbol(frame.sampleRate, symbolRate);
@@ -268,48 +247,14 @@ export function BasebandView({
 
   return (
     <div className="@container flex h-full min-h-0 flex-col overflow-hidden">
-      <div data-plot-chrome className={`${TAB_BAR} shrink-0 pr-1`}>
-        <div
-          role="group"
-          aria-label="Baseband view"
-          className="flex min-w-0 flex-wrap items-stretch"
-        >
-          {SIGNAL_VIEWS.map((name) => (
-            <ViewTab key={name} name={name} active={shown === name} onPick={pickView} />
-          ))}
-          {symbols !== null && (
-            <>
-              <span aria-hidden className="mx-1 my-2 w-px bg-line" />
-              {SYMBOL_VIEWS.map((name) => (
-                <ViewTab key={name} name={name} active={shown === name} onPick={pickView} />
-              ))}
-            </>
-          )}
-        </div>
-        {onExpand !== undefined && (
-          <Button
-            type="button"
-            aria-label={expanded ? "Leave full screen" : "Show full screen"}
-            aria-pressed={expanded}
-            title={expanded ? "Back to the panel" : "Fill the window with this chart"}
-            className={`${ICON_BTN_SM} ml-auto self-center text-ink-faint`}
-            onClick={onExpand}
-          >
-            <Icon glyph={expanded ? Minimize2 : Maximize2} size={12} />
-          </Button>
-        )}
-        {onClose !== undefined && (
-          <Button
-            type="button"
-            aria-label="Close chart"
-            title="Close chart"
-            className={`${ICON_BTN_SM} self-center text-ink-faint ${onExpand === undefined ? "ml-auto" : ""}`}
-            onClick={onClose}
-          >
-            <Icon glyph={X} size={12} />
-          </Button>
-        )}
-      </div>
+      <ChartHeader
+        shown={shown}
+        symbols={symbols !== null}
+        onPick={pickView}
+        expanded={expanded}
+        onExpand={onExpand}
+        onClose={onClose}
+      />
       <ViewOptions
         node={node}
         view={shown}
@@ -322,27 +267,121 @@ export function BasebandView({
         onSymbolRate={setSymbolRate}
         nyquist={nyquist}
       />
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative min-h-0 min-w-0 flex-1 bg-plot-bg">
-          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
-          {hint !== null && (
-            <span className="legend font-mono text-2xs pointer-events-none absolute inset-0 flex items-center justify-center text-plot-ink-dim">
-              {hint}
-            </span>
-          )}
-        </div>
-        {rows.length > 0 && (
-          <Readouts ruled={false} columns="fit" className="shrink-0 border-t border-line bg-panel">
-            {rows.map((row) => (
-              <Readout key={row.label} label={row.label} title={row.hint}>
-                {row.value}
-              </Readout>
-            ))}
-          </Readouts>
-        )}
-      </div>
+      <ChartPlot canvas={canvasRef} hint={hint} rows={rows} />
     </div>
   );
+}
+
+function ChartHeader({
+  shown,
+  symbols,
+  onPick,
+  expanded,
+  onExpand,
+  onClose,
+}: {
+  shown: BasebandView;
+  symbols: boolean;
+  onPick: (view: BasebandView) => void;
+  expanded: boolean;
+  onExpand?: () => void;
+  onClose?: () => void;
+}) {
+  return (
+    <div data-plot-chrome className={`${TAB_BAR} shrink-0 pr-1`}>
+      <div role="group" aria-label="Baseband view" className="flex min-w-0 flex-wrap items-stretch">
+        {SIGNAL_VIEWS.map((name) => (
+          <ViewTab key={name} name={name} active={shown === name} onPick={onPick} />
+        ))}
+        {symbols && (
+          <>
+            <span aria-hidden className="mx-1 my-2 w-px bg-line" />
+            {SYMBOL_VIEWS.map((name) => (
+              <ViewTab key={name} name={name} active={shown === name} onPick={onPick} />
+            ))}
+          </>
+        )}
+      </div>
+      {onExpand !== undefined && (
+        <Button
+          type="button"
+          aria-label={expanded ? "Leave full screen" : "Show full screen"}
+          aria-pressed={expanded}
+          title={expanded ? "Back to the panel" : "Fill the window with this chart"}
+          className={`${ICON_BTN_SM} ml-auto self-center text-ink-faint`}
+          onClick={onExpand}
+        >
+          <Icon glyph={expanded ? Minimize2 : Maximize2} size={12} />
+        </Button>
+      )}
+      {onClose !== undefined && (
+        <Button
+          type="button"
+          aria-label="Close chart"
+          title="Close chart"
+          className={`${ICON_BTN_SM} self-center text-ink-faint ${onExpand === undefined ? "ml-auto" : ""}`}
+          onClick={onClose}
+        >
+          <Icon glyph={X} size={12} />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ChartPlot({
+  canvas,
+  hint,
+  rows,
+}: {
+  canvas: RefObject<HTMLCanvasElement | null>;
+  hint: string | null;
+  rows: readonly Measurement[];
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="relative min-h-0 min-w-0 flex-1 bg-plot-bg">
+        <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
+        {hint !== null && (
+          <span className="legend font-mono text-2xs pointer-events-none absolute inset-0 flex items-center justify-center text-plot-ink-dim">
+            {hint}
+          </span>
+        )}
+      </div>
+      {rows.length > 0 && (
+        <Readouts ruled={false} columns="fit" className="shrink-0 border-t border-line bg-panel">
+          {rows.map((row) => (
+            <Readout key={row.label} label={row.label} title={row.hint}>
+              {row.value}
+            </Readout>
+          ))}
+        </Readouts>
+      )}
+    </div>
+  );
+}
+
+/** Keeps `latest` on the port's newest spectrum row while `active`, redrawing on each. */
+function useSpectrumRows(
+  node: string,
+  active: boolean,
+  latest: RefObject<SpectrumFrame | null>,
+  loop: RefObject<DrawLoop | null>,
+): void {
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    return spectrumHub.subscribe(
+      node,
+      PORT,
+      (row) => {
+        latest.current = row;
+        loop.current?.invalidate();
+      },
+      { bins: SPECTRUM_BINS },
+    );
+  }, [node, active, latest, loop]);
 }
 
 function ViewTab({
@@ -452,6 +491,26 @@ interface Trends {
   mer: Trend;
   margin: Trend;
   drift: Trend;
+}
+
+function newTrends(): Trends {
+  return {
+    mer: new Trend(TREND_POINTS),
+    margin: new Trend(TREND_POINTS),
+    drift: new Trend(TREND_POINTS),
+  };
+}
+
+function clearTrends(trends: Trends): void {
+  trends.mer.clear();
+  trends.margin.clear();
+  trends.drift.clear();
+}
+
+function recordTrends(trends: Trends, block: SymbolFrame): void {
+  trends.mer.push(block.merDb);
+  trends.margin.push(block.margin);
+  trends.drift.push(block.freqErrorHz);
 }
 
 export function paired(block: SymbolFrame): Float32Array {

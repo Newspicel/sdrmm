@@ -42,9 +42,7 @@
         "channels": [],
         "overruns": 0,
         "radio_use": "receive",
-        "uses": [
-          "receive"
-        ]
+        "uses": ["receive"]
       }
     ],
     "revision": 0

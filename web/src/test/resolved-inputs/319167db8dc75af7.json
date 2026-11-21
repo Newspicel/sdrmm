@@ -31,9 +31,7 @@
         },
         "capabilities": {
           "freq_ranges": [],
-          "sample_rates": [
-            2400000
-          ],
+          "sample_rates": [2400000],
           "gains": [],
           "antennas": [],
           "bandwidths": [],
