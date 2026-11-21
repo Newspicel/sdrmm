@@ -48,10 +48,12 @@ pub use demod::tone::{
     KeyingSlicer, KeyingTiming, ToneCorrelator,
 };
 pub use filter::decim::{Decimator, RealDecimator};
+pub use filter::fast_fir::FastFir;
 pub use filter::fir::{
-    design_bandpass, design_cosine_biphase, design_cosine_shaping, design_gaussian,
-    design_halfband, design_lowpass, design_lowpass_blackman_harris, design_lowpass_kaiser,
-    design_rrc, design_rrc_unit_energy,
+    RemezError, design_bandpass, design_cosine_biphase, design_cosine_shaping, design_equiripple,
+    design_gaussian, design_halfband, design_halfband_equiripple, design_lowpass,
+    design_lowpass_blackman_harris, design_lowpass_equiripple, design_lowpass_kaiser, design_rrc,
+    design_rrc_unit_energy,
 };
 pub use filter::firc::FirC;
 pub use filter::history::SampleHistory;

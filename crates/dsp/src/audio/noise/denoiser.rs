@@ -1,8 +1,7 @@
-use std::sync::Arc;
-
 use num_complex::Complex;
-use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
+use realfft::FftError;
 
+use crate::math::fft::RealTransform;
 use crate::math::special::exponential_integral;
 use crate::{math::db::Decibels, math::window::hann};
 
@@ -12,8 +11,7 @@ const BIN_SMOOTHING: [f32; 3] = [0.25, 0.5, 0.25];
 const PENDING_FRAMES: usize = 4;
 
 pub struct SpectralDenoiser {
-    fft: Arc<dyn RealToComplex<f32>>,
-    ifft: Arc<dyn ComplexToReal<f32>>,
+    fft: RealTransform,
     window: Vec<f32>,
     pending: Vec<f32>,
     frame: Vec<f32>,
@@ -33,7 +31,6 @@ pub struct SpectralDenoiser {
     floor: f32,
     log_floor: f32,
     spectrum: Vec<Complex<f32>>,
-    scratch: Vec<Complex<f32>>,
 }
 
 impl SpectralDenoiser {
@@ -58,13 +55,8 @@ impl SpectralDenoiser {
 
     #[must_use]
     pub fn new(strength: f32) -> Self {
-        let mut planner = RealFftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(Self::FRAME);
-        let ifft = planner.plan_fft_inverse(Self::FRAME);
-        let scratch_len = fft.get_scratch_len().max(ifft.get_scratch_len());
         let mut denoiser = Self {
-            fft,
-            ifft,
+            fft: RealTransform::new(Self::FRAME),
             window: hann(Self::FRAME).iter().map(|w| w.sqrt()).collect(),
             pending: Vec::with_capacity(Self::FRAME * PENDING_FRAMES),
             frame: vec![0.0; Self::FRAME],
@@ -84,7 +76,6 @@ impl SpectralDenoiser {
             floor: 1.0,
             log_floor: 0.0,
             spectrum: vec![Complex::new(0.0, 0.0); Self::BINS],
-            scratch: vec![Complex::new(0.0, 0.0); scratch_len],
         };
         denoiser.set_strength(strength);
         denoiser
@@ -161,11 +152,9 @@ impl SpectralDenoiser {
     }
 
     fn filter_frame(&mut self) -> Result<(), FftError> {
-        self.fft
-            .process_with_scratch(&mut self.frame, &mut self.spectrum, &mut self.scratch)?;
+        self.fft.forward(&mut self.frame, &mut self.spectrum)?;
         self.shape();
-        self.ifft
-            .process_with_scratch(&mut self.spectrum, &mut self.frame, &mut self.scratch)
+        self.fft.inverse(&mut self.spectrum, &mut self.frame)
     }
 
     fn shape(&mut self) {

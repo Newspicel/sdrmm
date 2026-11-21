@@ -62,7 +62,10 @@ impl NoiseBlanker {
             };
             let delayed = self.delay[self.write];
             self.delay[self.write] = input;
-            self.write = (self.write + 1) % self.delay.len();
+            self.write += 1;
+            if self.write == self.delay.len() {
+                self.write = 0;
+            }
 
             let magnitude = input.norm();
             if self.remaining == 0 {

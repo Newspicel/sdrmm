@@ -9,7 +9,7 @@ use super::{
     lanes::equal_len,
     weights::check_references,
 };
-use crate::math::complex::{axpy_norm_sqr, conj_dot, sum_norm_sqr};
+use crate::math::complex::sum_norm_sqr;
 use crate::math::db::Decibels;
 use crate::math::linalg::MAX_ORDER;
 
@@ -123,7 +123,16 @@ impl TdlCanceller {
         if !self.primed {
             self.prime(lanes, len);
         }
-        adaptive::run(self, lanes, len, out)
+        match self.adaptation {
+            Adaptation::Nlms { step } => self.process_nlms(lanes, len, step, out),
+            Adaptation::Rls { forget } => {
+                let mut pass = RlsPass {
+                    canceller: self,
+                    forget,
+                };
+                adaptive::run(&mut pass, lanes, len, out)
+            }
+        }
     }
 
     #[must_use]
@@ -164,7 +173,39 @@ impl TdlCanceller {
         std::iter::once(self.primary).chain(self.references[..self.refs].iter().copied())
     }
 
-    fn sample(&mut self, lanes: &[&[Complex<f32>]], t: usize) -> Option<Complex<f32>> {
+    fn process_nlms(
+        &mut self,
+        lanes: &[&[Complex<f32>]],
+        len: usize,
+        step: f32,
+        out: &mut Vec<Complex<f32>>,
+    ) -> Result<(), BeamError> {
+        out.reserve(len);
+        let mut diverged = false;
+        for t in 0..len {
+            let (d, y) = self.advance(lanes, t);
+            if y.is_finite() && self.nlms(step, y) {
+                self.track_power(d, y);
+                out.push(y);
+                continue;
+            }
+            out.push(ZERO);
+            self.reset();
+            if !diverged {
+                diverged = true;
+                self.resets += 1;
+            }
+        }
+        if diverged {
+            Err(BeamError::Diverged)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Takes sample `t` into the delay lines and returns the delayed primary and the residual.
+    #[inline(always)]
+    fn advance(&mut self, lanes: &[&[Complex<f32>]], t: usize) -> (Complex<f32>, Complex<f32>) {
         let taps = self.taps;
         let old_cursor = self.cursor;
         let mut next_cursor = old_cursor + 1;
@@ -187,34 +228,36 @@ impl TdlCanceller {
             self.resync_energy();
         }
         let d = self.delayed_primary(lanes[self.primary][t]);
-        let mut estimate = ZERO;
-        for k in 0..self.refs {
-            let start = k * 2 * taps + self.cursor;
-            let u = &self.history[start..start + taps];
-            let h = &self.h[k * taps..(k + 1) * taps];
-            estimate += conj_dot(h, u);
-        }
-        let y = d - estimate;
+        let estimate = fused_conj_dot(&self.h, &self.history, self.refs, taps, self.cursor);
+        (d, d - estimate)
+    }
+
+    fn rls_sample(
+        &mut self,
+        lanes: &[&[Complex<f32>]],
+        t: usize,
+        forget: f32,
+    ) -> Option<Complex<f32>> {
+        let (d, y) = self.advance(lanes, t);
         if !y.is_finite() {
             return None;
         }
-        let adapted = match self.adaptation {
-            Adaptation::Nlms { step } => self.nlms(step, y),
-            Adaptation::Rls { forget } => {
-                for k in 0..self.refs {
-                    let start = k * 2 * taps + self.cursor;
-                    self.regressor[k * taps..(k + 1) * taps]
-                        .copy_from_slice(&self.history[start..start + taps]);
-                }
-                self.rls(forget, y)
-            }
-        };
-        if !adapted {
+        let taps = self.taps;
+        for k in 0..self.refs {
+            let start = k * 2 * taps + self.cursor;
+            self.regressor[k * taps..(k + 1) * taps]
+                .copy_from_slice(&self.history[start..start + taps]);
+        }
+        if !self.rls(forget, y) {
             return None;
         }
+        self.track_power(d, y);
+        Some(y)
+    }
+
+    fn track_power(&mut self, d: Complex<f32>, y: Complex<f32>) {
         self.power_in += POWER_EMA * (d.norm_sqr() - self.power_in);
         self.power_out += POWER_EMA * (y.norm_sqr() - self.power_out);
-        Some(y)
     }
 
     fn resync_energy(&mut self) {
@@ -241,6 +284,7 @@ impl TdlCanceller {
         out
     }
 
+    #[inline(always)]
     fn nlms(&mut self, step: f32, y: Complex<f32>) -> bool {
         let energy = self.ref_energy as f32;
         if !energy.is_finite() {
@@ -252,34 +296,152 @@ impl TdlCanceller {
             return true;
         }
         let gain = y.conj() * (step / denominator);
-        let taps = self.taps;
-        let mut norm = 0.0f32;
-        for k in 0..self.refs {
-            let start = k * 2 * taps + self.cursor;
-            let u = &self.history[start..start + taps];
-            let h = &mut self.h[k * taps..(k + 1) * taps];
-            norm += axpy_norm_sqr(h, u, gain);
-        }
+        let norm = fused_axpy_norm_sqr(
+            &mut self.h,
+            &self.history,
+            self.refs,
+            self.taps,
+            self.cursor,
+            gain,
+        );
         norm.is_finite() && norm <= DIVERGE_NORM * DIVERGE_NORM
     }
 }
 
-impl Adaptive for TdlCanceller {
+#[inline(always)]
+fn fused_conj_dot(
+    h: &[Complex<f32>],
+    history: &[Complex<f32>],
+    refs: usize,
+    taps: usize,
+    cursor: usize,
+) -> Complex<f32> {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{vaddvq_f32, vdupq_n_f32, vfmaq_f32, vfmsq_f32, vld2q_f32};
+        assert!(h.len() >= refs * taps && history.len() >= refs * 2 * taps && cursor <= taps);
+        unsafe {
+            let mut re = vdupq_n_f32(0.0);
+            let mut im = vdupq_n_f32(0.0);
+            let mut tail = ZERO;
+            let quads = taps / 4;
+            let rem_start = quads * 4;
+            let hp = h.as_ptr().cast::<f32>();
+            let up = history.as_ptr().cast::<f32>();
+            for k in 0..refs {
+                let hk = hp.add(k * taps * 2);
+                let uk = up.add((k * 2 * taps + cursor) * 2);
+                for q in 0..quads {
+                    let off = q * 8;
+                    let va = vld2q_f32(hk.add(off));
+                    let vb = vld2q_f32(uk.add(off));
+                    re = vfmaq_f32(vfmaq_f32(re, va.0, vb.0), va.1, vb.1);
+                    im = vfmsq_f32(vfmaq_f32(im, va.0, vb.1), va.1, vb.0);
+                }
+                for t in rem_start..taps {
+                    let a = *h.get_unchecked(k * taps + t);
+                    let b = *history.get_unchecked(k * 2 * taps + cursor + t);
+                    tail += a.conj() * b;
+                }
+            }
+            Complex::new(vaddvq_f32(re) + tail.re, vaddvq_f32(im) + tail.im)
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        use crate::math::complex::conj_dot;
+        let mut estimate = ZERO;
+        for k in 0..refs {
+            let start = k * 2 * taps + cursor;
+            estimate += conj_dot(&h[k * taps..(k + 1) * taps], &history[start..start + taps]);
+        }
+        estimate
+    }
+}
+
+#[inline(always)]
+fn fused_axpy_norm_sqr(
+    h: &mut [Complex<f32>],
+    history: &[Complex<f32>],
+    refs: usize,
+    taps: usize,
+    cursor: usize,
+    gain: Complex<f32>,
+) -> f32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            float32x4x2_t, vaddvq_f32, vdupq_n_f32, vfmaq_f32, vfmsq_f32, vld2q_f32, vst2q_f32,
+        };
+        assert!(h.len() >= refs * taps && history.len() >= refs * 2 * taps && cursor <= taps);
+        unsafe {
+            let gr = vdupq_n_f32(gain.re);
+            let gi = vdupq_n_f32(gain.im);
+            let mut norm = vdupq_n_f32(0.0);
+            let mut tail_norm = 0.0f32;
+            let quads = taps / 4;
+            let rem_start = quads * 4;
+            let hp = h.as_mut_ptr().cast::<f32>();
+            let up = history.as_ptr().cast::<f32>();
+            for k in 0..refs {
+                let hk = hp.add(k * taps * 2);
+                let uk = up.add((k * 2 * taps + cursor) * 2);
+                for q in 0..quads {
+                    let off = q * 8;
+                    let vh = vld2q_f32(hk.add(off));
+                    let vu = vld2q_f32(uk.add(off));
+                    let re = vfmsq_f32(vfmaq_f32(vh.0, vu.0, gr), vu.1, gi);
+                    let im = vfmaq_f32(vfmaq_f32(vh.1, vu.0, gi), vu.1, gr);
+                    vst2q_f32(hk.add(off), float32x4x2_t(re, im));
+                    norm = vfmaq_f32(vfmaq_f32(norm, re, re), im, im);
+                }
+                for t in rem_start..taps {
+                    let slot = h.get_unchecked_mut(k * taps + t);
+                    let u = *history.get_unchecked(k * 2 * taps + cursor + t);
+                    *slot += u * gain;
+                    tail_norm += slot.norm_sqr();
+                }
+            }
+            vaddvq_f32(norm) + tail_norm
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        use crate::math::complex::axpy_norm_sqr;
+        let mut norm = 0.0f32;
+        for k in 0..refs {
+            let start = k * 2 * taps + cursor;
+            norm += axpy_norm_sqr(
+                &mut h[k * taps..(k + 1) * taps],
+                &history[start..start + taps],
+                gain,
+            );
+        }
+        norm
+    }
+}
+
+struct RlsPass<'a> {
+    canceller: &'a mut TdlCanceller,
+    forget: f32,
+}
+
+impl Adaptive for RlsPass<'_> {
     fn adapt(
         &mut self,
         lanes: &[&[Complex<f32>]],
         t: usize,
         _: &mut [Complex<f32>; MAX_ORDER],
     ) -> Option<Complex<f32>> {
-        self.sample(lanes, t)
+        self.canceller.rls_sample(lanes, t, self.forget)
     }
 
     fn restart(&mut self) {
-        self.reset();
+        self.canceller.reset();
     }
 
     fn count_reset(&mut self) {
-        self.resets += 1;
+        self.canceller.resets += 1;
     }
 }
 

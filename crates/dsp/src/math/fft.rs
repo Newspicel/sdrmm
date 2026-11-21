@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use num_complex::Complex;
+use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
 use rustfft::{Fft, FftDirection, FftNum, FftPlanner, num_traits::Zero};
 
 #[derive(Clone)]
@@ -38,6 +39,63 @@ impl<T: FftNum> Transform<T> {
 
     pub fn process(&mut self, buf: &mut [Complex<T>]) {
         self.plan.process_with_scratch(buf, &mut self.scratch);
+    }
+}
+
+/// A real forward and inverse FFT pair of one length, with its scratch.
+pub struct RealTransform {
+    len: usize,
+    forward: Arc<dyn RealToComplex<f32>>,
+    inverse: Arc<dyn ComplexToReal<f32>>,
+    scratch: Vec<Complex<f32>>,
+}
+
+impl RealTransform {
+    #[must_use]
+    pub fn new(len: usize) -> Self {
+        let mut planner = RealFftPlanner::<f32>::new();
+        let forward = planner.plan_fft_forward(len);
+        let inverse = planner.plan_fft_inverse(len);
+        let scratch_len = forward.get_scratch_len().max(inverse.get_scratch_len());
+        Self {
+            len,
+            forward,
+            inverse,
+            scratch: vec![Complex::zero(); scratch_len],
+        }
+    }
+
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    #[must_use]
+    pub const fn spectrum_len(&self) -> usize {
+        self.len / 2 + 1
+    }
+
+    pub fn forward(
+        &mut self,
+        input: &mut [f32],
+        spectrum: &mut [Complex<f32>],
+    ) -> Result<(), FftError> {
+        self.forward
+            .process_with_scratch(input, spectrum, &mut self.scratch)
+    }
+
+    pub fn inverse(
+        &mut self,
+        spectrum: &mut [Complex<f32>],
+        output: &mut [f32],
+    ) -> Result<(), FftError> {
+        self.inverse
+            .process_with_scratch(spectrum, output, &mut self.scratch)
     }
 }
 
@@ -102,8 +160,26 @@ impl FftPair<f32> {
 }
 
 fn scale(buf: &mut [Complex<f32>], factor: f32) {
-    for value in buf.iter_mut() {
-        *value *= factor;
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{vld1q_f32, vmulq_n_f32, vst1q_f32};
+        let (chunks, tail) = buf.as_chunks_mut::<4>();
+        unsafe {
+            for chunk in chunks {
+                let p = chunk.as_mut_ptr().cast::<f32>();
+                vst1q_f32(p, vmulq_n_f32(vld1q_f32(p), factor));
+                vst1q_f32(p.add(4), vmulq_n_f32(vld1q_f32(p.add(4)), factor));
+            }
+        }
+        for value in tail {
+            *value *= factor;
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for value in buf.iter_mut() {
+            *value *= factor;
+        }
     }
 }
 
@@ -163,5 +239,25 @@ mod tests {
             .map(|(bin, _)| bin);
         assert_eq!(peak, Some(9));
         assert!((buf[9].norm() - 128.0).abs() < 1e-2);
+    }
+
+    #[test]
+    fn real_transform_round_trips_accurately() {
+        let n = 256;
+        let mut rfft = RealTransform::new(n);
+        let original: Vec<f32> = (0..n)
+            .map(|k| {
+                (TAU * 5.0 * k as f32 / n as f32).sin()
+                    + 0.3 * (TAU * 17.0 * k as f32 / n as f32).cos()
+            })
+            .collect();
+        let mut input = original.clone();
+        let mut spectrum = vec![Complex::default(); rfft.spectrum_len()];
+        let mut recovered = vec![0.0f32; n];
+        rfft.forward(&mut input, &mut spectrum).unwrap();
+        rfft.inverse(&mut spectrum, &mut recovered).unwrap();
+        for (k, (a, b)) in original.iter().zip(&recovered).enumerate() {
+            assert!((a - b / n as f32).abs() < 1e-4, "sample {k}: {a} vs {b}");
+        }
     }
 }

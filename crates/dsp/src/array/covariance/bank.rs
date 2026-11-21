@@ -5,7 +5,7 @@ use super::{
     hermitian::{set_mirrored, write_identity},
 };
 use crate::math::complex::{decay_cross_add, scale_real_into, widen};
-use crate::math::fft::FftPair;
+use crate::math::fft::Transform;
 use crate::math::linalg::{CMat, LinalgError, MAX_ORDER};
 use crate::math::window::hann;
 
@@ -17,11 +17,12 @@ pub struct CovarianceBank {
     fft_size: usize,
     hop: usize,
     window: Vec<f32>,
-    fft: FftPair,
+    fft: Transform<f32>,
     frames: Vec<Vec<Complex<f32>>>,
     spectra: Vec<Vec<Complex<f32>>>,
     fill: usize,
-    sums: Vec<Complex<f32>>,
+    auto: Vec<f32>,
+    cross: Vec<Complex<f32>>,
     weight: f64,
 }
 
@@ -36,17 +37,18 @@ impl CovarianceBank {
         if hop == 0 || hop > fft_size {
             return Err(CovarianceError::Hop(hop));
         }
-        let tri = triangle(lanes);
+        let pairs = lanes * (lanes - 1) / 2;
         Ok(Self {
             lanes,
             fft_size,
             hop,
             window: hann(fft_size),
-            fft: FftPair::new(fft_size),
+            fft: Transform::forward(fft_size),
             frames: vec![vec![Complex::new(0.0, 0.0); fft_size]; lanes],
             spectra: vec![vec![Complex::new(0.0, 0.0); fft_size]; lanes],
             fill: 0,
-            sums: vec![Complex::new(0.0, 0.0); fft_size * tri],
+            auto: vec![0.0; fft_size * lanes],
+            cross: vec![Complex::new(0.0, 0.0); fft_size * pairs],
             weight: 0.0,
         })
     }
@@ -63,9 +65,10 @@ impl CovarianceBank {
         if lanes.iter().any(|lane| lane.len() != len) {
             return Err(CovarianceError::LaneLength);
         }
+        let overlap = self.fft_size - self.hop;
         let mut at = 0;
         let mut completed = 0;
-        while at < len {
+        while self.fill > 0 && at < len {
             let take = (self.fft_size - self.fill).min(len - at);
             for (frame, lane) in self.frames.iter_mut().zip(lanes) {
                 frame[self.fill..self.fill + take].copy_from_slice(&lane[at..at + take]);
@@ -73,12 +76,36 @@ impl CovarianceBank {
             self.fill += take;
             at += take;
             if self.fill == self.fft_size {
-                self.complete_frame(decay_per_frame);
+                self.transform_buffered();
+                self.accumulate_frame(decay_per_frame);
                 completed += 1;
-                for frame in &mut self.frames {
-                    frame.copy_within(self.hop.., 0);
+                if at >= overlap {
+                    at -= overlap;
+                    self.fill = 0;
+                } else {
+                    for frame in &mut self.frames {
+                        frame.copy_within(self.hop.., 0);
+                    }
+                    self.fill = overlap;
                 }
-                self.fill = self.fft_size - self.hop;
+            }
+        }
+        if self.fill == 0 {
+            while at + self.fft_size <= len {
+                for (spectrum, lane) in self.spectra.iter_mut().zip(lanes) {
+                    scale_real_into(spectrum, &lane[at..at + self.fft_size], &self.window);
+                    self.fft.process(spectrum);
+                }
+                self.accumulate_frame(decay_per_frame);
+                completed += 1;
+                at += self.hop;
+            }
+            let rem = len - at;
+            if rem > 0 {
+                for (frame, lane) in self.frames.iter_mut().zip(lanes) {
+                    frame[..rem].copy_from_slice(&lane[at..len]);
+                }
+                self.fill = rem;
             }
         }
         Ok(completed)
@@ -118,15 +145,21 @@ impl CovarianceBank {
         let half = self.fft_size / 2;
         let mask = self.fft_size - 1;
         let scale = 1.0 / (self.weight * bins as f64);
-        let mut index = 0;
+        let mut cross_index = 0;
         for i in 0..n {
-            for j in i..n {
-                let row = &self.sums[index * self.fft_size..(index + 1) * self.fft_size];
+            let diag_row = &self.auto[i * self.fft_size..(i + 1) * self.fft_size];
+            let diag: f64 = (first_bin..end)
+                .map(|bin| f64::from(diag_row[(bin + half) & mask]))
+                .sum();
+            set_mirrored(out, i, i, Complex::new(diag * scale, 0.0));
+            for j in i + 1..n {
+                let row =
+                    &self.cross[cross_index * self.fft_size..(cross_index + 1) * self.fft_size];
                 let sum: Complex<f64> = (first_bin..end)
                     .map(|bin| widen(row[(bin + half) & mask]))
                     .sum();
                 set_mirrored(out, i, j, sum * scale);
-                index += 1;
+                cross_index += 1;
             }
         }
         Ok(true)
@@ -139,11 +172,9 @@ impl CovarianceBank {
         }
         let n = self.lanes;
         let raw = (bin + self.fft_size / 2) & (self.fft_size - 1);
-        let mut index = 0;
         let mut trace = 0.0f64;
         for i in 0..n {
-            trace += f64::from(self.sums[index * self.fft_size + raw].re);
-            index += n - i;
+            trace += f64::from(self.auto[i * self.fft_size + raw]);
         }
         (trace / (n as f64 * self.weight)) as f32
     }
@@ -151,21 +182,29 @@ impl CovarianceBank {
     pub fn reset(&mut self) {
         self.fill = 0;
         self.weight = 0.0;
-        self.sums.fill(Complex::new(0.0, 0.0));
+        self.auto.fill(0.0);
+        self.cross.fill(Complex::new(0.0, 0.0));
     }
 
-    fn complete_frame(&mut self, decay: f32) {
+    fn transform_buffered(&mut self) {
         for (spectrum, frame) in self.spectra.iter_mut().zip(&self.frames) {
             scale_real_into(spectrum, frame, &self.window);
-            self.fft.forward(spectrum);
+            self.fft.process(spectrum);
         }
+    }
+
+    fn accumulate_frame(&mut self, decay: f32) {
         let n = self.lanes;
         let bins = self.fft_size;
+        for i in 0..n {
+            let row = &mut self.auto[i * bins..(i + 1) * bins];
+            decay_norm_sqr_add(row, decay, &self.spectra[i]);
+        }
         let mut index = 0;
         for i in 0..n {
             let left = &self.spectra[i];
-            for right in &self.spectra[i..] {
-                let row = &mut self.sums[index * bins..(index + 1) * bins];
+            for right in &self.spectra[i + 1..] {
+                let row = &mut self.cross[index * bins..(index + 1) * bins];
                 decay_cross_add(row, decay, left, right);
                 index += 1;
             }
@@ -174,8 +213,34 @@ impl CovarianceBank {
     }
 }
 
-const fn triangle(n: usize) -> usize {
-    n * (n + 1) / 2
+fn decay_norm_sqr_add(acc: &mut [f32], decay: f32, source: &[Complex<f32>]) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vdupq_n_f32, vfmaq_f32, vld1q_f32, vld2q_f32, vmulq_f32, vst1q_f32,
+        };
+        let (acc_chunks, acc_tail) = acc.as_chunks_mut::<4>();
+        let (src_chunks, src_tail) = source.as_chunks::<4>();
+        unsafe {
+            let vd = vdupq_n_f32(decay);
+            for (slot, src) in acc_chunks.iter_mut().zip(src_chunks) {
+                let sp = slot.as_mut_ptr();
+                let vs = vld2q_f32(src.as_ptr().cast());
+                let cur = vmulq_f32(vld1q_f32(sp), vd);
+                let out = vfmaq_f32(vfmaq_f32(cur, vs.0, vs.0), vs.1, vs.1);
+                vst1q_f32(sp, out);
+            }
+        }
+        for (slot, src) in acc_tail.iter_mut().zip(src_tail) {
+            *slot = *slot * decay + src.norm_sqr();
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for (slot, src) in acc.iter_mut().zip(source) {
+            *slot = *slot * decay + src.norm_sqr();
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
-use super::{MIN_TAPS, response_db, window_sinc::windowed_sinc};
-use crate::math::special::bessel_i0;
+use super::{MIN_TAPS, window_sinc::windowed_sinc};
+use crate::math::{db::Decibels, special::bessel_i0};
 
 /// Kaiser's length estimate, `taps - 1 = (attenuation - OFFSET) / (SLOPE * transition)`.
 const KAISER_OFFSET_DB: f64 = 7.95;
@@ -93,19 +93,38 @@ pub fn design_halfband(taps: usize, attenuation_db: f64) -> Vec<f32> {
 }
 
 fn stopband_peak_db(h: &[f32], stop: f64) -> f64 {
-    (0..=STOPBAND_PROBES)
-        .map(|step| {
-            response_db(
-                h,
-                stop + (0.5 - stop) * step as f64 / STOPBAND_PROBES as f64,
-            )
-        })
-        .fold(f64::NEG_INFINITY, f64::max)
+    let center = h.len() / 2;
+    let dc = f64::from(h[center]);
+    let odd_count = center.div_ceil(2);
+    let mut worst_sq = 0.0f64;
+    for step in 0..=STOPBAND_PROBES {
+        let freq = stop + (0.5 - stop) * step as f64 / STOPBAND_PROBES as f64;
+        let w = std::f64::consts::TAU * freq;
+        let c1 = w.cos();
+        let step_cos = 2.0 * (2.0 * c1 * c1 - 1.0);
+        let mut prev = c1;
+        let mut curr = c1;
+        let mut amp = dc;
+        for m in 0..odd_count {
+            let offset = 2 * m + 1;
+            let cos_k = if m == 0 {
+                c1
+            } else {
+                let next = step_cos.mul_add(curr, -prev);
+                prev = curr;
+                curr = next;
+                next
+            };
+            amp += 2.0 * f64::from(h[center - offset]) * cos_k;
+        }
+        worst_sq = worst_sq.max(amp * amp);
+    }
+    worst_sq.power_to_db()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{super::response_db, *};
     use crate::math::db::Decibels;
 
     #[test]

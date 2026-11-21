@@ -2,7 +2,7 @@ use num_complex::Complex;
 
 use crate::{
     Ddc, DdcError, Interpolator, Nco,
-    filter::fir::{design_lowpass_kaiser, kaiser_taps},
+    filter::fir::{design_halfband, design_lowpass_kaiser, halfband_taps, kaiser_taps},
     tuning::ddc::{MIN_STAGE_TAPS, STOPBAND_DB},
 };
 
@@ -79,8 +79,13 @@ impl Duc {
 fn doubler(band_rate: f64, stage_rate: f64) -> Interpolator {
     let pass = 0.5 * band_rate / (2.0 * stage_rate);
     let transition = 0.5 - 2.0 * pass;
-    let taps = kaiser_taps(transition, STOPBAND_DB).max(MIN_STAGE_TAPS);
-    Interpolator::new(&design_lowpass_kaiser(taps, DOUBLER_CUTOFF, STOPBAND_DB), 2)
+    if transition > 0.0 {
+        let taps = halfband_taps(transition, STOPBAND_DB).max(MIN_STAGE_TAPS);
+        Interpolator::new(&design_halfband(taps, STOPBAND_DB), 2)
+    } else {
+        let taps = kaiser_taps(transition, STOPBAND_DB).max(MIN_STAGE_TAPS);
+        Interpolator::new(&design_lowpass_kaiser(taps, DOUBLER_CUTOFF, STOPBAND_DB), 2)
+    }
 }
 
 #[cfg(test)]

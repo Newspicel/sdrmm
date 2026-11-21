@@ -3,7 +3,7 @@ mod plan;
 
 use fraction::Fraction;
 use num_complex::Complex;
-use plan::{stage, stage_factors, stage_filter};
+use plan::{stage_factors, stage_filter};
 
 use crate::{
     Decimator, Nco,
@@ -123,9 +123,9 @@ impl Ddc {
         let decimation: usize = factors.iter().product();
         let first_factor = factors.first().copied().unwrap_or(1);
         for &factor in &factors {
-            let taps = stage_filter(rate, factor, band_rate).taps();
-            span += (taps - 1) as f64 * input_rate / rate;
-            stages.push(stage(rate, factor, band_rate));
+            let filter = stage_filter(rate, factor, band_rate);
+            span += (filter.taps() - 1) as f64 * input_rate / rate;
+            stages.push(Decimator::new(&filter.design(), factor));
             rate /= factor as f64;
         }
         let ratio = output_rate / rate;

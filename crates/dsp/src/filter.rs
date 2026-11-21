@@ -1,5 +1,6 @@
 pub mod average;
 pub mod decim;
+pub mod fast_fir;
 pub mod fir;
 pub mod firc;
 pub mod frac_delay;

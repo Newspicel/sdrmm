@@ -5,10 +5,44 @@ const CLIPPING_FRACTION: u64 = 10_000;
 
 #[must_use]
 pub fn clipped_and_peak(samples: &[Complex<f32>]) -> (u64, f32) {
-    samples.iter().fold((0, 0.0), |(clipped, peak), sample| {
-        let rail = sample.re.abs().max(sample.im.abs());
-        (clipped + u64::from(rail >= FULL_SCALE), peak.max(rail))
-    })
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vabsq_f32, vaddvq_u32, vcgeq_f32, vdupq_n_f32, vdupq_n_u32, vld2q_f32, vmaxq_f32,
+            vmaxvq_f32, vsubq_u32,
+        };
+        let (chunks, tail) = samples.as_chunks::<4>();
+        let mut clipped = 0u64;
+        let mut peak = 0.0f32;
+        unsafe {
+            let limit = vdupq_n_f32(FULL_SCALE);
+            let mut vmax = vdupq_n_f32(0.0);
+            for block in chunks.chunks(65_536) {
+                let mut vcount = vdupq_n_u32(0);
+                for quad in block {
+                    let v = vld2q_f32(quad.as_ptr().cast());
+                    let rail = vmaxq_f32(vabsq_f32(v.0), vabsq_f32(v.1));
+                    vmax = vmaxq_f32(vmax, rail);
+                    vcount = vsubq_u32(vcount, vcgeq_f32(rail, limit));
+                }
+                clipped += u64::from(vaddvq_u32(vcount));
+            }
+            peak = peak.max(vmaxvq_f32(vmax));
+        }
+        for sample in tail {
+            let rail = sample.re.abs().max(sample.im.abs());
+            clipped += u64::from(rail >= FULL_SCALE);
+            peak = peak.max(rail);
+        }
+        (clipped, peak)
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        samples.iter().fold((0, 0.0), |(clipped, peak), sample| {
+            let rail = sample.re.abs().max(sample.im.abs());
+            (clipped + u64::from(rail >= FULL_SCALE), peak.max(rail))
+        })
+    }
 }
 
 #[must_use]

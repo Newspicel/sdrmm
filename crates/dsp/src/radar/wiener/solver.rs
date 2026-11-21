@@ -84,29 +84,28 @@ impl WienerSolver {
         if !fits || !self.holds(sums, batch, energy) {
             return Err(RadarDspError::Shape);
         }
+        let d = self.plan.doppler_taps;
         for group in 0..self.plan.groups() {
             if !self.plan.estimation(group).contains(&batch) {
                 continue;
             }
             let cycles = self.plan.cycles(group, batch);
-            for shift in 0..sums.shifts {
-                let at = (group * sums.shifts + shift) * m;
-                add_rotated(
-                    &mut sums.shared[at..at + m],
-                    &shared[..m],
-                    self.shared_turn(shift, cycles),
-                );
-            }
+            let shared_base = group * sums.shifts * m;
+            accumulate_symmetric_shared(
+                &mut sums.shared[shared_base..shared_base + sums.shifts * m],
+                &shared[..m],
+                d,
+                cycles,
+            );
             for lane in 0..lane_count {
                 let source = &lanes[lane * m..(lane + 1) * m];
-                for tap in 0..sums.taps {
-                    let at = ((group * lane_count + lane) * sums.taps + tap) * m;
-                    add_rotated(
-                        &mut sums.cross[at..at + m],
-                        source,
-                        self.cross_turn(tap, cycles),
-                    );
-                }
+                let cross_base = (group * lane_count + lane) * sums.taps * m;
+                accumulate_symmetric_cross(
+                    &mut sums.cross[cross_base..cross_base + sums.taps * m],
+                    source,
+                    d,
+                    cycles,
+                );
             }
         }
         self.accumulate_energy(sums, batch, energy)
@@ -155,10 +154,10 @@ impl WienerSolver {
         let cycles = self.plan.cycles(group, batch);
         let (shared, cross) = out.split_at_mut(shifts);
         for (shift, slot) in shared.iter_mut().enumerate() {
-            *slot = narrow(self.shared_turn(shift, cycles));
+            *slot = narrow(shared_turn(self.plan.doppler_taps, shift, cycles));
         }
         for (tap, slot) in cross.iter_mut().enumerate() {
-            *slot = narrow(self.cross_turn(tap, cycles));
+            *slot = narrow(cross_turn(self.plan.doppler_taps, tap, cycles));
         }
         Ok(())
     }
@@ -215,14 +214,6 @@ impl WienerSolver {
             && sums.groups == self.plan.groups()
             && sums.fft_len == self.shape.fft_len
             && sums.lanes == self.shape.lanes
-    }
-
-    fn shared_turn(&self, shift: usize, cycles: f64) -> C64 {
-        rotation((shift as f64 - 2.0 * self.plan.doppler_taps as f64) * cycles)
-    }
-
-    fn cross_turn(&self, tap: usize, cycles: f64) -> C64 {
-        rotation(-(tap as f64 - self.plan.doppler_taps as f64) * cycles)
     }
 
     fn inverse_into_buffer(&mut self, source: &[C64]) {
@@ -335,6 +326,160 @@ impl WienerSolver {
     }
 }
 
-fn add_rotated(sum: &mut [C64], source: &[C32], turn: C64) {
-    add_rotated_f64(sum, source, turn);
+fn shared_turn(doppler_taps: usize, shift: usize, cycles: f64) -> C64 {
+    rotation((shift as f64 - 2.0 * doppler_taps as f64) * cycles)
+}
+
+fn cross_turn(doppler_taps: usize, tap: usize, cycles: f64) -> C64 {
+    rotation(-(tap as f64 - doppler_taps as f64) * cycles)
+}
+
+fn accumulate_symmetric_shared(buf: &mut [C64], source: &[C32], doppler_taps: usize, cycles: f64) {
+    let m = source.len();
+    #[cfg(target_arch = "aarch64")]
+    if doppler_taps == 1 && m.is_multiple_of(4) {
+        let outer = shared_turn(1, 4, cycles);
+        add_sym_5_neon(buf, source, shared_turn(1, 3, cycles), outer);
+        return;
+    }
+    for (shift, sums) in buf.chunks_exact_mut(m).enumerate() {
+        add_rotated_f64(sums, source, shared_turn(doppler_taps, shift, cycles));
+    }
+}
+
+fn accumulate_symmetric_cross(buf: &mut [C64], source: &[C32], doppler_taps: usize, cycles: f64) {
+    let m = source.len();
+    #[cfg(target_arch = "aarch64")]
+    if doppler_taps == 1 && m.is_multiple_of(4) {
+        add_sym_3_neon(buf, source, cross_turn(1, 0, cycles));
+        return;
+    }
+    for (tap, sums) in buf.chunks_exact_mut(m).enumerate() {
+        add_rotated_f64(sums, source, cross_turn(doppler_taps, tap, cycles));
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn add_sym_5_neon(buf: &mut [C64], source: &[C32], t1: C64, t2: C64) {
+    use std::arch::aarch64::{
+        float64x2x2_t, vaddq_f64, vcvt_f64_f32, vcvt_high_f64_f32, vdupq_n_f64, vfmaq_f64,
+        vfmsq_f64, vget_low_f32, vld2q_f32, vld2q_f64, vst2q_f64,
+    };
+    let m = source.len();
+    assert!(buf.len() == 5 * m && m.is_multiple_of(4));
+    unsafe {
+        let xp = source.as_ptr().cast::<f32>();
+        let p0 = buf.as_mut_ptr().cast::<f64>();
+        let p1 = p0.add(2 * m);
+        let p2 = p0.add(4 * m);
+        let p3 = p0.add(6 * m);
+        let p4 = p0.add(8 * m);
+        let (c1, s1) = (vdupq_n_f64(t1.re), vdupq_n_f64(t1.im));
+        let (c2, s2) = (vdupq_n_f64(t2.re), vdupq_n_f64(t2.im));
+        let mut i = 0;
+        while i < m {
+            let vs = vld2q_f32(xp.add(i * 2));
+            let halves = [
+                (
+                    vcvt_f64_f32(vget_low_f32(vs.0)),
+                    vcvt_f64_f32(vget_low_f32(vs.1)),
+                    i * 2,
+                ),
+                (vcvt_high_f64_f32(vs.0), vcvt_high_f64_f32(vs.1), i * 2 + 4),
+            ];
+            for (xr, xi, off) in halves {
+                let a2 = vld2q_f64(p2.add(off));
+                vst2q_f64(
+                    p2.add(off),
+                    float64x2x2_t(vaddq_f64(a2.0, xr), vaddq_f64(a2.1, xi)),
+                );
+                let a3 = vld2q_f64(p3.add(off));
+                vst2q_f64(
+                    p3.add(off),
+                    float64x2x2_t(
+                        vfmsq_f64(vfmaq_f64(a3.0, c1, xr), s1, xi),
+                        vfmaq_f64(vfmaq_f64(a3.1, c1, xi), s1, xr),
+                    ),
+                );
+                let a1 = vld2q_f64(p1.add(off));
+                vst2q_f64(
+                    p1.add(off),
+                    float64x2x2_t(
+                        vfmaq_f64(vfmaq_f64(a1.0, c1, xr), s1, xi),
+                        vfmsq_f64(vfmaq_f64(a1.1, c1, xi), s1, xr),
+                    ),
+                );
+                let a4 = vld2q_f64(p4.add(off));
+                vst2q_f64(
+                    p4.add(off),
+                    float64x2x2_t(
+                        vfmsq_f64(vfmaq_f64(a4.0, c2, xr), s2, xi),
+                        vfmaq_f64(vfmaq_f64(a4.1, c2, xi), s2, xr),
+                    ),
+                );
+                let a0 = vld2q_f64(p0.add(off));
+                vst2q_f64(
+                    p0.add(off),
+                    float64x2x2_t(
+                        vfmaq_f64(vfmaq_f64(a0.0, c2, xr), s2, xi),
+                        vfmsq_f64(vfmaq_f64(a0.1, c2, xi), s2, xr),
+                    ),
+                );
+            }
+            i += 4;
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn add_sym_3_neon(buf: &mut [C64], source: &[C32], t1: C64) {
+    use std::arch::aarch64::{
+        float64x2x2_t, vaddq_f64, vcvt_f64_f32, vcvt_high_f64_f32, vdupq_n_f64, vfmaq_f64,
+        vfmsq_f64, vget_low_f32, vld2q_f32, vld2q_f64, vst2q_f64,
+    };
+    let m = source.len();
+    assert!(buf.len() == 3 * m && m.is_multiple_of(4));
+    unsafe {
+        let xp = source.as_ptr().cast::<f32>();
+        let p0 = buf.as_mut_ptr().cast::<f64>();
+        let p1 = p0.add(2 * m);
+        let p2 = p0.add(4 * m);
+        let (c1, s1) = (vdupq_n_f64(t1.re), vdupq_n_f64(t1.im));
+        let mut i = 0;
+        while i < m {
+            let vs = vld2q_f32(xp.add(i * 2));
+            let halves = [
+                (
+                    vcvt_f64_f32(vget_low_f32(vs.0)),
+                    vcvt_f64_f32(vget_low_f32(vs.1)),
+                    i * 2,
+                ),
+                (vcvt_high_f64_f32(vs.0), vcvt_high_f64_f32(vs.1), i * 2 + 4),
+            ];
+            for (xr, xi, off) in halves {
+                let a1 = vld2q_f64(p1.add(off));
+                vst2q_f64(
+                    p1.add(off),
+                    float64x2x2_t(vaddq_f64(a1.0, xr), vaddq_f64(a1.1, xi)),
+                );
+                let a0 = vld2q_f64(p0.add(off));
+                vst2q_f64(
+                    p0.add(off),
+                    float64x2x2_t(
+                        vfmsq_f64(vfmaq_f64(a0.0, c1, xr), s1, xi),
+                        vfmaq_f64(vfmaq_f64(a0.1, c1, xi), s1, xr),
+                    ),
+                );
+                let a2 = vld2q_f64(p2.add(off));
+                vst2q_f64(
+                    p2.add(off),
+                    float64x2x2_t(
+                        vfmaq_f64(vfmaq_f64(a2.0, c1, xr), s1, xi),
+                        vfmsq_f64(vfmaq_f64(a2.1, c1, xi), s1, xr),
+                    ),
+                );
+            }
+            i += 4;
+        }
+    }
 }

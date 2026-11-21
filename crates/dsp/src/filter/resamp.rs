@@ -5,7 +5,7 @@ use clock::{Clock, FREE_PHASES};
 use num_complex::Complex;
 pub(crate) use prototype::{Prototype, taps_per_phase};
 
-use crate::filter::fir::{DelayLine, Isa, plane_interpolated, reversed_branch};
+use crate::filter::fir::{DelayLine, Isa, StreamFir, plane_interpolated, reversed_branch};
 
 /// Branch lengths round up to this, a whole number of kernel lanes.
 const TAP_MULTIPLE: usize = 8;
@@ -23,6 +23,7 @@ pub struct FracResampler {
     position: usize,
     re: DelayLine<f32>,
     im: DelayLine<f32>,
+    decimator: Option<StreamFir<Complex<f32>, f32>>,
     isa: Isa,
 }
 
@@ -83,14 +84,32 @@ impl FracResampler {
                 .map(|(upper, lower)| upper - lower)
                 .collect(),
         };
+        let decimator = match clock {
+            Clock::Exact {
+                phases: 1,
+                whole,
+                rest: 0,
+                ..
+            } if whole >= 1 && whole <= taps_per_phase => {
+                let taps: Vec<f32> = rows[..taps_per_phase].iter().rev().copied().collect();
+                Some(StreamFir::new(&taps, whole))
+            }
+            _ => None,
+        };
+        let history = if decimator.is_some() {
+            0
+        } else {
+            taps_per_phase - 1
+        };
         Self {
             rows,
             slopes,
             taps_per_phase,
             clock,
             position: taps_per_phase - 1,
-            re: DelayLine::new(taps_per_phase - 1, 1, 0),
-            im: DelayLine::new(taps_per_phase - 1, 1, 0),
+            re: DelayLine::new(history, 1, 0),
+            im: DelayLine::new(history, 1, 0),
+            decimator,
             isa: Isa::detect(),
         }
     }
@@ -100,9 +119,16 @@ impl FracResampler {
         self.clock.reset();
         self.re.reset();
         self.im.reset();
+        if let Some(decimator) = &mut self.decimator {
+            decimator.reset();
+        }
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
+        if let Some(decimator) = &mut self.decimator {
+            decimator.process(input, out);
+            return;
+        }
         out.clear();
         for chunk in input.chunks(self.re.room()) {
             DelayLine::push_complex_planes(&mut self.re, &mut self.im, chunk);

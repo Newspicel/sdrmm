@@ -31,6 +31,15 @@ fn resampling(c: &mut Criterion) {
             });
         });
     }
+    let real: Vec<f32> = input.iter().map(|sample| sample.re).collect();
+    let mut real_output = Vec::new();
+    let mut real_resampler = sdrmm_dsp::RealResampler::new(44_100.0 / 48_000.0, 0.18, 0.31, 60.0);
+    group.bench_function("real_48000_to_44100", |b| {
+        b.iter(|| {
+            real_resampler.process(black_box(&real), &mut real_output);
+            black_box(&real_output);
+        });
+    });
     group.finish();
 }
 
@@ -72,6 +81,29 @@ fn fir(c: &mut Criterion) {
     group.bench_function("complex_taps_127", |b| {
         b.iter(|| {
             filter.process(black_box(&input), &mut output);
+            black_box(&output);
+        });
+    });
+    let long_taps = sdrmm_dsp::design_lowpass_kaiser(511, 0.11, 90.0);
+    let mut direct_long = sdrmm_dsp::Decimator::new(&long_taps, 1);
+    let mut fast_long = sdrmm_dsp::FastFir::real(&long_taps);
+    let mut output = Vec::new();
+    group.bench_function("complex_511_direct", |b| {
+        b.iter(|| {
+            direct_long.process(black_box(&input), &mut output);
+            black_box(&output);
+        });
+    });
+    group.bench_function("complex_511_fast_fir", |b| {
+        b.iter(|| {
+            fast_long.process(black_box(&input), &mut output);
+            black_box(&output);
+        });
+    });
+    let mut interp = sdrmm_dsp::Interpolator::new(&sdrmm_dsp::design_halfband(63, 100.0), 2);
+    group.bench_function("interp_halfband_63_by_2", |b| {
+        b.iter(|| {
+            interp.process(black_box(&input), &mut output);
             black_box(&output);
         });
     });
@@ -120,6 +152,20 @@ fn tuning(c: &mut Criterion) {
             });
         });
     }
+    let mut channelizer =
+        sdrmm_dsp::Channelizer::new(12, 9, 0.044, &[-5, -1, 0, 3, 4]).expect("shape");
+    let mut lanes = vec![Vec::new(); 5];
+    group.bench_function("channelizer_12_bins", |b| {
+        b.iter(|| {
+            channelizer.process(black_box(&input), &mut lanes);
+            black_box(&lanes);
+        });
+    });
+    group.bench_function("ddc_design_48000", |b| {
+        b.iter(|| {
+            black_box(sdrmm_dsp::Ddc::new(20_000_000.0, 48_000.0, 187_500.0).expect("rates"))
+        });
+    });
     group.finish();
 }
 
@@ -300,6 +346,22 @@ fn spectrum(c: &mut Criterion) {
         b.iter(|| {
             analyzer.power_db(black_box(&input), &mut out);
             black_box(&out);
+        });
+    });
+    let mut average = sdrmm_dsp::PowerAverage::new(4_096);
+    group.bench_function("average_4096", |b| {
+        b.iter(|| {
+            analyzer.accumulate(black_box(&input), &mut average);
+            average.take_db(&mut out);
+            black_box(&out);
+        });
+    });
+    let clipped = pseudo(65_536, 0xC11);
+    group.bench_function("clipped_and_peak_65536", |b| {
+        b.iter(|| {
+            black_box(sdrmm_dsp::audio::clip::clipped_and_peak(black_box(
+                &clipped,
+            )))
         });
     });
     group.finish();

@@ -2,7 +2,7 @@ use num_complex::Complex;
 
 use super::BatchShape;
 use crate::math::complex::{mul_conj_in_place, scale_real_in_place, sub_mul_into};
-use crate::math::fft::FftPair;
+use crate::math::fft::{FftPair, Transform};
 use crate::radar::RadarDspError;
 use crate::radar::wiener::WeightTable;
 
@@ -37,7 +37,7 @@ impl<'a> WeightsAt<'a> {
 pub struct BatchKernel {
     shape: BatchShape,
     pub(super) fft: FftPair,
-    doppler: FftPair,
+    doppler: Transform<f32>,
     work: Vec<C32>,
     kernel: Vec<C32>,
 }
@@ -48,7 +48,7 @@ impl BatchKernel {
         Self {
             shape,
             fft: FftPair::new(shape.fft_len),
-            doppler: FftPair::new(shape.batches),
+            doppler: Transform::forward(shape.batches),
             work: vec![C32::default(); shape.fft_len],
             kernel: vec![C32::default(); shape.fft_len],
         }
@@ -133,9 +133,14 @@ impl BatchKernel {
         } else {
             self.work.copy_from_slice(&product[..m]);
         }
-        self.fft.inverse_scaled(&mut self.work);
+        self.fft.inverse(&mut self.work);
         let lead = shape.lead;
-        gates[..shape.gates].copy_from_slice(&self.work[lead..lead + shape.gates]);
+        let inv = 1.0 / m as f32;
+        scale_copy(
+            &mut gates[..shape.gates],
+            &self.work[lead..lead + shape.gates],
+            inv,
+        );
         Ok(())
     }
 
@@ -146,13 +151,39 @@ impl BatchKernel {
         }
         let series = &mut series[..batches];
         scale_real_in_place(series, &window[..batches]);
-        self.doppler.forward(series);
+        self.doppler.process(series);
         series.rotate_right(batches / 2);
         Ok(())
     }
 
     fn fits(&self, window: &[C32], batch: usize) -> bool {
         batch < self.shape.batches && window.len() >= self.shape.window()
+    }
+}
+
+fn scale_copy(dst: &mut [C32], src: &[C32], factor: f32) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{vld1q_f32, vmulq_n_f32, vst1q_f32};
+        let (dst_chunks, dst_tail) = dst.as_chunks_mut::<4>();
+        let (src_chunks, src_tail) = src.as_chunks::<4>();
+        unsafe {
+            for (d, s) in dst_chunks.iter_mut().zip(src_chunks) {
+                let sp = s.as_ptr().cast::<f32>();
+                let dp = d.as_mut_ptr().cast::<f32>();
+                vst1q_f32(dp, vmulq_n_f32(vld1q_f32(sp), factor));
+                vst1q_f32(dp.add(4), vmulq_n_f32(vld1q_f32(sp.add(4)), factor));
+            }
+        }
+        for (d, &s) in dst_tail.iter_mut().zip(src_tail) {
+            *d = s * factor;
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for (d, &s) in dst.iter_mut().zip(src) {
+            *d = s * factor;
+        }
     }
 }
 

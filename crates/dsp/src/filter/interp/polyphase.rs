@@ -1,78 +1,203 @@
 use num_complex::Complex;
 
+use crate::filter::fir::StreamFir;
+
+#[derive(Clone, Debug)]
+enum Phase<T> {
+    Zero,
+    Tap {
+        delay: usize,
+        gain: f32,
+        ring: Vec<T>,
+        cursor: usize,
+    },
+    Fir(StreamFir<T, f32>),
+}
+
+impl<T: Copy + Default + std::ops::Mul<f32, Output = T>> Phase<T>
+where
+    T: crate::filter::fir::Accumulate<f32>,
+{
+    fn new(taps: &[f32]) -> Self {
+        let mut nonzero = taps.iter().enumerate().filter(|&(_, &tap)| tap != 0.0);
+        match (nonzero.next(), nonzero.next()) {
+            (None, _) => Self::Zero,
+            (Some((delay, &gain)), None) => Self::Tap {
+                delay,
+                gain,
+                ring: vec![T::default(); delay],
+                cursor: 0,
+            },
+            _ => Self::Fir(StreamFir::new(taps, 1)),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Zero => {}
+            Self::Tap { ring, cursor, .. } => {
+                ring.fill(T::default());
+                *cursor = 0;
+            }
+            Self::Fir(fir) => fir.reset(),
+        }
+    }
+
+    fn process(&mut self, input: &[T], out: &mut Vec<T>) {
+        match self {
+            Self::Zero => {
+                out.clear();
+                out.resize(input.len(), T::default());
+            }
+            Self::Tap {
+                delay,
+                gain,
+                ring,
+                cursor,
+            } => {
+                out.clear();
+                out.reserve(input.len());
+                let g = *gain;
+                let d = *delay;
+                if d == 0 {
+                    if g == 1.0 {
+                        out.extend_from_slice(input);
+                    } else {
+                        out.extend(input.iter().map(|&x| x * g));
+                    }
+                    return;
+                }
+                let n = input.len();
+                let mut c = *cursor;
+                if n >= d {
+                    let tail = d - c;
+                    if g == 1.0 {
+                        out.extend_from_slice(&ring[c..]);
+                        out.extend_from_slice(&ring[..c]);
+                        out.extend_from_slice(&input[..n - d]);
+                    } else {
+                        out.extend(ring[c..].iter().map(|&x| x * g));
+                        out.extend(ring[..c].iter().map(|&x| x * g));
+                        out.extend(input[..n - d].iter().map(|&x| x * g));
+                    }
+                    let keep = &input[n - d..];
+                    ring[c..].copy_from_slice(&keep[..tail]);
+                    ring[..c].copy_from_slice(&keep[tail..]);
+                } else {
+                    for &x in input {
+                        let y = ring[c];
+                        ring[c] = x;
+                        c += 1;
+                        if c == d {
+                            c = 0;
+                        }
+                        out.push(if g == 1.0 { y } else { y * g });
+                    }
+                    *cursor = c;
+                }
+            }
+            Self::Fir(fir) => fir.process(input, out),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RealInterpolator {
-    phases: Vec<Vec<f32>>,
-    history: Vec<f32>,
+    phases: Vec<Phase<f32>>,
+    scratch: Vec<Vec<f32>>,
 }
 
 impl RealInterpolator {
     #[must_use]
     pub fn new(taps: &[f32], factor: usize) -> Self {
-        let phases = split_phases(taps, factor);
-        Self {
-            history: vec![0.0; phases[0].len()],
-            phases,
-        }
+        let phases: Vec<_> = split_phases(taps, factor)
+            .into_iter()
+            .map(|row| Phase::new(&row))
+            .collect();
+        let scratch = (0..phases.len()).map(|_| Vec::new()).collect();
+        Self { phases, scratch }
     }
 
     pub fn reset(&mut self) {
-        self.history.fill(0.0);
+        for phase in &mut self.phases {
+            phase.reset();
+        }
     }
 
     pub fn process(&mut self, input: &[f32], out: &mut Vec<f32>) {
         out.clear();
-        let len = self.history.len();
-        for &sample in input {
-            self.history.copy_within(1.., 0);
-            self.history[len - 1] = sample;
-            for phase in &self.phases {
-                out.push(
-                    phase
-                        .iter()
-                        .zip(self.history.iter().rev())
-                        .map(|(h, x)| h * x)
-                        .sum(),
-                );
-            }
+        let factor = self.phases.len();
+        let n = input.len();
+        out.reserve(n * factor);
+        for (phase, buf) in self.phases.iter_mut().zip(&mut self.scratch) {
+            phase.process(input, buf);
         }
+        interleave(&self.scratch, n, out);
     }
 }
 
 /// The complex counterpart of [`RealInterpolator`]: zero-stuffs by `factor` and filters the images.
 #[derive(Clone, Debug)]
 pub struct Interpolator {
-    phases: Vec<Vec<f32>>,
-    history: Vec<Complex<f32>>,
+    phases: Vec<Phase<Complex<f32>>>,
+    scratch: Vec<Vec<Complex<f32>>>,
 }
 
 impl Interpolator {
     #[must_use]
     pub fn new(taps: &[f32], factor: usize) -> Self {
-        let phases = split_phases(taps, factor);
-        Self {
-            history: vec![Complex::new(0.0, 0.0); phases[0].len()],
-            phases,
-        }
+        let phases: Vec<_> = split_phases(taps, factor)
+            .into_iter()
+            .map(|row| Phase::new(&row))
+            .collect();
+        let scratch = (0..phases.len()).map(|_| Vec::new()).collect();
+        Self { phases, scratch }
     }
 
     pub fn reset(&mut self) {
-        self.history.fill(Complex::new(0.0, 0.0));
+        for phase in &mut self.phases {
+            phase.reset();
+        }
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Complex<f32>>) {
         out.clear();
-        out.reserve(input.len() * self.phases.len());
-        let len = self.history.len();
-        for &sample in input {
-            self.history.copy_within(1.., 0);
-            self.history[len - 1] = sample;
-            for phase in &self.phases {
-                let mut sum = Complex::new(0.0, 0.0);
-                for (h, x) in phase.iter().zip(self.history.iter().rev()) {
-                    sum += x * *h;
+        let factor = self.phases.len();
+        let n = input.len();
+        out.reserve(n * factor);
+        for (phase, buf) in self.phases.iter_mut().zip(&mut self.scratch) {
+            phase.process(input, buf);
+        }
+        interleave(&self.scratch, n, out);
+    }
+}
+
+fn interleave<T: Copy>(lanes: &[Vec<T>], len: usize, out: &mut Vec<T>) {
+    match lanes {
+        [a, b] => {
+            let base = out.len();
+            let dst = out.spare_capacity_mut();
+            for (i, (&x, &y)) in a[..len].iter().zip(&b[..len]).enumerate() {
+                dst[2 * i].write(x);
+                dst[2 * i + 1].write(y);
+            }
+            unsafe { out.set_len(base + 2 * len) };
+        }
+        [a, b, c] => {
+            let base = out.len();
+            let dst = out.spare_capacity_mut();
+            for i in 0..len {
+                dst[3 * i].write(a[i]);
+                dst[3 * i + 1].write(b[i]);
+                dst[3 * i + 2].write(c[i]);
+            }
+            unsafe { out.set_len(base + 3 * len) };
+        }
+        _ => {
+            for i in 0..len {
+                for lane in lanes {
+                    out.push(lane[i]);
                 }
-                out.push(sum);
             }
         }
     }

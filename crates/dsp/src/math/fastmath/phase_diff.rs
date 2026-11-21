@@ -123,6 +123,19 @@ mod tests {
     }
 
     #[test]
+    fn a_block_flush_with_the_end_of_its_allocation_is_not_read_past() {
+        const LEN: usize = 1 << 20;
+        let iq = vec![Complex::new(0.6f32, -0.8); LEN];
+        let mut out = Vec::new();
+        for len in [9, 10, 11, 12, 17, 203] {
+            let mut prev = Complex::new(1.0, 0.0);
+            phase_diff_into(&iq[LEN - len..], &mut prev, 1.0, &mut out);
+            assert_eq!(out.len(), len);
+            assert!(out[1..].iter().all(|&angle| angle == 0.0));
+        }
+    }
+
+    #[test]
     fn block_carries_state_across_calls_and_ignores_empty_input() {
         let iq: Vec<Complex<f32>> = (0..64)
             .map(|k| Complex::from_polar(1.0, 0.2 * k as f32))

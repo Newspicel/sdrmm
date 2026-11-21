@@ -1,8 +1,10 @@
 mod kaiser;
 mod polyphase;
 mod pulse;
+mod remez;
 mod window_sinc;
 
+#[cfg(test)]
 use std::f64::consts::PI;
 
 pub use kaiser::{
@@ -14,9 +16,13 @@ pub use pulse::{
     design_cosine_biphase, design_cosine_shaping, design_gaussian, design_rrc,
     design_rrc_unit_energy, rrc_pulse,
 };
+pub use remez::{
+    RemezError, design_equiripple, design_halfband_equiripple, design_lowpass_equiripple,
+};
 pub(crate) use window_sinc::blackman_taps;
 pub use window_sinc::{design_bandpass, design_lowpass, design_lowpass_blackman_harris};
 
+#[cfg(test)]
 use crate::math::db::Decibels;
 
 pub const MIN_TAPS: usize = 3;
@@ -27,6 +33,7 @@ fn unity_dc_gain(h: Vec<f64>) -> Vec<f32> {
 }
 
 /// Magnitude response of `h` at `freq` cycles per sample, in dB.
+#[cfg(test)]
 fn response_db(h: &[f32], freq: f64) -> f64 {
     let (re, im) = h
         .iter()

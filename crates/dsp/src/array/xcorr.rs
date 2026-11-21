@@ -98,13 +98,14 @@ impl XCorr {
         if energy_a <= f32::MIN_POSITIVE || energy_b <= f32::MIN_POSITIVE {
             return DelayEstimate::nothing();
         }
-        let cross = self.cross(a, b);
+        let cross = self.cross_unscaled(a, b);
         let size = cross.len();
+        let inv = 1.0 / size as f32;
         let (peak, best, total) = scan_lags(cross, frame);
         let at = |lag: isize| cross[lag.rem_euclid(size as isize) as usize];
         let value = at(peak);
-        let (left, right) = (at(peak - 1).norm(), at(peak + 1).norm());
-        let centre = value.norm();
+        let (left, right) = (at(peak - 1).norm() * inv, at(peak + 1).norm() * inv);
+        let centre = value.norm() * inv;
         let fraction = parabolic_peak(f64::from(left), f64::from(centre), f64::from(right)) as f32;
         DelayEstimate {
             delay_samples: peak as f32 + fraction,
@@ -115,7 +116,19 @@ impl XCorr {
         }
     }
 
+    fn cross_unscaled(&mut self, a: &[Complex<f32>], b: &[Complex<f32>]) -> &[Complex<f32>] {
+        self.cross_spectrum(a, b);
+        self.fft.inverse(&mut self.b);
+        &self.b
+    }
+
     fn cross(&mut self, a: &[Complex<f32>], b: &[Complex<f32>]) -> &[Complex<f32>] {
+        self.cross_spectrum(a, b);
+        self.fft.inverse_scaled(&mut self.b);
+        &self.b
+    }
+
+    fn cross_spectrum(&mut self, a: &[Complex<f32>], b: &[Complex<f32>]) {
         let size = self.fft.len();
         let frame = self.frame;
         let na = a.len().min(frame);
@@ -127,8 +140,94 @@ impl XCorr {
         self.fft.forward(&mut self.a);
         self.fft.forward(&mut self.b);
         mul_conj_in_place(&mut self.b, &self.a);
-        self.fft.inverse_scaled(&mut self.b);
-        &self.b
+    }
+}
+
+fn scan_slice(slice: &[Complex<f32>], lag_base: isize, peak: &mut isize, best: &mut f32) -> f32 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vaddq_f32, vaddvq_f32, vdupq_n_f32, vfmaq_f32, vld2q_f32, vmaxvq_f32, vmulq_f32,
+            vst1q_f32,
+        };
+        let (chunks, tail) = slice.as_chunks::<4>();
+        let mut total_v0 = unsafe { vdupq_n_f32(0.0) };
+        let mut total_v1 = unsafe { vdupq_n_f32(0.0) };
+        let mut cur_best = *best;
+        let mut cur_peak = *peak;
+        unsafe {
+            let mut idx = 0usize;
+            while idx + 1 < chunks.len() {
+                let v0 = vld2q_f32(chunks.get_unchecked(idx).as_ptr().cast());
+                let v1 = vld2q_f32(chunks.get_unchecked(idx + 1).as_ptr().cast());
+                let p0 = vfmaq_f32(vmulq_f32(v0.0, v0.0), v0.1, v0.1);
+                let p1 = vfmaq_f32(vmulq_f32(v1.0, v1.0), v1.1, v1.1);
+                total_v0 = vaddq_f32(total_v0, p0);
+                total_v1 = vaddq_f32(total_v1, p1);
+                if vmaxvq_f32(p0) > cur_best {
+                    let mut arr = [0.0f32; 4];
+                    vst1q_f32(arr.as_mut_ptr(), p0);
+                    for (lane, &power) in arr.iter().enumerate() {
+                        if power > cur_best {
+                            cur_best = power;
+                            cur_peak = lag_base + (idx * 4 + lane) as isize;
+                        }
+                    }
+                }
+                if vmaxvq_f32(p1) > cur_best {
+                    let mut arr = [0.0f32; 4];
+                    vst1q_f32(arr.as_mut_ptr(), p1);
+                    for (lane, &power) in arr.iter().enumerate() {
+                        if power > cur_best {
+                            cur_best = power;
+                            cur_peak = lag_base + ((idx + 1) * 4 + lane) as isize;
+                        }
+                    }
+                }
+                idx += 2;
+            }
+            if idx < chunks.len() {
+                let v0 = vld2q_f32(chunks.get_unchecked(idx).as_ptr().cast());
+                let p0 = vfmaq_f32(vmulq_f32(v0.0, v0.0), v0.1, v0.1);
+                total_v0 = vaddq_f32(total_v0, p0);
+                if vmaxvq_f32(p0) > cur_best {
+                    let mut arr = [0.0f32; 4];
+                    vst1q_f32(arr.as_mut_ptr(), p0);
+                    for (lane, &power) in arr.iter().enumerate() {
+                        if power > cur_best {
+                            cur_best = power;
+                            cur_peak = lag_base + (idx * 4 + lane) as isize;
+                        }
+                    }
+                }
+            }
+        }
+        let mut total = unsafe { vaddvq_f32(vaddq_f32(total_v0, total_v1)) };
+        let tail_base = chunks.len() * 4;
+        for (idx, value) in tail.iter().enumerate() {
+            let power = value.norm_sqr();
+            total += power;
+            if power > cur_best {
+                cur_best = power;
+                cur_peak = lag_base + (tail_base + idx) as isize;
+            }
+        }
+        *best = cur_best;
+        *peak = cur_peak;
+        total
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut total = 0.0f32;
+        for (idx, value) in slice.iter().enumerate() {
+            let power = value.norm_sqr();
+            total += power;
+            if power > *best {
+                *best = power;
+                *peak = lag_base + idx as isize;
+            }
+        }
+        total
     }
 }
 
@@ -136,24 +235,14 @@ fn scan_lags(cross: &[Complex<f32>], frame: usize) -> (isize, f32, f32) {
     let size = cross.len();
     let mut peak = 0isize;
     let mut best = 0.0f32;
-    let mut total = 0.0f32;
-    for (idx, value) in cross[size - frame..size].iter().enumerate() {
-        let power = value.norm_sqr();
-        total += power;
-        if power > best {
-            best = power;
-            peak = idx as isize - frame as isize;
-        }
-    }
-    for (idx, value) in cross[..frame].iter().enumerate() {
-        let power = value.norm_sqr();
-        total += power;
-        if power > best {
-            best = power;
-            peak = idx as isize;
-        }
-    }
-    (peak, best, total)
+    let t0 = scan_slice(
+        &cross[size - frame..size],
+        -(frame as isize),
+        &mut peak,
+        &mut best,
+    );
+    let t1 = scan_slice(&cross[..frame], 0, &mut peak, &mut best);
+    (peak, best, t0 + t1)
 }
 
 #[cfg(test)]

@@ -41,49 +41,60 @@ impl Cfar {
         let spec = self.spec;
         let gates = self.gates;
         let reach = spec.guard_range + spec.train_range;
-        let interior_end = gates.saturating_sub(reach);
+        let interior_start = spec.min_gate.max(reach).min(gates);
+        let interior_end = gates.saturating_sub(reach).max(interior_start);
         let prefix = &self.prefix;
-        let full_inv = (2 * spec.train_range) as f64;
+        let inv_full = 1.0 / (2 * spec.train_range) as f64;
         let factor = spec.alpha.max(spec.min_snr);
-        for (gate, &cell) in line.iter().enumerate().skip(spec.min_gate) {
-            if gate >= reach && gate < interior_end {
-                let left = prefix[gate - spec.guard_range] - prefix[gate - reach];
-                let right = prefix[gate + reach + 1] - prefix[gate + spec.guard_range + 1];
-                let noise = ((left + right) / full_inv) as f32;
+        for (gate, &cell) in line
+            .iter()
+            .enumerate()
+            .skip(spec.min_gate)
+            .take(interior_start.saturating_sub(spec.min_gate))
+        {
+            self.detect_range_ca_edge(gate, cell, row, out, keep);
+        }
+        if interior_start < interior_end {
+            let count = interior_end - interior_start;
+            let cells = &line[interior_start..interior_end];
+            let l_hi = &prefix[interior_start - spec.guard_range..interior_end - spec.guard_range];
+            let l_lo = &prefix[interior_start - reach..interior_end - reach];
+            let r_hi = &prefix[interior_start + reach + 1..=interior_end + reach];
+            let r_lo =
+                &prefix[interior_start + spec.guard_range + 1..=interior_end + spec.guard_range];
+            for idx in 0..count {
+                let cell = cells[idx];
+                let noise = (((l_hi[idx] - l_lo[idx]) + (r_hi[idx] - r_lo[idx])) * inv_full) as f32;
                 if noise > 0.0 && cell >= factor * noise && cell > spec.alpha * noise {
-                    keep.offer(
-                        out,
-                        Hit {
-                            row: row as u32,
-                            gate: gate as u32,
-                            power: cell,
-                            noise,
-                        },
-                        |hit| hit.power,
-                    );
-                }
-            } else {
-                let w = range_window(gate, gates, spec.guard_range, spec.train_range);
-                let count = w.left.len + w.right.len;
-                if count == 0 {
-                    continue;
-                }
-                let total = (prefix[w.left.end()] - prefix[w.left.start])
-                    + (prefix[w.right.end()] - prefix[w.right.start]);
-                let noise = total as f32 / count as f32;
-                if is_hit(cell, noise, spec.alpha, spec.min_snr) {
-                    keep.offer(
-                        out,
-                        Hit {
-                            row: row as u32,
-                            gate: gate as u32,
-                            power: cell,
-                            noise,
-                        },
-                        |hit| hit.power,
-                    );
+                    offer_hit(out, keep, row, interior_start + idx, cell, noise);
                 }
             }
+        }
+        for (gate, &cell) in line.iter().enumerate().skip(interior_end) {
+            self.detect_range_ca_edge(gate, cell, row, out, keep);
+        }
+    }
+
+    fn detect_range_ca_edge(
+        &self,
+        gate: usize,
+        cell: f32,
+        row: usize,
+        out: &mut Vec<Hit>,
+        keep: &mut Strongest,
+    ) {
+        let spec = self.spec;
+        let w = range_window(gate, self.gates, spec.guard_range, spec.train_range);
+        let count = w.left.len + w.right.len;
+        if count == 0 {
+            return;
+        }
+        let prefix = &self.prefix;
+        let total = (prefix[w.left.end()] - prefix[w.left.start])
+            + (prefix[w.right.end()] - prefix[w.right.start]);
+        let noise = total as f32 / count as f32;
+        if is_hit(cell, noise, spec.alpha, spec.min_snr) {
+            offer_hit(out, keep, row, gate, cell, noise);
         }
     }
 
@@ -201,6 +212,27 @@ fn range_window(gate: usize, gates: usize, guard: usize, train: usize) -> Window
         },
         edge: left < train || right < train,
     }
+}
+
+#[cold]
+fn offer_hit(
+    out: &mut Vec<Hit>,
+    keep: &mut Strongest,
+    row: usize,
+    gate: usize,
+    power: f32,
+    noise: f32,
+) {
+    keep.offer(
+        out,
+        Hit {
+            row: row as u32,
+            gate: gate as u32,
+            power,
+            noise,
+        },
+        |hit| hit.power,
+    );
 }
 
 pub(super) fn fill_prefix(prefix: &mut [f64], line: &[f32]) {

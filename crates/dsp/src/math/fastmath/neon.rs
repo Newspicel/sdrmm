@@ -42,8 +42,9 @@ fn atan2(y: float32x4_t, x: float32x4_t) -> float32x4_t {
     }
 }
 
-/// Writes `arg(iq[k + 1] * conj(iq[k])) * scale` to `out[k]` for as many whole groups of eight
-/// as fit, shifting each loaded quad into the next step with `vextq_f32`.
+/// Writes `arg(iq[k + 1] * conj(iq[k])) * scale` to `out[k]` for as many whole groups of four
+/// as fit, shifting each loaded quad into the next step with `vextq_f32`. The paired step
+/// loads a quad ahead, so it stops while that quad still lies inside `iq`.
 pub(super) unsafe fn phase_diffs(
     iq: &[Complex<f32>],
     scale: f32,
@@ -60,7 +61,8 @@ pub(super) unsafe fn phase_diffs(
         let v_scale = vdupq_n_f32(scale);
         let mut prev = vld2q_f32(sp);
         let mut start = 0;
-        while start + 8 <= count {
+        let paired = count.min(iq.len().saturating_sub(4));
+        while start + 8 <= paired {
             let next0 = vld2q_f32(sp.add((start + 4) * 2));
             let next1 = vld2q_f32(sp.add((start + 8) * 2));
             let now0_re = vextq_f32::<1>(prev.0, next0.0);

@@ -1,6 +1,5 @@
 use super::{MIN_STAGE_TAPS, PASSBAND_FRAC, STOPBAND_DB, is_unity};
 use crate::{
-    Decimator,
     filter::fir::{design_halfband, design_lowpass_kaiser, halfband_taps, kaiser_taps},
     filter::resamp::{Prototype, taps_per_phase},
 };
@@ -39,7 +38,7 @@ impl StageFilter {
         }
     }
 
-    fn design(self) -> Vec<f32> {
+    pub(super) fn design(self) -> Vec<f32> {
         match self {
             Self::Lowpass { taps, cutoff } => design_lowpass_kaiser(taps, cutoff, STOPBAND_DB),
             Self::Halfband { taps } => design_halfband(taps, STOPBAND_DB),
@@ -75,13 +74,6 @@ pub(super) fn integer_decimation(quotient: f64) -> usize {
         candidate -= 1;
     }
     best
-}
-
-pub(super) fn stage(input_rate: f64, factor: usize, band_rate: f64) -> Decimator {
-    Decimator::new(
-        &stage_filter(input_rate, factor, band_rate).design(),
-        factor,
-    )
 }
 
 /// The cheaper of the stage's low-pass and, for a stage by two, a half-band that meets the same

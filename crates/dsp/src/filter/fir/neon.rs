@@ -1,6 +1,6 @@
 use std::arch::aarch64::{
-    float32x4_t, float32x4x4_t, vaddq_f32, vaddvq_f32, vdupq_n_f32, vfmaq_f32, vfmaq_n_f32,
-    vld1q_f32, vld1q_f32_x4, vrev64q_f32, vst1q_f32_x4,
+    float32x4_t, float32x4x4_t, vaddq_f32, vaddvq_f32, vdupq_n_f32, vfmaq_f32, vfmaq_laneq_f32,
+    vfmaq_n_f32, vld1q_f32, vld1q_f32_x4, vrev64q_f32, vst1q_f32_x4,
 };
 
 use num_complex::Complex;
@@ -174,12 +174,13 @@ unsafe fn sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f32]) 
             even = unsafe { slid(even, base, at + 12) };
             odd = unsafe { slid(odd, base, at + 14) };
         }
-        sums[0] = add_product(sums[0], even, quad[0]);
-        sums[1] = add_product(sums[1], odd, quad[1]);
+        let taps = load(quad);
+        sums[0] = add_product_lane::<0>(sums[0], even, taps);
+        sums[1] = add_product_lane::<1>(sums[1], odd, taps);
         even = unsafe { slid(even, base, at + 16) };
         odd = unsafe { slid(odd, base, at + 18) };
-        sums[2] = add_product(sums[2], even, quad[2]);
-        sums[3] = add_product(sums[3], odd, quad[3]);
+        sums[2] = add_product_lane::<2>(sums[2], even, taps);
+        sums[3] = add_product_lane::<3>(sums[3], odd, taps);
     }
     let at = 8 * quads.len();
     let moved = !quads.is_empty();
@@ -213,27 +214,79 @@ unsafe fn real_sliding_block(floats: *const f32, plan: &Plan<f32>) -> Block {
 }
 
 #[target_feature(enable = "neon")]
+fn add_product_lane<const LANE: i32>(sum: Block, samples: Block, taps: float32x4_t) -> Block {
+    [
+        vfmaq_laneq_f32::<LANE>(sum[0], samples[0], taps),
+        vfmaq_laneq_f32::<LANE>(sum[1], samples[1], taps),
+        vfmaq_laneq_f32::<LANE>(sum[2], samples[2], taps),
+        vfmaq_laneq_f32::<LANE>(sum[3], samples[3], taps),
+    ]
+}
+
+#[target_feature(enable = "neon")]
+unsafe fn load_add_product_lane<const LANE: i32>(
+    sum: Block,
+    base: *const f32,
+    offset: usize,
+    taps: float32x4_t,
+) -> Block {
+    unsafe {
+        [
+            vfmaq_laneq_f32::<LANE>(sum[0], vld1q_f32(base.add(offset)), taps),
+            vfmaq_laneq_f32::<LANE>(sum[1], vld1q_f32(base.add(offset + 4)), taps),
+            vfmaq_laneq_f32::<LANE>(sum[2], vld1q_f32(base.add(offset + 8)), taps),
+            vfmaq_laneq_f32::<LANE>(sum[3], vld1q_f32(base.add(offset + 12)), taps),
+        ]
+    }
+}
+
+#[target_feature(enable = "neon")]
 #[inline]
 unsafe fn real_sliding_row(sums: &mut [Block; SETS], base: *const f32, taps: &[f32]) {
-    let mut windows = [zero(); SETS];
-    for (shift, window) in windows.iter_mut().enumerate().take(taps.len()) {
-        *window = unsafe { load_block(base, shift) };
-    }
+    let mut w0 = unsafe { load_block(base, 0) };
+    let mut w1 = if taps.len() > 1 {
+        unsafe { load_block(base, 1) }
+    } else {
+        zero()
+    };
+    let mut w2 = if taps.len() > 2 {
+        unsafe { load_block(base, 2) }
+    } else {
+        zero()
+    };
     let (quads, rest) = taps.as_chunks::<SETS>();
     for (index, quad) in quads.iter().enumerate() {
-        for (shift, (window, sum)) in windows.iter_mut().zip(sums.iter_mut()).enumerate() {
-            if index > 0 {
-                *window = unsafe { slid(*window, base, SETS * index + shift + 12) };
-            }
-            *sum = add_product(*sum, *window, quad[shift]);
+        let at = SETS * index;
+        if index > 0 {
+            w0 = unsafe { slid(w0, base, at + 12) };
+            w1 = unsafe { slid(w1, base, at + 13) };
+            w2 = unsafe { slid(w2, base, at + 14) };
         }
+        let vt = load(quad);
+        sums[0] = add_product_lane::<0>(sums[0], w0, vt);
+        sums[1] = add_product_lane::<1>(sums[1], w1, vt);
+        sums[2] = add_product_lane::<2>(sums[2], w2, vt);
+        sums[3] = unsafe { load_add_product_lane::<3>(sums[3], base, at + 3, vt) };
     }
     let at = SETS * quads.len();
-    for (shift, &tap) in rest.iter().enumerate() {
-        if !quads.is_empty() {
-            windows[shift] = unsafe { slid(windows[shift], base, at + shift + 12) };
+    let moved = !quads.is_empty();
+    if let Some(&tap) = rest.first() {
+        if moved {
+            w0 = unsafe { slid(w0, base, at + 12) };
         }
-        sums[shift] = add_product(sums[shift], windows[shift], tap);
+        sums[0] = add_product(sums[0], w0, tap);
+    }
+    if let Some(&tap) = rest.get(1) {
+        if moved {
+            w1 = unsafe { slid(w1, base, at + 13) };
+        }
+        sums[1] = add_product(sums[1], w1, tap);
+    }
+    if let Some(&tap) = rest.get(2) {
+        if moved {
+            w2 = unsafe { slid(w2, base, at + 14) };
+        }
+        sums[2] = add_product(sums[2], w2, tap);
     }
 }
 
@@ -277,10 +330,11 @@ unsafe fn complex_sliding_row(sets: &mut [[Block; 2]; 2], base: *const f32, taps
             even = unsafe { slid(even, base, at + 12) };
             odd = unsafe { slid(odd, base, at + 14) };
         }
-        sets[0][0] = add_product(sets[0][0], even, pair[0].re);
-        sets[0][1] = add_product(sets[0][1], even, pair[0].im);
-        sets[1][0] = add_product(sets[1][0], odd, pair[1].re);
-        sets[1][1] = add_product(sets[1][1], odd, pair[1].im);
+        let taps = unsafe { vld1q_f32(pair.as_ptr().cast()) };
+        sets[0][0] = add_product_lane::<0>(sets[0][0], even, taps);
+        sets[0][1] = add_product_lane::<1>(sets[0][1], even, taps);
+        sets[1][0] = add_product_lane::<2>(sets[1][0], odd, taps);
+        sets[1][1] = add_product_lane::<3>(sets[1][1], odd, taps);
     }
     if let Some(&tap) = rest.first() {
         if !pairs.is_empty() {
@@ -351,25 +405,44 @@ fn plane_interpolated(
     slope: &[f32],
     mu: f32,
 ) -> Complex<f32> {
-    let mut sums = [[vdupq_n_f32(0.0); 2]; 2];
-    let (re_quads, re) = re.as_chunks::<4>();
-    let (im_quads, im) = im.as_chunks::<4>();
-    let (lower_quads, lower) = lower.as_chunks::<4>();
-    let (slope_quads, slope) = slope.as_chunks::<4>();
-    let quads = re_quads
-        .iter()
-        .zip(im_quads)
-        .zip(lower_quads.iter().zip(slope_quads));
-    for (index, ((re, im), (lower, slope))) in quads.enumerate() {
-        if index % 2 == 0 {
-            sums[0] = interpolated_quad(sums[0], re, im, lower, slope, mu);
-        } else {
-            sums[1] = interpolated_quad(sums[1], re, im, lower, slope, mu);
+    let mut sum_re0 = vdupq_n_f32(0.0);
+    let mut sum_im0 = vdupq_n_f32(0.0);
+    let mut sum_re1 = vdupq_n_f32(0.0);
+    let mut sum_im1 = vdupq_n_f32(0.0);
+    let (re_octs, re_rest) = re.as_chunks::<8>();
+    let (im_octs, im_rest) = im.as_chunks::<8>();
+    let (lo_octs, lo_rest) = lower.as_chunks::<8>();
+    let (sl_octs, sl_rest) = slope.as_chunks::<8>();
+    for ((re, im), (lo, sl)) in re_octs.iter().zip(im_octs).zip(lo_octs.iter().zip(sl_octs)) {
+        unsafe {
+            let t0 = vfmaq_n_f32(vld1q_f32(lo.as_ptr()), vld1q_f32(sl.as_ptr()), mu);
+            let t1 = vfmaq_n_f32(
+                vld1q_f32(lo.as_ptr().add(4)),
+                vld1q_f32(sl.as_ptr().add(4)),
+                mu,
+            );
+            sum_re0 = vfmaq_f32(sum_re0, vld1q_f32(re.as_ptr()), t0);
+            sum_im0 = vfmaq_f32(sum_im0, vld1q_f32(im.as_ptr()), t0);
+            sum_re1 = vfmaq_f32(sum_re1, vld1q_f32(re.as_ptr().add(4)), t1);
+            sum_im1 = vfmaq_f32(sum_im1, vld1q_f32(im.as_ptr().add(4)), t1);
         }
     }
+    let (re_quads, re_tail) = re_rest.as_chunks::<4>();
+    let (im_quads, im_tail) = im_rest.as_chunks::<4>();
+    let (lo_quads, lo_tail) = lo_rest.as_chunks::<4>();
+    let (sl_quads, sl_tail) = sl_rest.as_chunks::<4>();
+    for ((re, im), (lo, sl)) in re_quads
+        .iter()
+        .zip(im_quads)
+        .zip(lo_quads.iter().zip(sl_quads))
+    {
+        let [r, i] = interpolated_quad([sum_re0, sum_im0], re, im, lo, sl, mu);
+        sum_re0 = r;
+        sum_im0 = i;
+    }
     let sum = Complex::new(
-        vaddvq_f32(vaddq_f32(sums[0][0], sums[1][0])),
-        vaddvq_f32(vaddq_f32(sums[0][1], sums[1][1])),
+        vaddvq_f32(vaddq_f32(sum_re0, sum_re1)),
+        vaddvq_f32(vaddq_f32(sum_im0, sum_im1)),
     );
-    interpolated_plane_tail(sum, re, im, lower, slope, mu)
+    interpolated_plane_tail(sum, re_tail, im_tail, lo_tail, sl_tail, mu)
 }

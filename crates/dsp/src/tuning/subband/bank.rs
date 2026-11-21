@@ -6,7 +6,7 @@ use super::{
 use crate::filter::fir::Accumulate;
 
 const ROTATION_PHASES: usize = MIXER_PERIOD / FACTOR;
-const BAND_BINS: [usize; SUBBANDS] = [
+pub(super) const BAND_BINS: [usize; SUBBANDS] = [
     ((MIXER_PERIOD - HALF_BANDS) * MIXER_STEP) % MIXER_PERIOD,
     ((1 + MIXER_PERIOD - HALF_BANDS) * MIXER_STEP) % MIXER_PERIOD,
     ((2 + MIXER_PERIOD - HALF_BANDS) * MIXER_STEP) % MIXER_PERIOD,
@@ -40,6 +40,8 @@ const ROT_SRC: [[usize; MIXER_PERIOD]; ROTATION_PHASES] = {
 pub struct SubbandFilterBank {
     tap_len: usize,
     padded_len: usize,
+    #[cfg(target_arch = "aarch64")]
+    skip_groups: usize,
     rev_taps: Vec<[f32; MIXER_PERIOD]>,
     #[cfg(target_arch = "x86_64")]
     rev_taps_dup: Vec<[[f32; 8]; 6]>,
@@ -89,6 +91,8 @@ impl SubbandFilterBank {
         Self {
             tap_len,
             padded_len,
+            #[cfg(target_arch = "aarch64")]
+            skip_groups: (pad / 4).min(6),
             rev_taps,
             #[cfg(target_arch = "x86_64")]
             rev_taps_dup,
@@ -128,9 +132,18 @@ impl SubbandFilterBank {
         let mut frame = 0;
         #[cfg(target_arch = "aarch64")]
         {
+            let mut out_ptrs: [*mut f32; SUBBANDS] =
+                std::array::from_fn(|b| self.output[b].spare_capacity_mut().as_mut_ptr().cast());
+            let mut written = 0usize;
             while frame + 4 <= frames {
-                self.process_four(frame);
+                self.process_four(frame, &mut out_ptrs, written);
                 frame += 4;
+                written += 4;
+            }
+            if written > 0 {
+                for output in &mut self.output {
+                    unsafe { output.set_len(written) };
+                }
             }
         }
         #[cfg(target_arch = "x86_64")]
@@ -180,81 +193,101 @@ impl SubbandFilterBank {
     }
 
     #[cfg(target_arch = "aarch64")]
-    fn process_four(&mut self, frame: usize) {
+    fn process_four(&mut self, frame: usize, out_ptrs: &mut [*mut f32; SUBBANDS], written: usize) {
         use std::arch::aarch64::{
-            float32x4_t, float32x4x2_t, vdupq_n_f32, vfmaq_f32, vld1q_f32, vld2q_f32, vst1q_f32,
-            vst2q_f32,
+            vdupq_n_f32, vfmaq_f32, vld1q_f32, vld2q_f32, vmulq_f32, vst1q_f32,
         };
         let mut sums_re = [[0.0f32; MIXER_PERIOD]; 4];
         let mut sums_im = [[0.0f32; MIXER_PERIOD]; 4];
         unsafe {
-            for f in 0..4 {
-                let base = self.start + (frame + f) * FACTOR;
-                let mut re = [vdupq_n_f32(0.0); 6];
-                let mut im = [vdupq_n_f32(0.0); 6];
-                let mut last_re = 0.0f32;
-                let mut last_im = 0.0f32;
-                for (block_idx, taps) in self.rev_taps.iter().enumerate() {
-                    let sp = self
+            if self.rev_taps.len() == 3 && self.skip_groups == 1 {
+                let t0 = self.rev_taps.get_unchecked(0);
+                let t1 = self.rev_taps.get_unchecked(1);
+                let t2 = self.rev_taps.get_unchecked(2);
+                let tp0 = t0.as_ptr();
+                let tp1 = t1.as_ptr();
+                let tp2 = t2.as_ptr();
+                for f in 0..4 {
+                    let base = self.start + (frame + f) * FACTOR;
+                    let sp0 = self.input.as_ptr().add(base).cast::<f32>();
+                    let sp1 = self.input.as_ptr().add(base + MIXER_PERIOD).cast::<f32>();
+                    let sp2 = self
                         .input
                         .as_ptr()
-                        .add(base + block_idx * MIXER_PERIOD)
+                        .add(base + 2 * MIXER_PERIOD)
                         .cast::<f32>();
-                    let tp = taps.as_ptr();
-                    for g in 0..6 {
-                        let vs = vld2q_f32(sp.add(g * 8));
-                        let vt = vld1q_f32(tp.add(g * 4));
-                        re[g] = vfmaq_f32(re[g], vs.0, vt);
-                        im[g] = vfmaq_f32(im[g], vs.1, vt);
+                    let rp = sums_re[f].as_mut_ptr();
+                    let ip = sums_im[f].as_mut_ptr();
+                    {
+                        let vs1 = vld2q_f32(sp1);
+                        let vt1 = vld1q_f32(tp1);
+                        let vs2 = vld2q_f32(sp2);
+                        let vt2 = vld1q_f32(tp2);
+                        vst1q_f32(rp, vfmaq_f32(vmulq_f32(vs1.0, vt1), vs2.0, vt2));
+                        vst1q_f32(ip, vfmaq_f32(vmulq_f32(vs1.1, vt1), vs2.1, vt2));
                     }
-                    let last = *self
-                        .input
-                        .get_unchecked(base + block_idx * MIXER_PERIOD + 24);
-                    let t24 = taps[24];
-                    last_re = last.re.mul_add(t24, last_re);
-                    last_im = last.im.mul_add(t24, last_im);
+                    for g in 1..6 {
+                        let vs0 = vld2q_f32(sp0.add(g * 8));
+                        let vt0 = vld1q_f32(tp0.add(g * 4));
+                        let vs1 = vld2q_f32(sp1.add(g * 8));
+                        let vt1 = vld1q_f32(tp1.add(g * 4));
+                        let vs2 = vld2q_f32(sp2.add(g * 8));
+                        let vt2 = vld1q_f32(tp2.add(g * 4));
+                        let re =
+                            vfmaq_f32(vfmaq_f32(vmulq_f32(vs0.0, vt0), vs1.0, vt1), vs2.0, vt2);
+                        let im =
+                            vfmaq_f32(vfmaq_f32(vmulq_f32(vs0.1, vt0), vs1.1, vt1), vs2.1, vt2);
+                        vst1q_f32(rp.add(g * 4), re);
+                        vst1q_f32(ip.add(g * 4), im);
+                    }
+                    let l0 = *self.input.get_unchecked(base + 24);
+                    let l1 = *self.input.get_unchecked(base + MIXER_PERIOD + 24);
+                    let l2 = *self.input.get_unchecked(base + 2 * MIXER_PERIOD + 24);
+                    sums_re[f][24] = l2.re.mul_add(t2[24], l1.re.mul_add(t1[24], l0.re * t0[24]));
+                    sums_im[f][24] = l2.im.mul_add(t2[24], l1.im.mul_add(t1[24], l0.im * t0[24]));
                 }
-                let rp = sums_re[f].as_mut_ptr();
-                let ip = sums_im[f].as_mut_ptr();
-                for g in 0..6 {
-                    vst1q_f32(rp.add(g * 4), re[g]);
-                    vst1q_f32(ip.add(g * 4), im[g]);
+            } else {
+                for f in 0..4 {
+                    let base = self.start + (frame + f) * FACTOR;
+                    let mut re = [vdupq_n_f32(0.0); 6];
+                    let mut im = [vdupq_n_f32(0.0); 6];
+                    let mut last_re = 0.0f32;
+                    let mut last_im = 0.0f32;
+                    for (block_idx, taps) in self.rev_taps.iter().enumerate() {
+                        let block_base = base + block_idx * MIXER_PERIOD;
+                        let sp = self.input.as_ptr().add(block_base).cast::<f32>();
+                        let tp = taps.as_ptr();
+                        for g in 0..6 {
+                            let vs = vld2q_f32(sp.add(g * 8));
+                            let vt = vld1q_f32(tp.add(g * 4));
+                            re[g] = vfmaq_f32(re[g], vs.0, vt);
+                            im[g] = vfmaq_f32(im[g], vs.1, vt);
+                        }
+                        let last = *self.input.get_unchecked(block_base + 24);
+                        let t24 = taps[24];
+                        last_re = last.re.mul_add(t24, last_re);
+                        last_im = last.im.mul_add(t24, last_im);
+                    }
+                    let rp = sums_re[f].as_mut_ptr();
+                    let ip = sums_im[f].as_mut_ptr();
+                    for g in 0..6 {
+                        vst1q_f32(rp.add(g * 4), re[g]);
+                        vst1q_f32(ip.add(g * 4), im[g]);
+                    }
+                    sums_re[f][24] = last_re;
+                    sums_im[f][24] = last_im;
                 }
-                sums_re[f][24] = last_re;
-                sums_im[f][24] = last_im;
             }
             let phases: [usize; 4] =
                 std::array::from_fn(|f| (self.phase + frame + f) % ROTATION_PHASES);
-            let mut fft_re: [float32x4_t; MIXER_PERIOD] = [vdupq_n_f32(0.0); MIXER_PERIOD];
-            let mut fft_im: [float32x4_t; MIXER_PERIOD] = [vdupq_n_f32(0.0); MIXER_PERIOD];
-            for dst in 0..MIXER_PERIOD {
-                let i0 = ROT_SRC[phases[0]][dst];
-                let i1 = ROT_SRC[phases[1]][dst];
-                let i2 = ROT_SRC[phases[2]][dst];
-                let i3 = ROT_SRC[phases[3]][dst];
-                let r_arr = [
-                    sums_re[0][i0],
-                    sums_re[1][i1],
-                    sums_re[2][i2],
-                    sums_re[3][i3],
-                ];
-                let i_arr = [
-                    sums_im[0][i0],
-                    sums_im[1][i1],
-                    sums_im[2][i2],
-                    sums_im[3][i3],
-                ];
-                fft_re[dst] = vld1q_f32(r_arr.as_ptr());
-                fft_im[dst] = vld1q_f32(i_arr.as_ptr());
-            }
-            self.fft.process_4(&mut fft_re, &mut fft_im);
-            for (band, output) in self.output.iter_mut().enumerate() {
-                let bin = BAND_BINS[band];
-                let base = output.len();
-                let dst = output.spare_capacity_mut().as_mut_ptr().cast::<f32>();
-                vst2q_f32(dst, float32x4x2_t(fft_re[bin], fft_im[bin]));
-                output.set_len(base + 4);
-            }
+            self.fft.process_4_subbands(
+                &sums_re,
+                &sums_im,
+                phases,
+                &ROT_SRC,
+                out_ptrs,
+                written * 2,
+            );
         }
     }
 

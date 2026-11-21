@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use crate::{
     RealDecimator, RealInterpolator, design_lowpass,
+    math::fft::RealTransform,
     math::neural::{Net, NetError, Session},
 };
 use num_complex::Complex;
-use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
+use realfft::FftError;
 
 const TAPS_PER_FACTOR: usize = 32;
 const CUTOFF_PER_FACTOR: f64 = 0.45;
@@ -102,8 +103,7 @@ pub struct NeuralDenoiser {
     window_len: usize,
     hop: usize,
     factor: usize,
-    fft: Arc<dyn RealToComplex<f32>>,
-    ifft: Arc<dyn ComplexToReal<f32>>,
+    fft: RealTransform,
     window: Vec<f32>,
     decimator: RealDecimator,
     interpolator: RealInterpolator,
@@ -114,7 +114,6 @@ pub struct NeuralDenoiser {
     overlap: Vec<f32>,
     frame: Vec<f32>,
     spectrum: Vec<Complex<f32>>,
-    scratch: Vec<Complex<f32>>,
     noisy: Vec<Vec<Complex<f32>>>,
     noisy_head: usize,
     ready: std::collections::VecDeque<f32>,
@@ -130,10 +129,6 @@ impl NeuralDenoiser {
             factor,
         } = Shape::of(&net, audio_rate)?;
         let initial_state = initial_state(&net)?;
-        let mut planner = RealFftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(window_len);
-        let ifft = planner.plan_fft_inverse(window_len);
-        let scratch_len = fft.get_scratch_len().max(ifft.get_scratch_len());
         let bins = window_len / 2 + 1;
         let taps = design_lowpass(TAPS_PER_FACTOR * factor, CUTOFF_PER_FACTOR / factor as f64);
         let mut denoiser = Self {
@@ -142,8 +137,7 @@ impl NeuralDenoiser {
             window_len,
             hop,
             factor,
-            fft,
-            ifft,
+            fft: RealTransform::new(window_len),
             window: vorbis(window_len),
             decimator: RealDecimator::new(&taps, factor),
             interpolator: RealInterpolator::new(&taps, factor),
@@ -154,7 +148,6 @@ impl NeuralDenoiser {
             overlap: vec![0.0; window_len],
             frame: vec![0.0; window_len],
             spectrum: vec![Complex::new(0.0, 0.0); bins],
-            scratch: vec![Complex::new(0.0, 0.0); scratch_len],
             noisy: vec![vec![Complex::new(0.0, 0.0); bins]; MODEL_DELAY_FRAMES + 1],
             noisy_head: 0,
             ready: std::collections::VecDeque::with_capacity(window_len * factor * 4),
@@ -239,8 +232,7 @@ impl NeuralDenoiser {
         {
             *slot = x * w;
         }
-        self.fft
-            .process_with_scratch(&mut self.frame, &mut self.spectrum, &mut self.scratch)?;
+        self.fft.forward(&mut self.frame, &mut self.spectrum)?;
         self.noisy_head = (self.noisy_head + 1) % self.noisy.len();
         self.noisy[self.noisy_head].copy_from_slice(&self.spectrum);
         self.infer();
@@ -255,8 +247,7 @@ impl NeuralDenoiser {
         if len.is_multiple_of(2) {
             self.spectrum[bins - 1].im = 0.0;
         }
-        self.ifft
-            .process_with_scratch(&mut self.spectrum, &mut self.frame, &mut self.scratch)?;
+        self.fft.inverse(&mut self.spectrum, &mut self.frame)?;
         let scale = 1.0 / len as f32;
         for ((acc, &value), &w) in self.overlap.iter_mut().zip(&self.frame).zip(&self.window) {
             *acc += value * scale * w;

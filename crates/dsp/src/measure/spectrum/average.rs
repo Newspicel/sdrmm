@@ -1,7 +1,7 @@
 use num_complex::Complex;
 
 use super::POWER_EPSILON;
-use crate::math::fastmath::{fast_db_to_power, fast_power_db};
+use crate::math::fastmath::{fast_db_to_power, fast_power_db_normal};
 
 pub struct PowerAverage {
     sum: Vec<f32>,
@@ -39,7 +39,7 @@ impl PowerAverage {
         assert_eq!(out.len(), self.sum.len(), "average length mismatch");
         let scale = 1.0 / self.count.max(1) as f32;
         for (slot, &power) in out.iter_mut().zip(&self.sum) {
-            *slot = fast_power_db(power * scale + POWER_EPSILON);
+            *slot = fast_power_db_normal(power * scale + POWER_EPSILON);
         }
         self.reset();
     }
@@ -56,14 +56,38 @@ impl PowerAverage {
         scale: f32,
     ) {
         let (low, high) = self.sum.split_at_mut(low_bins.len());
-        for (slot, bin) in low
-            .iter_mut()
-            .chain(high)
-            .zip(low_bins.iter().chain(high_bins))
-        {
+        add_scaled_power(low, low_bins, scale);
+        add_scaled_power(high, high_bins, scale);
+        self.count += 1;
+    }
+}
+
+fn add_scaled_power(dst: &mut [f32], bins: &[Complex<f32>], scale: f32) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vdupq_n_f32, vfmaq_f32, vld1q_f32, vld2q_f32, vmulq_f32, vst1q_f32,
+        };
+        let (dst_chunks, dst_tail) = dst.as_chunks_mut::<4>();
+        let (bin_chunks, bin_tail) = bins.as_chunks::<4>();
+        unsafe {
+            let vs = vdupq_n_f32(scale);
+            for (slot, bin) in dst_chunks.iter_mut().zip(bin_chunks) {
+                let sp = slot.as_mut_ptr();
+                let vb = vld2q_f32(bin.as_ptr().cast());
+                let p = vfmaq_f32(vmulq_f32(vb.0, vb.0), vb.1, vb.1);
+                vst1q_f32(sp, vfmaq_f32(vld1q_f32(sp), p, vs));
+            }
+        }
+        for (slot, bin) in dst_tail.iter_mut().zip(bin_tail) {
             *slot += bin.norm_sqr() * scale;
         }
-        self.count += 1;
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        for (slot, bin) in dst.iter_mut().zip(bins) {
+            *slot += bin.norm_sqr() * scale;
+        }
     }
 }
 

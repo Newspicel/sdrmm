@@ -5,7 +5,7 @@ use num_complex::Complex;
 use crate::{
     math::complex::{add_cross_f64, add_norm_sqr_f64, narrow, scale_real_into},
     math::db::Decibels,
-    math::fft::FftPair,
+    math::fft::Transform,
     math::linalg::MAX_ORDER,
     math::special::parabolic_peak,
     math::window::hann,
@@ -14,6 +14,7 @@ use crate::{
 pub const MIN_CORRELATOR_FFT: usize = 64;
 pub const MAX_CORRELATOR_FFT: usize = 8192;
 pub const DELAY_PAD: usize = 4;
+const FRAME_BATCH: usize = 4;
 
 type C64 = Complex<f64>;
 
@@ -46,16 +47,16 @@ pub struct FxCorrelator {
     fft_size: usize,
     hop: usize,
     window: Vec<f32>,
-    fft: FftPair,
+    fft: Transform<f32>,
     frames: Vec<Vec<Complex<f32>>>,
-    spectra: Vec<Vec<Complex<f32>>>,
+    spectra: Vec<Complex<f32>>,
     fill: usize,
     pairs: Vec<(usize, usize)>,
     cross: Vec<C64>,
     auto: Vec<f64>,
     count: u64,
     lag: Vec<Complex<f32>>,
-    lag_fft: FftPair,
+    lag_fft: Transform<f32>,
 }
 
 impl FxCorrelator {
@@ -77,16 +78,16 @@ impl FxCorrelator {
             fft_size,
             hop: if overlap { fft_size / 2 } else { fft_size },
             window: hann(fft_size),
-            fft: FftPair::new(fft_size),
+            fft: Transform::forward(fft_size),
             frames: vec![vec![ZERO; fft_size]; lanes],
-            spectra: vec![vec![ZERO; fft_size]; lanes],
+            spectra: vec![ZERO; FRAME_BATCH * lanes * fft_size],
             fill: 0,
             cross: vec![C64::new(0.0, 0.0); pairs.len() * fft_size],
             auto: vec![0.0; lanes * fft_size],
             pairs,
             count: 0,
             lag: vec![ZERO; padded],
-            lag_fft: FftPair::new(padded),
+            lag_fft: Transform::inverse(padded),
         })
     }
 
@@ -128,9 +129,10 @@ impl FxCorrelator {
         if lanes.iter().any(|lane| lane.len() != len) {
             return Err(CorrelatorError::LaneLength);
         }
+        let overlap = self.fft_size - self.hop;
         let mut done = 0;
         let mut at = 0;
-        while at < len {
+        while self.fill > 0 && at < len {
             let take = (self.fft_size - self.fill).min(len - at);
             for (frame, lane) in self.frames.iter_mut().zip(lanes) {
                 frame[self.fill..self.fill + take].copy_from_slice(&lane[at..at + take]);
@@ -138,10 +140,44 @@ impl FxCorrelator {
             self.fill += take;
             at += take;
             if self.fill == self.fft_size {
-                self.transform();
-                self.accumulate();
-                self.slide();
+                self.transform_buffered(0);
+                self.accumulate_batch(1);
                 done += 1;
+                if at >= overlap {
+                    at -= overlap;
+                    self.fill = 0;
+                } else {
+                    for frame in &mut self.frames {
+                        frame.copy_within(self.hop.., 0);
+                    }
+                    self.fill = overlap;
+                }
+            }
+        }
+        if self.fill == 0 {
+            let f = self.fft_size;
+            let stride = self.lanes * f;
+            while at + f <= len {
+                let mut batch = 0;
+                while batch < FRAME_BATCH && at + f <= len {
+                    for (lane_idx, lane) in lanes.iter().enumerate() {
+                        let start = batch * stride + lane_idx * f;
+                        let dst = &mut self.spectra[start..start + f];
+                        scale_real_into(dst, &lane[at..at + f], &self.window);
+                        self.fft.process(dst);
+                    }
+                    at += self.hop;
+                    batch += 1;
+                }
+                self.accumulate_batch(batch);
+                done += batch as u32;
+            }
+            let rem = len - at;
+            if rem > 0 {
+                for (frame, lane) in self.frames.iter_mut().zip(lanes) {
+                    frame[..rem].copy_from_slice(&lane[at..len]);
+                }
+                self.fill = rem;
             }
         }
         Ok(done)
@@ -206,7 +242,7 @@ impl FxCorrelator {
             let value = self.cross[baseline * f + self.raw_bin(bin)].conj() / norm;
             self.lag[slot] = narrow(value);
         }
-        self.lag_fft.inverse(&mut self.lag);
+        self.lag_fft.process(&mut self.lag);
         Ok(peak_lag(&self.lag) / DELAY_PAD as f64)
     }
 
@@ -257,29 +293,155 @@ impl FxCorrelator {
         (power(a) * power(b)).sqrt()
     }
 
-    fn transform(&mut self) {
-        for (spectrum, frame) in self.spectra.iter_mut().zip(&self.frames) {
-            scale_real_into(spectrum, frame, &self.window);
-            self.fft.forward(spectrum);
-        }
-    }
-
-    fn accumulate(&mut self) {
+    fn transform_buffered(&mut self, slot: usize) {
         let f = self.fft_size;
-        for (sums, &(a, b)) in self.cross.chunks_exact_mut(f).zip(&self.pairs) {
-            add_cross_f64(sums, &self.spectra[a], &self.spectra[b]);
+        let base = slot * self.lanes * f;
+        for (lane_idx, frame) in self.frames.iter().enumerate() {
+            let dst = &mut self.spectra[base + lane_idx * f..base + (lane_idx + 1) * f];
+            scale_real_into(dst, frame, &self.window);
+            self.fft.process(dst);
         }
-        for (sums, spectrum) in self.auto.chunks_exact_mut(f).zip(&self.spectra) {
-            add_norm_sqr_f64(sums, spectrum);
-        }
-        self.count += 1;
     }
 
-    fn slide(&mut self) {
-        for frame in &mut self.frames {
-            frame.copy_within(self.hop.., 0);
+    fn accumulate_batch(&mut self, batch: usize) {
+        let f = self.fft_size;
+        let stride = self.lanes * f;
+        #[cfg(target_arch = "aarch64")]
+        if batch == FRAME_BATCH {
+            for (sums, &(a, b)) in self.cross.chunks_exact_mut(f).zip(&self.pairs) {
+                add_cross_f64_4_neon(
+                    sums,
+                    [
+                        &self.spectra[a * f..(a + 1) * f],
+                        &self.spectra[stride + a * f..stride + (a + 1) * f],
+                        &self.spectra[2 * stride + a * f..2 * stride + (a + 1) * f],
+                        &self.spectra[3 * stride + a * f..3 * stride + (a + 1) * f],
+                    ],
+                    [
+                        &self.spectra[b * f..(b + 1) * f],
+                        &self.spectra[stride + b * f..stride + (b + 1) * f],
+                        &self.spectra[2 * stride + b * f..2 * stride + (b + 1) * f],
+                        &self.spectra[3 * stride + b * f..3 * stride + (b + 1) * f],
+                    ],
+                );
+            }
+            for (lane, sums) in self.auto.chunks_exact_mut(f).enumerate() {
+                add_norm_sqr_f64_4_neon(
+                    sums,
+                    [
+                        &self.spectra[lane * f..(lane + 1) * f],
+                        &self.spectra[stride + lane * f..stride + (lane + 1) * f],
+                        &self.spectra[2 * stride + lane * f..2 * stride + (lane + 1) * f],
+                        &self.spectra[3 * stride + lane * f..3 * stride + (lane + 1) * f],
+                    ],
+                );
+            }
+            self.count += batch as u64;
+            return;
         }
-        self.fill = self.fft_size - self.hop;
+        for k in 0..batch {
+            let base = k * stride;
+            for (sums, &(a, b)) in self.cross.chunks_exact_mut(f).zip(&self.pairs) {
+                add_cross_f64(
+                    sums,
+                    &self.spectra[base + a * f..base + (a + 1) * f],
+                    &self.spectra[base + b * f..base + (b + 1) * f],
+                );
+            }
+            for (lane, sums) in self.auto.chunks_exact_mut(f).enumerate() {
+                add_norm_sqr_f64(sums, &self.spectra[base + lane * f..base + (lane + 1) * f]);
+            }
+        }
+        self.count += batch as u64;
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn add_cross_f64_4_neon(acc: &mut [C64], a: [&[Complex<f32>]; 4], b: [&[Complex<f32>]; 4]) {
+    use std::arch::aarch64::{
+        float64x2x2_t, vcvt_f64_f32, vcvt_high_f64_f32, vfmaq_f64, vfmsq_f64, vget_low_f32,
+        vld2q_f32, vld2q_f64, vst2q_f64,
+    };
+    let len = acc.len();
+    assert!(len.is_multiple_of(4) && a.iter().chain(&b).all(|lane| lane.len() == len));
+    let mut i = 0;
+    unsafe {
+        let sp = acc.as_mut_ptr().cast::<f64>();
+        let ap = [
+            a[0].as_ptr().cast::<f32>(),
+            a[1].as_ptr().cast::<f32>(),
+            a[2].as_ptr().cast::<f32>(),
+            a[3].as_ptr().cast::<f32>(),
+        ];
+        let bp = [
+            b[0].as_ptr().cast::<f32>(),
+            b[1].as_ptr().cast::<f32>(),
+            b[2].as_ptr().cast::<f32>(),
+            b[3].as_ptr().cast::<f32>(),
+        ];
+        while i + 4 <= len {
+            let off = i * 2;
+            let vs0 = vld2q_f64(sp.add(off));
+            let vs1 = vld2q_f64(sp.add(off + 4));
+            let (mut re0, mut im0) = (vs0.0, vs0.1);
+            let (mut re1, mut im1) = (vs1.0, vs1.1);
+            for k in 0..4 {
+                let va = vld2q_f32(ap[k].add(off));
+                let vb = vld2q_f32(bp[k].add(off));
+                let ar0 = vcvt_f64_f32(vget_low_f32(va.0));
+                let ai0 = vcvt_f64_f32(vget_low_f32(va.1));
+                let br0 = vcvt_f64_f32(vget_low_f32(vb.0));
+                let bi0 = vcvt_f64_f32(vget_low_f32(vb.1));
+                re0 = vfmaq_f64(vfmaq_f64(re0, ar0, br0), ai0, bi0);
+                im0 = vfmsq_f64(vfmaq_f64(im0, ai0, br0), ar0, bi0);
+
+                let ar1 = vcvt_high_f64_f32(va.0);
+                let ai1 = vcvt_high_f64_f32(va.1);
+                let br1 = vcvt_high_f64_f32(vb.0);
+                let bi1 = vcvt_high_f64_f32(vb.1);
+                re1 = vfmaq_f64(vfmaq_f64(re1, ar1, br1), ai1, bi1);
+                im1 = vfmsq_f64(vfmaq_f64(im1, ai1, br1), ar1, bi1);
+            }
+            vst2q_f64(sp.add(off), float64x2x2_t(re0, im0));
+            vst2q_f64(sp.add(off + 4), float64x2x2_t(re1, im1));
+            i += 4;
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn add_norm_sqr_f64_4_neon(acc: &mut [f64], s: [&[Complex<f32>]; 4]) {
+    use std::arch::aarch64::{
+        vcvt_f64_f32, vcvt_high_f64_f32, vfmaq_f64, vget_low_f32, vld1q_f64, vld2q_f32, vst1q_f64,
+    };
+    let len = acc.len();
+    assert!(len.is_multiple_of(4) && s.iter().all(|lane| lane.len() == len));
+    let mut i = 0;
+    unsafe {
+        let dp = acc.as_mut_ptr();
+        let sp = [
+            s[0].as_ptr().cast::<f32>(),
+            s[1].as_ptr().cast::<f32>(),
+            s[2].as_ptr().cast::<f32>(),
+            s[3].as_ptr().cast::<f32>(),
+        ];
+        while i + 4 <= len {
+            let mut out0 = vld1q_f64(dp.add(i));
+            let mut out1 = vld1q_f64(dp.add(i + 2));
+            let off = i * 2;
+            for p in sp {
+                let vs = vld2q_f32(p.add(off));
+                let r0 = vcvt_f64_f32(vget_low_f32(vs.0));
+                let i0 = vcvt_f64_f32(vget_low_f32(vs.1));
+                let r1 = vcvt_high_f64_f32(vs.0);
+                let i1 = vcvt_high_f64_f32(vs.1);
+                out0 = vfmaq_f64(vfmaq_f64(out0, r0, r0), i0, i0);
+                out1 = vfmaq_f64(vfmaq_f64(out1, r1, r1), i1, i1);
+            }
+            vst1q_f64(dp.add(i), out0);
+            vst1q_f64(dp.add(i + 2), out1);
+            i += 4;
+        }
     }
 }
 

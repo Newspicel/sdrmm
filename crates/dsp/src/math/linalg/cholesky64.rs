@@ -4,6 +4,61 @@ use super::LinalgError;
 
 type C64 = Complex<f64>;
 
+/// Leading diagonal reciprocals kept on the stack; later columns divide, their dot products
+/// dwarf it.
+const RECIPROCALS: usize = 64;
+
+#[inline]
+fn dot_conj_c64(a: &[C64], b: &[C64]) -> C64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        use std::arch::aarch64::{
+            vaddq_f64, vaddvq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld2q_f64,
+        };
+        let (a4, a_rem) = a.as_chunks::<4>();
+        let (b4, b_rem) = b.as_chunks::<4>();
+        let (a2, a_tail) = a_rem.as_chunks::<2>();
+        let (b2, b_tail) = b_rem.as_chunks::<2>();
+        let (mut re, mut im) = unsafe {
+            let (mut r0, mut i0) = (vdupq_n_f64(0.0), vdupq_n_f64(0.0));
+            let (mut r1, mut i1) = (vdupq_n_f64(0.0), vdupq_n_f64(0.0));
+            for (ac, bc) in a4.iter().zip(b4) {
+                let ap = ac.as_ptr().cast::<f64>();
+                let bp = bc.as_ptr().cast::<f64>();
+                let va0 = vld2q_f64(ap);
+                let vb0 = vld2q_f64(bp);
+                let va1 = vld2q_f64(ap.add(4));
+                let vb1 = vld2q_f64(bp.add(4));
+                r0 = vfmaq_f64(vfmaq_f64(r0, va0.0, vb0.0), va0.1, vb0.1);
+                i0 = vfmsq_f64(vfmaq_f64(i0, va0.1, vb0.0), va0.0, vb0.1);
+                r1 = vfmaq_f64(vfmaq_f64(r1, va1.0, vb1.0), va1.1, vb1.1);
+                i1 = vfmsq_f64(vfmaq_f64(i1, va1.1, vb1.0), va1.0, vb1.1);
+            }
+            for (ac, bc) in a2.iter().zip(b2) {
+                let va = vld2q_f64(ac.as_ptr().cast());
+                let vb = vld2q_f64(bc.as_ptr().cast());
+                r0 = vfmaq_f64(vfmaq_f64(r0, va.0, vb.0), va.1, vb.1);
+                i0 = vfmsq_f64(vfmaq_f64(i0, va.1, vb.0), va.0, vb.1);
+            }
+            (vaddvq_f64(vaddq_f64(r0, r1)), vaddvq_f64(vaddq_f64(i0, i1)))
+        };
+        for (&x, &y) in a_tail.iter().zip(b_tail) {
+            let p = x * y.conj();
+            re += p.re;
+            im += p.im;
+        }
+        C64::new(re, im)
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let mut sum = C64::default();
+        for (&x, &y) in a.iter().zip(b) {
+            sum += x * y.conj();
+        }
+        sum
+    }
+}
+
 /// Factors the row-major Hermitian `matrix` of order `n`, plus `loading` on its diagonal,
 /// into the lower triangular `factor`. Allocation free, for f64 normal equations.
 pub fn cholesky_c64(
@@ -19,26 +74,31 @@ pub fn cholesky_c64(
         return Err(LinalgError::NotPositiveDefinite(0));
     }
     factor[..n * n].fill(C64::default());
+    let mut reciprocal = [0.0f64; RECIPROCALS];
     for i in 0..n {
-        for j in 0..=i {
-            let mut sum = matrix[i * n + j];
-            if i == j {
-                sum += loading;
-            }
-            for k in 0..j {
-                sum -= factor[i * n + k] * factor[j * n + k].conj();
-            }
-            if i == j {
-                if !sum.re.is_finite() {
-                    return Err(LinalgError::NonFinite);
-                }
-                if sum.re <= 0.0 {
-                    return Err(LinalgError::NotPositiveDefinite(i));
-                }
-                factor[i * n + i] = C64::new(sum.re.sqrt(), 0.0);
-            } else {
-                factor[i * n + j] = sum / factor[j * n + j].re;
-            }
+        let row_i = i * n;
+        for j in 0..i {
+            let row_j = j * n;
+            let dot = dot_conj_c64(&factor[row_i..row_i + j], &factor[row_j..row_j + j]);
+            let sum = matrix[row_i + j] - dot;
+            let scale = reciprocal
+                .get(j)
+                .copied()
+                .unwrap_or_else(|| factor[row_j + j].re.recip());
+            factor[row_i + j] = sum * scale;
+        }
+        let dot = dot_conj_c64(&factor[row_i..row_i + i], &factor[row_i..row_i + i]);
+        let diag = matrix[row_i + i].re + loading - dot.re;
+        if !diag.is_finite() {
+            return Err(LinalgError::NonFinite);
+        }
+        if diag <= 0.0 {
+            return Err(LinalgError::NotPositiveDefinite(i));
+        }
+        let root = diag.sqrt();
+        factor[row_i + i] = C64::new(root, 0.0);
+        if let Some(slot) = reciprocal.get_mut(i) {
+            *slot = root.recip();
         }
     }
     Ok(())
