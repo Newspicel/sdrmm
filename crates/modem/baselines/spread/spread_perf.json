@@ -1,7 +1,7 @@
 [
   {
     "bench": "dsss_barker11_44m",
-    "msamples_per_s": 26.070710559290646,
+    "msamples_per_s": 26.07071055929065,
     "realtime_factor": 0.5925161490747874,
     "config": "11 chips/symbol, 4 samples/chip, RRC α=0.35, 512 symbols, burst search over 192 samples + despread",
     "host": "aarch64-macos"
@@ -33,5 +33,40 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "dsss_barker11_44m",
+    "msamples_per_s": 14.22011297348471,
+    "realtime_factor": 0.32318438576101616,
+    "config": "11 chips/symbol, 4 samples/chip, RRC α=0.35, 512 symbols, burst search over 192 samples + despread",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "cck_8bit_44m",
+    "msamples_per_s": 10.883937806875423,
+    "realtime_factor": 0.24736222288353232,
+    "config": "8 chips/symbol, 4 samples/chip, RRC α=0.35, 512 symbols, burst search over 192 samples + 64-word correlator bank",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "css_sf7_125k",
+    "msamples_per_s": 16.495676893994585,
+    "realtime_factor": 131.96541515195668,
+    "config": "SF7, critically sampled, 16-symbol preamble, 192 symbols, preamble timing, carrier and clock fit + tracked dechirp",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "fhss_dehop_44m",
+    "msamples_per_s": 79.33587214426501,
+    "realtime_factor": 1.8030880032787502,
+    "config": "3-channel plan, 0.25 cycles/sample spacing, de-hop only",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1106.058408519988,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]

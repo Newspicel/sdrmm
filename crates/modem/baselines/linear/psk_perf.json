@@ -23,7 +23,7 @@
   {
     "bench": "linear_qam16_tracked",
     "msamples_per_s": 74.06157408315838,
-    "realtime_factor": 1542.9494600657995,
+    "realtime_factor": 1542.9494600657997,
     "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, SymbolSync (bw 0.015), decision-directed Costas",
     "host": "aarch64-macos"
   },
@@ -33,5 +33,40 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "linear_qpsk_burst",
+    "msamples_per_s": 14.552651852202798,
+    "realtime_factor": 303.1802469208916,
+    "config": "4-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.003), held power estimate",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "linear_qam16_burst",
+    "msamples_per_s": 13.2575629316453,
+    "realtime_factor": 276.19922774261045,
+    "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.003), held power estimate",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "linear_qam1024_burst",
+    "msamples_per_s": 1.0605068377515798,
+    "realtime_factor": 22.093892453157917,
+    "config": "1024-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.0003), held power estimate",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "linear_qam16_tracked",
+    "msamples_per_s": 52.48829582203909,
+    "realtime_factor": 1093.5061629591478,
+    "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, SymbolSync (bw 0.015), decision-directed Costas",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1104.6834234170644,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]

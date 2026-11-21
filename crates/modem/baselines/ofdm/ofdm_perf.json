@@ -19,5 +19,26 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "ofdm64_symbols_20m",
+    "msamples_per_s": 265.5976706254293,
+    "realtime_factor": 13.279883531271466,
+    "config": "64-point/16-prefix, 48+4 subcarriers, 64 data symbols, QPSK, 20 MHz, per-symbol path (long-training estimate held)",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ofdm64_frame_20m",
+    "msamples_per_s": 164.37458691385135,
+    "realtime_factor": 8.218729345692568,
+    "config": "64-point/16-prefix, 48+4 subcarriers, 64 data symbols, QPSK, 20 MHz, whole frame including preamble search over 192 samples",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1103.8769221699479,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]

@@ -1,19 +1,5 @@
 [
   {
-    "bench": "symbol_sync_8sps",
-    "msamples_per_s": 245.6324765603061,
-    "realtime_factor": 6396.679077091304,
-    "config": "8 S/sym, loop_bw 0.01, RRC α=0.35 shaped BPSK",
-    "host": "x86_64-linux"
-  },
-  {
-    "bench": "__calibration",
-    "msamples_per_s": 1159.516831126983,
-    "realtime_factor": 0.0,
-    "config": "fixed reference kernel, scales the gate to the host's current speed",
-    "host": "x86_64-linux"
-  },
-  {
     "bench": "fsk4_dmr_48k",
     "msamples_per_s": 24.31416236508077,
     "realtime_factor": 506.54504927251605,
@@ -33,5 +19,19 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "symbol_sync_8sps",
+    "msamples_per_s": 238.67908953950598,
+    "realtime_factor": 6215.601290091302,
+    "config": "8 S/sym, loop_bw 0.01, RRC α=0.35 shaped BPSK",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1105.5190765973778,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]

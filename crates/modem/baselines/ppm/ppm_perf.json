@@ -19,5 +19,26 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "ppm2_matched_8m",
+    "msamples_per_s": 1274.7622707247583,
+    "realtime_factor": 159.3452838405948,
+    "config": "1 Mslot/s at 8 MS/s (8 samples/slot), M=2, matched filter",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ppm2_envelope_8m",
+    "msamples_per_s": 300.34400974651504,
+    "realtime_factor": 37.54300121831438,
+    "config": "1 Mslot/s at 8 MS/s (8 samples/slot), M=2, envelope",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1106.0350751727626,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]

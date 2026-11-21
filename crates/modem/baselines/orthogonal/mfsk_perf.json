@@ -12,5 +12,19 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "mfsk4_filterbank_48k",
+    "msamples_per_s": 231.8491640689007,
+    "realtime_factor": 4830.190918102098,
+    "config": "48 kHz, 4800 baud, 10 S/sym, M=4 orthogonal tone plan (spacing 1 cycle/symbol)",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1106.0368251396553,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]

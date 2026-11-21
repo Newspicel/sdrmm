@@ -40,5 +40,47 @@
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "aarch64-macos"
+  },
+  {
+    "bench": "gfdm_zf_20m",
+    "msamples_per_s": 13.200182740029808,
+    "realtime_factor": 0.6600091370014904,
+    "config": "16×5 block, roll-off 0.5, 8-sample prefix, 8 blocks, dense A⁻¹ per block",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "gfdm_tx_20m",
+    "msamples_per_s": 13.231067580355829,
+    "realtime_factor": 0.6615533790177914,
+    "config": "16×5 block, dense A per block: the transmitter pays exactly what the zero-forcing receiver does",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "ufmc_20m",
+    "msamples_per_s": 491.45237615304137,
+    "realtime_factor": 24.572618807652066,
+    "config": "128-point transform, 4 subbands of 12, 33-tap prototype, 8 symbols, zero-pad-to-2N receiver",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "fbmc_20m",
+    "msamples_per_s": 3.5736711333024003,
+    "realtime_factor": 0.17868355666512,
+    "config": "64-subcarrier bank, 48 allocated, PHYDYAS K=4, 8 symbols, direct-form analysis bank",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "otfs_precoder_20m",
+    "msamples_per_s": 944.3224182326526,
+    "realtime_factor": 47.21612091163263,
+    "config": "48×16 delay–Doppler grid, ISFFT only: the carrier's own cost is the CP-OFDM row's",
+    "host": "x86_64-linux"
+  },
+  {
+    "bench": "__calibration",
+    "msamples_per_s": 1105.1380716448552,
+    "realtime_factor": 0.0,
+    "config": "fixed reference kernel, scales the gate to the host's current speed",
+    "host": "x86_64-linux"
   }
 ]
