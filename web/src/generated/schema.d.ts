@@ -6111,6 +6111,8 @@ export interface components {
             unit?: components["schemas"]["Unit"];
         };
         ReadoutValue: {
+            /** Format: int32 */
+            decimals?: number;
             /** @enum {string} */
             kind: "number";
             unit: string;

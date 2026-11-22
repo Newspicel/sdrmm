@@ -713,9 +713,12 @@ pub struct Readout {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReadoutValue {
+    /// A measurement, shown with `decimals` places.
     Number {
         value: f64,
         unit: String,
+        #[serde(default = "one_decimal")]
+        decimals: u8,
     },
     /// A yes-or-no state, shown with the driver's own words. `warn_when` names the state that
     /// lights the readout as a warning; none means neither does.
@@ -728,6 +731,10 @@ pub enum ReadoutValue {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         warn_when: Option<bool>,
     },
+}
+
+const fn one_decimal() -> u8 {
+    1
 }
 
 fn on_text() -> String {
@@ -753,6 +760,7 @@ impl Readout {
             value: ReadoutValue::Number {
                 value,
                 unit: unit.into(),
+                decimals: one_decimal(),
             },
         }
     }
@@ -772,6 +780,15 @@ impl Readout {
                 warn_when: None,
             },
         }
+    }
+
+    /// How many decimal places a number shows, such as 0 for a count.
+    #[must_use]
+    pub fn decimals(mut self, places: u8) -> Self {
+        if let ReadoutValue::Number { decimals, .. } = &mut self.value {
+            *decimals = places;
+        }
+        self
     }
 
     /// The words a flag shows for each state, such as "locked" and "unlocked".
@@ -2591,6 +2608,20 @@ mod tests {
         let plain = serde_json::to_value(Readout::flag("fix", "Fix", true)).expect("serializes");
         assert_eq!(plain["value"]["on_text"], "on");
         assert!(plain["value"].get("warn_when").is_none());
+    }
+
+    #[test]
+    fn a_number_shows_one_decimal_unless_its_driver_says_otherwise() {
+        let count = Readout::number("sats", "Satellites", 7.0, "").decimals(0);
+        assert_eq!(
+            serde_json::to_value(&count).expect("serializes")["value"]["decimals"],
+            0
+        );
+        let old: ReadoutValue = serde_json::from_value(
+            serde_json::json!({ "kind": "number", "value": 1.0, "unit": "V" }),
+        )
+        .expect("reads");
+        assert!(matches!(old, ReadoutValue::Number { decimals: 1, .. }));
     }
 
     #[test]

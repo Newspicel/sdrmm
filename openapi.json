@@ -22172,12 +22172,18 @@
         "oneOf": [
           {
             "type": "object",
+            "description": "A measurement, shown with `decimals` places.",
             "required": [
               "value",
               "unit",
               "kind"
             ],
             "properties": {
+              "decimals": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
               "kind": {
                 "type": "string",
                 "enum": [

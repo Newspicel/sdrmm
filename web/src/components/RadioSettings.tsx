@@ -215,7 +215,7 @@ function SettingChips({ active, patch }: { active: DeviceSet; patch: Patch }) {
 
       {isTunable(tuningRange(caps)) && (
         <SettingChip
-          label="Conv"
+          label="Converter"
           value={settings.offset_hz ? `${settings.offset_hz / 1e6} MHz` : "none"}
           quiet={!settings.offset_hz}
           title="Local oscillator of a converter in front of the radio: positive for a downconverter, negative for an upconverter. Frequencies shown are what the antenna sees. Kept for this radio"

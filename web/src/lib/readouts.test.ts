@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { readoutStats, useReadouts } from "./readouts";
+import { faultStats, readoutStats, useReadouts } from "./readouts";
 import type { Readout } from "./types";
 
 afterEach(() => useReadouts.getState().reset());
@@ -56,4 +56,19 @@ it("shows each flag in its driver's words and warns only in the state it names",
     ["Guard", "tripped", true],
     ["Fix", "no", false],
   ]);
+});
+
+it("shows a number with its driver's decimals and keeps only warnings for the face", () => {
+  const count = {
+    name: "sats",
+    label: "Satellites",
+    value: { kind: "number", value: 7, unit: "", decimals: 0 },
+  } as Readout;
+  const stats = readoutStats([
+    count,
+    number("supply", "Supply", 4.84, "V"),
+    flag("Overload", true, "yes", "no", true),
+  ]);
+  expect(stats.map((stat) => stat.text)).toEqual(["7", "4.8", "yes"]);
+  expect(faultStats(stats).map((stat) => stat.label)).toEqual(["Overload"]);
 });

@@ -12,6 +12,7 @@ import {
 } from "../../components/controls";
 import { inTuningRange, isTunable, tuningRange } from "../../components/dial";
 import { dialId, FrequencyDial } from "../../components/FrequencyDial";
+import { Chips, ReadoutChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Stat } from "../../components/face/Stats";
 import { formatMhz } from "../../components/format";
@@ -23,7 +24,7 @@ import { Tip } from "../../components/Tip";
 import { TuneTo } from "../../components/TuneTo";
 import { TuningLock } from "../../components/TuningLock";
 import { addNetworkRadio, STATE_KEY } from "../../lib/api";
-import { readoutStats, useDeviceReadouts } from "../../lib/readouts";
+import { faultStats, type ReadoutStat, readoutStats, useDeviceReadouts } from "../../lib/readouts";
 import { resolvedNode, runsOf } from "../../lib/resolved";
 import { toastError } from "../../lib/toasts";
 import type {
@@ -654,6 +655,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
             }
           />
         </InspectSection>
+        <ReadoutSection set={set} />
       </Inspect>
       <FaceFooter>
         <DeviceHealth set={set} />
@@ -679,6 +681,34 @@ const READOUT_TITLES: Record<string, string> = {
   reference: "Reference clock lock",
 };
 
+function readoutTitle(stat: ReadoutStat): string {
+  return READOUT_TITLES[stat.name] ?? stat.label;
+}
+
+/** Every readout the radio reports, in the inspector; the face keeps only the faults. */
+function ReadoutSection({ set }: { set: DeviceSet }) {
+  const stats = readoutStats(useDeviceReadouts(set.id));
+  if (set.status !== "running" || stats.length === 0) {
+    return null;
+  }
+  return (
+    <InspectSection label="Health">
+      <Chips inset="none">
+        {stats.map((stat) => (
+          <ReadoutChip
+            key={stat.name}
+            label={stat.label}
+            value={stat.text}
+            unit={stat.unit}
+            title={readoutTitle(stat)}
+            tone={stat.warn ? "warn" : undefined}
+          />
+        ))}
+      </Chips>
+    </InspectSection>
+  );
+}
+
 const LOSS_HINT =
   "The radio sends more than its link or this computer carries. Lower the rate or the lanes";
 
@@ -686,15 +716,15 @@ function DeviceHealth({ set }: { set: DeviceSet }) {
   const clipping = clippingLanes(set);
   const loss = lossSaid(set);
   const bond = lanesMerged(set) ? bondSaid(set.capabilities.coherence) : null;
-  const readouts = readoutStats(useDeviceReadouts(set.id));
+  const faults = faultStats(readoutStats(useDeviceReadouts(set.id)));
   return (
     <SourceHealth set={set}>
       {set.status === "running" &&
-        readouts.map((stat) => (
+        faults.map((stat) => (
           <Stat
             key={stat.name}
             label={stat.label}
-            title={READOUT_TITLES[stat.name] ?? stat.label}
+            title={readoutTitle(stat)}
             tone={stat.warn ? "warn" : undefined}
           >
             {stat.text}

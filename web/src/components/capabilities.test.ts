@@ -86,6 +86,8 @@ describe("gain labels", () => {
     expect(gainLabel({ kind: "lna", name: "LNA" })).toBe("LNA");
     expect(gainLabel({ kind: "mixer", name: "MIX" })).toBe("Mixer");
     expect(gainLabel({ kind: "other", name: "rxvga1" })).toBe("rxvga1");
+    expect(gainLabel({ kind: "amp", name: "AMP1" })).toBe("Amp 1");
+    expect(gainLabel({ kind: "if", name: "IF2" })).toBe("IF 2");
   });
 
   it("reads a firmware step without a unit", () => {

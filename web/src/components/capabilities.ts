@@ -23,7 +23,10 @@ const GAIN_LABEL: Record<GainKind, string> = {
 };
 
 export function gainLabel(stage: Pick<GainStage, "kind" | "name">): string {
-  return GAIN_LABEL[stage.kind] || settingLabel(stage.name);
+  const kind = GAIN_LABEL[stage.kind];
+  if (kind === "") return settingLabel(stage.name);
+  const index = /\d+$/.exec(stage.name)?.[0];
+  return index === undefined ? kind : `${kind} ${index}`;
 }
 
 export function gainUnit(stage: Pick<GainStage, "unit">): string {

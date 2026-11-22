@@ -24,10 +24,10 @@ sdrmm --doctor
 
 Controls mean the same thing across radios. Non-obvious ones:
 
-- **Conv (MHz):** up/downconverter LO offset so all dials show antenna RF (`9750` for a Ku-band LNB, `-125` for a Ham It Up).
+- **Converter (MHz):** up/downconverter LO offset so all dials show antenna RF (`9750` for a Ku-band LNB, `-125` for a Ham It Up).
 - **Multi-lane radios:** gain rows label `iq1`, `iq2`, ... with an **All** row and `-`/`+` lane count buttons.
 - **Footer:** live **Queue**, **Drops**, **Lost**, and **Clipping** counters.
 
 ### Calibration
 
-**PPM** and **Conv** save per physical radio (USB serial or network address), applying across all workspaces. Give RTL-SDR dongles [unique serials](usb.md#serials) so calibration never swaps on replug.
+**PPM** and **Converter** save per physical radio (USB serial or network address), applying across all workspaces. Give RTL-SDR dongles [unique serials](usb.md#serials) so calibration never swaps on replug.

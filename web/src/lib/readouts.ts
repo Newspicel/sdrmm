@@ -44,7 +44,7 @@ export function readoutStats(readouts: readonly Readout[]): ReadoutStat[] {
       });
       continue;
     }
-    const text = readout.value.value.toFixed(1);
+    const text = readout.value.value.toFixed(readout.value.decimals ?? 1);
     if (held === undefined) {
       stats.push({
         name: readout.name,
@@ -58,4 +58,9 @@ export function readoutStats(readouts: readonly Readout[]): ReadoutStat[] {
     }
   }
   return stats;
+}
+
+/** The stats a face shows: only those that need the operator now. */
+export function faultStats(stats: readonly ReadoutStat[]): ReadoutStat[] {
+  return stats.filter((stat) => stat.warn);
 }
