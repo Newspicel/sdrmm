@@ -1,5 +1,4 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FrameTween } from "../../components/frameTween";
 import { ReadoutHold } from "../../components/readoutHold";
 import {
   alignHistory,
@@ -61,7 +60,7 @@ export interface FeedState {
   rate: number | null;
   reseed: number;
   loop: DrawLoop | null;
-  readonly tween: FrameTween;
+  shown: Float32Array | null;
   readonly readout: ReadoutHold;
   readonly video: VideoAverage;
 }
@@ -91,7 +90,7 @@ function newFeedState(seed: SpectrumFrame | null): FeedState {
     rate: null,
     reseed: 0,
     loop: null,
-    tween: new FrameTween(),
+    shown: null,
     readout: new ReadoutHold(),
     video: new VideoAverage(),
   };
@@ -205,17 +204,12 @@ interface TraceInputs {
   density: DensityLayer | null;
 }
 
-/// Paints the trace once and tells whether the next frame is needed: a blend is still
-/// running or the cursor readout is live.
+/// Paints the trace once and tells whether the next frame is needed: only while the cursor
+/// readout is live. The trace moves at the spectrum's own rate, so an idle scope costs no
+/// frames between spectra.
 function paintTrace(canvas: HTMLCanvasElement, scratch: PaintScratch, input: TraceInputs): boolean {
   const { state, live, cursor, density } = input;
-  const now = performance.now();
-  const frame = plotSource(
-    scratch,
-    state.frame,
-    state.liveDb === null ? null : state.tween.sample(now),
-    live.range,
-  );
+  const frame = plotSource(scratch, state.frame, state.shown, live.range);
   overlays(scratch, state.traces, live.modes, frame);
   const options = scratch.options;
   options.frame = frame;
@@ -225,7 +219,7 @@ function paintTrace(canvas: HTMLCanvasElement, scratch: PaintScratch, input: Tra
   options.readout = state.readout;
   options.rollOff = frame === null ? 0 : rollOffShare(state.clean, state.rate, frame.spanHz);
   drawPlot(canvas, options);
-  return !state.tween.settled(now) || cursor !== null;
+  return cursor !== null;
 }
 
 function seedHistory(node: string, state: FeedState, held: DbWindow | null): void {
@@ -260,11 +254,7 @@ function spectrumListener(
       state.video.reset();
     }
     const db = state.video.apply(state.liveDb, live.current.average);
-    if (action.kind === "none") {
-      state.tween.push(db, performance.now());
-    } else {
-      state.tween.jump(db, performance.now());
-    }
+    state.shown = db;
     let seeded = false;
     if (action.kind !== "none") {
       state.traces = null;
