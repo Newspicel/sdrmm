@@ -52,6 +52,7 @@ impl Session {
                 presence.clone(),
             ));
         }
+        let name = self.identity.user().map_or(name, |user| user.name.as_str());
         presence.present(self.peer.id, author, name, &self.peer.fallback);
     }
 

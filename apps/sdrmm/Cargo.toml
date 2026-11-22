@@ -35,6 +35,7 @@ dvsi = ["sdrmm-server/dvsi"]
 
 [dependencies]
 sdrmm-server.workspace = true
+sdrmm-wire.workspace = true
 sdrmm-channels = { workspace = true, features = ["synth"] }
 sdrmm-array.workspace = true
 sdrmm-engine.workspace = true

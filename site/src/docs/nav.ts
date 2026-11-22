@@ -64,6 +64,7 @@ export const DOCS_NAV: readonly DocSection[] = [
     title: "Server",
     items: [
       { slug: "server/configuration", label: "Configuration and security" },
+      { slug: "server/sign-in", label: "Sign-in and roles" },
       { slug: "server/deployment", label: "Deployment" },
       { slug: "server/tunnels", label: "HTTPS with a tunnel" },
       { slug: "server/api", label: "API and MCP" },

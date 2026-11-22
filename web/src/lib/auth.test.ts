@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  adoptSignInResult,
   adoptUrlToken,
   getToken,
   onTokenRejected,
@@ -128,5 +129,19 @@ describe("adoptUrlToken", () => {
     adoptUrlToken(location, history);
     expect(getToken()).toBe("saved");
     expect(location.href).toBe("https://abc.sdrmm.link/");
+  });
+});
+
+describe("adoptSignInResult", () => {
+  it("takes the outcome out of the URL", () => {
+    const { location, history } = page("https://sdr.example/?sign_in=denied&x=1");
+    expect(adoptSignInResult(location, history)).toBe("denied");
+    expect(location.href).toBe("https://sdr.example/?x=1");
+  });
+
+  it("leaves a URL without one alone", () => {
+    const { location, history } = page("https://sdr.example/");
+    expect(adoptSignInResult(location, history)).toBeNull();
+    expect(location.href).toBe("https://sdr.example/");
   });
 });

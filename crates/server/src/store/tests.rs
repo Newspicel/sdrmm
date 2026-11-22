@@ -2624,7 +2624,8 @@ fn a_stored_retired_decoder_event_leaves_the_log() {
              ALTER TABLE workspace_history DROP COLUMN kind; \
              ALTER TABLE workspace_history DROP COLUMN undone_by; \
              ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0; \
-             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets;",
+             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets; \
+             DROP TABLE sessions;",
         )
         .expect("drop the later tables");
     }
@@ -2661,7 +2662,8 @@ fn a_stored_broadcast_status_leaves_the_log() {
              ALTER TABLE workspace_history DROP COLUMN kind; \
              ALTER TABLE workspace_history DROP COLUMN undone_by; \
              ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0; \
-             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets;",
+             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets; \
+             DROP TABLE sessions;",
         )
         .expect("undo the later migrations");
     }
@@ -2784,7 +2786,8 @@ fn the_author_migration_keeps_the_head_and_drops_the_redo_tail() {
              ALTER TABLE workspace_history DROP COLUMN kind; \
              ALTER TABLE workspace_history DROP COLUMN undone_by; \
              ALTER TABLE workspaces ADD COLUMN history_at INTEGER NOT NULL DEFAULT 0; \
-             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets;",
+             DROP TABLE nanovna_measurements; DROP TABLE nanovna_antennas; DROP TABLE secrets; \
+             DROP TABLE sessions;",
         )
         .expect("back to the shared history");
         let starter = serde_json::to_string(&WorkspaceSnapshot::starter()).expect("json");

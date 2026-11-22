@@ -414,7 +414,7 @@ describe("SdrSocket over WebTransport", () => {
 
   it("pins the advertised certificate and carries the token in the address", async () => {
     setToken("s3cret");
-    const socket = new SdrSocket("/api/ws", async () => OFFER);
+    const socket = new SdrSocket("/api/ws", async () => ({ info: OFFER, ticket: null }));
     const session = await connected(socket);
     expect(session.url).toBe("https://sdr.local:8443/api/wt?token=s3cret");
     expect(session.options.serverCertificateHashes).toEqual([
@@ -424,8 +424,16 @@ describe("SdrSocket over WebTransport", () => {
     socket.close();
   });
 
+  it("dials a signed-in browser with its ticket instead of the token", async () => {
+    setToken("s3cret");
+    const socket = new SdrSocket("/api/ws", async () => ({ info: OFFER, ticket: "ticket-1" }));
+    const session = await connected(socket);
+    expect(session.url).toBe("https://sdr.local:8443/api/wt?token=ticket-1");
+    socket.close();
+  });
+
   it("is connected before anyone hears of it, so a first command is sent", async () => {
-    const socket = new SdrSocket("/api/ws", async () => OFFER);
+    const socket = new SdrSocket("/api/ws", async () => ({ info: OFFER, ticket: null }));
     socket.on("status", (up) => {
       if (up) {
         socket.send({ type: "SubscribeDiagnostics", data: { enabled: true } });
@@ -440,7 +448,7 @@ describe("SdrSocket over WebTransport", () => {
   });
 
   it("reads events from the control stream, frames from lanes and audio from datagrams", async () => {
-    const socket = new SdrSocket("/api/ws", async () => OFFER);
+    const socket = new SdrSocket("/api/ws", async () => ({ info: OFFER, ticket: null }));
     const heard: string[] = [];
     socket.on("event", (event) => heard.push(event.type));
     socket.on("spectrum", () => heard.push("spectrum"));
@@ -460,7 +468,7 @@ describe("SdrSocket over WebTransport", () => {
   });
 
   it("reports a lost session and dials again", async () => {
-    const socket = new SdrSocket("/api/ws", async () => OFFER);
+    const socket = new SdrSocket("/api/ws", async () => ({ info: OFFER, ticket: null }));
     const status: boolean[] = [];
     socket.on("status", (up) => status.push(up));
     const session = await connected(socket);
@@ -472,7 +480,7 @@ describe("SdrSocket over WebTransport", () => {
 
   it("falls back to the WebSocket and leaves WebTransport alone for a while", async () => {
     FakeWebTransport.refuse = true;
-    const socket = new SdrSocket("/api/ws", async () => OFFER);
+    const socket = new SdrSocket("/api/ws", async () => ({ info: OFFER, ticket: null }));
     socket.connect();
     await vi.waitFor(() => expect(sockets).toHaveLength(1));
     expect(latest().url).toBe("wss://sdr.local/api/ws");

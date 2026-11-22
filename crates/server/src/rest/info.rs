@@ -1,3 +1,7 @@
+use axum::Extension;
+
+use crate::auth::Identity;
+
 use super::{
     AboutResponse, ApiError, AppError, AppState, AuthInfo, BandPlan, BandRegionMatch,
     BandRegionsResponse, ClientsResponse, DiagnosticsReport, DoctorReport, IonosondeReport, Json,
@@ -150,14 +154,16 @@ pub(super) async fn get_ionosonde(State(state): State<AppState>) -> Json<Ionoson
     get, path = "/api/auth",
     responses((
         status = 200,
-        description = "Whether this server requires the shared token. Answered without \
-                       authentication so a client can prompt before its first real request",
+        description = "Whether this server takes the shared token and offers sign-in. \
+                       Answered without authentication so a client can prompt before its \
+                       first real request",
         body = AuthInfo,
     )),
 )]
 pub(super) async fn get_auth(State(state): State<AppState>) -> Json<AuthInfo> {
     Json(AuthInfo {
-        token_required: state.auth.required(),
+        token_required: state.auth.token_required(),
+        sign_in: state.auth.oidc().is_some(),
     })
 }
 
@@ -170,9 +176,18 @@ pub(super) async fn get_auth(State(state): State<AppState>) -> Json<AuthInfo> {
         body = TransportInfo,
     )),
 )]
-pub(super) async fn get_transport(State(state): State<AppState>) -> Json<TransportInfo> {
+pub(super) async fn get_transport(
+    State(state): State<AppState>,
+    Extension(identity): Extension<Identity>,
+) -> Json<TransportInfo> {
+    let webtransport = state.webtransport.current();
+    let ticket = webtransport
+        .as_ref()
+        .and(identity.user())
+        .and_then(|user| state.auth.sessions.ticket(user.clone()));
     Json(TransportInfo {
-        webtransport: state.webtransport.current(),
+        webtransport,
+        ticket,
     })
 }
 

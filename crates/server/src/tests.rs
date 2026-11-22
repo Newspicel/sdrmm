@@ -191,7 +191,7 @@ fn recording_router_with_shell(dir: &Path) -> (Router, Arc<FakeShell>) {
 /// test started by hand.
 fn recording_router_without_reconcilers(dir: &Path) -> (Router, Arc<Engine>) {
     let mut state = recording_state(dir);
-    configure(&mut state, &ServerOptions::default());
+    configure(&mut state, &ServerOptions::default()).expect("configure");
     let engine = state.engine.clone();
     (app(&state, auth::ListenerRole::Main, false), engine)
 }

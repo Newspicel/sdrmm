@@ -443,6 +443,17 @@ const MIGRATIONS: &[&str] = &[
         updated_at TEXT NOT NULL
     ) WITHOUT ROWID;
     ",
+    "
+    CREATE TABLE sessions (
+        id_sha256 BLOB PRIMARY KEY,
+        subject TEXT NOT NULL,
+        name TEXT NOT NULL,
+        email TEXT,
+        role TEXT NOT NULL,
+        id_token TEXT,
+        expires_at TEXT NOT NULL
+    ) WITHOUT ROWID;
+    ",
 ];
 
 const SERVER_ID_KEY: &str = "server_id";
@@ -2238,9 +2249,11 @@ mod log_groups;
 mod nanovna;
 mod phones;
 mod secrets;
+mod sessions;
 mod steps;
 
 pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};
+pub(crate) use sessions::SessionRow;
 pub(crate) use steps::upgrade_import;
 
 #[cfg(test)]

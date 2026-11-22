@@ -517,11 +517,128 @@
         "operationId": "get_auth",
         "responses": {
           "200": {
-            "description": "Whether this server requires the shared token. Answered without authentication so a client can prompt before its first real request",
+            "description": "Whether this server takes the shared token and offers sign-in. Answered without authentication so a client can prompt before its first real request",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuthInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/callback": {
+      "get": {
+        "operationId": "sign_in_callback",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "error_description",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Signed in, back to the page that asked"
+          },
+          "404": {
+            "description": "Sign-in is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "get": {
+        "operationId": "sign_in",
+        "parameters": [
+          {
+            "name": "next",
+            "in": "query",
+            "description": "The path to return to once signed in.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "To the identity provider"
+          },
+          "404": {
+            "description": "Sign-in is off",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "sign_out",
+        "responses": {
+          "200": {
+            "description": "Signed out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedOut"
                 }
               }
             }
@@ -2603,6 +2720,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/IonosondeReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "get_me",
+        "responses": {
+          "200": {
+            "description": "Who the caller is and what they may do",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A phone has no role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
                 }
               }
             }
@@ -8222,6 +8366,10 @@
           "token_required"
         ],
         "properties": {
+          "sign_in": {
+            "type": "boolean",
+            "description": "The server offers sign-in with an identity provider."
+          },
           "token_required": {
             "type": "boolean"
           }
@@ -15775,6 +15923,34 @@
             }
           }
         ]
+      },
+      "Me": {
+        "type": "object",
+        "description": "Who the caller is. `name` is set for a signed-in user only.",
+        "required": [
+          "role",
+          "signed_in"
+        ],
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "signed_in": {
+            "type": "boolean"
+          }
+        }
       },
       "MergeMode": {
         "type": "string",
@@ -25132,6 +25308,18 @@
           }
         }
       },
+      "SignedOut": {
+        "type": "object",
+        "description": "Where the browser goes after signing out: the identity provider's logout page, if it has one.",
+        "properties": {
+          "redirect": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "SinkFeed": {
         "type": "object",
         "required": [
@@ -27105,6 +27293,13 @@
       "TransportInfo": {
         "type": "object",
         "properties": {
+          "ticket": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short-lived, single-use key a signed-in browser puts in the WebTransport URL, which\ncarries no cookie."
+          },
           "webtransport": {
             "oneOf": [
               {
@@ -27905,6 +28100,15 @@
             "minimum": 0
           }
         }
+      },
+      "UserRole": {
+        "type": "string",
+        "description": "What a caller may do. Each role holds every right of the roles before it.",
+        "enum": [
+          "viewer",
+          "operator",
+          "admin"
+        ]
       },
       "Verification": {
         "type": "string",

@@ -1,5 +1,16 @@
 use std::{net::IpAddr, sync::Arc};
 
+mod oidc;
+mod roles;
+mod sessions;
+
+pub use oidc::OidcOptions;
+pub(crate) use oidc::{Callback, LOGIN_COOKIE, Oidc, PENDING_LIFETIME};
+pub(crate) use roles::{command_needs, refusal_text};
+pub(crate) use sessions::{
+    COOKIE as SESSION_COOKIE, Sessions, User, clear_cookie, cookie, session_max_age, set_cookie,
+};
+
 use axum::{
     Json,
     extract::{MatchedPath, Request, State},
@@ -8,8 +19,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sdrmm_wire::{
-    ApiError, ErrorCode, PhoneToken, WS_BEARER_PROTOCOL_PREFIX, phone::PHONE_TOKEN_PREFIX,
-    phone::unhex,
+    ApiError, ErrorCode, Me, PhoneToken, UserRole, WS_BEARER_PROTOCOL_PREFIX,
+    phone::PHONE_TOKEN_PREFIX, phone::unhex,
 };
 
 use crate::{
@@ -19,6 +30,9 @@ use crate::{
 
 const PUBLIC_PATHS: &[&str] = &[
     "/api/auth",
+    "/api/auth/login",
+    "/api/auth/callback",
+    "/api/auth/logout",
     "/api/about",
     "/api/openapi.json",
     "/api/status",
@@ -29,27 +43,47 @@ const KEYS_UNREADABLE: &str = "Phone keys unreadable, try again";
 const LOCAL_NAME: &str = "localhost";
 const LOCAL_SUFFIX: &str = ".localhost";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone)]
 pub(crate) struct Auth {
     token: Option<Arc<str>>,
+    oidc: Option<Arc<Oidc>>,
+    pub(crate) sessions: Arc<Sessions>,
 }
 
 impl Auth {
-    pub(crate) fn new(token: Option<&str>) -> Self {
+    pub(crate) fn open(sessions: Arc<Sessions>) -> Self {
+        Self {
+            token: None,
+            oidc: None,
+            sessions,
+        }
+    }
+
+    pub(crate) fn configured(&self, token: Option<&str>, oidc: Option<Oidc>) -> Self {
         Self {
             token: match token {
                 Some(t) if !t.is_empty() => Some(t.into()),
                 Some(_) => {
-                    tracing::warn!("empty --token ignored; the server is running without auth");
+                    tracing::warn!("empty --token ignored");
                     None
                 }
                 None => None,
             },
+            oidc: oidc.map(Arc::new),
+            sessions: self.sessions.clone(),
         }
     }
 
     pub(crate) fn required(&self) -> bool {
+        self.token.is_some() || self.oidc.is_some()
+    }
+
+    pub(crate) fn token_required(&self) -> bool {
         self.token.is_some()
+    }
+
+    pub(crate) fn oidc(&self) -> Option<&Arc<Oidc>> {
+        self.oidc.as_ref()
     }
 }
 
@@ -57,7 +91,8 @@ impl Auth {
 pub(crate) enum Identity {
     Anonymous,
     Open,
-    Operator,
+    Token,
+    User(Arc<User>),
     Phone(String),
 }
 
@@ -65,12 +100,40 @@ impl Identity {
     pub(crate) fn phone(&self) -> Option<&str> {
         match self {
             Self::Phone(id) => Some(id),
-            Self::Anonymous | Self::Open | Self::Operator => None,
+            Self::Anonymous | Self::Open | Self::Token | Self::User(_) => None,
+        }
+    }
+
+    pub(crate) fn user(&self) -> Option<&Arc<User>> {
+        match self {
+            Self::User(user) => Some(user),
+            Self::Anonymous | Self::Open | Self::Token | Self::Phone(_) => None,
+        }
+    }
+
+    /// What this caller may do. The shared token and an open server hold every right; a phone
+    /// is bounded by its own route list instead.
+    pub(crate) fn role(&self) -> Option<UserRole> {
+        match self {
+            Self::Open | Self::Token => Some(UserRole::Admin),
+            Self::User(user) => Some(user.role),
+            Self::Anonymous | Self::Phone(_) => None,
         }
     }
 
     pub(crate) fn administers(&self) -> bool {
-        matches!(self, Self::Open | Self::Operator)
+        self.role() == Some(UserRole::Admin)
+    }
+
+    pub(crate) fn me(&self) -> Option<Me> {
+        let role = self.role()?;
+        let user = self.user();
+        Some(Me {
+            name: user.map(|user| user.name.clone()),
+            email: user.and_then(|user| user.email.clone()),
+            role,
+            signed_in: user.is_some(),
+        })
     }
 }
 
@@ -86,6 +149,8 @@ pub(crate) struct AuthGate {
     role: ListenerRole,
     tls: bool,
     shared: Option<Arc<str>>,
+    sign_in: bool,
+    sessions: Arc<Sessions>,
     phones: Arc<Phones>,
     dev_cors: bool,
     allowed_hosts: Option<Arc<[String]>>,
@@ -94,12 +159,14 @@ pub(crate) struct AuthGate {
 impl AuthGate {
     pub(crate) fn new(state: &AppState, role: ListenerRole, tls: bool) -> Self {
         let shared = state.auth.token.clone();
-        let allowed_hosts = (role == ListenerRole::Main && shared.is_none())
+        let allowed_hosts = (role == ListenerRole::Main && !state.auth.required())
             .then(|| Arc::from(trusted_names(state)));
         Self {
             role,
             tls,
             shared,
+            sign_in: state.auth.oidc.is_some(),
+            sessions: state.auth.sessions.clone(),
             phones: state.phones.clone(),
             dev_cors: state.dev_cors,
             allowed_hosts,
@@ -238,6 +305,8 @@ impl IntoResponse for Refusal {
 
 enum Credential {
     Shared(String),
+    Session(String),
+    Ticket(String),
     Phone(PhoneToken),
     PhoneInQuery,
     Malformed,
@@ -270,6 +339,12 @@ pub(crate) async fn authenticate(
         }
         gate.phones.touch(id);
     }
+    if let Some(role) = identity.role() {
+        let needed = roles::needed(request.method(), request.extensions().get::<MatchedPath>());
+        if role < needed {
+            return forbidden(refusal_text(needed)).into_response();
+        }
+    }
     request.extensions_mut().insert(identity);
     next.run(request).await
 }
@@ -294,6 +369,8 @@ impl AuthGate {
             )),
             Some(Credential::Phone(token)) => return Claim::Phone(token),
             Some(Credential::Shared(shared)) => self.shared(Some(&shared)),
+            Some(Credential::Session(cookie)) => self.session(&cookie),
+            Some(Credential::Ticket(ticket)) => self.ticket(&ticket),
             None => self.shared(None),
         })
     }
@@ -334,15 +411,36 @@ impl AuthGate {
             return Err(unauthorized("Phone key required"));
         }
         match (self.shared.as_deref(), presented) {
+            (None, _) if self.sign_in => Err(unauthorized("Sign in")),
             (None, _) => Ok(Identity::Open),
             (Some(expected), Some(presented))
                 if bytes_eq(presented.as_bytes(), expected.as_bytes()) =>
             {
-                Ok(Identity::Operator)
+                Ok(Identity::Token)
             }
             (Some(_), Some(_)) => Err(unauthorized("Wrong token")),
             (Some(_), None) => Err(unauthorized("Token required")),
         }
+    }
+
+    fn session(&self, cookie: &str) -> Result<Identity, Refusal> {
+        if self.role == ListenerRole::Phones || !self.sign_in {
+            return self.shared(None);
+        }
+        self.sessions
+            .find(cookie)
+            .map(Identity::User)
+            .ok_or_else(|| unauthorized("Session expired"))
+    }
+
+    fn ticket(&self, ticket: &str) -> Result<Identity, Refusal> {
+        if !self.sign_in {
+            return Err(unauthorized("Bad credentials"));
+        }
+        self.sessions
+            .redeem(ticket)
+            .map(Identity::User)
+            .ok_or_else(|| unauthorized("Ticket expired"))
     }
 }
 
@@ -361,12 +459,16 @@ fn credential(request: &Request, role: ListenerRole) -> Option<Credential> {
     if role != ListenerRole::Main {
         return None;
     }
-    let token = query_token(request.uri().query()?)?;
-    Some(if token.starts_with(PHONE_TOKEN_PREFIX) {
-        Credential::PhoneInQuery
-    } else {
-        Credential::Shared(token)
-    })
+    if let Some(token) = request.uri().query().and_then(query_token) {
+        return Some(if token.starts_with(PHONE_TOKEN_PREFIX) {
+            Credential::PhoneInQuery
+        } else if token.starts_with(sessions::TICKET_PREFIX) {
+            Credential::Ticket(token)
+        } else {
+            Credential::Shared(token)
+        });
+    }
+    cookie(headers, SESSION_COOKIE).map(|value| Credential::Session(value.to_owned()))
 }
 
 fn bearer(headers: &HeaderMap) -> Option<&str> {

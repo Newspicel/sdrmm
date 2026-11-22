@@ -213,7 +213,7 @@ async fn only_the_session_path_is_taken() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_token_is_asked_of_a_session_too() {
     let mut state = fresh_state();
-    state.auth = crate::auth::Auth::new(Some("s3cret"));
+    state.auth = state.auth.configured(Some("s3cret"), None);
     let info = listening(&state);
 
     assert!(dial_session(&info, WEBTRANSPORT_PATH).await.is_err());

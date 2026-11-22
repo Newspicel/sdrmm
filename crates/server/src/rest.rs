@@ -54,6 +54,7 @@ mod processors;
 mod recordings;
 mod satellites;
 mod secrets;
+mod sign_in;
 mod sinks;
 mod sky_scan;
 mod speakers;
@@ -531,6 +532,10 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_band_plan))
         .routes(routes!(locate_band_region))
         .routes(routes!(get_auth))
+        .routes(routes!(sign_in::sign_in))
+        .routes(routes!(sign_in::sign_in_callback))
+        .routes(routes!(sign_in::sign_out))
+        .routes(routes!(sign_in::get_me))
         .routes(routes!(get_clients))
         .routes(routes!(get_occupancy))
         .routes(routes!(get_ionosonde))

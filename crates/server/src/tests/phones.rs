@@ -242,7 +242,7 @@ async fn pair_errors_answer_with_their_status() {
 async fn about_is_public_on_both_listeners() {
     let store = Arc::new(Store::open(None).expect("in-memory store"));
     let mut state = state_over(store);
-    state.auth = crate::auth::Auth::new(Some("s3cret"));
+    state.auth = state.auth.configured(Some("s3cret"), None);
     let main = crate::app(&state, ListenerRole::Main, true);
     let phones = crate::app(&state, ListenerRole::Phones, true);
     for app in [&main, &phones] {

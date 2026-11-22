@@ -80,6 +80,7 @@ mod trunking;
 mod workspace;
 mod ws;
 
+pub use auth::OidcOptions;
 pub use store::{Store, StoreError};
 
 pub trait NativeShell: Send + Sync + std::fmt::Debug {
@@ -91,6 +92,7 @@ pub trait NativeShell: Send + Sync + std::fmt::Debug {
 pub struct ServerOptions {
     pub dev_cors: bool,
     pub token: Option<String>,
+    pub oidc: Option<OidcOptions>,
     pub shell: Option<Arc<dyn NativeShell>>,
 }
 
@@ -151,10 +153,11 @@ impl AppState {
         let server_id = store.server_id();
         let phones = Arc::new(phones::Phones::new(store.clone()));
         let runs = Arc::new(run_gate::RunGate::default());
+        let sessions = Arc::new(auth::Sessions::new(store.clone()));
         Self {
             engine,
             store,
-            auth: auth::Auth::default(),
+            auth: auth::Auth::open(sessions),
             db_path: None,
             recordings_gate: Arc::new(std::sync::Mutex::new(())),
             apply_gate: Arc::new(std::sync::Mutex::new(())),
@@ -265,13 +268,24 @@ fn openapi_route(api: &utoipa::openapi::OpenApi) -> axum::routing::MethodRouter<
     })
 }
 
-fn configure(state: &mut AppState, options: &ServerOptions) {
-    state.auth = auth::Auth::new(options.token.as_deref());
+fn configure(state: &mut AppState, options: &ServerOptions) -> std::io::Result<()> {
+    let oidc = options
+        .oidc
+        .clone()
+        .map(|oidc| {
+            if let Some(secret) = &oidc.client_secret {
+                diagnostics::hide_secret(secret);
+            }
+            auth::Oidc::new(oidc).map_err(std::io::Error::other)
+        })
+        .transpose()?;
+    state.auth = state.auth.configured(options.token.as_deref(), oidc);
     state.shell.clone_from(&options.shell);
     state.dev_cors = options.dev_cors;
     if let Some(token) = &options.token {
         diagnostics::hide_secret(token);
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -281,7 +295,7 @@ fn router_with_state(state: AppState, options: &ServerOptions) -> (Router, Backg
 
 #[cfg(test)]
 fn main_router(mut state: AppState, options: &ServerOptions, tls: bool) -> (Router, Background) {
-    configure(&mut state, options);
+    configure(&mut state, options).expect("sign-in client");
     let background = start_runtime(&state);
     let app = app(&state, auth::ListenerRole::Main, tls);
     (app, background)
@@ -542,7 +556,7 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
     let store = Store::open(config.db_path.as_deref()).map_err(std::io::Error::other)?;
     workspace::adopt_named_devices(&engine, &store);
     let mut state = AppState::new(engine, Arc::new(store));
-    configure(&mut state, &config.options);
+    configure(&mut state, &config.options)?;
     state.db_path = config.db_path.clone();
     state.data_dir = config
         .db_path

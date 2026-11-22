@@ -754,11 +754,61 @@ pub struct ClientsResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AuthInfo {
     pub token_required: bool,
+    /// The server offers sign-in with an identity provider.
+    #[serde(default)]
+    pub sign_in: bool,
+}
+
+/// What a caller may do. Each role holds every right of the roles before it.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum UserRole {
+    Viewer,
+    Operator,
+    Admin,
+}
+
+impl UserRole {
+    pub const ALL: [Self; 3] = [Self::Viewer, Self::Operator, Self::Admin];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Viewer => "viewer",
+            Self::Operator => "operator",
+            Self::Admin => "admin",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|role| role.as_str() == text)
+    }
+}
+
+/// Who the caller is. `name` is set for a signed-in user only.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Me {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub role: UserRole,
+    pub signed_in: bool,
+}
+
+/// Where the browser goes after signing out: the identity provider's logout page, if it has one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SignedOut {
+    pub redirect: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TransportInfo {
     pub webtransport: Option<WebTransportInfo>,
+    /// A short-lived, single-use key a signed-in browser puts in the WebTransport URL, which
+    /// carries no cookie.
+    pub ticket: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

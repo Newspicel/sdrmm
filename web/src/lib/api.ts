@@ -1,7 +1,7 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import createClient from "openapi-fetch";
 import type { paths } from "../generated/schema";
-import { getToken, rejectToken, withToken } from "./auth";
+import { getToken, rejectToken, signalUnauthorized, withToken } from "./auth";
 import { authorKey } from "./presence";
 import type {
   AboutResponse,
@@ -47,6 +47,7 @@ import type {
   IonosondeReport,
   LicenseTextResponse,
   LogGroupKey,
+  Me,
   NanoVnaAntenna,
   NanoVnaAntennaRequest,
   NanoVnaLibraryResponse,
@@ -90,13 +91,13 @@ import type {
   ToolsResponse,
   TransmittersResponse,
   UpdateNanoVnaMeasurementRequest,
-  WebTransportInfo,
   WireVerdict,
   WorkspaceDetail,
   WorkspaceExport,
   WorkspaceSnapshot,
   WorkspacesResponse,
 } from "./types";
+import type { TransportOffer } from "./ws";
 
 /** Resolves `fetch` per call, so a shim installed after this module loads (the site demo) still applies. */
 function currentFetch(request: Request): Promise<Response> {
@@ -119,6 +120,7 @@ client.use({
   onResponse({ response }) {
     if (response.status === 401) {
       rejectToken();
+      signalUnauthorized();
     }
     return response;
   },
@@ -527,8 +529,32 @@ export function authQuery() {
   });
 }
 
-export async function webTransportOffer(): Promise<WebTransportInfo | null> {
-  return unwrap(await client.GET("/api/transport")).webtransport ?? null;
+export const ME_KEY = ["get", "/api/me"] as const;
+
+export function meQuery() {
+  return queryOptions({
+    queryKey: ME_KEY,
+    queryFn: async (): Promise<Me> => unwrap(await client.GET("/api/me")),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+}
+
+export function signInUrl(location: Location): string {
+  return `/api/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+}
+
+export async function signOut(): Promise<void> {
+  const out = unwrap(await client.POST("/api/auth/logout"));
+  window.location.assign(out.redirect ?? "/");
+}
+
+export async function webTransportOffer(): Promise<TransportOffer | null> {
+  const transport = unwrap(await client.GET("/api/transport"));
+  if (transport.webtransport === undefined || transport.webtransport === null) {
+    return null;
+  }
+  return { info: transport.webtransport, ticket: transport.ticket ?? null };
 }
 
 export async function serverReachable(): Promise<boolean> {

@@ -22,6 +22,7 @@ import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
 import { zoomSettled } from "../gl/drawLoop";
 import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
+import { useCanEdit } from "../lib/role";
 import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
@@ -152,6 +153,7 @@ export function Canvas() {
   }, []);
   const replaced = replacing === null ? undefined : nodeOf(workspace.graph, replacing);
 
+  const canEdit = useCanEdit();
   const select = workspace.select;
   const claimed = menu !== null || adding !== null || workspace.expanded !== null;
   useEffect(() => {
@@ -182,6 +184,7 @@ export function Canvas() {
       onPointerLeave={() => publish({ at: null })}
       onDoubleClick={(event) => {
         if (
+          canEdit &&
           event.target instanceof Element &&
           event.target.classList.contains("react-flow__pane")
         ) {
@@ -204,6 +207,8 @@ export function Canvas() {
           publish({ dragging: [] });
           commitGeometry();
         }}
+        nodesDraggable={canEdit}
+        nodesConnectable={canEdit}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
@@ -223,10 +228,16 @@ export function Canvas() {
           }
         }}
         onMoveEnd={(_event, viewport) => zoomSettled(viewport.zoom)}
-        onNodeContextMenu={(event, node) => openMenu(event, { kind: "node", id: node.id })}
-        onEdgeContextMenu={(event, edge) => openMenu(event, { kind: "edge", id: edge.id })}
-        onPaneContextMenu={(event) => openMenu(event as React.MouseEvent, { kind: "pane" })}
-        deleteKeyCode={workspace.expanded === null ? DELETE_KEYS : null}
+        onNodeContextMenu={
+          canEdit ? (event, node) => openMenu(event, { kind: "node", id: node.id }) : undefined
+        }
+        onEdgeContextMenu={
+          canEdit ? (event, edge) => openMenu(event, { kind: "edge", id: edge.id }) : undefined
+        }
+        onPaneContextMenu={
+          canEdit ? (event) => openMenu(event as React.MouseEvent, { kind: "pane" }) : undefined
+        }
+        deleteKeyCode={canEdit && workspace.expanded === null ? DELETE_KEYS : null}
         zoomOnDoubleClick={false}
         snapToGrid
         snapGrid={grid.snap}

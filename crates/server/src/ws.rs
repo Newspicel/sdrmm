@@ -152,6 +152,11 @@ impl Session {
             self.send_error(NOT_FOR_PHONES);
             return;
         }
+        let needed = crate::auth::command_needs(&command);
+        if self.identity.role().is_some_and(|role| role < needed) {
+            self.send_error(crate::auth::refusal_text(needed));
+            return;
+        }
         match command {
             ClientCommand::SubscribeDiagnostics { enabled } => {
                 if let Some(task) = self.diagnostics.take() {

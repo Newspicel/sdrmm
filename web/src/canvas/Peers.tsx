@@ -1,7 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Form, Input } from "../components/BaseControls";
 import { BTN_QUIET, FIELD, LABEL } from "../components/controls";
 import { Popover } from "../components/Popover";
+import { meQuery, signOut } from "../lib/api";
 import { PRESENCE_LIMITS } from "../lib/limits";
 import {
   authorKey,
@@ -81,6 +83,7 @@ function PeopleList({
   others: readonly Person[];
   onDone: () => void;
 }) {
+  const account = useQuery(meQuery()).data;
   return (
     <div className="flex flex-col gap-2">
       <span className={LABEL}>Here now</span>
@@ -90,7 +93,29 @@ function PeopleList({
           <Row key={`${person.hue}:${person.name}`} person={person} />
         ))}
       </ul>
-      <NameForm current={me.name} onDone={onDone} />
+      {account?.signed_in === true ? (
+        <Account role={account.role} email={account.email ?? undefined} />
+      ) : (
+        <NameForm current={me.name} onDone={onDone} />
+      )}
+    </div>
+  );
+}
+
+function Account({ role, email }: { role: string; email: string | undefined }) {
+  return (
+    <div className="flex items-center gap-1 border-t border-line pt-2">
+      <span className="min-w-0 flex-1 truncate text-xs text-ink-dim" title={email}>
+        {role}
+      </span>
+      <Button
+        className={BTN_QUIET}
+        onClick={() => {
+          signOut().catch(reportError);
+        }}
+      >
+        Sign out
+      </Button>
     </div>
   );
 }

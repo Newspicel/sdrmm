@@ -89,6 +89,7 @@ png.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+openidconnect.workspace = true
 
 [build-dependencies]
 flate2.workspace = true

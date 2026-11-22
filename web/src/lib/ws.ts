@@ -43,7 +43,13 @@ const STABLE_MS = 10_000;
 const WEBTRANSPORT_RETRY_MS = 5 * 60_000;
 const REORDER_WINDOW_FRAMES = 48_000n;
 
-export type WebTransportOffer = () => Promise<WebTransportInfo | null>;
+/** A WebTransport endpoint and the single-use ticket a signed-in browser dials it with. */
+export interface TransportOffer {
+  info: WebTransportInfo;
+  ticket: string | null;
+}
+
+export type WebTransportOffer = () => Promise<TransportOffer | null>;
 
 export class LateAudio {
   private readonly newest = new Map<number, bigint>();
@@ -151,16 +157,16 @@ export class SdrSocket {
   }
 
   private async openWebTransport(dial: number, offer: WebTransportOffer): Promise<void> {
-    const info = await offer().catch(() => null);
+    const offered = await offer().catch(() => null);
     if (dial !== this.dialing) {
       return;
     }
-    if (info === null) {
+    if (offered === null) {
       this.openWebSocket(dial);
       return;
     }
     try {
-      const dialed = await dialWebTransport(info, getToken());
+      const dialed = await dialWebTransport(offered.info, offered.ticket ?? getToken());
       if (dial !== this.dialing) {
         dialed.abandon();
         return;

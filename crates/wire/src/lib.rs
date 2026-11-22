@@ -237,12 +237,12 @@ pub use rest::{
     DecoderLogResponse, DeletedCount, DeviceClaim, DevicesResponse, ErrorCode, EventAudio,
     EventImage, ExampleInfo, ExampleNeeds, ExamplesResponse, ExportFormat, LogGroupKey, LogScope,
     MAX_DECODER_LOG_ROWS, MAX_LOG_SOURCES, MAX_RECORDING_NAME_LEN, MAX_RECORDING_NOTE_LEN,
-    MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, OccupancyBucket,
+    MAX_RECORDING_TAG_LEN, MAX_RECORDING_TAGS, MAX_RECORDING_UPLOAD_BYTES, Me, OccupancyBucket,
     OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchChannelRequest, PlaybackAction, PlaybackRequest,
     PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation, RecordingDownloadQuery,
     RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse, SaveRadioRequest,
-    SavedRadio, ServerStatus, TemplateInfo, TemplatesResponse, TransportInfo, VoiceCall,
-    WebTransportInfo, WriteSerialRequest, WrittenSerial, device_claims, kinds_in,
+    SavedRadio, ServerStatus, SignedOut, TemplateInfo, TemplatesResponse, TransportInfo, UserRole,
+    VoiceCall, WebTransportInfo, WriteSerialRequest, WrittenSerial, device_claims, kinds_in,
 };
 pub use rotator::{
     DEFAULT_GS232_BAUD, DEFAULT_ROTATOR_TOLERANCE_DEG, DEFAULT_ROTCTLD_ADDRESS,

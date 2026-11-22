@@ -18,13 +18,14 @@ import { type View, WorkspaceBar } from "./canvas/WorkspaceBar";
 import { WorkspaceNotices } from "./canvas/WorkspaceNotices";
 import { WorkspaceStart } from "./canvas/WorkspaceStart";
 import { AboutPanel } from "./components/AboutPanel";
+import { AccessGate } from "./components/AccessGate";
 import { AutoOffDialog } from "./components/AutoOffDialog";
 import { HelpPanel } from "./components/HelpPanel";
 import { ReportProblem } from "./components/ReportProblem";
 import { SerialDialog } from "./components/SerialDialog";
 import { ServerDown } from "./components/ServerDown";
 import { Toasts } from "./components/Toasts";
-import { TokenGate } from "./components/TokenGate";
+import { ViewOnly } from "./components/ViewOnly";
 import {
   channelTypesQuery,
   encoderTypesQuery,
@@ -178,7 +179,7 @@ export function App() {
   });
 
   return (
-    <TokenGate onToken={() => socket?.retryNow()}>
+    <AccessGate onToken={() => socket?.retryNow()}>
       <div className="flex h-full flex-col bg-bg text-ink">
         {socket !== null && snapshot !== null && catalogReady && (
           <WorkspaceProvider
@@ -235,13 +236,13 @@ export function App() {
                 />
               )}
               <InspectorProvider>
-                <div className="flex min-h-0 flex-1">
+                <ViewOnly>
                   <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                     {view === "patch" ? <Canvas key={activeId} /> : <Rack />}
                     <FullFace />
                   </div>
                   <InspectorPanel />
-                </div>
+                </ViewOnly>
               </InspectorProvider>
             </ReactFlowProvider>
           </WorkspaceProvider>
@@ -272,6 +273,6 @@ export function App() {
         <SerialDialog />
         <Toasts onReport={() => setShowReport(true)} />
       </div>
-    </TokenGate>
+    </AccessGate>
   );
 }

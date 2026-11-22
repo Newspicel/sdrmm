@@ -78,6 +78,34 @@ export function rejectToken(): void {
   }
 }
 
+const unauthorized = new Set<() => void>();
+
+/** Fires on every refused request, so the gate can ask again who this browser is. */
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorized.add(listener);
+  return () => {
+    unauthorized.delete(listener);
+  };
+}
+
+export function signalUnauthorized(): void {
+  for (const listener of unauthorized) {
+    listener();
+  }
+}
+
+/** Takes the sign-in outcome the server put in the URL, leaving the URL clean. */
+export function adoptSignInResult(location: Location, history: History): string | null {
+  const url = new URL(location.href);
+  const result = url.searchParams.get("sign_in");
+  if (result === null) {
+    return null;
+  }
+  url.searchParams.delete("sign_in");
+  history.replaceState(history.state, "", url);
+  return result;
+}
+
 export function resetTokenCache(): void {
   cached = null;
   loaded = false;

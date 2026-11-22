@@ -10,6 +10,7 @@ use sdrmm_engine::Engine;
 use sdrmm_server::{Config, ServerOptions, serve, tls::Tls};
 
 mod phone;
+mod sign_in;
 mod token;
 
 #[derive(Parser, Debug)]
@@ -53,6 +54,8 @@ struct Args {
         conflicts_with_all = ["tls_cert", "tls_self_signed", "tls_names"]
     )]
     no_tls: bool,
+    #[command(flatten)]
+    sign_in: sign_in::SignInArgs,
     #[arg(long)]
     doctor: bool,
     #[arg(long)]
@@ -134,8 +137,7 @@ fn device_bench(bench: &DeviceBenchArgs, plugins_dir: &Path) -> anyhow::Result<(
     let report = sdrmm_engine::bench::bench_device(
         &registry,
         &bench.device,
-        std::time::Duration::try_from_secs_f64(bench.seconds)
-            .context("--seconds is too long")?,
+        std::time::Duration::try_from_secs_f64(bench.seconds).context("--seconds is too long")?,
     )
     .with_context(|| format!("cannot bench {}", bench.device))?;
     print!("{}", report.render());
@@ -255,6 +257,7 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         options: ServerOptions {
             dev_cors: args.dev_cors,
             token,
+            oidc: std::mem::take(&mut args.sign_in).options()?,
             shell: None,
         },
     };

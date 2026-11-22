@@ -16,11 +16,23 @@ fn phones() -> Arc<Phones> {
     )))
 }
 
+fn sessions() -> Arc<Sessions> {
+    Arc::new(Sessions::new(Arc::new(
+        Store::open(None).expect("in-memory store"),
+    )))
+}
+
+fn auth(token: Option<&str>) -> Auth {
+    Auth::open(sessions()).configured(token, None)
+}
+
 fn gate(role: ListenerRole, tls: bool, token: Option<&str>, phones: &Arc<Phones>) -> AuthGate {
     AuthGate {
         role,
         tls,
-        shared: Auth::new(token).token,
+        shared: auth(token).token,
+        sign_in: false,
+        sessions: sessions(),
         phones: phones.clone(),
         dev_cors: false,
         allowed_hosts: None,
@@ -48,6 +60,7 @@ fn app(gate: AuthGate) -> Router {
         .route("/api/status", get(echo))
         .route("/api/phones/pair", post(echo))
         .route("/api/workspaces/1/activate", post(echo))
+        .route("/api/phones", get(echo))
         .route("/api/docs/index.html", get(|| async { "docs" }))
         .route_layer(axum::middleware::from_fn_with_state(gate, authenticate))
         .fallback(|| async { "spa" })
@@ -129,7 +142,7 @@ async fn a_configured_token_gates_the_api_but_never_the_ui_shell() {
     .await;
     assert_eq!(
         (operator.status, operator.body.as_str()),
-        (StatusCode::OK, "Operator")
+        (StatusCode::OK, "Token")
     );
     assert_eq!(
         status(&app, "/api/state?token=s3cret", None).await,
@@ -391,7 +404,7 @@ async fn the_socket_subprotocol_carries_the_shared_token() {
     .await;
     assert_eq!(
         (operator.status, operator.body.as_str()),
-        (StatusCode::OK, "Operator")
+        (StatusCode::OK, "Token")
     );
     let phone = format!(
         "sdrmm,{WS_BEARER_PROTOCOL_PREFIX}{}",
@@ -508,22 +521,24 @@ fn token_comparison_is_length_safe() {
 
 #[test]
 fn empty_token_disables_auth() {
-    assert!(!Auth::new(Some("")).required());
-    assert!(!Auth::new(None).required());
-    assert!(Auth::new(Some("x")).required());
+    assert!(!auth(Some("")).required());
+    assert!(!auth(None).required());
+    assert!(auth(Some("x")).required());
 }
 
 #[test]
-fn only_operators_administer() {
+fn only_admins_administer() {
     assert!(Identity::Open.administers());
-    assert!(Identity::Operator.administers());
+    assert!(Identity::Token.administers());
+    assert!(!Identity::User(Arc::new(user(UserRole::Operator))).administers());
+    assert!(Identity::User(Arc::new(user(UserRole::Admin))).administers());
     assert!(!Identity::Anonymous.administers());
     assert!(!Identity::Phone("p0123456789abcdef".to_owned()).administers());
     assert_eq!(
         Identity::Phone("p0123456789abcdef".to_owned()).phone(),
         Some("p0123456789abcdef")
     );
-    assert_eq!(Identity::Operator.phone(), None);
+    assert_eq!(Identity::Token.phone(), None);
 }
 
 #[tokio::test]
@@ -676,7 +691,7 @@ fn a_tokenless_main_listener_checks_the_host_wherever_it_is_bound() {
             .is_some_and(|names| names.contains(&"radio.example".to_owned()))
     );
     let mut guarded = loopback.clone();
-    guarded.auth = Auth::new(Some("secret"));
+    guarded.auth = guarded.auth.configured(Some("secret"), None);
     assert!(!checks(&guarded, ListenerRole::Main));
     let lan = bound_on(std::net::Ipv4Addr::UNSPECIFIED.into());
     assert!(checks(&lan, ListenerRole::Main));
@@ -693,4 +708,144 @@ fn only_a_lan_bind_trusts_its_own_mdns_name() {
     assert!(!trusts(std::net::Ipv4Addr::LOCALHOST.into()));
     assert!(!trusts(std::net::Ipv6Addr::LOCALHOST.into()));
     assert!(trusts(std::net::Ipv4Addr::UNSPECIFIED.into()));
+}
+
+fn user(role: UserRole) -> User {
+    User {
+        subject: "ada".to_owned(),
+        name: "Ada".to_owned(),
+        email: None,
+        role,
+    }
+}
+
+fn sign_in_gate(role: ListenerRole, sessions: Arc<Sessions>) -> AuthGate {
+    AuthGate {
+        sign_in: true,
+        sessions,
+        ..gate(role, true, None, &phones())
+    }
+}
+
+fn signed_in(role: UserRole) -> (Router, String) {
+    let sessions = sessions();
+    let cookie = sessions.open(user(role), None).expect("session");
+    (
+        app(sign_in_gate(ListenerRole::Main, sessions)),
+        format!("{SESSION_COOKIE}={cookie}"),
+    )
+}
+
+#[tokio::test]
+async fn sign_in_without_a_token_admits_no_one_unsigned() {
+    let (app, _) = signed_in(UserRole::Viewer);
+    assert_eq!(
+        status(&app, "/api/state", None).await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        status(&app, "/api/state", Some("Bearer anything")).await,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(status(&app, "/api/auth", None).await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_viewer_reads_but_changes_nothing() {
+    let (app, cookie) = signed_in(UserRole::Viewer);
+    let read = call(&app, "GET", "/api/state", &[("cookie", &cookie)]).await;
+    assert_eq!(read.status, StatusCode::OK);
+    let change = call(
+        &app,
+        "POST",
+        "/api/workspaces/1/activate",
+        &[("cookie", &cookie)],
+    )
+    .await;
+    assert_eq!(change.status, StatusCode::FORBIDDEN);
+    assert_eq!(change.error().error, "Needs the operator role");
+}
+
+#[tokio::test]
+async fn an_operator_changes_things_but_only_an_admin_holds_access() {
+    let (app, cookie) = signed_in(UserRole::Operator);
+    let change = call(
+        &app,
+        "POST",
+        "/api/workspaces/1/activate",
+        &[("cookie", &cookie)],
+    )
+    .await;
+    assert_eq!(change.status, StatusCode::OK);
+    let phones = call(&app, "GET", "/api/phones", &[("cookie", &cookie)]).await;
+    assert_eq!(phones.status, StatusCode::FORBIDDEN);
+    assert_eq!(phones.error().error, "Needs the admin role");
+    let (app, cookie) = signed_in(UserRole::Admin);
+    let phones = call(&app, "GET", "/api/phones", &[("cookie", &cookie)]).await;
+    assert_eq!(phones.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn the_shared_token_still_holds_every_right_beside_sign_in() {
+    let gate = AuthGate {
+        shared: Some("s3cret".into()),
+        ..sign_in_gate(ListenerRole::Main, sessions())
+    };
+    let app = app(gate);
+    let phones = call(
+        &app,
+        "GET",
+        "/api/phones",
+        &[("authorization", "Bearer s3cret")],
+    )
+    .await;
+    assert_eq!(
+        (phones.status, phones.body.as_str()),
+        (StatusCode::OK, "Token")
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_session_is_refused() {
+    let (app, _) = signed_in(UserRole::Admin);
+    let stale = call(
+        &app,
+        "GET",
+        "/api/state",
+        &[("cookie", "sdrmm_session=nope")],
+    )
+    .await;
+    assert_eq!(stale.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(stale.error().error, "Session expired");
+}
+
+#[tokio::test]
+async fn a_ticket_admits_once() {
+    let sessions = sessions();
+    let ticket = sessions
+        .ticket(Arc::new(user(UserRole::Viewer)))
+        .expect("ticket");
+    let app = app(sign_in_gate(ListenerRole::Main, sessions));
+    let uri = format!("/api/state?token={ticket}");
+    assert_eq!(status(&app, &uri, None).await, StatusCode::OK);
+    assert_eq!(status(&app, &uri, None).await, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn the_phone_listener_takes_no_session_cookie() {
+    let sessions = sessions();
+    let cookie = sessions.open(user(UserRole::Admin), None).expect("session");
+    let app = app(sign_in_gate(ListenerRole::Phones, sessions));
+    let header = format!("{SESSION_COOKIE}={cookie}");
+    let refused = call(&app, "GET", "/api/state", &[("cookie", &header)]).await;
+    assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
+}
+
+#[test]
+fn speaking_needs_an_operator() {
+    let speak = sdrmm_wire::ClientCommand::Speak {
+        node: "mic".to_owned(),
+        pcm: String::new(),
+    };
+    assert_eq!(command_needs(&speak), UserRole::Operator);
 }

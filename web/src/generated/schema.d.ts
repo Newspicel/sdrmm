@@ -196,6 +196,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["sign_in_callback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["sign_in"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sign_out"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/bandplan/locate": {
         parameters: {
             query?: never;
@@ -844,6 +892,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_ionosonde"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_me"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2460,6 +2524,8 @@ export interface components {
             started_at: string;
         };
         AuthInfo: {
+            /** @description The server offers sign-in with an identity provider. */
+            sign_in?: boolean;
             token_required: boolean;
         };
         /**
@@ -4495,6 +4561,13 @@ export interface components {
             reason: string;
             /** @enum {string} */
             state: "failed";
+        };
+        /** @description Who the caller is. `name` is set for a signed-in user only. */
+        Me: {
+            email?: string | null;
+            name?: string | null;
+            role: components["schemas"]["UserRole"];
+            signed_in: boolean;
         };
         /** @enum {string} */
         MergeMode: "replace" | "append" | "union";
@@ -6855,6 +6928,10 @@ export interface components {
             /** @description Settings tried side by side; empty tries the decoder's defaults. */
             settings?: components["schemas"]["ChannelParams"][];
         };
+        /** @description Where the browser goes after signing out: the identity provider's logout page, if it has one. */
+        SignedOut: {
+            redirect?: string | null;
+        };
         SinkFeed: {
             entities: components["schemas"]["Entity"][];
             /** Format: int64 */
@@ -7427,6 +7504,11 @@ export interface components {
             transmitters: components["schemas"]["Transmitter"][];
         };
         TransportInfo: {
+            /**
+             * @description A short-lived, single-use key a signed-in browser puts in the WebTransport URL, which
+             *     carries no cookie.
+             */
+            ticket?: string | null;
             webtransport?: components["schemas"]["WebTransportInfo"] | null;
         };
         TriangulationMission: {
@@ -7706,6 +7788,11 @@ export interface components {
             /** Format: int32 */
             vid: number;
         };
+        /**
+         * @description What a caller may do. Each role holds every right of the roles before it.
+         * @enum {string}
+         */
+        UserRole: "viewer" | "operator" | "admin";
         /**
          * @description How far a decoder is proven. The catalogs in the docs and on the site are built from it.
          *
@@ -8403,13 +8490,95 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Whether this server requires the shared token. Answered without authentication so a client can prompt before its first real request */
+            /** @description Whether this server takes the shared token and offers sign-in. Answered without authentication so a client can prompt before its first real request */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["AuthInfo"];
+                };
+            };
+        };
+    };
+    sign_in_callback: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                error?: string | null;
+                error_description?: string | null;
+                state?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in, back to the page that asked */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sign-in is off */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    sign_in: {
+        parameters: {
+            query?: {
+                /** @description The path to return to once signed in. */
+                next?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the identity provider */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sign-in is off */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    sign_out: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignedOut"];
                 };
             };
         };
@@ -10037,6 +10206,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IonosondeReport"];
+                };
+            };
+        };
+    };
+    get_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Who the caller is and what they may do */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description A phone has no role */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
