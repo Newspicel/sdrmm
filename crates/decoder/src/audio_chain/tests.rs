@@ -354,6 +354,43 @@ fn turning_a_stage_off_takes_it_out_of_the_path() {
     assert!(rms(&output[12_000..]) > 0.3, "the filter kept filtering");
 }
 
+#[test]
+fn its_tail_in_zeros_drains_the_chain_and_leaves_it_silent() {
+    let denoise = |mode| DenoiseSettings {
+        enabled: true,
+        mode,
+        strength: 0.0,
+        ..DenoiseSettings::default()
+    };
+    let clicks = ClickRemovalSettings {
+        enabled: true,
+        threshold: 6.0,
+    };
+    for settings in [
+        AudioProcessing {
+            denoise: denoise(DenoiseMode::Neural),
+            ..AudioProcessing::default()
+        },
+        AudioProcessing {
+            denoise: denoise(DenoiseMode::Spectral),
+            ..AudioProcessing::default()
+        },
+        AudioProcessing {
+            click_removal: clicks,
+            denoise: denoise(DenoiseMode::Neural),
+            ..AudioProcessing::default()
+        },
+    ] {
+        let mut chain = chain(&settings);
+        run(&mut chain, &tone(1_000.0, 0.3, 24_000));
+        let mut flushed = vec![0.0; chain.tail()];
+        chain.process_audio(&mut flushed).expect("chain runs");
+        let after = run(&mut chain, &vec![0.0; 4_800]);
+        assert!(rms(&flushed) > 0.1, "{settings:?}: the tail was empty");
+        assert!(rms(&after) < 1e-4, "{settings:?}: {} left", rms(&after));
+    }
+}
+
 struct FixtureNets;
 
 impl DenoiseNets for FixtureNets {

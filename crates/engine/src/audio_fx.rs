@@ -181,6 +181,7 @@ fn spawn(
                     commands,
                     recorder: None,
                     failed: false,
+                    held: 0,
                 }
                 .run(source.pcm);
                 drop(encoder);
@@ -251,6 +252,10 @@ impl Stage {
             .as_mut()
             .map_or(Ok(()), |chain| chain.process_audio(pcm))
     }
+
+    fn tail(&self) -> usize {
+        self.chain.as_ref().map_or(0, AudioChain::tail)
+    }
 }
 
 struct Worker {
@@ -261,6 +266,8 @@ struct Worker {
     commands: mpsc::Receiver<FxControl>,
     recorder: Option<AudioTaps>,
     failed: bool,
+    /// Frames of the last open squelch still inside the chain.
+    held: usize,
 }
 
 impl Worker {
@@ -275,16 +282,49 @@ impl Worker {
                 Err(RecvError::Closed) => return,
             };
             self.follow_commands();
-            if self.idle() {
+            if self.idle() || !self.prepare(block.channels) {
                 return;
             }
-            let Some(block) = self.process(block) else {
-                return;
-            };
-            if let Some(recorder) = &self.recorder {
-                recorder.push(&block);
+            match block.payload {
+                PcmPayload::Samples(samples) => {
+                    let payload = PcmPayload::Samples(self.processed(samples.to_vec()));
+                    self.held = self.tail();
+                    self.emit(PcmBlock { payload, ..block });
+                }
+                PcmPayload::Silence(frames) => {
+                    self.silence(block.start_frame, block.channels, frames);
+                }
             }
-            let _ = self.pcm_tx.send(block);
+        }
+    }
+
+    fn emit(&self, block: PcmBlock) {
+        if let Some(recorder) = &self.recorder {
+            recorder.push(&block);
+        }
+        let _ = self.pcm_tx.send(block);
+    }
+
+    /// A closing squelch first pushes out what the chain still holds of the audio before it, so
+    /// an over keeps its last words and the next one does not start with them.
+    fn silence(&mut self, start_frame: u64, channels: u8, frames: usize) {
+        let flushed = self.held.min(frames);
+        self.held -= flushed;
+        if flushed > 0 {
+            let zeros = vec![0.0; flushed * usize::from(channels.max(1))];
+            let payload = PcmPayload::Samples(self.processed(zeros));
+            self.emit(PcmBlock {
+                start_frame,
+                channels,
+                payload,
+            });
+        }
+        if frames > flushed || flushed == 0 {
+            self.emit(PcmBlock {
+                start_frame: start_frame + flushed as u64,
+                channels,
+                payload: PcmPayload::Silence(frames - flushed),
+            });
         }
     }
 
@@ -302,27 +342,29 @@ impl Worker {
             && self.pcm_tx.receiver_count() <= 1
     }
 
-    fn process(&mut self, block: PcmBlock) -> Option<PcmBlock> {
+    /// False once a stage's settings are gone.
+    fn prepare(&mut self, channels: u8) -> bool {
         for stage in &mut self.stages {
-            match stage.prepare(block.channels, self.profile) {
+            match stage.prepare(channels, self.profile) {
                 Ok(true) => {}
-                Ok(false) => return None,
+                Ok(false) => return false,
                 Err(error) => report(&mut self.failed, &error),
             }
         }
-        let payload = match block.payload {
-            PcmPayload::Silence(frames) => PcmPayload::Silence(frames),
-            PcmPayload::Samples(samples) => {
-                let mut pcm = samples.to_vec();
-                for stage in &mut self.stages {
-                    if let Err(error) = stage.process(&mut pcm) {
-                        report(&mut self.failed, &error);
-                    }
-                }
-                PcmPayload::Samples(Arc::from(pcm))
+        true
+    }
+
+    fn processed(&mut self, mut pcm: Vec<f32>) -> Arc<[f32]> {
+        for stage in &mut self.stages {
+            if let Err(error) = stage.process(&mut pcm) {
+                report(&mut self.failed, &error);
             }
-        };
-        Some(PcmBlock { payload, ..block })
+        }
+        Arc::from(pcm)
+    }
+
+    fn tail(&self) -> usize {
+        self.stages.iter().map(Stage::tail).sum()
     }
 }
 
@@ -335,7 +377,9 @@ pub(crate) fn report(failed: &mut bool, error: &NeuralDenoiseError) {
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{AudioAgcMode, AudioFilterSettings};
+    use sdrmm_wire::{
+        AudioAgcMode, AudioFilterSettings, DenoiseMode, DenoiseModel, DenoiseSettings,
+    };
 
     use super::*;
 
@@ -472,6 +516,105 @@ mod tests {
         let block = rx.blocking_recv().expect("a block");
         assert_eq!(block.start_frame, 777);
         assert!(matches!(block.payload, PcmPayload::Silence(960)));
+    }
+
+    fn dpdfnet(dir: &std::path::Path) -> Arc<DenoiseModels> {
+        let models = DenoiseModels::default();
+        models.set_dir(dir.to_path_buf());
+        let bytes = sdrmm_test_support::denoise_model(DenoiseModel::Dpdfnet2).expect("model");
+        models
+            .install(DenoiseModel::Dpdfnet2, &bytes)
+            .expect("installs");
+        Arc::new(models)
+    }
+
+    /// At zero strength the neural denoiser is a pure delay, so what leaves it is what went in, later.
+    fn delaying() -> AudioProcessing {
+        AudioProcessing {
+            denoise: DenoiseSettings {
+                enabled: true,
+                mode: DenoiseMode::Neural,
+                model: DenoiseModel::Dpdfnet2,
+                strength: 0.0,
+            },
+            ..AudioProcessing::default()
+        }
+    }
+
+    fn silence(tx: &broadcast::Sender<PcmBlock>, frames: usize, start_frame: u64) {
+        tx.send(PcmBlock {
+            start_frame,
+            channels: 1,
+            payload: PcmPayload::Silence(frames),
+        })
+        .expect("the worker listens");
+    }
+
+    fn heard(block: &PcmBlock) -> Option<&[f32]> {
+        match &block.payload {
+            PcmPayload::Samples(samples) => Some(samples),
+            PcmPayload::Silence(_) => None,
+        }
+    }
+
+    #[test]
+    fn a_closing_squelch_gets_the_denoisers_tail_then_silence() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (tx, _keep) = broadcast::channel(64);
+        let mut hub = AudioFxHub::new(dpdfnet(dir.path()));
+        hub.set("a", delaying());
+        let mut rx = hub
+            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .expect("the route opens");
+        let over = tone(1_000.0, 0.3, 4_800);
+        for n in 0..10 {
+            feed(&tx, &over, n * 4_800);
+        }
+        silence(&tx, 4_800, 48_000);
+        silence(&tx, 960, 52_800);
+        for _ in 0..10 {
+            assert!(heard(&rx.blocking_recv().expect("the over")).is_some());
+        }
+        let tail = rx.blocking_recv().expect("the tail");
+        let held = heard(&tail).expect("the tail is audio").len();
+        assert_eq!(tail.start_frame, 48_000);
+        assert!(held > 0 && held < 4_800, "{held} frames held");
+        assert!(
+            rms(heard(&tail).unwrap_or_default()) > 0.1,
+            "the last words were lost"
+        );
+        let closed = rx.blocking_recv().expect("the rest of the silence");
+        assert_eq!(closed.start_frame, 48_000 + held as u64);
+        assert!(matches!(closed.payload, PcmPayload::Silence(n) if n == 4_800 - held));
+        let quiet = rx.blocking_recv().expect("more silence");
+        assert_eq!(quiet.start_frame, 52_800);
+        assert!(matches!(quiet.payload, PcmPayload::Silence(960)));
+    }
+
+    #[test]
+    fn the_next_over_does_not_start_with_the_last_ones_words() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (tx, _keep) = broadcast::channel(64);
+        let mut hub = AudioFxHub::new(dpdfnet(dir.path()));
+        hub.set("a", delaying());
+        let mut rx = hub
+            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .expect("the route opens");
+        feed(&tx, &tone(1_000.0, 0.3, 4_800), 0);
+        silence(&tx, 4_800, 4_800);
+        feed(&tx, &tone(700.0, 0.3, 4_800), 9_600);
+        let mut next = Vec::new();
+        while next.is_empty() {
+            let block = rx.blocking_recv().expect("a block");
+            if block.start_frame == 9_600 {
+                next = heard(&block).expect("the next over").to_vec();
+            }
+        }
+        assert!(
+            rms(&next[..1_000]) < 1e-3,
+            "the last over leaked into the next"
+        );
+        assert!(rms(&next[3_800..]) > 0.1, "the next over is missing");
     }
 
     #[test]

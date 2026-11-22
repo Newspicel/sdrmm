@@ -7,15 +7,16 @@ use std::{
 };
 
 use sdrmm_channels::AdsbParams;
-use sdrmm_channels::NfmParams;
 use sdrmm_channels::WfmParams;
+use sdrmm_channels::{NfmParams, NfmToneMode};
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_recording::RecordingDriver;
 use sdrmm_device_virtual::{NFM_CARRIER_OFFSET_HZ, VirtualDriver};
 use sdrmm_engine::Engine;
 use sdrmm_recorder::read_audio_info;
 use sdrmm_wire::{
-    AudioRecordingStatus, AudioRoute, ChannelParams, ChannelSettings, DeviceSettings,
+    AudioProcessing, AudioRecordingStatus, AudioRoute, ChannelParams, ChannelSettings, DenoiseMode,
+    DenoiseModel, DenoiseSettings, DeviceSettings,
 };
 
 const TEST_RATE: f64 = 2_400_000.0;
@@ -241,6 +242,90 @@ async fn a_channel_records_raw_and_through_audio_fx_at_once() {
     engine.stop_audio_recording("clean", ds, ch).unwrap();
     engine.stop_audio_recording("raw", ds, ch).unwrap();
     assert!(live_status(&engine, ds, ch).is_none());
+    engine.remove_device_set(ds).unwrap();
+}
+
+fn recording(engine: &Engine, ds: u32, ch: u32, node: &str) -> Option<AudioRecordingStatus> {
+    engine
+        .snapshot()
+        .device_sets
+        .into_iter()
+        .find(|s| s.id == ds)?
+        .channels
+        .into_iter()
+        .find(|c| c.id == ch)?
+        .audio_recordings
+        .into_iter()
+        .find(|status| status.node == node)
+}
+
+fn dpdfnet(engine: &Engine, dir: &Path) {
+    let models = engine.denoise_models();
+    models.set_dir(dir.join("models"));
+    let bytes = sdrmm_test_support::denoise_model(DenoiseModel::Dpdfnet2).unwrap();
+    models.install(DenoiseModel::Dpdfnet2, &bytes).unwrap();
+    engine
+        .set_audio_fx(
+            "fx",
+            AudioProcessing {
+                denoise: DenoiseSettings {
+                    enabled: true,
+                    mode: DenoiseMode::Neural,
+                    model: DenoiseModel::Dpdfnet2,
+                    strength: 1.0,
+                },
+                ..AudioProcessing::default()
+            },
+        )
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_skip_silence_recording_through_dpdfnet_keeps_only_an_open_squelch() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let engine = engine(dir.path());
+    dpdfnet(&engine, dir.path());
+    let ds = set_at_test_rate(&engine);
+    for (tone_mode, open) in [(NfmToneMode::Off, true), (NfmToneMode::Ctcss, false)] {
+        let params = NfmParams {
+            tone_mode,
+            ctcss_hz: Some(250.3),
+            ..NfmParams::default()
+        };
+        let ch = engine
+            .add_channel(
+                ds,
+                0,
+                settings(
+                    ChannelParams::new("nfm", &params).unwrap(),
+                    NFM_CARRIER_OFFSET_HZ,
+                ),
+            )
+            .unwrap();
+        let gated = AudioRoute {
+            fx: vec!["fx".to_owned()],
+            ..AudioRoute::channel(ds, ch)
+        };
+        engine.start_audio_recording("gated", &gated, true).unwrap();
+        engine
+            .start_audio_recording("clock", &AudioRoute::channel(ds, ch), false)
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while recording(&engine, ds, ch, "clock").is_none_or(|clock| clock.frames < 24_000) {
+            assert!(Instant::now() < deadline, "the channel never ran");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let kept = engine.stop_audio_recording("gated", ds, ch).unwrap();
+        engine.stop_audio_recording("clock", ds, ch).unwrap();
+        assert_eq!(kept.error, None);
+        assert_eq!(
+            kept.frames > 0,
+            open,
+            "{tone_mode:?}: {} frames kept",
+            kept.frames
+        );
+        engine.remove_channel(ds, ch).unwrap();
+    }
     engine.remove_device_set(ds).unwrap();
 }
 

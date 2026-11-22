@@ -246,11 +246,8 @@ fn subscriptions(sinks: &ChannelSinks) -> u8 {
 }
 
 fn publish_audio(packet: &ChannelPacket, sinks: &ChannelSinks) {
-    let payload = if !packet.outputs.audio_pcm.is_empty() {
-        PcmPayload::Samples(Arc::from(packet.outputs.audio_pcm.as_slice()))
-    } else if packet.silence > 0 {
-        PcmPayload::Silence(packet.silence)
-    } else {
+    let Some(payload) = audio_payload(&packet.outputs.audio_pcm, packet.silence, packet.channels)
+    else {
         return;
     };
     let block = PcmBlock {
@@ -264,9 +261,42 @@ fn publish_audio(packet: &ChannelPacket, sinks: &ChannelSinks) {
     let _ = sinks.pcm_tx.send(block);
 }
 
+/// A decoder's own mute (a tone squelch, a call without its key) leaves exact zeros. They travel
+/// as silence, so listeners, audio FX and recorders treat them like a closed squelch.
+fn audio_payload(pcm: &[f32], silence: usize, channels: u8) -> Option<PcmPayload> {
+    if pcm.is_empty() {
+        return (silence > 0).then_some(PcmPayload::Silence(silence));
+    }
+    if pcm.iter().all(|&sample| sample == 0.0) {
+        return Some(PcmPayload::Silence(
+            pcm.len() / usize::from(channels.max(1)),
+        ));
+    }
+    Some(PcmPayload::Samples(Arc::from(pcm)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_decoders_own_mute_travels_as_silence() {
+        assert!(matches!(
+            audio_payload(&[0.0; 960], 0, 2),
+            Some(PcmPayload::Silence(480))
+        ));
+        assert!(matches!(
+            audio_payload(&[], 300, 1),
+            Some(PcmPayload::Silence(300))
+        ));
+        assert!(audio_payload(&[], 0, 1).is_none());
+        let mut heard = [0.0; 480];
+        heard[479] = 0.01;
+        assert!(matches!(
+            audio_payload(&heard, 0, 1),
+            Some(PcmPayload::Samples(samples)) if samples.len() == 480
+        ));
+    }
 
     fn slack_ms(device_rate: f64, depth: usize) -> f64 {
         depth as f64 * dsp_block_len(device_rate) as f64 / device_rate * 1000.0

@@ -104,6 +104,12 @@ impl AudioChain {
         self.planes.len()
     }
 
+    /// Frames until the chain falls silent once its input stops.
+    #[must_use]
+    pub fn tail(&self) -> usize {
+        self.planes.first().map_or(0, Plane::tail)
+    }
+
     pub fn reset(&mut self) {
         for plane in &mut self.planes {
             plane.reset();
@@ -165,6 +171,13 @@ impl Denoiser {
             Self::Neural(_, model) => {
                 settings.mode == DenoiseMode::Neural && settings.model == *model
             }
+        }
+    }
+
+    fn tail(&self) -> usize {
+        match self {
+            Self::Spectral(denoiser) => denoiser.latency(),
+            Self::Neural(denoiser, _) => denoiser.tail(),
         }
     }
 
@@ -307,6 +320,11 @@ impl Plane {
                 Ok(())
             }
         }
+    }
+
+    fn tail(&self) -> usize {
+        self.clicks.as_ref().map_or(0, ClickRemover::latency)
+            + self.denoise.as_ref().map_or(0, Denoiser::tail)
     }
 
     fn reset(&mut self) {

@@ -173,6 +173,13 @@ impl NeuralDenoiser {
         (self.window_len + MODEL_DELAY_FRAMES * self.hop) * self.factor + self.resampler_delay()
     }
 
+    /// Frames until the output falls silent once the input stops: the latency and the far half
+    /// of the resampling filters.
+    #[must_use]
+    pub fn tail(&self) -> usize {
+        self.latency() + self.resampler_delay()
+    }
+
     fn resampler_delay(&self) -> usize {
         if self.factor == 1 {
             0
