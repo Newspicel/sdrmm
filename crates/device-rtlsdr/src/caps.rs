@@ -702,7 +702,7 @@ mod tests {
     fn unique_serial_becomes_the_key() {
         let infos = device_infos(&[descriptor(4, Some("00000123"))]);
         assert_eq!(infos.len(), 1);
-        assert_eq!(infos[0].driver, DeviceBackend::Rtlsdr);
+        assert_eq!(infos[0].driver, DeviceBackend::RTLSDR);
         assert_eq!(infos[0].key, "00000123");
         assert_eq!(infos[0].serial.as_deref(), Some("00000123"));
         assert_eq!(infos[0].label, "Realtek RTL2838UHIDIR 00000123");

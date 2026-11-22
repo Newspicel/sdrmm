@@ -346,13 +346,13 @@ fn connected_radio_capture_health() {
         .map(|driver| {
             let rate = number(
                 "SDRMM_CAPTURE_RATE",
-                if driver.id() == DeviceBackend::Hackrf {
+                if driver.id() == DeviceBackend::HACKRF {
                     20e6
                 } else {
                     2.4e6
                 },
             );
-            let rate = if driver.id() == DeviceBackend::Rtlsdr {
+            let rate = if driver.id() == DeviceBackend::RTLSDR {
                 number("SDRMM_CAPTURE_RTL_RATE", rate)
             } else {
                 rate

@@ -656,7 +656,7 @@ mod tests {
                     "dev",
                     NodeBody::Device(DeviceNode {
                         device: Some(DeviceRef {
-                            backend: DeviceBackend::Virtual,
+                            backend: DeviceBackend::VIRTUAL,
                             serial: None,
                             key: None,
                         }),

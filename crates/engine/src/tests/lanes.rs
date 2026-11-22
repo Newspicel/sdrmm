@@ -10,7 +10,7 @@ struct LanesDriver(Started);
 
 impl DeviceDriver for LanesDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

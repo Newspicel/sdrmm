@@ -506,7 +506,7 @@ mod tests {
     fn a_helper_reply_carries_the_device_and_the_arguments_that_reopen_it() {
         let reply = serde_json::to_string(&vec![Found {
             info: DeviceInfo {
-                driver: DeviceBackend::Soapy,
+                driver: DeviceBackend::SOAPY,
                 key: "00000001".to_string(),
                 label: "NESDR SMArt v5".to_string(),
                 serial: Some("00000001".to_string()),
@@ -573,7 +573,7 @@ mod tests {
     fn a_reply_round_trips_through_the_child_encoding() {
         let found = vec![Found {
             info: DeviceInfo {
-                driver: DeviceBackend::Soapy,
+                driver: DeviceBackend::SOAPY,
                 key: "00000001".to_string(),
                 label: "Generic RTL2832U".to_string(),
                 serial: Some("00000001".to_string()),

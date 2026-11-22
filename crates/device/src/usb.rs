@@ -27,7 +27,7 @@ pub enum BusChange {
 /// A USB radio as its device node presents it to this process.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RadioNode {
-    pub name: &'static str,
+    pub name: String,
     pub path: PathBuf,
     pub present: bool,
     pub uid: u32,
@@ -39,7 +39,7 @@ pub struct RadioNode {
 /// The device nodes of the attached USB radios, which only Linux hands out.
 #[cfg(not(target_os = "linux"))]
 #[must_use]
-pub fn radio_nodes() -> Vec<RadioNode> {
+pub fn radio_nodes(_identities: &[sdrmm_wire::UsbIdentity]) -> Vec<RadioNode> {
     Vec::new()
 }
 

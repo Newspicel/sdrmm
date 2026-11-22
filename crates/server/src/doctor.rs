@@ -7,8 +7,16 @@ use sdrmm_wire::{
 const LANE_SUFFIX: &str = " lane ";
 
 #[must_use]
-pub fn collect(db_path: Option<&Path>, recordings_dir: Option<&Path>) -> DoctorReport {
-    let registry = sdrmm_engine::builtin_registry(None);
+pub fn collect(
+    db_path: Option<&Path>,
+    recordings_dir: Option<&Path>,
+    plugins_dir: Option<&Path>,
+) -> DoctorReport {
+    let plugins = plugins_dir.map_or_else(
+        sdrmm_engine::DevicePlugins::default,
+        sdrmm_engine::DevicePlugins::load,
+    );
+    let registry = sdrmm_engine::registry(None, 1.0, plugins);
     report(&registry, db_path, recordings_dir)
 }
 
@@ -21,7 +29,7 @@ pub fn report(
     let mut checks = vec![backends_check(registry)];
     checks.extend(registry.health());
     checks.extend(devices_checks(registry));
-    checks.extend(usb_checks());
+    checks.extend(usb_checks(registry));
     checks.push(path_check(
         "storage.db",
         "Database",
@@ -45,22 +53,10 @@ pub fn report(
 }
 
 fn backends_check(registry: &sdrmm_device::DeviceRegistry) -> DoctorCheck {
-    let mut backends: Vec<DeviceBackend> = registry
-        .driver_ids()
-        .into_iter()
-        .map(|(_, backend)| backend)
-        .collect();
-    backends.sort_unstable_by_key(|backend| backend.as_str());
-    let hardware: Vec<DeviceBackend> = backends
-        .iter()
-        .copied()
-        .filter(|backend| backend.is_radio())
-        .collect();
-    let names: Vec<&str> = backends
-        .iter()
-        .copied()
-        .map(DeviceBackend::as_str)
-        .collect();
+    let mut specs = registry.specs();
+    specs.sort_unstable_by_key(|spec| spec.backend);
+    let hardware = radio_backends(registry);
+    let names: Vec<&str> = specs.iter().map(|spec| spec.backend.as_str()).collect();
     let detail = format!("compiled backends: {}", names.join(", "));
     if hardware.is_empty() {
         let virtual_capabilities = virtual_capabilities(sdrmm_engine::synthetic_devices_offered());
@@ -93,10 +89,19 @@ fn virtual_capabilities(debug_build: bool) -> &'static str {
     }
 }
 
+fn radio_backends(registry: &sdrmm_device::DeviceRegistry) -> Vec<DeviceBackend> {
+    registry
+        .specs()
+        .into_iter()
+        .filter(sdrmm_wire::BackendSpec::is_radio)
+        .map(|spec| spec.backend)
+        .collect()
+}
+
 fn devices_checks(registry: &sdrmm_device::DeviceRegistry) -> Vec<DoctorCheck> {
     let timings = registry.probe_timings();
     let devices = registry.probe_all_deep();
-    let mut checks = vec![devices_check(&devices, &timings)];
+    let mut checks = vec![devices_check(&devices, &timings, &radio_backends(registry))];
     checks.extend(port_bound_check(&devices));
     checks.extend(banks_check(&devices));
     checks
@@ -214,7 +219,7 @@ pub(crate) fn served(engine: &sdrmm_engine::Engine, db_path: Option<&Path>) -> D
 fn port_bound_check(devices: &[DeviceInfo]) -> Option<DoctorCheck> {
     let bound: Vec<&str> = devices
         .iter()
-        .filter(|device| device.driver == DeviceBackend::Rtlsdr && device.serial.is_none())
+        .filter(|device| device.driver == DeviceBackend::RTLSDR && device.serial.is_none())
         .map(|device| device.label.as_str())
         .collect();
     if bound.is_empty() {
@@ -239,10 +244,11 @@ fn port_bound_check(devices: &[DeviceInfo]) -> Option<DoctorCheck> {
 fn devices_check(
     devices: &[DeviceInfo],
     timings: &[(DeviceBackend, usize, std::time::Duration)],
+    radios: &[DeviceBackend],
 ) -> DoctorCheck {
     let mut hardware: Vec<String> = devices
         .iter()
-        .filter(|d| d.driver.is_radio())
+        .filter(|d| radios.contains(&d.driver))
         .map(|d| match &d.serial {
             Some(serial) => format!("{} [{}] serial {serial}", d.id(), d.label),
             None => format!("{} [{}]", d.id(), d.label),
@@ -281,10 +287,11 @@ fn devices_check(
 
 #[must_use]
 pub fn rate_report(registry: &sdrmm_device::DeviceRegistry) -> DoctorReport {
+    let radios = radio_backends(registry);
     let checks = registry
         .probe_all_deep()
         .into_iter()
-        .filter(|d| d.driver.is_radio())
+        .filter(|d| radios.contains(&d.driver))
         .map(|info| match registry.open(&info.id()) {
             Ok((_, mut device)) => {
                 let rates = device.capabilities().sample_rates.clone();
@@ -392,11 +399,13 @@ fn rate_check(
     }
 }
 
-fn usb_checks() -> Vec<DoctorCheck> {
+fn usb_checks(registry: &sdrmm_device::DeviceRegistry) -> Vec<DoctorCheck> {
     if !cfg!(target_os = "linux") {
         return Vec::new();
     }
-    vec![usb_permission_check(&sdrmm_device::usb::radio_nodes())]
+    vec![usb_permission_check(&sdrmm_device::usb::radio_nodes(
+        &registry.usb_identities(),
+    ))]
 }
 
 fn current_user() -> u32 {
@@ -592,7 +601,7 @@ mod tests {
 
     fn node(name: &'static str, openable: bool, mode: u32) -> sdrmm_device::usb::RadioNode {
         sdrmm_device::usb::RadioNode {
-            name,
+            name: name.to_owned(),
             path: std::path::PathBuf::from("/dev/bus/usb/001/004"),
             present: true,
             uid: 0,
@@ -605,14 +614,14 @@ mod tests {
     #[test]
     fn an_rtl_sdr_known_by_its_port_is_told_to_get_a_serial() {
         let dongle = |key: &str, serial: Option<&str>| DeviceInfo {
-            driver: DeviceBackend::Rtlsdr,
+            driver: DeviceBackend::RTLSDR,
             key: key.to_string(),
             label: format!("RTL-SDR {key}"),
             serial: serial.map(str::to_string),
             profile: None,
         };
         let network = DeviceInfo {
-            driver: DeviceBackend::Rtltcp,
+            driver: DeviceBackend::RTLTCP,
             ..dongle("10.0.0.5:1234", None)
         };
         assert!(port_bound_check(&[dongle("00000123", Some("00000123")), network]).is_none());
@@ -818,7 +827,7 @@ mod tests {
 
         impl sdrmm_device::DeviceDriver for Ailing {
             fn id(&self) -> DeviceBackend {
-                DeviceBackend::Sdrplay
+                DeviceBackend::SDRPLAY
             }
 
             fn probe(&self) -> Vec<DeviceInfo> {
@@ -879,7 +888,7 @@ mod tests {
 
     fn lane(name: &str, lane: u32, lanes: u32) -> DeviceInfo {
         DeviceInfo {
-            driver: DeviceBackend::Rtlsdr,
+            driver: DeviceBackend::RTLSDR,
             key: (1000 + lane).to_string(),
             label: format!("{name} lane {}", lane + 1),
             serial: None,

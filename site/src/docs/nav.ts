@@ -55,6 +55,7 @@ export const DOCS_NAV: readonly DocSection[] = [
       { slug: "operate/direction-finding", label: "Direction finding" },
       { slug: "operate/passive-radar", label: "Passive radar" },
       { slug: "operate/network-export", label: "Network export" },
+      { slug: "operate/voice-chat", label: "Voice chat" },
       { slug: "operate/tools", label: "Tools" },
       { slug: "operate/phones", label: "Phones" },
     ],
@@ -84,7 +85,10 @@ export const DOCS_NAV: readonly DocSection[] = [
       {
         slug: "develop/plugins",
         label: "Plugins",
-        children: [{ slug: "develop/plugin-abi", label: "Any language ABI" }],
+        children: [
+          { slug: "develop/plugin-abi", label: "Any language ABI" },
+          { slug: "develop/device-plugins", label: "Device plugins" },
+        ],
       },
       { slug: "develop/releases", label: "Releases" },
       { slug: "develop/hardware-tests", label: "Hardware tests" },

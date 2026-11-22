@@ -8227,6 +8227,54 @@
           }
         }
       },
+      "BackendReach": {
+        "type": "string",
+        "description": "How a backend gets at its samples, and so whether the browser offers it as a radio, keeps it\nfor a node that owns one, or hides it behind the synthetic tab. The one policy every surface\nreads.",
+        "enum": [
+          "local",
+          "network",
+          "synthetic",
+          "playback"
+        ]
+      },
+      "BackendSpec": {
+        "type": "object",
+        "description": "What a driver tells every surface about its backend: the browser's label and reach, the\naddress field's hint, the Soapy module it drives itself and the USB devices it speaks to.",
+        "required": [
+          "backend",
+          "label",
+          "reach"
+        ],
+        "properties": {
+          "address_hint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "backend": {
+            "$ref": "#/components/schemas/DeviceBackend"
+          },
+          "label": {
+            "type": "string"
+          },
+          "reach": {
+            "$ref": "#/components/schemas/BackendReach"
+          },
+          "soapy_module": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usb": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsbIdentity"
+            }
+          }
+        }
+      },
       "BandAllocation": {
         "type": "object",
         "required": [
@@ -12052,26 +12100,8 @@
       },
       "DeviceBackend": {
         "type": "string",
-        "description": "Which driver opens a radio. The one name a backend has, shared by the device crates,\nthe stored patch, the doctor and the browser.",
-        "enum": [
-          "virtual",
-          "recording",
-          "rtlsdr",
-          "hackrf",
-          "airspy",
-          "airspyhf",
-          "funcube",
-          "cr8",
-          "sdrplay",
-          "aaronia",
-          "soapy",
-          "rtltcp",
-          "spyserver",
-          "sdrconnect",
-          "kiwisdr",
-          "ad936x",
-          "espsdr"
-        ]
+        "description": "Which driver opens a radio: a built-in or a device plugin's id.",
+        "pattern": "^[a-z0-9_-]{1,31}$"
       },
       "DeviceClaim": {
         "type": "object",
@@ -12554,6 +12584,13 @@
           "synthetic"
         ],
         "properties": {
+          "backends": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackendSpec"
+            },
+            "description": "Every backend this server drives, built-in or plugin, for labels, reach and address hints."
+          },
           "claims": {
             "type": "array",
             "items": {
@@ -27821,6 +27858,32 @@
                 "type": "null"
               }
             ]
+          }
+        }
+      },
+      "UsbIdentity": {
+        "type": "object",
+        "description": "A USB device a driver speaks to, by the identity it announces on the bus. A product of\n`None` claims the whole vendor, which is only right for a vendor that makes nothing else.",
+        "required": [
+          "vendor",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "product": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "vendor": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

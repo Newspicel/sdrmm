@@ -18,7 +18,7 @@ mod caps;
 mod convert;
 mod driver;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Hackrf;
+const DRIVER_ID: DeviceBackend = DeviceBackend::HACKRF;
 const SWEEP_READ_TIMEOUT: Duration = Duration::from_millis(100);
 const RX_YIELD_TIMEOUT: Duration = Duration::from_secs(2);
 const SWEEP_MAX_RANGES: usize = 10;
@@ -102,6 +102,16 @@ impl HackRfDriver {
 impl DeviceDriver for HackRfDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "HackRF", sdrmm_wire::BackendReach::Local)
+            .soapy_module("hackrf")
+            .usb([
+                sdrmm_wire::UsbIdentity::new(0x1d50, Some(0x604b), "HackRF Jawbreaker"),
+                sdrmm_wire::UsbIdentity::new(0x1d50, Some(0x6089), "HackRF One"),
+                sdrmm_wire::UsbIdentity::new(0x1d50, Some(0xcc15), "rad1o"),
+            ])
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -621,7 +631,7 @@ mod tests {
     #[test]
     fn key_is_the_full_usb_serial_so_the_registry_can_merge() {
         let info = device_info(&descriptor(Some(SERIAL), None));
-        assert_eq!(info.driver, DeviceBackend::Hackrf);
+        assert_eq!(info.driver, DeviceBackend::HACKRF);
         assert_eq!(info.key, "0000000000000000675c62dc3b2d4b8b");
         assert_eq!(
             info.serial.as_deref(),

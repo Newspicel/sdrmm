@@ -63,6 +63,16 @@ struct Args {
 enum Command {
     #[command(about = "Show a QR code that pairs a phone")]
     Phone(phone::PhoneArgs),
+    #[command(about = "Stream one radio flat out and count lost samples")]
+    DeviceBench(DeviceBenchArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct DeviceBenchArgs {
+    /// The radio, as `backend:key` like the doctor lists it.
+    device: String,
+    #[arg(long, default_value_t = 10.0)]
+    seconds: f64,
 }
 
 impl Args {
@@ -70,6 +80,7 @@ impl Args {
         let mut command = self.command.take()?;
         match &mut command {
             Command::Phone(phone) => phone.db = phone.db.take().or_else(|| self.db.take()),
+            Command::DeviceBench(_) => {}
         }
         Some(command)
     }
@@ -111,6 +122,25 @@ fn resolve_tls(args: &Args, db_path: &Path) -> anyhow::Result<Option<Tls>> {
 fn self_signs(args: &Args) -> bool {
     !args.no_tls
         && (args.tls_self_signed || !args.tls_names.is_empty() || !args.bind.ip().is_loopback())
+}
+
+fn device_bench(bench: &DeviceBenchArgs, plugins_dir: &Path) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        bench.seconds.is_finite() && bench.seconds > 0.0,
+        "--seconds must be a positive number"
+    );
+    let registry =
+        sdrmm_engine::registry(None, 1.0, sdrmm_engine::DevicePlugins::load(plugins_dir));
+    let report = sdrmm_engine::bench::bench_device(
+        &registry,
+        &bench.device,
+        std::time::Duration::try_from_secs_f64(bench.seconds)
+            .context("--seconds is too long")?,
+    )
+    .with_context(|| format!("cannot bench {}", bench.device))?;
+    print!("{}", report.render());
+    anyhow::ensure!(report.failure.is_none(), "the radio failed while streaming");
+    Ok(())
 }
 
 fn parse_playback_speed(raw: &str) -> Result<f64, String> {
@@ -158,6 +188,9 @@ fn main() -> ExitCode {
 fn run(mut args: Args) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(Command::Phone(phone)) => return phone::run(phone),
+        Some(Command::DeviceBench(bench)) => {
+            return device_bench(&bench, &resolve_plugins_dir(args.plugins_dir.take())?);
+        }
         None => {}
     }
     sdrmm_server::diagnostics::install_tracing()?;
@@ -172,12 +205,14 @@ fn run(mut args: Args) -> anyhow::Result<()> {
             sdrmm_server::doctor::render(&sdrmm_server::doctor::collect(
                 Some(&db_path),
                 Some(&recordings_dir),
+                Some(&plugins_dir),
             ))
         );
         return Ok(());
     }
     if args.doctor_rates {
-        let registry = sdrmm_engine::builtin_registry(None);
+        let registry =
+            sdrmm_engine::registry(None, 1.0, sdrmm_engine::DevicePlugins::load(&plugins_dir));
         print!(
             "{}",
             sdrmm_server::doctor::render(&sdrmm_server::doctor::rate_report(&registry))
@@ -198,9 +233,10 @@ fn run(mut args: Args) -> anyhow::Result<()> {
         data_dir,
     )?;
     let engine = Engine::with_registry(
-        sdrmm_engine::builtin_registry_accelerated(
+        sdrmm_engine::registry(
             Some(recordings_dir.clone()),
             args.playback_speed,
+            sdrmm_engine::DevicePlugins::load(&plugins_dir),
         ),
         Some(recordings_dir),
     );

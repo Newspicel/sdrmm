@@ -15,7 +15,7 @@ struct LateDriver {
 
 impl DeviceDriver for LateDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Spyserver
+        DeviceBackend::SPYSERVER
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -23,7 +23,7 @@ impl DeviceDriver for LateDriver {
             return Vec::new();
         }
         vec![DeviceInfo {
-            driver: DeviceBackend::Spyserver,
+            driver: DeviceBackend::SPYSERVER,
             key: "band".to_string(),
             label: "Late radio".to_string(),
             serial: Some(SERIAL.to_string()),
@@ -33,7 +33,7 @@ impl DeviceDriver for LateDriver {
 
     fn open(&self, info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
         self.radios.open(&DeviceInfo {
-            driver: DeviceBackend::Virtual,
+            driver: DeviceBackend::VIRTUAL,
             ..info.clone()
         })
     }
@@ -57,7 +57,7 @@ fn late_snapshot() -> sdrmm_wire::WorkspaceSnapshot {
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(DeviceRef {
-        backend: DeviceBackend::Spyserver,
+        backend: DeviceBackend::SPYSERVER,
         serial: Some(SERIAL.to_string()),
         key: None,
     });
@@ -114,7 +114,7 @@ async fn a_radio_that_turns_up_later_is_bound_to_the_node_waiting_for_it() {
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(DeviceRef {
-        backend: DeviceBackend::Spyserver,
+        backend: DeviceBackend::SPYSERVER,
         serial: Some(SERIAL.to_string()),
         key: None,
     });
@@ -237,7 +237,7 @@ fn a_run_controller_settles_the_workspace_active_once_it_holds_the_gate() {
             "dev",
             NodeBody::Device(DeviceNode {
                 device: Some(DeviceRef {
-                    backend: DeviceBackend::Virtual,
+                    backend: DeviceBackend::VIRTUAL,
                     serial: None,
                     key: Some("band".to_owned()),
                 }),

@@ -226,7 +226,7 @@ mod tests {
             panic!("the starter's radio is a device node");
         };
         device.device = Some(DeviceRef {
-            backend: DeviceBackend::Virtual,
+            backend: DeviceBackend::VIRTUAL,
             serial: None,
             key: Some("band".to_owned()),
         });

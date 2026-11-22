@@ -19,11 +19,11 @@ fn radio(id: &str) -> PatchNode {
 }
 
 fn generator(id: &str) -> PatchNode {
-    pinned(id, crate::DeviceBackend::Virtual, "gen-")
+    pinned(id, crate::DeviceBackend::VIRTUAL, "gen-")
 }
 
 fn recording(id: &str, stem: &str) -> PatchNode {
-    pinned(id, crate::DeviceBackend::Recording, stem)
+    pinned(id, crate::DeviceBackend::RECORDING, stem)
 }
 
 fn pinned(id: &str, backend: crate::DeviceBackend, key: &str) -> PatchNode {

@@ -966,7 +966,7 @@ fn virtual_snapshot(key: &str, taps: &[(&str, &str, &str)]) -> sdrmm_wire::Works
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(sdrmm_wire::DeviceRef {
-        backend: DeviceBackend::Virtual,
+        backend: DeviceBackend::VIRTUAL,
         serial: None,
         key: Some(key.to_string()),
     });

@@ -23,7 +23,7 @@ mod proto;
 mod session;
 mod stream;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Kiwisdr;
+const DRIVER_ID: DeviceBackend = DeviceBackend::KIWISDR;
 
 #[derive(Debug, Default)]
 pub struct KiwiSdrDriver {
@@ -50,6 +50,11 @@ fn device_info(address: &Address) -> WireDeviceInfo {
 impl DeviceDriver for KiwiSdrDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "KiwiSDR", sdrmm_wire::BackendReach::Network)
+            .address_hint("kiwi.example.org:8073")
     }
 
     fn probe(&self) -> Vec<WireDeviceInfo> {

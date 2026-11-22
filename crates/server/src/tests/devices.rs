@@ -49,7 +49,7 @@ async fn the_device_list_states_whether_synthetic_radios_are_offered() {
         response
             .devices
             .iter()
-            .any(|device| device.driver == DeviceBackend::Virtual),
+            .any(|device| device.driver == DeviceBackend::VIRTUAL),
         "the flag and the list agree on synthetic radios"
     );
 }

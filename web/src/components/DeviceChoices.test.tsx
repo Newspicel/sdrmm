@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { DEVICES_KEY } from "../lib/api";
 import type { DeviceInfo, DevicesResponse } from "../lib/types";
+import { BACKENDS } from "./devices.fixture";
 import { DeviceChoices } from "./OpenRadio";
 
 function render(response: DevicesResponse): string {
@@ -19,11 +20,13 @@ const VIRTUAL: DeviceInfo = { driver: "virtual", key: "band", label: "Test band 
 
 describe("DeviceChoices", () => {
   it("offers the virtual radios the server says it serves", () => {
-    expect(render({ devices: [VIRTUAL], synthetic: true })).toContain("Virtual (1)");
+    expect(render({ devices: [VIRTUAL], backends: [...BACKENDS], synthetic: true })).toContain(
+      "Virtual (1)",
+    );
   });
 
   it("counts none when the server does not serve them", () => {
-    const html = render({ devices: [VIRTUAL], synthetic: false });
+    const html = render({ devices: [VIRTUAL], backends: [...BACKENDS], synthetic: false });
     expect(html).toContain("Virtual");
     expect(html).not.toContain("Virtual (1)");
   });

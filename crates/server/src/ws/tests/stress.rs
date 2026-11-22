@@ -92,12 +92,12 @@ struct PacedDriver {
 
 impl DeviceDriver for PacedDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Sdrconnect
+        DeviceBackend::SDRCONNECT
     }
 
     fn probe(&self) -> Vec<sdrmm_wire::DeviceInfo> {
         vec![sdrmm_wire::DeviceInfo {
-            driver: DeviceBackend::Sdrconnect,
+            driver: DeviceBackend::SDRCONNECT,
             key: "band".to_string(),
             label: "Paced band".to_string(),
             serial: None,
@@ -311,7 +311,7 @@ fn paced_engine(pace: Arc<Pace>) -> Arc<Engine> {
 async fn simultaneous_socket_listeners_keep_audio_continuous_during_retunes() {
     let names: Vec<String> = (0..8).map(|index| format!("ch{index}")).collect();
     let mut nodes = vec![
-        radio_of(DeviceBackend::Sdrconnect, "band"),
+        radio_of(DeviceBackend::SDRCONNECT, "band"),
         of("scope", sdrmm_wire::NodeKind::Scope),
         of("spk", sdrmm_wire::NodeKind::Speaker),
     ];

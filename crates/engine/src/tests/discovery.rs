@@ -38,7 +38,7 @@ struct GatedDriver {
 
 impl DeviceDriver for GatedDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -165,29 +165,30 @@ fn the_builtin_registry_carries_every_backend_this_build_compiled_in() {
         .into_iter()
         .map(|(_, id)| id)
         .collect();
-    assert!(ids.contains(&DeviceBackend::Virtual), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::VIRTUAL), "{ids:?}");
     #[cfg(feature = "rtlsdr")]
-    assert!(ids.contains(&DeviceBackend::Rtlsdr), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::RTLSDR), "{ids:?}");
     #[cfg(feature = "hackrf")]
-    assert!(ids.contains(&DeviceBackend::Hackrf), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::HACKRF), "{ids:?}");
     #[cfg(feature = "ad936x")]
-    assert!(ids.contains(&DeviceBackend::Ad936x), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::AD936X), "{ids:?}");
     #[cfg(all(
         feature = "funcube",
         any(target_os = "macos", target_os = "linux", target_os = "windows")
     ))]
-    assert!(ids.contains(&DeviceBackend::Funcube), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::FUNCUBE), "{ids:?}");
     #[cfg(feature = "soapy")]
-    assert!(ids.contains(&DeviceBackend::Soapy), "{ids:?}");
+    assert!(ids.contains(&DeviceBackend::SOAPY), "{ids:?}");
 }
 
 #[test]
 fn soapy_hides_exactly_the_radios_this_build_drives_over_usb() {
-    let handled = soapy_handled_natively();
-    assert_eq!(handled.contains(&"rtlsdr"), cfg!(feature = "rtlsdr"));
-    assert_eq!(handled.contains(&"hackrf"), cfg!(feature = "hackrf"));
+    let handled = soapy_handled_natively(&builtin_registry(None));
+    let handles = |module: &str| handled.iter().any(|known| known == module);
+    assert_eq!(handles("rtlsdr"), cfg!(feature = "rtlsdr"));
+    assert_eq!(handles("hackrf"), cfg!(feature = "hackrf"));
     assert_eq!(
-        handled.contains(&"fcdpp"),
+        handles("fcdpp"),
         cfg!(all(
             feature = "funcube",
             any(
@@ -198,35 +199,150 @@ fn soapy_hides_exactly_the_radios_this_build_drives_over_usb() {
         ))
     );
     assert_eq!(
-        handled.contains(&"plutosdr"),
+        handles("plutosdr"),
         cfg!(feature = "ad936x"),
         "the AD936x boards Soapy calls plutosdr are driven over their own iiod connection"
     );
     assert!(
-        !handled.contains(&"sdrplay"),
+        !handles("sdrplay"),
         "the SDRplay driver reports unique serials and settles its duplicate by priority instead"
     );
 }
 
 #[test]
-fn every_native_backend_is_registered_and_names_itself_once() {
-    let registered: Vec<DeviceBackend> = builtin_registry(None)
-        .driver_ids()
-        .into_iter()
-        .map(|(_, id)| id)
-        .collect();
-    for backend in native_backends() {
-        assert!(registered.contains(&backend), "{backend} is not registered");
-        assert!(backend.is_radio(), "{backend} is not a radio");
-    }
-    for backend in registered {
-        if backend.soapy_module().is_some() && backend != DeviceBackend::Soapy {
-            assert!(
-                native_backends().contains(&backend),
-                "{backend} shadows a Soapy module but is not listed as native"
-            );
+fn soapy_hides_modules_a_plugin_claims() {
+    struct Claiming;
+
+    impl DeviceDriver for Claiming {
+        fn id(&self) -> DeviceBackend {
+            DeviceBackend::new("claiming")
+        }
+
+        fn spec(&self) -> sdrmm_wire::BackendSpec {
+            sdrmm_wire::BackendSpec::bare(self.id()).soapy_module("lime")
+        }
+
+        fn probe(&self) -> Vec<DeviceInfo> {
+            Vec::new()
+        }
+
+        fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+            Err(DeviceError::NotFound("claiming".to_string()))
         }
     }
+
+    let registry = crate::registry(
+        None,
+        1.0,
+        crate::DevicePlugins::default().with_driver("claiming", Box::new(Claiming)),
+    );
+    assert!(soapy_handled_natively(&registry).contains(&"lime".to_string()));
+    assert!(
+        registry
+            .driver_ids()
+            .contains(&(crate::PLUGIN_PRIORITY, DeviceBackend::new("claiming")))
+    );
+}
+
+struct Named(DeviceBackend);
+
+impl DeviceDriver for Named {
+    fn id(&self) -> DeviceBackend {
+        self.0
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        Vec::new()
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Err(DeviceError::NotFound(self.0.to_string()))
+    }
+}
+
+fn plugin_check(registry: &DeviceRegistry, file: &str) -> sdrmm_wire::DoctorCheck {
+    registry
+        .health()
+        .into_iter()
+        .find(|check| check.id == format!("plugins.device.{file}"))
+        .unwrap_or_else(|| panic!("no doctor line for {file}"))
+}
+
+#[test]
+fn a_duplicate_backend_is_refused() {
+    let plugins = crate::DevicePlugins::default()
+        .with_driver("first", Box::new(Named(DeviceBackend::new("twin"))))
+        .with_driver("second", Box::new(Named(DeviceBackend::new("twin"))))
+        .with_driver("shadow", Box::new(Named(DeviceBackend::VIRTUAL)));
+    let registry = crate::registry(None, 1.0, plugins);
+    let twins = registry
+        .driver_ids()
+        .into_iter()
+        .filter(|(_, id)| *id == DeviceBackend::new("twin"))
+        .count();
+    assert_eq!(twins, 1);
+    assert_eq!(
+        plugin_check(&registry, "first").status,
+        sdrmm_wire::CheckStatus::Ok
+    );
+    assert_eq!(
+        plugin_check(&registry, "second").status,
+        sdrmm_wire::CheckStatus::Fail
+    );
+    assert_eq!(
+        plugin_check(&registry, "shadow").status,
+        sdrmm_wire::CheckStatus::Fail
+    );
+}
+
+#[test]
+fn a_broken_plugin_file_is_reported_and_the_rest_still_load() {
+    let dir = std::env::temp_dir().join(format!("sdrmm-device-plugins-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("plugin dir");
+    let file = format!("broken.{}", std::env::consts::DLL_EXTENSION);
+    std::fs::write(dir.join(&file), b"not a library").expect("broken plugin");
+    std::fs::write(dir.join("notes.txt"), b"ignored").expect("other file");
+    let plugins = crate::DevicePlugins::load(&dir)
+        .with_driver("fine", Box::new(Named(DeviceBackend::new("fine"))));
+    let registry = crate::registry(None, 1.0, plugins);
+    std::fs::remove_dir_all(&dir).expect("clean up");
+    let broken = plugin_check(&registry, &file);
+    assert_eq!(broken.status, sdrmm_wire::CheckStatus::Fail);
+    assert!(
+        broken.detail.starts_with("not a loadable library"),
+        "{}",
+        broken.detail
+    );
+    assert!(registry.spec(DeviceBackend::new("fine")).is_some());
+    assert!(
+        !registry
+            .health()
+            .iter()
+            .any(|check| check.id.ends_with("notes.txt")),
+        "only libraries are plugins"
+    );
+}
+
+#[test]
+fn every_builtin_radio_declares_how_it_is_reached() {
+    let registry = builtin_registry(None);
+    for spec in registry.specs() {
+        assert!(!spec.label.is_empty(), "{} has no label", spec.backend);
+        assert_eq!(
+            spec.addressable(),
+            spec.reach == sdrmm_wire::BackendReach::Network,
+            "{}",
+            spec.backend
+        );
+    }
+    let virtual_spec = registry
+        .spec(DeviceBackend::VIRTUAL)
+        .expect("virtual is built in");
+    assert!(!virtual_spec.is_radio());
+    let recording = registry
+        .spec(DeviceBackend::RECORDING)
+        .expect("recording is built in");
+    assert!(recording.node_owned());
 }
 
 #[tokio::test]

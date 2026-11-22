@@ -1,6 +1,6 @@
 use sdrmm_wire::{DeviceBackend, DeviceInfo};
 
-pub const DRIVER_ID: DeviceBackend = DeviceBackend::Aaronia;
+pub const DRIVER_ID: DeviceBackend = DeviceBackend::AARONIA;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Kind {

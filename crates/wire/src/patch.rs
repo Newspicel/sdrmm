@@ -104,7 +104,7 @@ impl DeviceRef {
 
     #[must_use]
     pub fn is_generator(&self) -> bool {
-        self.backend == DeviceBackend::Virtual
+        self.backend == DeviceBackend::VIRTUAL
             && self
                 .key
                 .as_deref()
@@ -113,7 +113,7 @@ impl DeviceRef {
 
     #[must_use]
     pub fn is_recording(&self) -> bool {
-        self.backend == DeviceBackend::Recording
+        self.backend == DeviceBackend::RECORDING
     }
 
     /// A generator belongs to the node that names it, so a copied node opens its own rather than

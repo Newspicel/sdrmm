@@ -2462,6 +2462,25 @@ export interface components {
         AuthInfo: {
             token_required: boolean;
         };
+        /**
+         * @description How a backend gets at its samples, and so whether the browser offers it as a radio, keeps it
+         *     for a node that owns one, or hides it behind the synthetic tab. The one policy every surface
+         *     reads.
+         * @enum {string}
+         */
+        BackendReach: "local" | "network" | "synthetic" | "playback";
+        /**
+         * @description What a driver tells every surface about its backend: the browser's label and reach, the
+         *     address field's hint, the Soapy module it drives itself and the USB devices it speaks to.
+         */
+        BackendSpec: {
+            address_hint?: string | null;
+            backend: components["schemas"]["DeviceBackend"];
+            label: string;
+            reach: components["schemas"]["BackendReach"];
+            soapy_module?: string | null;
+            usb?: components["schemas"]["UsbIdentity"][];
+        };
         BandAllocation: {
             aliases?: string[];
             /** Format: double */
@@ -3463,12 +3482,8 @@ export interface components {
             /** Format: float */
             strength?: number;
         };
-        /**
-         * @description Which driver opens a radio. The one name a backend has, shared by the device crates,
-         *     the stored patch, the doctor and the browser.
-         * @enum {string}
-         */
-        DeviceBackend: "virtual" | "recording" | "rtlsdr" | "hackrf" | "airspy" | "airspyhf" | "funcube" | "cr8" | "sdrplay" | "aaronia" | "soapy" | "rtltcp" | "spyserver" | "sdrconnect" | "kiwisdr" | "ad936x" | "espsdr";
+        /** @description Which driver opens a radio: a built-in or a device plugin's id. */
+        DeviceBackend: string;
         DeviceClaim: {
             device: string;
             node: string;
@@ -3568,6 +3583,8 @@ export interface components {
             tuning?: components["schemas"]["Tuning"] | null;
         };
         DevicesResponse: {
+            /** @description Every backend this server drives, built-in or plugin, for labels, reach and address hints. */
+            backends?: components["schemas"]["BackendSpec"][];
             claims?: components["schemas"]["DeviceClaim"][];
             devices: components["schemas"]["DeviceInfo"][];
             synthetic: boolean;
@@ -7671,6 +7688,17 @@ export interface components {
             /** Format: int64 */
             revision: number;
             snapshot?: components["schemas"]["WorkspaceSnapshot"] | null;
+        };
+        /**
+         * @description A USB device a driver speaks to, by the identity it announces on the bus. A product of
+         *     `None` claims the whole vendor, which is only right for a vendor that makes nothing else.
+         */
+        UsbIdentity: {
+            name: string;
+            /** Format: int32 */
+            product?: number | null;
+            /** Format: int32 */
+            vendor: number;
         };
         UsbMatch: {
             /** Format: int32 */

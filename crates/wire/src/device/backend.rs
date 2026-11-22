@@ -1,4 +1,6 @@
-use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use utoipa::ToSchema;
 
 /// How a backend gets at its samples, and so whether the browser offers it as a radio, keeps it
@@ -15,137 +17,90 @@ pub enum BackendReach {
     Playback,
 }
 
-macro_rules! backends {
-    ($callback:ident) => {
-        $callback! {
-            (Virtual, "virtual", Synthetic, "Virtual", None, None),
-            (Recording, "recording", Playback, "Recording", None, None),
-            (Rtlsdr, "rtlsdr", Local, "RTL-SDR", Some("rtlsdr"), None),
-            (Hackrf, "hackrf", Local, "HackRF", Some("hackrf"), None),
-            (Airspy, "airspy", Local, "Airspy", Some("airspy"), None),
-            (Airspyhf, "airspyhf", Local, "Airspy HF+", Some("airspyhf"), None),
-            (Funcube, "funcube", Local, "FUNcube Dongle", Some("fcdpp"), None),
-            (Cr8, "cr8", Local, "CR-8", None, None),
-            (Sdrplay, "sdrplay", Local, "SDRplay", None, None),
-            (Aaronia, "aaronia", Local, "Aaronia SPECTRAN", None, None),
-            (Soapy, "soapy", Local, "SoapySDR", None, None),
-            (Rtltcp, "rtltcp", Network, "rtl_tcp", None, Some("192.168.1.5:1234")),
-            (Spyserver, "spyserver", Network, "SpyServer", None, Some("192.168.1.5:5555")),
-            (Sdrconnect, "sdrconnect", Network, "SDRconnect", None, Some("192.168.1.5:5454")),
-            (Kiwisdr, "kiwisdr", Network, "KiwiSDR", None, Some("kiwi.example.org:8073")),
-            (Ad936x, "ad936x", Network, "AntSDR / Pluto", Some("plutosdr"), Some("192.168.1.10:30431")),
-            (Espsdr, "espsdr", Network, "ESP-SDR", None, Some("192.168.1.20:80")),
-        }
-    };
+const MAX_ID: usize = 31;
+
+/// Which driver opens a radio. The one name a backend has, shared by the device crates, plugins,
+/// the stored patch, the doctor and the browser. Any id a driver declares is valid, so a patch
+/// naming a backend this build lacks still reads back.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DeviceBackend {
+    len: u8,
+    bytes: [u8; MAX_ID],
 }
-
-macro_rules! define_backends {
-    ($((
-        $variant:ident,
-        $id:literal,
-        $reach:ident,
-        $label:literal,
-        $soapy:expr,
-        $address:expr
-    )),* $(,)?) => {
-        /// Which driver opens a radio. The one name a backend has, shared by the device crates,
-        /// the stored patch, the doctor and the browser.
-        #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-            ToSchema,
-        )]
-        pub enum DeviceBackend {
-            $(
-                #[serde(rename = $id)]
-                #[schema(rename = $id)]
-                $variant,
-            )*
-        }
-
-        impl DeviceBackend {
-            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
-
-            #[must_use]
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $id,)*
-                }
-            }
-
-            #[must_use]
-            pub fn parse(text: &str) -> Option<Self> {
-                match text {
-                    $($id => Some(Self::$variant),)*
-                    _ => None,
-                }
-            }
-
-            #[must_use]
-            pub const fn reach(self) -> BackendReach {
-                match self {
-                    $(Self::$variant => BackendReach::$reach,)*
-                }
-            }
-
-            #[must_use]
-            pub const fn label(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $label,)*
-                }
-            }
-
-            /// The `SoapySDR` module this backend speaks to the same hardware as, so the Soapy
-            /// driver can hide what a native one already lists.
-            #[must_use]
-            pub const fn soapy_module(self) -> Option<&'static str> {
-                match self {
-                    $(Self::$variant => $soapy,)*
-                }
-            }
-
-            /// What an address field shows before the operator types one.
-            #[must_use]
-            pub const fn address_hint(self) -> Option<&'static str> {
-                match self {
-                    $(Self::$variant => $address,)*
-                }
-            }
-        }
-    };
-}
-
-backends!(define_backends);
 
 impl DeviceBackend {
+    pub const VIRTUAL: Self = Self::new("virtual");
+    pub const RECORDING: Self = Self::new("recording");
+    pub const RTLSDR: Self = Self::new("rtlsdr");
+    pub const HACKRF: Self = Self::new("hackrf");
+    pub const AIRSPY: Self = Self::new("airspy");
+    pub const AIRSPYHF: Self = Self::new("airspyhf");
+    pub const FUNCUBE: Self = Self::new("funcube");
+    pub const CR8: Self = Self::new("cr8");
+    pub const SDRPLAY: Self = Self::new("sdrplay");
+    pub const AARONIA: Self = Self::new("aaronia");
+    pub const SOAPY: Self = Self::new("soapy");
+    pub const RTLTCP: Self = Self::new("rtltcp");
+    pub const SPYSERVER: Self = Self::new("spyserver");
+    pub const SDRCONNECT: Self = Self::new("sdrconnect");
+    pub const KIWISDR: Self = Self::new("kiwisdr");
+    pub const AD936X: Self = Self::new("ad936x");
+    pub const ESPSDR: Self = Self::new("espsdr");
+
+    /// A backend id known when compiling. Fails the build on an id [`Self::parse`] refuses.
     #[must_use]
-    pub const fn is_radio(self) -> bool {
-        matches!(self.reach(), BackendReach::Local | BackendReach::Network)
+    pub const fn new(id: &str) -> Self {
+        match Self::checked(id) {
+            Some(backend) => backend,
+            None => panic!("a backend id is 1 to 31 of a-z, 0-9, _ and -"),
+        }
     }
 
     #[must_use]
-    pub const fn is_synthetic(self) -> bool {
-        matches!(self.reach(), BackendReach::Synthetic)
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::checked(text)
     }
 
-    /// Whether a node opens this backend for itself, so the browser never offers it in the radio
-    /// list.
-    #[must_use]
-    pub const fn node_owned(self) -> bool {
-        matches!(self.reach(), BackendReach::Playback)
+    const fn checked(id: &str) -> Option<Self> {
+        let text = id.as_bytes();
+        if text.is_empty() || text.len() > MAX_ID {
+            return None;
+        }
+        let mut bytes = [0u8; MAX_ID];
+        let mut at = 0;
+        while at < text.len() {
+            let byte = text[at];
+            if !(byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-')
+            {
+                return None;
+            }
+            bytes[at] = byte;
+            at += 1;
+        }
+        Some(Self {
+            len: text.len() as u8,
+            bytes,
+        })
     }
 
     #[must_use]
-    pub const fn addressable(self) -> bool {
-        self.address_hint().is_some()
+    pub const fn as_str(&self) -> &str {
+        match std::str::from_utf8(self.bytes.split_at(self.len as usize).0) {
+            Ok(text) => text,
+            Err(_) => "",
+        }
     }
+}
 
-    #[must_use]
-    pub fn radios() -> Vec<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .filter(|backend| backend.is_radio())
-            .collect()
+impl PartialOrd for DeviceBackend {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DeviceBackend {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_str().cmp(other.as_str())
     }
 }
 
@@ -155,26 +110,142 @@ impl std::fmt::Display for DeviceBackend {
     }
 }
 
+impl std::fmt::Debug for DeviceBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.as_str())
+    }
+}
+
+impl Serialize for DeviceBackend {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for DeviceBackend {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = Cow::<'de, str>::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "backend {text:?} is not 1 to 31 of a-z, 0-9, _ and -"
+            ))
+        })
+    }
+}
+
+impl utoipa::PartialSchema for DeviceBackend {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::schema::Type::String)
+            .description(Some(
+                "Which driver opens a radio: a built-in or a device plugin's id.",
+            ))
+            .pattern(Some("^[a-z0-9_-]{1,31}$"))
+            .into()
+    }
+}
+
+impl ToSchema for DeviceBackend {}
+
+/// A USB device a driver speaks to, by the identity it announces on the bus. A product of
+/// `None` claims the whole vendor, which is only right for a vendor that makes nothing else.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub struct BackendEntry {
+pub struct UsbIdentity {
+    pub vendor: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<u16>,
+    pub name: String,
+}
+
+impl UsbIdentity {
+    #[must_use]
+    pub fn new(vendor: u16, product: Option<u16>, name: &str) -> Self {
+        Self {
+            vendor,
+            product,
+            name: name.to_owned(),
+        }
+    }
+
+    #[must_use]
+    pub fn matches(&self, vendor: u16, product: u16) -> bool {
+        self.vendor == vendor && self.product.is_none_or(|wanted| wanted == product)
+    }
+}
+
+/// What a driver tells every surface about its backend: the browser's label and reach, the
+/// address field's hint, the Soapy module it drives itself and the USB devices it speaks to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct BackendSpec {
     pub backend: DeviceBackend,
     pub label: String,
     pub reach: BackendReach,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub address_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soapy_module: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub usb: Vec<UsbIdentity>,
 }
 
-#[must_use]
-pub fn backend_table() -> Vec<BackendEntry> {
-    DeviceBackend::ALL
-        .iter()
-        .map(|&backend| BackendEntry {
+impl BackendSpec {
+    #[must_use]
+    pub fn new(backend: DeviceBackend, label: &str, reach: BackendReach) -> Self {
+        Self {
             backend,
-            label: backend.label().to_owned(),
-            reach: backend.reach(),
-            address_hint: backend.address_hint().map(str::to_owned),
-        })
-        .collect()
+            label: label.to_owned(),
+            reach,
+            address_hint: None,
+            soapy_module: None,
+            usb: Vec::new(),
+        }
+    }
+
+    /// The spec of a driver that declares nothing beyond its id: a local radio named by it.
+    #[must_use]
+    pub fn bare(backend: DeviceBackend) -> Self {
+        Self::new(backend, backend.as_str(), BackendReach::Local)
+    }
+
+    #[must_use]
+    pub fn address_hint(mut self, hint: &str) -> Self {
+        self.address_hint = Some(hint.to_owned());
+        self
+    }
+
+    #[must_use]
+    pub fn soapy_module(mut self, module: &str) -> Self {
+        self.soapy_module = Some(module.to_owned());
+        self
+    }
+
+    #[must_use]
+    pub fn usb(mut self, identities: impl IntoIterator<Item = UsbIdentity>) -> Self {
+        self.usb.extend(identities);
+        self
+    }
+
+    #[must_use]
+    pub const fn is_radio(&self) -> bool {
+        matches!(self.reach, BackendReach::Local | BackendReach::Network)
+    }
+
+    #[must_use]
+    pub const fn is_synthetic(&self) -> bool {
+        matches!(self.reach, BackendReach::Synthetic)
+    }
+
+    /// Whether a node opens this backend for itself, so the browser never offers it in the radio
+    /// list.
+    #[must_use]
+    pub const fn node_owned(&self) -> bool {
+        matches!(self.reach, BackendReach::Playback)
+    }
+
+    #[must_use]
+    pub const fn addressable(&self) -> bool {
+        self.address_hint.is_some()
+    }
 }
 
 #[cfg(test)]
@@ -182,51 +253,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_backend_is_named_once() {
-        let mut ids: Vec<&str> = DeviceBackend::ALL
-            .iter()
-            .map(|backend| backend.as_str())
-            .collect();
-        let listed = ids.len();
-        ids.sort_unstable();
-        ids.dedup();
-        assert_eq!(ids.len(), listed);
+    fn an_id_round_trips_as_a_plain_string() {
+        let json = serde_json::to_string(&DeviceBackend::RTLSDR).expect("serializes");
+        assert_eq!(json, "\"rtlsdr\"");
+        let back: DeviceBackend = serde_json::from_str(&json).expect("parses");
+        assert_eq!(back, DeviceBackend::RTLSDR);
     }
 
     #[test]
-    fn an_id_round_trips_through_parse() {
-        for &backend in DeviceBackend::ALL {
-            assert_eq!(DeviceBackend::parse(backend.as_str()), Some(backend));
+    fn an_unknown_id_still_parses() {
+        let backend = DeviceBackend::parse("kraken_2").expect("valid id");
+        assert_eq!(backend.as_str(), "kraken_2");
+        assert_eq!(backend.to_string(), "kraken_2");
+    }
+
+    #[test]
+    fn a_bad_id_is_refused() {
+        for bad in ["", "Rtl", "a b", "a:b", &"x".repeat(32)] {
+            assert_eq!(DeviceBackend::parse(bad), None, "{bad:?}");
+            assert!(serde_json::from_value::<DeviceBackend>(serde_json::json!(bad)).is_err());
         }
-        assert_eq!(DeviceBackend::parse("kraken"), None);
+        assert!(DeviceBackend::parse(&"x".repeat(31)).is_some());
     }
 
     #[test]
-    fn an_id_serialises_as_itself() {
-        for &backend in DeviceBackend::ALL {
-            let json = serde_json::to_value(backend).expect("backend serialises");
-            assert_eq!(json, serde_json::Value::String(backend.as_str().to_owned()));
-        }
+    fn ids_sort_by_name() {
+        let mut ids = [
+            DeviceBackend::SOAPY,
+            DeviceBackend::AIRSPYHF,
+            DeviceBackend::CR8,
+        ];
+        ids.sort();
+        assert_eq!(
+            ids,
+            [
+                DeviceBackend::AIRSPYHF,
+                DeviceBackend::CR8,
+                DeviceBackend::SOAPY
+            ]
+        );
     }
 
     #[test]
-    fn only_a_radio_backend_counts_as_hardware() {
-        assert!(!DeviceBackend::Virtual.is_radio());
-        assert!(!DeviceBackend::Recording.is_radio());
-        assert!(DeviceBackend::Rtlsdr.is_radio());
-        assert!(DeviceBackend::Rtltcp.is_radio());
-        assert!(DeviceBackend::Recording.node_owned());
-        assert!(!DeviceBackend::Virtual.node_owned());
-    }
-
-    #[test]
-    fn a_network_backend_hints_an_address_and_a_local_one_does_not() {
-        for &backend in DeviceBackend::ALL {
-            assert_eq!(
-                backend.addressable(),
-                backend.reach() == BackendReach::Network,
-                "{backend}"
-            );
-        }
+    fn a_vendor_wide_identity_matches_every_product() {
+        let whole = UsbIdentity::new(0x1df7, None, "SDRplay RSP");
+        assert!(whole.matches(0x1df7, 0x3020));
+        assert!(!whole.matches(0x1df8, 0x3020));
+        let one = UsbIdentity::new(0x0bda, Some(0x2838), "RTL-SDR");
+        assert!(one.matches(0x0bda, 0x2838));
+        assert!(!one.matches(0x0bda, 0x2839));
     }
 }

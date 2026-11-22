@@ -166,7 +166,7 @@ async fn applying_a_workspace_reports_an_absent_radio() {
         panic!("the default workspace opens with a receiver")
     };
     node.device = Some(sdrmm_wire::DeviceRef {
-        backend: DeviceBackend::Hackrf,
+        backend: DeviceBackend::HACKRF,
         serial: Some("deadbeef".to_string()),
         key: None,
     });
@@ -1428,7 +1428,7 @@ fn two_radio_snapshot(taps: &[(&str, &str)]) -> sdrmm_wire::WorkspaceSnapshot {
         id: "device2".to_string(),
         body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
             device: Some(sdrmm_wire::DeviceRef {
-                backend: DeviceBackend::Virtual,
+                backend: DeviceBackend::VIRTUAL,
                 serial: None,
                 key: Some("halfduplex".to_string()),
             }),

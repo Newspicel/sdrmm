@@ -1,49 +1,49 @@
-import backends from "../generated/backends.json" with { type: "json" };
-import type { DeviceBackend, DeviceClaim, DeviceInfo, DevicesResponse } from "../lib/types";
+import type {
+  BackendSpec,
+  DeviceBackend,
+  DeviceClaim,
+  DeviceInfo,
+  DevicesResponse,
+} from "../lib/types";
 import type { Options } from "./controls";
 
-export type BackendEntry = (typeof backends)[number];
+/** Every backend the server drives, built-in or plugin, as `/api/devices` lists them. */
+export type Backends = readonly BackendSpec[];
 
 const GENERATOR_KEY_PREFIX = "gen-";
 
-const BY_ID = new Map<string, BackendEntry>(backends.map((entry) => [entry.backend, entry]));
-
-export function backendEntry(driver: string): BackendEntry | undefined {
-  return BY_ID.get(driver);
+function reach(device: DeviceInfo, backends: Backends): string | undefined {
+  return backends.find((entry) => entry.backend === device.driver)?.reach;
 }
 
-function reach(device: DeviceInfo): string | undefined {
-  return BY_ID.get(device.driver)?.reach;
-}
-
-function nodeOwned(device: DeviceInfo): boolean {
+function nodeOwned(device: DeviceInfo, backends: Backends): boolean {
   return (
-    reach(device) === "playback" ||
-    (isVirtualDevice(device) && device.key.startsWith(GENERATOR_KEY_PREFIX))
+    reach(device, backends) === "playback" ||
+    (isVirtualDevice(device, backends) && device.key.startsWith(GENERATOR_KEY_PREFIX))
   );
 }
 
-function deviceRank(device: DeviceInfo): number {
-  return isVirtualDevice(device) ? 1 : 0;
+export function isVirtualDevice(device: DeviceInfo, backends: Backends): boolean {
+  return reach(device, backends) === "synthetic";
 }
 
-export function isVirtualDevice(device: DeviceInfo): boolean {
-  return reach(device) === "synthetic";
-}
-
-export function rankDevices(devices: readonly DeviceInfo[]): readonly DeviceInfo[] {
-  return devices.toSorted(
-    (a, b) => deviceRank(a) - deviceRank(b) || a.label.localeCompare(b.label),
-  );
+export function rankDevices(
+  devices: readonly DeviceInfo[],
+  backends: Backends,
+): readonly DeviceInfo[] {
+  const rank = (device: DeviceInfo) => (isVirtualDevice(device, backends) ? 1 : 0);
+  return devices.toSorted((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label));
 }
 
 export function visibleDevices(
   devices: readonly DeviceInfo[],
   showSynthetic: DevicesResponse["synthetic"],
+  backends: Backends,
 ): readonly DeviceInfo[] {
-  const pickable = devices.filter((device) => !nodeOwned(device));
+  const pickable = devices.filter((device) => !nodeOwned(device, backends));
   return rankDevices(
-    showSynthetic ? pickable : pickable.filter((device) => !isVirtualDevice(device)),
+    showSynthetic ? pickable : pickable.filter((device) => !isVirtualDevice(device, backends)),
+    backends,
   );
 }
 
@@ -58,13 +58,16 @@ export function unclaimedDevices(
   );
 }
 
-export function groupDevices(devices: readonly DeviceInfo[]): {
+export function groupDevices(
+  devices: readonly DeviceInfo[],
+  backends: Backends,
+): {
   radios: readonly DeviceInfo[];
   virtual: readonly DeviceInfo[];
 } {
   return {
-    radios: devices.filter((device) => !isVirtualDevice(device)),
-    virtual: devices.filter(isVirtualDevice),
+    radios: devices.filter((device) => !isVirtualDevice(device, backends)),
+    virtual: devices.filter((device) => isVirtualDevice(device, backends)),
   };
 }
 
@@ -101,13 +104,15 @@ export function deviceId(device: DeviceInfo): string {
 
 export type NetworkBackend = { driver: DeviceBackend; label: string; placeholder: string };
 
-export const NETWORK_BACKENDS: readonly [NetworkBackend, ...NetworkBackend[]] = backends
-  .filter((entry) => entry.reach === "network")
-  .map((entry) => ({
-    driver: entry.backend as DeviceBackend,
-    label: entry.label,
-    placeholder: entry.address_hint ?? "",
-  })) as unknown as readonly [NetworkBackend, ...NetworkBackend[]];
+export function networkBackends(backends: Backends): readonly NetworkBackend[] {
+  return backends
+    .filter((entry) => entry.reach === "network")
+    .map((entry) => ({
+      driver: entry.backend,
+      label: entry.label,
+      placeholder: entry.address_hint ?? "",
+    }));
+}
 
 export function networkDeviceId(driver: string, address: string): string | null {
   const scheme = /^([a-z][a-z0-9+._-]*):\/\//i.exec(address.trim());
@@ -127,9 +132,9 @@ export function networkDeviceId(driver: string, address: string): string | null 
   return `${driver}:${trimmed}${webDefault ? ":80" : ""}`;
 }
 
-export function networkRadioLabel(id: string): string {
+export function networkRadioLabel(id: string, backends: Backends): string {
   const at = id.indexOf(":");
-  const backend = NETWORK_BACKENDS.find((b) => b.driver === id.slice(0, at));
+  const backend = networkBackends(backends).find((b) => b.driver === id.slice(0, at));
   const address = id.slice(at + 1).replace(/^https:\/\//, "");
   const host = address.slice(address.lastIndexOf("@") + 1);
   return backend === undefined ? host : `${backend.label} ${host}`;

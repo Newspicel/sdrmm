@@ -5628,6 +5628,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-device-plugin"
+version = "0.0.0"
+dependencies = [
+ "libloading 0.9.0",
+ "num-complex",
+ "sdrmm-device",
+ "sdrmm-wire",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "tracing",
+ "utoipa",
+]
+
+[[package]]
+name = "sdrmm-device-plugin-example"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+ "sdrmm-device-plugin",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "sdrmm-device-recording"
 version = "0.0.0"
 dependencies = [
@@ -5778,6 +5804,7 @@ dependencies = [
  "sdrmm-device-funcube",
  "sdrmm-device-hackrf",
  "sdrmm-device-kiwisdr",
+ "sdrmm-device-plugin",
  "sdrmm-device-recording",
  "sdrmm-device-rtlsdr",
  "sdrmm-device-rtltcp",

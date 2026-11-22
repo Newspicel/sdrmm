@@ -483,7 +483,7 @@ struct BiasTeeRefusingDriver;
 
 impl DeviceDriver for BiasTeeRefusingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -557,7 +557,7 @@ struct AgcDriver;
 
 impl DeviceDriver for AgcDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

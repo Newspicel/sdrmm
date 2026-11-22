@@ -48,7 +48,7 @@ fn radio(id: &str, key: &str) -> PatchNode {
         id,
         NodeBody::Device(DeviceNode {
             device: Some(DeviceRef {
-                backend: DeviceBackend::Virtual,
+                backend: DeviceBackend::VIRTUAL,
                 serial: None,
                 key: Some(key.to_owned()),
             }),
@@ -868,7 +868,7 @@ async fn a_recorded_collection_feeds_an_array_through_its_lane_outputs() {
                 "rec",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: DeviceBackend::Recording,
+                        backend: DeviceBackend::RECORDING,
                         serial: None,
                         key: Some("take".to_owned()),
                     }),

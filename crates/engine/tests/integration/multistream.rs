@@ -563,12 +563,12 @@ struct PagingDriver {
 
 impl DeviceDriver for PagingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
         vec![DeviceInfo {
-            driver: DeviceBackend::Rtlsdr,
+            driver: DeviceBackend::RTLSDR,
             key: "paging".to_string(),
             label: "Paging mock".to_string(),
             serial: None,

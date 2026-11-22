@@ -712,7 +712,7 @@ impl Store {
             let samples = row.get::<_, i64>(6)? as u64;
             Ok(RecordingInfo {
                 id: row.get(0)?,
-                device_id: format!("{}:{stem}", DeviceBackend::Recording),
+                device_id: format!("{}:{stem}", DeviceBackend::RECORDING),
                 file: stem,
                 name: row.get(10)?,
                 created_at: row.get(2)?,
@@ -1779,14 +1779,14 @@ fn migrate_recording_devices(snapshot: &mut serde_json::Value) {
             continue;
         };
         node["data"] = serde_json::json!({
-            "device": { "backend": DeviceBackend::Recording.as_str(), "key": stem }
+            "device": { "backend": DeviceBackend::RECORDING.as_str(), "key": stem }
         });
     }
 }
 
 fn migrated_recording_device_id(device_id: &str) -> Option<String> {
     let stem = legacy_recording_stem(device_id.strip_prefix("virtual:file:")?)?;
-    Some(format!("{}:{stem}", DeviceBackend::Recording))
+    Some(format!("{}:{stem}", DeviceBackend::RECORDING))
 }
 
 fn legacy_recording_stem(path: &str) -> Option<String> {

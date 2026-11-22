@@ -258,7 +258,7 @@ fn surveyed(with_position: bool) -> WorkspaceSnapshot {
     for patch in &mut snapshot.graph.nodes {
         if let NodeBody::Device(device) = &mut patch.body {
             device.device = Some(DeviceRef {
-                backend: DeviceBackend::Virtual,
+                backend: DeviceBackend::VIRTUAL,
                 serial: None,
                 key: Some("band".to_owned()),
             });

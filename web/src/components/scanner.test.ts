@@ -9,6 +9,7 @@ import type {
   TemplateInfo,
 } from "../lib/types";
 import { rankDevices } from "./devices";
+import { BACKENDS } from "./devices.fixture";
 import {
   applyPreset,
   channelName,
@@ -291,12 +292,15 @@ describe("templatesHint", () => {
 
 describe("rankDevices", () => {
   it("puts real hardware above the virtual devices", () => {
-    const ranked = rankDevices([
-      { driver: "virtual", key: "band", label: "Test band" },
-      { driver: "rtlsdr", key: "0001", label: "RTL-SDR" },
-      { driver: "virtual", key: "file:a", label: "A recording" },
-      { driver: "hackrf", key: "abcd", label: "HackRF One" },
-    ]);
+    const ranked = rankDevices(
+      [
+        { driver: "virtual", key: "band", label: "Test band" },
+        { driver: "rtlsdr", key: "0001", label: "RTL-SDR" },
+        { driver: "virtual", key: "file:a", label: "A recording" },
+        { driver: "hackrf", key: "abcd", label: "HackRF One" },
+      ],
+      BACKENDS,
+    );
     expect(ranked.map((d) => d.label)).toEqual([
       "HackRF One",
       "RTL-SDR",

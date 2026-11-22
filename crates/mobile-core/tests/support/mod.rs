@@ -468,7 +468,7 @@ pub fn hunt_graph(phone: Option<&str>) -> PatchGraph {
                 "radio",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: DeviceBackend::Virtual,
+                        backend: DeviceBackend::VIRTUAL,
                         serial: None,
                         key: Some("band".to_owned()),
                     }),

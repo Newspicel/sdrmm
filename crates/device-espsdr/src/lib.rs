@@ -24,7 +24,7 @@ mod proto;
 mod radio;
 mod session;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Espsdr;
+const DRIVER_ID: DeviceBackend = DeviceBackend::ESPSDR;
 const OPEN_BAUD: u32 = 115_200;
 const ESPRESSIF_VID: u16 = 0x303A;
 const BRIDGES: [(u16, u16); 4] = [
@@ -92,6 +92,11 @@ fn system_ports() -> Vec<sdrmm_serial::SerialPortInfo> {
 impl DeviceDriver for EspSdrDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "ESP-SDR", sdrmm_wire::BackendReach::Network)
+            .address_hint("192.168.1.20:80")
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

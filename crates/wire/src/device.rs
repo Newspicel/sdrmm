@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 mod backend;
 
-pub use backend::{BackendEntry, BackendReach, DeviceBackend, backend_table};
+pub use backend::{BackendReach, BackendSpec, DeviceBackend, UsbIdentity};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DeviceInfo {
@@ -1874,7 +1874,7 @@ mod tests {
     #[test]
     fn identity_drops_the_probe_time_profile() {
         let probed = DeviceInfo {
-            driver: DeviceBackend::Rtlsdr,
+            driver: DeviceBackend::RTLSDR,
             key: "00000001".to_string(),
             label: "RTL-SDR 00000001".to_string(),
             serial: Some("00000001".to_string()),
@@ -1896,11 +1896,11 @@ mod tests {
             profile: None,
         };
         assert_eq!(
-            radio(DeviceBackend::Rtlsdr, "0@rx", Some("00000001")).radio(),
+            radio(DeviceBackend::RTLSDR, "0@rx", Some("00000001")).radio(),
             "rtlsdr:00000001"
         );
         assert_eq!(
-            radio(DeviceBackend::Rtltcp, "10.0.0.5:1234", None).radio(),
+            radio(DeviceBackend::RTLTCP, "10.0.0.5:1234", None).radio(),
             "rtltcp:10.0.0.5:1234"
         );
     }

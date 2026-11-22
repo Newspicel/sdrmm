@@ -1048,21 +1048,21 @@ fn ids_geometry_and_labels_are_bounded() {
 #[test]
 fn device_refs_match_by_serial_then_key_then_singleton() {
     let hardware = DeviceInfo {
-        driver: DeviceBackend::Rtlsdr,
+        driver: DeviceBackend::RTLSDR,
         key: "0".to_owned(),
         label: "RTL-SDR".to_owned(),
         serial: Some("00000001".to_owned()),
         profile: None,
     };
     let file = DeviceInfo {
-        driver: DeviceBackend::Virtual,
+        driver: DeviceBackend::VIRTUAL,
         key: "file:/rec/capture".to_owned(),
         label: "capture".to_owned(),
         serial: None,
         profile: None,
     };
     let band = DeviceInfo {
-        driver: DeviceBackend::Virtual,
+        driver: DeviceBackend::VIRTUAL,
         key: "band".to_owned(),
         label: "Test band".to_owned(),
         serial: None,
@@ -1083,7 +1083,7 @@ fn device_refs_match_by_serial_then_key_then_singleton() {
     }));
 
     let duo = DeviceInfo {
-        driver: DeviceBackend::Soapy,
+        driver: DeviceBackend::SOAPY,
         key: "123456@DT".to_owned(),
         label: "Dual Tuner".to_owned(),
         serial: Some("123456".to_owned()),
@@ -1106,12 +1106,12 @@ fn device_refs_match_by_serial_then_key_then_singleton() {
     );
 
     let singleton = DeviceRef {
-        backend: DeviceBackend::Hackrf,
+        backend: DeviceBackend::HACKRF,
         serial: None,
         key: None,
     };
     assert!(singleton.matches(&DeviceInfo {
-        driver: DeviceBackend::Hackrf,
+        driver: DeviceBackend::HACKRF,
         key: "0".to_owned(),
         label: "HackRF One".to_owned(),
         serial: None,
@@ -1705,7 +1705,7 @@ fn pinned(id: &str, backend: DeviceBackend, key: Option<&str>) -> PatchNode {
 }
 
 fn recording(id: &str, stem: Option<&str>) -> PatchNode {
-    pinned(id, DeviceBackend::Recording, stem)
+    pinned(id, DeviceBackend::RECORDING, stem)
 }
 
 #[test]
@@ -1714,7 +1714,7 @@ fn a_device_node_pinned_to_a_recording_opens_the_stem_it_names() {
     assert_eq!(
         body.device_ref("rec"),
         Some(DeviceRef {
-            backend: DeviceBackend::Recording,
+            backend: DeviceBackend::RECORDING,
             serial: None,
             key: Some("2026-09-16T10-00-00".to_owned()),
         })
@@ -1724,11 +1724,11 @@ fn a_device_node_pinned_to_a_recording_opens_the_stem_it_names() {
 
 #[test]
 fn a_generator_takes_the_key_of_the_node_that_holds_it() {
-    let body = pinned("gen:9f2c", DeviceBackend::Virtual, Some("gen-")).body;
+    let body = pinned("gen:9f2c", DeviceBackend::VIRTUAL, Some("gen-")).body;
     assert_eq!(
         body.device_ref("gen:9f2c"),
         Some(DeviceRef {
-            backend: DeviceBackend::Virtual,
+            backend: DeviceBackend::VIRTUAL,
             serial: None,
             key: Some("gen-gen-9f2c".to_owned()),
         })
@@ -1739,7 +1739,7 @@ fn a_generator_takes_the_key_of_the_node_that_holds_it() {
 
 #[test]
 fn a_plain_virtual_radio_keeps_the_key_it_was_given() {
-    let body = pinned("dev", DeviceBackend::Virtual, Some("band")).body;
+    let body = pinned("dev", DeviceBackend::VIRTUAL, Some("band")).body;
     assert_eq!(
         body.device_ref("dev").and_then(|pinned| pinned.key),
         Some("band".to_owned())
@@ -1750,7 +1750,7 @@ fn a_plain_virtual_radio_keeps_the_key_it_was_given() {
 fn a_stopped_generator_stays_stopped_when_the_patch_is_applied_again() {
     let stopped = NodeBody::Device(DeviceNode {
         device: Some(DeviceRef {
-            backend: DeviceBackend::Virtual,
+            backend: DeviceBackend::VIRTUAL,
             serial: None,
             key: Some("gen-gen".to_owned()),
         }),
@@ -1771,7 +1771,7 @@ fn a_stopped_generator_stays_stopped_when_the_patch_is_applied_again() {
 #[test]
 fn a_stopped_radio_keeps_its_reference_and_claims_no_device() {
     let reference = DeviceRef {
-        backend: DeviceBackend::Rtlsdr,
+        backend: DeviceBackend::RTLSDR,
         serial: Some("00000001".to_owned()),
         key: None,
     };
@@ -1808,9 +1808,9 @@ fn a_stopped_radio_keeps_its_reference_and_claims_no_device() {
 fn every_source_that_opens_a_radio_is_bound_like_one() {
     let graph = PatchGraph {
         nodes: vec![
-            pinned("dev", DeviceBackend::Rtlsdr, Some("0")),
+            pinned("dev", DeviceBackend::RTLSDR, Some("0")),
             recording("rec", Some("take")),
-            pinned("gen", DeviceBackend::Virtual, Some("gen-")),
+            pinned("gen", DeviceBackend::VIRTUAL, Some("gen-")),
             node("scope", NodeBody::Scope),
         ],
         edges: Vec::new(),
@@ -1824,7 +1824,7 @@ fn every_source_that_opens_a_radio_is_bound_like_one() {
 fn a_recording_and_a_generator_each_carry_one_iq_output() {
     for node in [
         recording("rec", Some("take")),
-        pinned("gen", DeviceBackend::Virtual, Some("gen-")),
+        pinned("gen", DeviceBackend::VIRTUAL, Some("gen-")),
     ] {
         let ports = node.body.ports(None);
         let iq: Vec<_> = ports
@@ -1845,8 +1845,8 @@ fn only_a_recording_sends_a_position() {
         })
     };
     assert!(sends(recording("rec", Some("take"))));
-    assert!(!sends(pinned("gen", DeviceBackend::Virtual, Some("gen-"))));
-    assert!(!sends(pinned("dev", DeviceBackend::Virtual, Some("band"))));
+    assert!(!sends(pinned("gen", DeviceBackend::VIRTUAL, Some("gen-"))));
+    assert!(!sends(pinned("dev", DeviceBackend::VIRTUAL, Some("band"))));
     assert!(!sends(node(
         "bare",
         NodeBody::Device(DeviceNode::default())
@@ -1861,14 +1861,14 @@ fn only_a_recording_sends_a_position() {
 
 #[test]
 fn only_a_generator_sends_synthetic_iq() {
-    let synthetic = pinned("gen", DeviceBackend::Virtual, Some("gen-"))
+    let synthetic = pinned("gen", DeviceBackend::VIRTUAL, Some("gen-"))
         .body
         .ports(None);
     assert_eq!(
         synthetic[0].payload,
         Payload::iq(&[crate::IqOrigin::Synthetic])
     );
-    let radio = pinned("dev", DeviceBackend::Virtual, Some("band"))
+    let radio = pinned("dev", DeviceBackend::VIRTUAL, Some("band"))
         .body
         .ports(None);
     assert_eq!(radio[0].payload, Payload::iq(&[crate::IqOrigin::Radio]));
@@ -2161,7 +2161,7 @@ fn a_decoder_runs_its_listeners_through_its_own_audio_chain_only_while_on() {
 fn radio(key: &str) -> DeviceNode {
     DeviceNode {
         device: Some(DeviceRef {
-            backend: DeviceBackend::Rtltcp,
+            backend: DeviceBackend::RTLTCP,
             serial: None,
             key: Some(key.to_owned()),
         }),
@@ -2337,8 +2337,8 @@ fn a_recording_and_a_generator_have_nothing_to_transmit_from() {
         key: Some(key.to_owned()),
     };
     for device in [
-        pinned(DeviceBackend::Recording, "2026-09-16T10-00-00"),
-        pinned(DeviceBackend::Virtual, &crate::patch::generator_key("node")),
+        pinned(DeviceBackend::RECORDING, "2026-09-16T10-00-00"),
+        pinned(DeviceBackend::VIRTUAL, &crate::patch::generator_key("node")),
     ] {
         let body = NodeBody::Device(DeviceNode {
             device: Some(device),
@@ -2393,4 +2393,12 @@ fn a_band_counts_channels_up_from_its_base() {
     };
     assert_eq!(band.frequency(0), 423_000_000);
     assert_eq!(band.frequency(48), 423_600_000);
+}
+
+#[test]
+fn a_device_ref_to_a_backend_this_build_lacks_round_trips() {
+    let stored = serde_json::json!({ "backend": "kraken", "serial": "1234" });
+    let reference: DeviceRef = serde_json::from_value(stored.clone()).expect("reads back");
+    assert_eq!(reference.backend.as_str(), "kraken");
+    assert_eq!(serde_json::to_value(&reference).expect("writes"), stored);
 }

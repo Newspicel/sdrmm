@@ -895,7 +895,7 @@ fn a_radio_at_an_address_it_was_told_about_is_listed_without_a_search() {
     let driver = Ad936xDriver::searching([]);
     assert!(networked(driver.probe()).is_empty());
     let info = driver.resolve(&server.endpoint()).expect("addressable");
-    assert_eq!(info.driver, DeviceBackend::Ad936x);
+    assert_eq!(info.driver, DeviceBackend::AD936X);
     assert!(driver.probe().contains(&info));
     assert!(driver.probe_deep().contains(&info));
 }

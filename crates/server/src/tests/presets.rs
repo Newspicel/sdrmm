@@ -122,7 +122,7 @@ async fn a_preset_carries_every_radio_the_workspace_draws() {
         id: "second".to_string(),
         body: sdrmm_wire::NodeBody::Device(sdrmm_wire::DeviceNode {
             device: Some(sdrmm_wire::DeviceRef {
-                backend: DeviceBackend::Virtual,
+                backend: DeviceBackend::VIRTUAL,
                 serial: None,
                 key: Some("array4".to_string()),
             }),

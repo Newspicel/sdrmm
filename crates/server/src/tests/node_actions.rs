@@ -318,7 +318,7 @@ struct Answering;
 
 impl DeviceDriver for Answering {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Kiwisdr
+        DeviceBackend::KIWISDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -331,7 +331,7 @@ impl DeviceDriver for Answering {
 
     fn resolve(&self, key: &str) -> Option<DeviceInfo> {
         Some(DeviceInfo {
-            driver: DeviceBackend::Kiwisdr,
+            driver: DeviceBackend::KIWISDR,
             key: key.to_owned(),
             label: format!("answering {key}"),
             serial: None,

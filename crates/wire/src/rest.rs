@@ -105,6 +105,9 @@ pub struct CapturedImagesResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct DevicesResponse {
     pub devices: Vec<DeviceInfo>,
+    /// Every backend this server drives, built-in or plugin, for labels, reach and address hints.
+    #[serde(default)]
+    pub backends: Vec<crate::BackendSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claims: Vec<DeviceClaim>,
     pub synthetic: bool,
@@ -827,7 +830,7 @@ mod tests {
     #[test]
     fn each_radio_is_claimed_once_by_the_first_node_naming_it() {
         let device = |key: &str| DeviceInfo {
-            driver: DeviceBackend::Rtlsdr,
+            driver: DeviceBackend::RTLSDR,
             key: key.to_owned(),
             label: key.to_owned(),
             serial: None,
@@ -837,7 +840,7 @@ mod tests {
             id: id.to_owned(),
             body: crate::NodeBody::Device(crate::DeviceNode {
                 device: Some(crate::DeviceRef {
-                    backend: DeviceBackend::Rtlsdr,
+                    backend: DeviceBackend::RTLSDR,
                     serial: None,
                     key: key.map(str::to_owned),
                 }),
@@ -1146,7 +1149,7 @@ mod tests {
     }
 
     fn recording(stem: &str) -> NodeBody {
-        pinned(crate::DeviceBackend::Recording, stem)
+        pinned(crate::DeviceBackend::RECORDING, stem)
     }
 
     #[test]
@@ -1168,7 +1171,7 @@ mod tests {
     #[test]
     fn needs_of_a_graph_without_sources_is_zero() {
         let graph = graph_with(
-            &[("gen", pinned(crate::DeviceBackend::Virtual, "gen-"))],
+            &[("gen", pinned(crate::DeviceBackend::VIRTUAL, "gen-"))],
             &[],
         );
         let needs = ExampleNeeds::of(&graph, &crate::WorkspaceState::new());

@@ -1,0 +1,22 @@
+[package]
+name = "sdrmm-device-plugin-example"
+description = "A tone generator radio, as a template for device plugins"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+sdrmm-device-plugin.workspace = true
+num-complex.workspace = true
+tracing.workspace = true
+serde_json.workspace = true

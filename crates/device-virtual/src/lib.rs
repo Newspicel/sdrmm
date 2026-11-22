@@ -34,7 +34,7 @@ pub use generator::{
 };
 use pace::SampleClock;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Virtual;
+const DRIVER_ID: DeviceBackend = DeviceBackend::VIRTUAL;
 const MAX_GENERATOR_KEY_LEN: usize = 64;
 const BAND_KEY: &str = "band";
 const BLOCK_SECS: f64 = 0.025;
@@ -172,6 +172,10 @@ impl VirtualDriver {
 impl DeviceDriver for VirtualDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "Virtual", sdrmm_wire::BackendReach::Synthetic)
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

@@ -1090,7 +1090,7 @@ struct SweptDriver {
 
 impl DeviceDriver for SweptDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

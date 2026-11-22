@@ -18,7 +18,7 @@ mod driver;
 #[cfg(test)]
 mod hardware;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Airspyhf;
+const DRIVER_ID: DeviceBackend = DeviceBackend::AIRSPYHF;
 const NOSERIAL_KEY_PREFIX: &str = "noserial-";
 
 #[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
@@ -106,6 +106,16 @@ impl AirspyHfDriver {
 impl DeviceDriver for AirspyHfDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "Airspy HF+", sdrmm_wire::BackendReach::Local)
+            .soapy_module("airspyhf")
+            .usb([sdrmm_wire::UsbIdentity::new(
+                0x03eb,
+                Some(0x800c),
+                "Airspy HF+",
+            )])
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -288,7 +298,7 @@ mod tests {
     #[test]
     fn a_radio_with_a_serial_is_keyed_by_it() {
         let info = device_info(&descriptor(Some(0x0044_0000_2e19_a5b3)));
-        assert_eq!(info.driver, DeviceBackend::Airspyhf);
+        assert_eq!(info.driver, DeviceBackend::AIRSPYHF);
         assert_eq!(info.key, "004400002e19a5b3");
         assert_eq!(info.label, "AIRSPY HF+ 004400002e19a5b3");
         assert_eq!(key_serial(&info.key), Some(0x0044_0000_2e19_a5b3));

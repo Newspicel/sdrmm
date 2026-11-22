@@ -5,7 +5,8 @@ use std::sync::{
 
 use num_complex::Complex;
 use sdrmm_wire::{
-    AgcGain, Capabilities, DeviceInfo, DeviceSettings, DoctorCheck, Readout, StreamScope,
+    AgcGain, BackendSpec, Capabilities, DeviceInfo, DeviceSettings, DoctorCheck, Readout,
+    StreamScope,
 };
 
 pub type Sample = Complex<f32>;
@@ -127,9 +128,18 @@ pub enum SinkItem<'a> {
     Event(LaneEvent),
 }
 
+/// Where a forwarding [`RxSink`] sends everything it is told, so a sink on the far side of a
+/// plugin boundary keeps the same index as the one it mirrors.
+pub trait SinkForward: Send {
+    fn samples(&mut self, samples: &[Sample], index: u64);
+    fn event(&mut self, event: LaneEvent);
+    fn dropped(&mut self, samples: u64);
+}
+
 enum Handler {
     Samples(PushFn),
     Items(ItemFn),
+    Forward(Box<dyn SinkForward>),
 }
 
 impl Handler {
@@ -137,12 +147,21 @@ impl Handler {
         match self {
             Self::Samples(push_fn) => push_fn(samples, index),
             Self::Items(handler) => handler(SinkItem::Samples { samples, index }),
+            Self::Forward(forward) => forward.samples(samples, index),
         }
     }
 
     fn event(&mut self, event: LaneEvent) {
-        if let Self::Items(handler) = self {
-            handler(SinkItem::Event(event));
+        match self {
+            Self::Samples(_) => {}
+            Self::Items(handler) => handler(SinkItem::Event(event)),
+            Self::Forward(forward) => forward.event(event),
+        }
+    }
+
+    fn dropped(&mut self, samples: u64) {
+        if let Self::Forward(forward) = self {
+            forward.dropped(samples);
         }
     }
 }
@@ -194,6 +213,17 @@ impl RxSink {
     }
 
     #[must_use]
+    pub fn forwarding(
+        forward: impl SinkForward + 'static,
+        fatal_fn: impl FnOnce(DeviceError) + Send + 'static,
+    ) -> Self {
+        Self::build(
+            Handler::Forward(Box::new(forward)),
+            Some(Box::new(fatal_fn)),
+        )
+    }
+
+    #[must_use]
     pub fn with_room(mut self, room: Arc<SinkRoom>) -> Self {
         self.room = Some(room);
         self
@@ -216,6 +246,7 @@ impl RxSink {
     }
 
     pub fn dropped(&mut self, samples: u64) {
+        self.handler.dropped(samples);
         self.index = self.index.saturating_add(samples);
     }
 
@@ -228,7 +259,7 @@ impl RxSink {
     }
 
     pub fn dropped_estimate(&mut self, samples: u64, error: u64, scope: GapScope) {
-        self.index = self.index.saturating_add(samples);
+        self.dropped(samples);
         self.realigned(Uncertainty::EstimatedGap, error, scope);
     }
 
@@ -300,6 +331,12 @@ impl std::fmt::Debug for RxSink {
 
 pub trait DeviceDriver: Send + Sync {
     fn id(&self) -> DeviceBackend;
+
+    /// What every surface shows about this backend. A driver that declares nothing is a local
+    /// radio named by its id.
+    fn spec(&self) -> BackendSpec {
+        BackendSpec::bare(self.id())
+    }
 
     fn probe(&self) -> Vec<DeviceInfo>;
 
@@ -487,6 +524,89 @@ mod tests {
                 ),
                 (104, None),
             ]
+        );
+    }
+
+    struct Mirror(RxSink);
+
+    impl SinkForward for Mirror {
+        fn samples(&mut self, samples: &[Sample], _index: u64) {
+            self.0.push(samples);
+        }
+
+        fn event(&mut self, event: LaneEvent) {
+            match event {
+                LaneEvent::Mark { mark, .. } => self.0.mark(mark),
+                LaneEvent::Uncertain {
+                    error,
+                    scope,
+                    cause,
+                    ..
+                } => self.0.realigned(cause, error, scope),
+                LaneEvent::HardwareTime { ns, .. } => self.0.stamp_hardware(ns),
+                LaneEvent::Deaf { samples, .. } => self.0.deaf(samples),
+            }
+        }
+
+        fn dropped(&mut self, samples: u64) {
+            self.0.dropped(samples);
+        }
+    }
+
+    type Log = Arc<std::sync::Mutex<Vec<(u64, Option<LaneEvent>)>>>;
+
+    fn logged(seen: &Log) -> RxSink {
+        let log = seen.clone();
+        RxSink::with_items(
+            move |item: SinkItem<'_>| {
+                let entry = match item {
+                    SinkItem::Samples { index, .. } => (index, None),
+                    SinkItem::Event(event) => (0, Some(event)),
+                };
+                log.lock().expect("log").push(entry);
+            },
+            |_| {},
+        )
+    }
+
+    fn drive(sink: &mut RxSink) {
+        let block = [Sample::new(0.0, 0.0); 4];
+        sink.push(&block);
+        sink.dropped(10);
+        sink.deaf(5);
+        sink.dropped_estimate(3, 2, GapScope::Lane);
+        sink.mark(LaneMark::Ended);
+        sink.stamp_hardware(42);
+        sink.push(&block);
+    }
+
+    #[test]
+    fn a_forwarded_sink_mirrors_every_index_move() {
+        let direct_log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut direct = logged(&direct_log);
+        drive(&mut direct);
+        let mirrored_log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut forwarded = RxSink::forwarding(Mirror(logged(&mirrored_log)), |_| {});
+        drive(&mut forwarded);
+        assert_eq!(forwarded.index(), direct.index());
+        assert_eq!(
+            *mirrored_log.lock().expect("log"),
+            *direct_log.lock().expect("log")
+        );
+    }
+
+    #[test]
+    fn a_forwarded_sink_hands_its_failure_to_the_far_side() {
+        let failed = Arc::new(std::sync::Mutex::new(None));
+        let record = failed.clone();
+        let mirror = Mirror(RxSink::new(|_, _| {}));
+        let mut sink = RxSink::forwarding(mirror, move |err| {
+            *record.lock().expect("record") = Some(err.to_string());
+        });
+        sink.fail(DeviceError::Io("gone".to_string()));
+        assert_eq!(
+            failed.lock().expect("record").as_deref(),
+            Some("device I/O error: gone")
         );
     }
 

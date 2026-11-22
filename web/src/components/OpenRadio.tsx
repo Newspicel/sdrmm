@@ -18,7 +18,7 @@ import {
   deviceHint,
   deviceId,
   groupDevices,
-  NETWORK_BACKENDS,
+  networkBackends,
   networkDeviceId,
   networkRadioLabel,
   type SourceTab,
@@ -36,12 +36,14 @@ type Choose = (device: DeviceInfo) => void;
 function useSavedRadios() {
   const queryClient = useQueryClient();
   const saved = useQuery(savedRadiosQuery());
+  const backends = useQuery(devicesQuery()).data?.backends ?? [];
   const settled = {
     onError: (error: Error) => pushToast(error.message),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: SAVED_RADIOS_KEY }),
   };
   const save = useMutation({
-    mutationFn: (id: string) => saveRadio({ device_id: id, label: networkRadioLabel(id) }),
+    mutationFn: (id: string) =>
+      saveRadio({ device_id: id, label: networkRadioLabel(id, backends) }),
     ...settled,
   });
   const forget = useMutation({ mutationFn: deleteSavedRadio, ...settled });
@@ -78,11 +80,13 @@ function SavedRadios({ onAdd, busy }: { onAdd: (id: string) => void; busy: boole
 
 function AddNetworkRadio({ onAdd, busy }: { onAdd: (id: string) => void; busy: boolean }) {
   const { save } = useSavedRadios();
-  const [driver, setDriver] = useState<string>(NETWORK_BACKENDS[0].driver);
+  const offered = networkBackends(useQuery(devicesQuery()).data?.backends ?? []);
+  const [picked, setDriver] = useState<string | null>(null);
   const [address, setAddress] = useState("");
-  const backend = NETWORK_BACKENDS.find((b) => b.driver === driver) ?? NETWORK_BACKENDS[0];
-  const id = networkDeviceId(driver, address);
-  const port = backend.placeholder.split(":").pop();
+  const backend = offered.find((b) => b.driver === picked) ?? offered[0];
+  const driver = backend?.driver ?? "";
+  const id = backend === undefined ? null : networkDeviceId(driver, address);
+  const port = backend?.placeholder.split(":").pop();
 
   return (
     <Form
@@ -99,7 +103,7 @@ function AddNetworkRadio({ onAdd, busy }: { onAdd: (id: string) => void; busy: b
         <Select
           label="Network protocol"
           value={driver}
-          options={NETWORK_BACKENDS.map((b) => ({ value: b.driver, label: b.label }))}
+          options={offered.map((b) => ({ value: b.driver, label: b.label }))}
           onChange={setDriver}
         />
       </div>
@@ -108,8 +112,8 @@ function AddNetworkRadio({ onAdd, busy }: { onAdd: (id: string) => void; busy: b
           className={`${FIELD} w-full`}
           type="text"
           aria-label="Radio address"
-          title={`Host or address of the ${backend.label} server; without a port it uses ${port}`}
-          placeholder={backend.placeholder}
+          title={`Host or address of the ${backend?.label ?? "radio"} server; without a port it uses ${port}`}
+          placeholder={backend?.placeholder}
           value={address}
           onChange={(event) => setAddress(event.target.value)}
         />
@@ -213,12 +217,17 @@ export function DeviceChoices({
 }) {
   const devices = useQuery(devicesQuery());
   const [tab, setTab] = useState<SourceTab>("radios");
-  const visible = visibleDevices(devices.data?.devices ?? [], devices.data?.synthetic ?? false);
+  const backends = devices.data?.backends ?? [];
+  const visible = visibleDevices(
+    devices.data?.devices ?? [],
+    devices.data?.synthetic ?? false,
+    backends,
+  );
   const found =
     claimant === undefined
       ? visible
       : unclaimedDevices(visible, devices.data?.claims ?? [], claimant);
-  const groups = groupDevices(found);
+  const groups = groupDevices(found, backends);
   const tabs = sourceTabs(groups);
   const shown = tabs.some((option) => option.value === tab) ? tab : "radios";
 

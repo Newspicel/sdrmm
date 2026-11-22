@@ -9,7 +9,7 @@ mod playback;
 pub use collection::CollectionPlayback;
 pub use playback::{FilePlayback, LOOP_SETTING};
 
-pub(crate) const DRIVER_ID: DeviceBackend = DeviceBackend::Recording;
+pub(crate) const DRIVER_ID: DeviceBackend = DeviceBackend::RECORDING;
 pub(crate) const BLOCK_SECS: f64 = 0.025;
 
 pub struct RecordingDriver {
@@ -67,6 +67,10 @@ impl RecordingDriver {
 impl DeviceDriver for RecordingDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "Recording", sdrmm_wire::BackendReach::Playback)
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

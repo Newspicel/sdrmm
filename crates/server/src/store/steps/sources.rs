@@ -32,7 +32,7 @@ pub(super) fn sources_become_device_nodes(snapshot: &mut Value) -> Vec<Workspace
 fn played(data: &Value) -> Option<Value> {
     let stem = data.get("recording").and_then(Value::as_str)?;
     Some(json!({
-        "device": { "backend": DeviceBackend::Recording.as_str(), "key": stem }
+        "device": { "backend": DeviceBackend::RECORDING.as_str(), "key": stem }
     }))
 }
 
@@ -40,7 +40,7 @@ fn generated(node_id: &str, data: &Value) -> Value {
     let running = data.get("running").and_then(Value::as_bool).unwrap_or(true);
     json!({
         "device": {
-            "backend": DeviceBackend::Virtual.as_str(),
+            "backend": DeviceBackend::VIRTUAL.as_str(),
             "key": generator_key(node_id),
         },
         "stopped": !running,

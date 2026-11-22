@@ -101,7 +101,7 @@ fn engine() -> Arc<Engine> {
 
 fn open(engine: &Engine, per_stream: StreamScope) -> u32 {
     let info = DeviceInfo {
-        driver: DeviceBackend::Rtlsdr,
+        driver: DeviceBackend::RTLSDR,
         key: "lanes".to_owned(),
         label: "Mock lanes".to_owned(),
         serial: None,

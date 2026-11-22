@@ -17,7 +17,7 @@ mod settings;
 pub use api::{Cr8Api, DevHandle, library_candidates, load_error, shared};
 pub use caps::{CLOCK_EXTERNAL, CLOCK_INTERNAL, CLOCK_SETTING, capabilities, profile};
 
-pub const DRIVER_ID: DeviceBackend = DeviceBackend::Cr8;
+pub const DRIVER_ID: DeviceBackend = DeviceBackend::CR8;
 
 const BUFFER_SAMPLES: usize = 65_536;
 
@@ -84,6 +84,10 @@ fn info(serial: &str) -> DeviceInfo {
 impl DeviceDriver for Cr8Driver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "CR-8", sdrmm_wire::BackendReach::Local)
     }
 
     fn health(&self) -> Option<DoctorCheck> {

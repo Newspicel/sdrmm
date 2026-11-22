@@ -71,7 +71,7 @@ fn bench() -> (Arc<Engine>, PatchGraph, u32, u32) {
                 "dev",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: DeviceBackend::Virtual,
+                        backend: DeviceBackend::VIRTUAL,
                         serial: None,
                         key: Some("band".to_owned()),
                     }),

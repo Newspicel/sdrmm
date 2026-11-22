@@ -22,7 +22,7 @@ mod convert;
 mod dongle;
 mod pausing;
 
-pub(crate) const DRIVER_ID: DeviceBackend = DeviceBackend::Rtlsdr;
+pub(crate) const DRIVER_ID: DeviceBackend = DeviceBackend::RTLSDR;
 
 const DEFAULT_SAMPLE_RATE_HZ: u32 = 2_048_000;
 const LANE_SAMPLE_RATE_HZ: u32 = 2_400_000;
@@ -50,6 +50,15 @@ impl RtlSdrDriver {
 impl DeviceDriver for RtlSdrDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "RTL-SDR", sdrmm_wire::BackendReach::Local)
+            .soapy_module("rtlsdr")
+            .usb([
+                sdrmm_wire::UsbIdentity::new(0x0bda, Some(0x2832), "RTL-SDR"),
+                sdrmm_wire::UsbIdentity::new(0x0bda, Some(0x2838), "RTL-SDR"),
+            ])
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -602,6 +611,6 @@ mod tests {
 
     #[test]
     fn driver_id_is_the_wire_id() {
-        assert_eq!(RtlSdrDriver::new().id(), DeviceBackend::Rtlsdr);
+        assert_eq!(RtlSdrDriver::new().id(), DeviceBackend::RTLSDR);
     }
 }

@@ -9,6 +9,8 @@ members = [
     "crates/modem-test-support",
     "crates/decoder-test-support",
     "crates/device",
+    "crates/device-plugin",
+    "crates/device-plugin-example",
     "crates/device-virtual",
     "crates/device-recording",
     "crates/device-ad936x",
@@ -130,6 +132,7 @@ sdrmm-decoder-test-support = { path = "crates/decoder-test-support" }
 sdrmm-device = { path = "crates/device" }
 sdrmm-device-virtual = { path = "crates/device-virtual" }
 sdrmm-device-recording = { path = "crates/device-recording" }
+sdrmm-device-plugin = { path = "crates/device-plugin" }
 sdrmm-device-ad936x = { path = "crates/device-ad936x" }
 sdrmm-device-airspy = { path = "crates/device-airspy" }
 sdrmm-device-airspyhf = { path = "crates/device-airspyhf" }

@@ -57,7 +57,7 @@ fn radio(id: &str, key: &str) -> PatchNode {
         id,
         NodeBody::Device(DeviceNode {
             device: Some(DeviceRef {
-                backend: DeviceBackend::Virtual,
+                backend: DeviceBackend::VIRTUAL,
                 serial: None,
                 key: Some(key.to_owned()),
             }),

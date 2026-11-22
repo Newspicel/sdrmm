@@ -55,7 +55,13 @@ fn run() -> Result<Exit> {
         return Ok(newer_db::ask(&db, &error));
     }
     let runtime = tokio::runtime::Runtime::new()?;
-    let engine = Engine::new(Some(data_dir.join("recordings")));
+    let recordings = data_dir.join("recordings");
+    let registry = sdrmm_engine::registry(
+        Some(recordings.clone()),
+        1.0,
+        sdrmm_engine::DevicePlugins::load(&data_dir.join("plugins")),
+    );
+    let engine = Engine::with_registry(registry, Some(recordings));
     let _plugins = watch_plugins(&data_dir, &engine);
     let url = runtime.block_on(serve(db, Arc::clone(&engine)))?;
     update::spawn(runtime.handle());

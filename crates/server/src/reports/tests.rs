@@ -228,7 +228,7 @@ fn graph(wiring: &Wiring) -> PatchGraph {
                 "radio",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: DeviceBackend::Virtual,
+                        backend: DeviceBackend::VIRTUAL,
                         serial: None,
                         key: Some("kraken5".to_owned()),
                     }),

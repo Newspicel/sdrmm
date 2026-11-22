@@ -20,7 +20,7 @@ mod proto;
 mod session;
 mod stream;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Sdrconnect;
+const DRIVER_ID: DeviceBackend = DeviceBackend::SDRCONNECT;
 
 #[derive(Debug, Default)]
 pub struct SdrConnectDriver {
@@ -47,6 +47,11 @@ fn device_info(address: &Address) -> WireDeviceInfo {
 impl DeviceDriver for SdrConnectDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "SDRconnect", sdrmm_wire::BackendReach::Network)
+            .address_hint("192.168.1.5:5454")
     }
 
     fn probe(&self) -> Vec<WireDeviceInfo> {

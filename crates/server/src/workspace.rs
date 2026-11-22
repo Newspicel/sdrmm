@@ -573,7 +573,7 @@ pub(crate) mod tests {
 
     impl DeviceDriver for NamedOnly {
         fn id(&self) -> DeviceBackend {
-            DeviceBackend::Hackrf
+            DeviceBackend::HACKRF
         }
 
         fn probe(&self) -> Vec<DeviceInfo> {
@@ -600,7 +600,7 @@ pub(crate) mod tests {
 
     fn info(key: &str) -> DeviceInfo {
         DeviceInfo {
-            driver: DeviceBackend::Hackrf,
+            driver: DeviceBackend::HACKRF,
             key: key.to_string(),
             label: format!("named {key}"),
             serial: None,
@@ -612,7 +612,7 @@ pub(crate) mod tests {
 
     impl DeviceDriver for HardwareOnly {
         fn id(&self) -> DeviceBackend {
-            DeviceBackend::Airspy
+            DeviceBackend::AIRSPY
         }
 
         fn probe(&self) -> Vec<DeviceInfo> {
@@ -653,7 +653,7 @@ pub(crate) mod tests {
             .create_workspace(
                 "remote",
                 &workspace_naming(DeviceRef {
-                    backend: DeviceBackend::Hackrf,
+                    backend: DeviceBackend::HACKRF,
                     serial: None,
                     key: Some("10.0.0.5:1234".to_string()),
                 }),
@@ -680,7 +680,7 @@ pub(crate) mod tests {
             .create_workspace(
                 "bench",
                 &workspace_naming(DeviceRef {
-                    backend: DeviceBackend::Airspy,
+                    backend: DeviceBackend::AIRSPY,
                     serial: None,
                     key: Some("00000001".to_string()),
                 }),
@@ -690,7 +690,7 @@ pub(crate) mod tests {
             .create_workspace(
                 "serial",
                 &workspace_naming(DeviceRef {
-                    backend: DeviceBackend::Hackrf,
+                    backend: DeviceBackend::HACKRF,
                     serial: Some("00000001".to_string()),
                     key: None,
                 }),

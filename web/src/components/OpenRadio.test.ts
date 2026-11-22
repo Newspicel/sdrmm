@@ -4,7 +4,7 @@ import {
   deviceHint,
   deviceId,
   groupDevices,
-  NETWORK_BACKENDS,
+  networkBackends,
   networkDeviceId,
   networkRadioLabel,
   rankDevices,
@@ -12,6 +12,7 @@ import {
   unclaimedDevices,
   visibleDevices,
 } from "./devices";
+import { BACKENDS } from "./devices.fixture";
 
 function device(driver: DeviceBackend, key: string, label = `${driver} ${key}`): DeviceInfo {
   return { driver, key, label };
@@ -19,11 +20,14 @@ function device(driver: DeviceBackend, key: string, label = `${driver} ${key}`):
 
 describe("rankDevices", () => {
   it("puts every real radio above the virtual devices", () => {
-    const ranked = rankDevices([
-      device("virtual", "band", "Test band"),
-      device("rtlsdr", "00000001", "RTL-SDR 00000001"),
-      device("rtltcp", "10.0.0.5:1234", "rtl_tcp 10.0.0.5:1234"),
-    ]);
+    const ranked = rankDevices(
+      [
+        device("virtual", "band", "Test band"),
+        device("rtlsdr", "00000001", "RTL-SDR 00000001"),
+        device("rtltcp", "10.0.0.5:1234", "rtl_tcp 10.0.0.5:1234"),
+      ],
+      BACKENDS,
+    );
     expect(
       ranked
         .map((d) => d.driver)
@@ -44,7 +48,7 @@ describe("visibleDevices", () => {
   ];
 
   it("leaves every radio a node of its own opens out of the picker", () => {
-    expect(visibleDevices(devices, true).map(deviceId)).toEqual([
+    expect(visibleDevices(devices, true, BACKENDS).map(deviceId)).toEqual([
       "rtlsdr:00000001",
       "virtual:array4",
       "virtual:band",
@@ -52,7 +56,7 @@ describe("visibleDevices", () => {
   });
 
   it("omits synthetic radios from a production build", () => {
-    expect(visibleDevices(devices, false).map(deviceId)).toEqual(["rtlsdr:00000001"]);
+    expect(visibleDevices(devices, false, BACKENDS).map(deviceId)).toEqual(["rtlsdr:00000001"]);
   });
 });
 
@@ -84,7 +88,7 @@ describe("groupDevices", () => {
   ];
 
   it("keeps the synthetic radios out of the top-level device list", () => {
-    const grouped = groupDevices(devices);
+    const grouped = groupDevices(devices, BACKENDS);
 
     expect(grouped.radios.map(deviceId)).toEqual(["rtlsdr:00000001"]);
     expect(grouped.virtual.map(deviceId)).toEqual(["virtual:band", "virtual:array4"]);
@@ -92,10 +96,10 @@ describe("groupDevices", () => {
 });
 
 describe("sourceTabs", () => {
-  const groups = groupDevices([
-    device("rtlsdr", "00000001", "RTL-SDR 00000001"),
-    device("virtual", "band", "Test band"),
-  ]);
+  const groups = groupDevices(
+    [device("rtlsdr", "00000001", "RTL-SDR 00000001"), device("virtual", "band", "Test band")],
+    BACKENDS,
+  );
 
   it("counts what each tab holds and explains each one on hover", () => {
     const tabs = sourceTabs(groups);
@@ -167,9 +171,9 @@ describe("networkDeviceId", () => {
   });
 });
 
-describe("NETWORK_BACKENDS", () => {
+describe("networkBackends", () => {
   it("names each protocol and shows its default port", () => {
-    expect(NETWORK_BACKENDS.map((b) => b.driver)).toEqual([
+    expect(networkBackends(BACKENDS).map((b) => b.driver)).toEqual([
       "rtltcp",
       "spyserver",
       "sdrconnect",
@@ -177,7 +181,7 @@ describe("NETWORK_BACKENDS", () => {
       "ad936x",
       "espsdr",
     ]);
-    expect(NETWORK_BACKENDS.map((b) => b.placeholder.split(":").pop())).toEqual([
+    expect(networkBackends(BACKENDS).map((b) => b.placeholder.split(":").pop())).toEqual([
       "1234",
       "5555",
       "5454",
@@ -188,14 +192,31 @@ describe("NETWORK_BACKENDS", () => {
   });
 });
 
+describe("networkBackends from a plugin", () => {
+  it("offers a network backend a plugin brings", () => {
+    const plugged = [
+      ...BACKENDS,
+      { backend: "meshsdr", label: "MeshSDR", reach: "network" as const, address_hint: "mesh:7" },
+    ];
+    expect(networkBackends(plugged).at(-1)).toEqual({
+      driver: "meshsdr",
+      label: "MeshSDR",
+      placeholder: "mesh:7",
+    });
+    expect(networkRadioLabel("meshsdr:10.0.0.9:7", plugged)).toBe("MeshSDR 10.0.0.9:7");
+  });
+});
+
 describe("networkRadioLabel", () => {
   it("names the protocol and host, never the password", () => {
-    expect(networkRadioLabel("kiwisdr:pw@kiwi.example.org:8073")).toBe(
+    expect(networkRadioLabel("kiwisdr:pw@kiwi.example.org:8073", BACKENDS)).toBe(
       "KiwiSDR kiwi.example.org:8073",
     );
-    expect(networkRadioLabel("kiwisdr:https://kiwi.example.org")).toBe("KiwiSDR kiwi.example.org");
-    expect(networkRadioLabel("rtltcp:[::1]:1234")).toBe("rtl_tcp [::1]:1234");
-    expect(networkRadioLabel("mystery:host:1")).toBe("host:1");
+    expect(networkRadioLabel("kiwisdr:https://kiwi.example.org", BACKENDS)).toBe(
+      "KiwiSDR kiwi.example.org",
+    );
+    expect(networkRadioLabel("rtltcp:[::1]:1234", BACKENDS)).toBe("rtl_tcp [::1]:1234");
+    expect(networkRadioLabel("mystery:host:1", BACKENDS)).toBe("host:1");
   });
 });
 

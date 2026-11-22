@@ -5,6 +5,7 @@ export type StateScope = components["schemas"]["StateScope"];
 export type DeviceSet = components["schemas"]["DeviceSet"];
 export type DeviceInfo = components["schemas"]["DeviceInfo"];
 export type DeviceBackend = components["schemas"]["DeviceBackend"];
+export type BackendSpec = components["schemas"]["BackendSpec"];
 export type DeviceSettings = components["schemas"]["DeviceSettings"];
 export type Capabilities = components["schemas"]["Capabilities"];
 export type DeviceProfile = components["schemas"]["DeviceProfile"];

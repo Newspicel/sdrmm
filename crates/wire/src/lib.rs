@@ -122,13 +122,13 @@ pub use decode::{
     install_catalog, modulation_label, platform_kinds,
 };
 pub use device::{
-    Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendEntry,
-    BackendReach, BandwidthSetting, Capabilities, ChannelCapabilities, ClockBank, Coherence,
+    Agc, AgcGain, AgcReach, AgcSetting, ArgumentInfo, ArgumentOption, ArgumentType, BackendReach,
+    BackendSpec, BandwidthSetting, Capabilities, ChannelCapabilities, ClockBank, Coherence,
     DcArtifact, DeviceBackend, DeviceInfo, DeviceProfile, DeviceSettings, Direction,
     DirectionalCapabilities, Duplex, ExtraSetting, ExtraValue, GENERATOR_PREFIX, GainKind,
     GainStage, GainUnit, GainValue, MAX_RECORDING_STEM_LEN, NoiseSource, RadioActivity, RadioUse,
-    Range, Readout, ReadoutValue, StreamScope, StreamSettings, Tuning, any_range_holds,
-    backend_table, recording_stem_valid,
+    Range, Readout, ReadoutValue, StreamScope, StreamSettings, Tuning, UsbIdentity,
+    any_range_holds, recording_stem_valid,
 };
 pub use diagnostics::{DiagnosticsReport, LogLevel, LogLine, MAX_LOG_LINES, MAX_LOG_MESSAGE_LEN};
 pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
@@ -766,7 +766,7 @@ mod contract_tests {
         DeviceSet {
             id: 1,
             device: DeviceInfo {
-                driver: DeviceBackend::Virtual,
+                driver: DeviceBackend::VIRTUAL,
                 key: "band".to_owned(),
                 label: "Test band".to_owned(),
                 serial: None,

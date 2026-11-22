@@ -31,11 +31,13 @@ mod array_ops;
 pub mod audio;
 mod audio_fx;
 pub mod audio_recording;
+pub mod bench;
 mod capture_ops;
 mod capture_ring;
 mod channel_ops;
 mod denoise_models;
 mod device_ops;
+mod device_plugins;
 mod discovery;
 mod doppler;
 #[cfg(feature = "gpu-fft")]
@@ -71,6 +73,7 @@ pub mod video;
 pub use array::{ArrayEvent, ArraySpec, LaneRef, ProcessorAction, ProcessorSpec};
 pub use audio::{AudioPacket, PcmBlock, PcmPayload};
 pub use denoise_models::DenoiseModels;
+pub use device_plugins::DevicePlugins;
 pub use doppler::Doppler;
 pub use image::ImageCapture;
 pub use iq::{IQ_BLOCK_SAMPLES, IQ_BLOCKS_PER_SEC, IqBlock};
@@ -136,53 +139,30 @@ pub fn channel_types() -> Vec<sdrmm_wire::ChannelDescriptor> {
     sdrmm_decoder::descriptors()
 }
 
-/// Every backend this build drives itself, so the `SoapySDR` driver can hide the radios a native
-/// one already lists.
-#[must_use]
-pub fn native_backends() -> Vec<DeviceBackend> {
-    [
-        #[cfg(feature = "cr8")]
-        DeviceBackend::Cr8,
-        #[cfg(feature = "aaronia")]
-        DeviceBackend::Aaronia,
-        #[cfg(feature = "rtlsdr")]
-        DeviceBackend::Rtlsdr,
-        #[cfg(feature = "hackrf")]
-        DeviceBackend::Hackrf,
-        #[cfg(feature = "airspy")]
-        DeviceBackend::Airspy,
-        #[cfg(feature = "airspyhf")]
-        DeviceBackend::Airspyhf,
-        #[cfg(all(
-            feature = "funcube",
-            any(target_os = "macos", target_os = "linux", target_os = "windows")
-        ))]
-        DeviceBackend::Funcube,
-        #[cfg(feature = "espsdr")]
-        DeviceBackend::Espsdr,
-        #[cfg(feature = "ad936x")]
-        DeviceBackend::Ad936x,
-    ]
-    .to_vec()
-}
-
-#[must_use]
-pub fn soapy_handled_natively() -> Vec<&'static str> {
-    native_backends()
-        .into_iter()
-        .filter_map(DeviceBackend::soapy_module)
-        .collect()
-}
+/// The priority a device plugin registers at: above every built-in, so a driver the operator
+/// installed wins a radio a built-in also sees.
+pub const PLUGIN_PRIORITY: u8 = 27;
 
 #[must_use]
 pub fn builtin_registry(recordings_dir: Option<PathBuf>) -> DeviceRegistry {
-    builtin_registry_accelerated(recordings_dir, 1.0)
+    registry(recordings_dir, 1.0, DevicePlugins::default())
 }
 
 #[must_use]
 pub fn builtin_registry_accelerated(
     recordings_dir: Option<PathBuf>,
     playback_speed: f64,
+) -> DeviceRegistry {
+    registry(recordings_dir, playback_speed, DevicePlugins::default())
+}
+
+/// The built-in drivers plus the device `plugins`. Soapy comes last and hides every module
+/// another driver already drives.
+#[must_use]
+pub fn registry(
+    recordings_dir: Option<PathBuf>,
+    playback_speed: f64,
+    plugins: DevicePlugins,
 ) -> DeviceRegistry {
     let mut registry = DeviceRegistry::new();
     registry.register(
@@ -192,13 +172,6 @@ pub fn builtin_registry_accelerated(
     registry.register(
         VIRTUAL_PRIORITY,
         Box::new(RecordingDriver::accelerated(recordings_dir, playback_speed)),
-    );
-    #[cfg(feature = "soapy")]
-    registry.register(
-        SOAPY_PRIORITY,
-        Box::new(sdrmm_device_soapy::SoapyDriver::excluding(
-            soapy_handled_natively(),
-        )),
     );
     #[cfg(feature = "sdrplay")]
     registry.register(
@@ -272,7 +245,32 @@ pub fn builtin_registry_accelerated(
             Box::new(sdrmm_device_kiwisdr::KiwiSdrDriver::new()),
         );
     }
+    let reserved: &[DeviceBackend] = if cfg!(feature = "soapy") {
+        &[DeviceBackend::SOAPY]
+    } else {
+        &[]
+    };
+    plugins.register(&mut registry, reserved);
+    #[cfg(feature = "soapy")]
+    {
+        let hidden = soapy_handled_natively(&registry);
+        registry.register(
+            SOAPY_PRIORITY,
+            Box::new(sdrmm_device_soapy::SoapyDriver::excluding(hidden)),
+        );
+    }
     registry
+}
+
+/// The `SoapySDR` modules the registered drivers speak to themselves, so Soapy hides the radios
+/// they already list.
+#[must_use]
+pub fn soapy_handled_natively(registry: &DeviceRegistry) -> Vec<String> {
+    registry
+        .specs()
+        .into_iter()
+        .filter_map(|spec| spec.soapy_module)
+        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]

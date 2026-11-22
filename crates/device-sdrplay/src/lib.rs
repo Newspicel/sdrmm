@@ -125,6 +125,11 @@ impl DeviceDriver for SdrplayDriver {
         DRIVER_ID
     }
 
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "SDRplay", sdrmm_wire::BackendReach::Local)
+            .usb([sdrmm_wire::UsbIdentity::new(0x1df7, None, "SDRplay RSP")])
+    }
+
     fn health(&self) -> Option<DoctorCheck> {
         Some(health(&runtime_info()))
     }

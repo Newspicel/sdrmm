@@ -36,7 +36,7 @@ use macos as platform;
 #[cfg(target_os = "windows")]
 use windows as platform;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Funcube;
+const DRIVER_ID: DeviceBackend = DeviceBackend::FUNCUBE;
 const LABEL: &str = "FUNcube Dongle Pro+";
 
 #[expect(clippy::needless_pass_by_value, reason = "used as a map_err fn")]
@@ -89,6 +89,16 @@ impl FunCubeDriver {
 impl DeviceDriver for FunCubeDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "FUNcube Dongle", sdrmm_wire::BackendReach::Local)
+            .soapy_module("fcdpp")
+            .usb([sdrmm_wire::UsbIdentity::new(
+                0x04d8,
+                Some(0xfb31),
+                "FUNcube Dongle Pro+",
+            )])
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -235,7 +245,7 @@ mod tests {
     #[test]
     fn a_dongle_is_named_by_the_port_it_is_plugged_into() {
         let info = device_info("1-4".to_string());
-        assert_eq!(info.driver, DeviceBackend::Funcube);
+        assert_eq!(info.driver, DeviceBackend::FUNCUBE);
         assert_eq!(info.key, "1-4");
         assert_eq!(info.label, "FUNcube Dongle Pro+");
         assert_eq!(info.serial, None);

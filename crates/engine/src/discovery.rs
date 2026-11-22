@@ -105,9 +105,9 @@ mod tests {
     #[test]
     fn a_network_radio_joins_the_attached_ones() {
         let mut discovery = Discovery::default();
-        discovery.searched(vec![device(DeviceBackend::Soapy, "remote")], Instant::now());
+        discovery.searched(vec![device(DeviceBackend::SOAPY, "remote")], Instant::now());
         assert_eq!(
-            ids(&discovery.merge(vec![device(DeviceBackend::Rtlsdr, "0")])),
+            ids(&discovery.merge(vec![device(DeviceBackend::RTLSDR, "0")])),
             vec!["rtlsdr:0", "soapy:remote"]
         );
     }
@@ -115,9 +115,9 @@ mod tests {
     #[test]
     fn a_radio_the_quick_search_already_found_is_listed_once() {
         let mut discovery = Discovery::default();
-        discovery.searched(vec![device(DeviceBackend::Soapy, "one")], Instant::now());
+        discovery.searched(vec![device(DeviceBackend::SOAPY, "one")], Instant::now());
         assert_eq!(
-            ids(&discovery.merge(vec![device(DeviceBackend::Soapy, "one")])),
+            ids(&discovery.merge(vec![device(DeviceBackend::SOAPY, "one")])),
             vec!["soapy:one"]
         );
     }
@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn a_radio_opened_while_the_search_ran_is_no_network_find() {
-        let band = device(DeviceBackend::Virtual, "band");
-        let remote = device(DeviceBackend::Soapy, "remote");
+        let band = device(DeviceBackend::VIRTUAL, "band");
+        let remote = device(DeviceBackend::SOAPY, "remote");
         let found = vec![band.clone(), remote];
         assert_eq!(
             ids(&extras_beyond(found.clone(), &[band.id()], &[])),
@@ -166,8 +166,8 @@ mod tests {
     fn only_a_different_result_counts_as_a_change() {
         let now = Instant::now();
         let mut discovery = Discovery::default();
-        assert!(discovery.searched(vec![device(DeviceBackend::Soapy, "remote")], now));
-        assert!(!discovery.searched(vec![device(DeviceBackend::Soapy, "remote")], now));
+        assert!(discovery.searched(vec![device(DeviceBackend::SOAPY, "remote")], now));
+        assert!(!discovery.searched(vec![device(DeviceBackend::SOAPY, "remote")], now));
         assert!(discovery.searched(Vec::new(), now));
     }
 }

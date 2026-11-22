@@ -5,7 +5,7 @@ use super::graph_nodes;
 use crate::store::node_kind;
 
 const RETIRED_DRIVER_ID: &str = "siggen";
-const VIRTUAL: &str = DeviceBackend::Virtual.as_str();
+const VIRTUAL: &str = DeviceBackend::VIRTUAL.as_str();
 
 pub(super) fn generators_join_the_virtual_backend(
     snapshot: &mut Value,

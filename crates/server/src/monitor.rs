@@ -275,7 +275,7 @@ mod tests {
             .map(|node| &mut node.body)
         {
             device.device = Some(DeviceRef {
-                backend: DeviceBackend::Virtual,
+                backend: DeviceBackend::VIRTUAL,
                 serial: None,
                 key: Some("band".to_owned()),
             });

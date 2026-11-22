@@ -2362,7 +2362,7 @@ fn a_stored_recording_device_reopens_as_a_recording_node() {
         panic!("a played recording is a Device node");
     };
     let pinned = device.device.as_ref().expect("a pinned recording");
-    assert_eq!(pinned.backend, DeviceBackend::Recording);
+    assert_eq!(pinned.backend, DeviceBackend::RECORDING);
     assert_eq!(pinned.key.as_deref(), Some("take-1"));
     assert_eq!(
         played
@@ -2716,7 +2716,7 @@ fn forgetting_a_radio_drops_the_settings_it_left_on_the_node() {
         (node.id.clone(), snapshot)
     };
     let tcp = sdrmm_wire::DeviceRef {
-        backend: DeviceBackend::Rtltcp,
+        backend: DeviceBackend::RTLTCP,
         serial: None,
         key: Some("192.168.4.104:1234".to_string()),
     };

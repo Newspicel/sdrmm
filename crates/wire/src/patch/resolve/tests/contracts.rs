@@ -128,7 +128,7 @@ fn a_radio_and_a_generator_share_a_decoder_but_a_beam_stands_alone() {
                 "gen",
                 NodeBody::Device(DeviceNode {
                     device: Some(DeviceRef {
-                        backend: crate::DeviceBackend::Virtual,
+                        backend: crate::DeviceBackend::VIRTUAL,
                         serial: None,
                         key: Some("gen-".to_owned()),
                     }),

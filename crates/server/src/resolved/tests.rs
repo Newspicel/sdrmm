@@ -73,7 +73,7 @@ fn snapshot(channels: &[&str]) -> WorkspaceSnapshot {
     let mut snapshot = WorkspaceSnapshot::starter();
     if let NodeBody::Device(device) = &mut snapshot.graph.nodes[0].body {
         device.device = Some(DeviceRef {
-            backend: DeviceBackend::Virtual,
+            backend: DeviceBackend::VIRTUAL,
             serial: None,
             key: Some("band".to_owned()),
         });

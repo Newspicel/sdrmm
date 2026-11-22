@@ -23,7 +23,7 @@ pub mod fuzzing;
 mod proto;
 mod stream;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Rtltcp;
+const DRIVER_ID: DeviceBackend = DeviceBackend::RTLTCP;
 
 const PATIENCE: Duration = Duration::from_secs(15);
 const BETWEEN_DIALS: Duration = Duration::from_millis(500);
@@ -54,6 +54,11 @@ fn device_info(endpoint: &Endpoint) -> DeviceInfo {
 impl DeviceDriver for RtlTcpDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "rtl_tcp", sdrmm_wire::BackendReach::Network)
+            .address_hint("192.168.1.5:1234")
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

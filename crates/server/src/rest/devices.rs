@@ -25,6 +25,7 @@ pub(super) async fn get_devices(
     let claims = sdrmm_wire::device_claims(&state.resolved.current().graph, &devices);
     Ok(Json(DevicesResponse {
         devices,
+        backends: state.engine.registry().specs(),
         claims,
         synthetic: sdrmm_engine::synthetic_devices_offered(),
     }))

@@ -26,7 +26,7 @@ pub mod fuzzing;
 mod proto;
 mod stream;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Spyserver;
+const DRIVER_ID: DeviceBackend = DeviceBackend::SPYSERVER;
 
 const CLIENT_NAME: &str = "SDRmm";
 
@@ -55,6 +55,11 @@ fn device_info(endpoint: &Endpoint) -> WireDeviceInfo {
 impl DeviceDriver for SpyServerDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "SpyServer", sdrmm_wire::BackendReach::Network)
+            .address_hint("192.168.1.5:5555")
     }
 
     fn probe(&self) -> Vec<WireDeviceInfo> {

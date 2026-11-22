@@ -148,6 +148,18 @@ impl DeviceDriver for AaroniaDriver {
         DRIVER_ID
     }
 
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(
+            DRIVER_ID,
+            "Aaronia SPECTRAN",
+            sdrmm_wire::BackendReach::Local,
+        )
+        .usb([
+            sdrmm_wire::UsbIdentity::new(0x2f72, Some(0x0060), "SPECTRAN V6"),
+            sdrmm_wire::UsbIdentity::new(0x2f72, Some(0x0064), "SPECTRAN V6 ECO"),
+        ])
+    }
+
     fn health(&self) -> Option<DoctorCheck> {
         if self.api.is_none() && !api::platform_supported() {
             return None;

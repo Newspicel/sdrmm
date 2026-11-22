@@ -123,10 +123,6 @@ fn generated(root: &Path) -> Result<Vec<(&'static str, String)>> {
             "web/src/generated/limits.json",
             sdrmm_wire::limits::generated()?,
         ),
-        (
-            "web/src/generated/backends.json",
-            serde_json::to_string_pretty(&sdrmm_wire::backend_table())?,
-        ),
         ("docs/reference/wires.md", wires::page(&catalog)),
         (
             modes::DOCS_PAGE,

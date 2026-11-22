@@ -51,7 +51,7 @@ fn hold_tuning(engine: &Engine, ds: u32) {
 
 fn mock_info(key: &str, serial: Option<&str>) -> DeviceInfo {
     DeviceInfo {
-        driver: DeviceBackend::Rtlsdr,
+        driver: DeviceBackend::RTLSDR,
         key: key.to_string(),
         label: format!("Mock {key}"),
         serial: serial.map(str::to_string),
@@ -108,7 +108,7 @@ struct DyingDriver;
 
 impl DeviceDriver for DyingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -166,7 +166,7 @@ struct InstantFailDriver;
 
 impl DeviceDriver for InstantFailDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -214,7 +214,7 @@ struct VanishingDriver {
 
 impl DeviceDriver for VanishingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -240,7 +240,7 @@ struct AdoptingDriver {
 
 impl DeviceDriver for AdoptingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -270,7 +270,7 @@ struct CountingDriver {
 
 impl DeviceDriver for CountingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -290,7 +290,7 @@ struct RatelessDriver;
 
 impl DeviceDriver for RatelessDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -334,7 +334,7 @@ struct FloodingDriver;
 
 impl DeviceDriver for FloodingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -383,7 +383,7 @@ struct FaultOnDemandDriver {
 
 impl DeviceDriver for FaultOnDemandDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -455,7 +455,7 @@ struct BlockingApplyDriver {
 
 impl DeviceDriver for BlockingApplyDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -516,7 +516,7 @@ struct SlowTunerDriver {
 
 impl DeviceDriver for SlowTunerDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -590,7 +590,7 @@ struct RefusedSweepDriver;
 
 impl DeviceDriver for RefusedSweepDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -665,7 +665,7 @@ struct SignalDriver;
 
 impl DeviceDriver for SignalDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -767,7 +767,7 @@ struct AdsbTestDriver;
 
 impl DeviceDriver for AdsbTestDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Airspy
+        DeviceBackend::AIRSPY
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -864,7 +864,7 @@ const SNAPPED_RATE: f64 = 2_400_000.0;
 
 impl DeviceDriver for SnappingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -921,7 +921,7 @@ struct HeldSinkDriver {
 
 impl DeviceDriver for HeldSinkDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -974,7 +974,7 @@ struct ExclusiveDriver {
 
 impl DeviceDriver for ExclusiveDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1057,7 +1057,7 @@ struct UnopenableDriver {
 
 impl DeviceDriver for UnopenableDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1105,7 +1105,7 @@ struct BusyDriver;
 
 impl DeviceDriver for BusyDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1125,7 +1125,7 @@ struct FlappingDriver {
 
 impl DeviceDriver for FlappingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

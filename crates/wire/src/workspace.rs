@@ -597,7 +597,7 @@ mod tests {
 
     fn rtlsdr() -> DeviceRef {
         DeviceRef {
-            backend: DeviceBackend::Rtlsdr,
+            backend: DeviceBackend::RTLSDR,
             serial: Some("00000001".to_owned()),
             key: None,
         }

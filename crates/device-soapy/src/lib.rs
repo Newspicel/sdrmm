@@ -25,7 +25,7 @@ use capture::{Quiesce, RxPlan};
 pub use probe::enable_isolated_probes;
 pub use runtime::{RuntimeInfo, runtime_info};
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Soapy;
+const DRIVER_ID: DeviceBackend = DeviceBackend::SOAPY;
 
 #[cfg(test)]
 #[global_allocator]
@@ -172,6 +172,15 @@ impl SoapyDriver {
 impl DeviceDriver for SoapyDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(DRIVER_ID, "SoapySDR", sdrmm_wire::BackendReach::Local).usb([
+            sdrmm_wire::UsbIdentity::new(0x1d50, Some(0x6108), "LimeSDR Mini"),
+            sdrmm_wire::UsbIdentity::new(0x0403, Some(0x601f), "LimeSDR-USB"),
+            sdrmm_wire::UsbIdentity::new(0x2cf0, Some(0x5246), "bladeRF x40/x115"),
+            sdrmm_wire::UsbIdentity::new(0x2cf0, Some(0x5250), "bladeRF 2.0 micro"),
+        ])
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {
@@ -1595,7 +1604,7 @@ mod tests {
     fn info_prefers_label_and_serial_key() {
         let args = soapy::Args::from("driver=rtlsdr, serial=00000001, label=Generic RTL2832U");
         let info = device_info(&args);
-        assert_eq!(info.driver, DeviceBackend::Soapy);
+        assert_eq!(info.driver, DeviceBackend::SOAPY);
         assert_eq!(info.key, "00000001");
         assert_eq!(info.label, "Generic RTL2832U");
     }

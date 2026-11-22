@@ -5,7 +5,7 @@ use sdrmm_wire::DeviceInfo;
 
 use crate::ffi;
 
-pub const DRIVER_ID: DeviceBackend = DeviceBackend::Sdrplay;
+pub const DRIVER_ID: DeviceBackend = DeviceBackend::SDRPLAY;
 pub const DUO_DUAL_TUNER_FS_HZ: f64 = 6_000_000.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

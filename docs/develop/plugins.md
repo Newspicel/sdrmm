@@ -3,7 +3,7 @@ title: Plugins
 description: Write WebAssembly decoder, encoder, and array processor plugins in Rust with hot reload and native DSP kernels.
 ---
 
-Drop a `.wasm` into `--plugins-dir` (default `<data>/sdrmm/plugins`). The folder is hot-watched: rebuilt plugins reload live, reopening active channels with their wires and settings intact. Compiled modules cache under the user cache dir. For C/Zig/Go/AssemblyScript, see [Any language ABI](plugin-abi.md).
+Drop a `.wasm` into `--plugins-dir` (default `<data>/sdrmm/plugins`). The folder is hot-watched: rebuilt plugins reload live, reopening active channels with their wires and settings intact. Compiled modules cache under the user cache dir. For C/Zig/Go/AssemblyScript, see [Any language ABI](plugin-abi.md). Radio drivers are [device plugins](device-plugins.md).
 
 ## Quick start (Rust)
 

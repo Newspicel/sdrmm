@@ -45,7 +45,7 @@ mod source;
 mod tone;
 mod tx;
 
-const DRIVER_ID: DeviceBackend = DeviceBackend::Ad936x;
+const DRIVER_ID: DeviceBackend = DeviceBackend::AD936X;
 
 const SINK_BLOCK_SAMPLES: usize = 32_768;
 
@@ -147,6 +147,21 @@ fn usb_info(radio: &discovery::UsbRadio) -> DeviceInfo {
 impl DeviceDriver for Ad936xDriver {
     fn id(&self) -> DeviceBackend {
         DRIVER_ID
+    }
+
+    fn spec(&self) -> sdrmm_wire::BackendSpec {
+        sdrmm_wire::BackendSpec::new(
+            DRIVER_ID,
+            "AntSDR / Pluto",
+            sdrmm_wire::BackendReach::Network,
+        )
+        .soapy_module("plutosdr")
+        .address_hint("192.168.1.10:30431")
+        .usb([sdrmm_wire::UsbIdentity::new(
+            0x0456,
+            Some(0xb673),
+            "AD936x board",
+        )])
     }
 
     fn probe(&self) -> Vec<DeviceInfo> {

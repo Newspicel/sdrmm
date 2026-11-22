@@ -18,7 +18,7 @@ pub fn snapshot(receivers: usize) -> WorkspaceSnapshot {
             RECORDING,
             NodeBody::Device(DeviceNode {
                 device: Some(DeviceRef {
-                    backend: DeviceBackend::Recording,
+                    backend: DeviceBackend::RECORDING,
                     serial: None,
                     key: Some(STEM.to_owned()),
                 }),

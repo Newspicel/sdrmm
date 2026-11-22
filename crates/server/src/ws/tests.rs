@@ -153,7 +153,7 @@ fn radio_of(backend: DeviceBackend, key: &str) -> sdrmm_wire::PatchNode {
 }
 
 fn radio(key: &str) -> sdrmm_wire::PatchNode {
-    radio_of(DeviceBackend::Virtual, key)
+    radio_of(DeviceBackend::VIRTUAL, key)
 }
 
 fn channel(id: &str, channel_type: &str) -> sdrmm_wire::PatchNode {
@@ -763,7 +763,7 @@ async fn spectrum_resumes_after_a_reconnect_without_a_resubscribe() {
         engine,
         graph(
             vec![
-                radio_of(DeviceBackend::Rtlsdr, "faulting"),
+                radio_of(DeviceBackend::RTLSDR, "faulting"),
                 of("scope", sdrmm_wire::NodeKind::Scope),
             ],
             vec![wire(("radio", "iq"), ("scope", "iq"))],
@@ -835,12 +835,12 @@ struct FaultingDriver {
 
 impl sdrmm_device::DeviceDriver for FaultingDriver {
     fn id(&self) -> DeviceBackend {
-        DeviceBackend::Rtlsdr
+        DeviceBackend::RTLSDR
     }
 
     fn probe(&self) -> Vec<sdrmm_wire::DeviceInfo> {
         vec![sdrmm_wire::DeviceInfo {
-            driver: DeviceBackend::Rtlsdr,
+            driver: DeviceBackend::RTLSDR,
             key: "faulting".to_string(),
             label: "Faulting mock".to_string(),
             serial: None,
