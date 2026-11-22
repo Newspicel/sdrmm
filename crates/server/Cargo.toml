@@ -49,6 +49,7 @@ sdrmm-serial.workspace = true
 sdrmm-dvsi = { workspace = true, optional = true }
 sdrmm-codec = { workspace = true, optional = true }
 sdrmm-tools.workspace = true
+sdrmm-voicechat.workspace = true
 
 # `macros` for the FromRequest/FromRequestParts derives that remap extractor rejections
 # onto the ApiError contract.

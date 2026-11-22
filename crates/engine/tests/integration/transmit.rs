@@ -241,7 +241,9 @@ async fn voice_fed_to_an_nfm_transmitter_comes_back_out_of_the_receiver() {
             .map(|n| (0.5 * (std::f64::consts::TAU * TONE_HZ * n as f64 / AUDIO_RATE).sin()) as f32)
             .collect();
         spoken += chunk;
-        engine.transmit_audio(ds, "tx", pcm).expect("audio taken");
+        engine
+            .transmit_audio(ds, "tx", 1, pcm)
+            .expect("audio taken");
         pace.tick().await;
     }
     let keyed = settled(&engine, ds, |now| now.bursts >= 1);

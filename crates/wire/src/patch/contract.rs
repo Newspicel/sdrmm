@@ -148,12 +148,25 @@ impl IqOrigin {
     pub const ALL: &'static [Self] = &[Self::Radio, Self::Synthetic, Self::Derived];
 }
 
+/// Where audio comes from: a channel the engine runs, or a voice the server carries straight
+/// to a transmitter (a microphone, a voice chat), which no channel audio input can tap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioOrigin {
+    Channel,
+    Voice,
+}
+
+impl AudioOrigin {
+    pub const ALL: &'static [Self] = &[Self::Channel, Self::Voice];
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Payload {
     Iq { origins: Vec<IqOrigin> },
     Baseband,
-    Audio,
+    Audio { origins: Vec<AudioOrigin> },
     Events { kinds: KindSet },
     Video,
     Control { verbs: Vec<ControlVerb> },
@@ -198,6 +211,13 @@ impl Payload {
     }
 
     #[must_use]
+    pub fn audio(origins: &[AudioOrigin]) -> Self {
+        Self::Audio {
+            origins: origins.to_vec(),
+        }
+    }
+
+    #[must_use]
     pub fn events(accept: Accept) -> Self {
         Self::Events {
             kinds: accept.kinds(),
@@ -216,7 +236,7 @@ impl Payload {
         match self {
             Self::Iq { .. } => PortType::Iq,
             Self::Baseband => PortType::Baseband,
-            Self::Audio => PortType::Audio,
+            Self::Audio { .. } => PortType::Audio,
             Self::Events { .. } => PortType::Events,
             Self::Video => PortType::Video,
             Self::Control { .. } => PortType::Control,
@@ -241,6 +261,9 @@ impl Payload {
             (Self::Iq { origins }, Self::Iq { origins: offered }) => {
                 offered.iter().all(|origin| origins.contains(origin))
             }
+            (Self::Audio { origins }, Self::Audio { origins: offered }) => {
+                offered.iter().all(|origin| origins.contains(origin))
+            }
             (Self::Events { kinds }, Self::Events { kinds: offered }) => {
                 offered.is_empty() || !kinds.intersection(offered).is_empty()
             }
@@ -258,13 +281,16 @@ impl Payload {
                 [IqOrigin::Radio] => Some("a radio lane".to_owned()),
                 _ => None,
             },
+            Self::Audio { origins } => match origins.as_slice() {
+                [AudioOrigin::Channel] => Some("channel audio".to_owned()),
+                _ => None,
+            },
             Self::Events { kinds } => kinds_noun(kinds),
             Self::Control { verbs } => match verbs.as_slice() {
                 [verb] => Some(verb.noun().to_owned()),
                 _ => None,
             },
             Self::Baseband
-            | Self::Audio
             | Self::Video
             | Self::Position
             | Self::Array

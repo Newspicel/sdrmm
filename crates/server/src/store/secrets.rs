@@ -20,11 +20,7 @@ impl Store {
 
     /// Writes `value` under `id`, the id a workspace from another server may already name.
     pub fn put_secret(&self, id: &str, value: &str) -> Result<(), StoreError> {
-        self.lock().execute(
-            "INSERT INTO secrets (id, value, updated_at) VALUES (?1, ?2, ?3) \
-             ON CONFLICT(id) DO UPDATE SET value = ?2, updated_at = ?3",
-            params![id, value, now_rfc3339()],
-        )?;
+        put(&self.lock(), id, value)?;
         self.secrets_changed();
         Ok(())
     }
@@ -44,7 +40,7 @@ impl Store {
         self.secret_changes.subscribe()
     }
 
-    fn secrets_changed(&self) {
+    pub(super) fn secrets_changed(&self) {
         self.secret_changes
             .send_modify(|count| *count = count.wrapping_add(1));
     }
@@ -62,7 +58,9 @@ pub(super) fn collect(conn: &Connection) -> Result<usize, StoreError> {
          AND NOT EXISTS (SELECT 1 FROM workspaces \
              WHERE instr(snapshot, '\"' || secrets.id || '\"') > 0) \
          AND NOT EXISTS (SELECT 1 FROM workspace_history \
-             WHERE instr(snapshot, '\"' || secrets.id || '\"') > 0)",
+             WHERE instr(snapshot, '\"' || secrets.id || '\"') > 0) \
+         AND NOT EXISTS (SELECT 1 FROM chat_accounts \
+             WHERE instr(body, '\"' || secrets.id || '\"') > 0)",
         params![rfc3339(cutoff)],
     )?;
     if removed > 0 {
@@ -71,7 +69,21 @@ pub(super) fn collect(conn: &Connection) -> Result<usize, StoreError> {
     Ok(removed)
 }
 
-fn insert(conn: &Connection, value: &str) -> Result<String, StoreError> {
+pub(super) fn put(conn: &Connection, id: &str, value: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO secrets (id, value, updated_at) VALUES (?1, ?2, ?3) \
+         ON CONFLICT(id) DO UPDATE SET value = ?2, updated_at = ?3",
+        params![id, value, now_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub(super) fn remove(conn: &Connection, id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM secrets WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub(super) fn insert(conn: &Connection, value: &str) -> Result<String, StoreError> {
     Ok(conn.query_row(
         "INSERT INTO secrets (id, value, updated_at) \
          VALUES (lower(hex(randomblob(16))), ?1, ?2) RETURNING id",

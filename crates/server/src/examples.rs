@@ -102,7 +102,8 @@ static EXAMPLES: &[Example] = &[
     },
 ];
 
-/// Kinds no shipped example can hold: a plugin processor runs only once its plugin is loaded.
+/// Kinds no shipped example can hold: a plugin processor runs only once its plugin is loaded,
+/// a voice chat only with the operator's own chat account.
 #[cfg(test)]
 const UNCOVERED: &[sdrmm_wire::NodeKind] = &[
     sdrmm_wire::NodeKind::Schedule,
@@ -110,6 +111,7 @@ const UNCOVERED: &[sdrmm_wire::NodeKind] = &[
     sdrmm_wire::NodeKind::Microphone,
     sdrmm_wire::NodeKind::Encoder,
     sdrmm_wire::NodeKind::Transmit,
+    sdrmm_wire::NodeKind::VoiceChat,
 ];
 
 #[derive(Debug)]

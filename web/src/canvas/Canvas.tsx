@@ -156,22 +156,7 @@ export function Canvas() {
   const canEdit = useCanEdit();
   const select = workspace.select;
   const claimed = menu !== null || adding !== null || workspace.expanded !== null;
-  useEffect(() => {
-    if (claimed) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || isTyping(event.target)) {
-        return;
-      }
-      setNodes((previous) =>
-        previous.map((node) => (node.selected === true ? { ...node, selected: false } : node)),
-      );
-      select(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [claimed, select, setNodes]);
+  useEscapeDeselects(claimed, select, setNodes);
 
   return (
     <div
@@ -265,6 +250,30 @@ export function Canvas() {
       )}
     </div>
   );
+}
+
+/** Escape clears the selection, unless a menu, palette or full screen face has the keyboard. */
+function useEscapeDeselects(
+  claimed: boolean,
+  select: (id: string | null) => void,
+  setNodes: React.Dispatch<React.SetStateAction<Node<FlowData>[]>>,
+): void {
+  useEffect(() => {
+    if (claimed) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isTyping(event.target)) {
+        return;
+      }
+      setNodes((previous) =>
+        previous.map((node) => (node.selected === true ? { ...node, selected: false } : node)),
+      );
+      select(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [claimed, select, setNodes]);
 }
 
 function addsToSelection(event: React.MouseEvent): boolean {

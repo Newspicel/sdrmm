@@ -7,12 +7,13 @@ use std::{
 };
 
 use sdrmm_decoder::encoder::EncoderParams;
+use sdrmm_dsp::audio::{downmix::mono_mix, mix::lane_of, voice_gate::VoiceGate};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload, TransmitRequest, TransmitSource};
 use sdrmm_wire::{
-    AUDIO_PORT, AudioProcessing, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeProblem,
-    ProblemSource, TRANSMIT_PORT, TransmitStatus,
+    AUDIO_PORT, AudioProcessing, AudioRoute, BASEBAND_PORT, IQ_PORT, MicrophoneNode, NodeBody,
+    NodeProblem, ProblemSource, SendMode, TRANSMIT_PORT, TransmitStatus,
 };
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast::error::RecvError, watch};
 
 use crate::{AppState, resolved::Resolved, rest::AppError};
 
@@ -28,6 +29,8 @@ struct Link {
 #[derive(Default)]
 pub(crate) struct TransmitHub {
     links: Mutex<HashMap<Link, Arc<AtomicBool>>>,
+    gates: Mutex<HashMap<String, VoiceGate>>,
+    armed: watch::Sender<u64>,
 }
 
 /// The radio a transmitter drives and what the patch wires into it.
@@ -198,22 +201,36 @@ pub(crate) fn send(
     Ok(())
 }
 
-/// Carries a microphone's audio to every armed transmitter its wires reach. Returns how many
-/// took it.
+/// Carries a microphone's 48 kHz audio to the armed transmitters its wires reach, if its send
+/// mode lets the frame through. Returns how many took it.
 pub(crate) fn speak(state: &AppState, microphone: &str, pcm: &[f32]) -> usize {
     let resolved = state.resolved.current();
-    if !matches!(
-        resolved.graph.node(microphone).map(|found| &found.body),
-        Some(NodeBody::Microphone(_))
-    ) {
+    let Some(NodeBody::Microphone(node)) = resolved.graph.node(microphone).map(|found| &found.body)
+    else {
+        return 0;
+    };
+    if !state.transmit.passes(microphone, node, pcm) {
         return 0;
     }
-    reached_from(&resolved, microphone, AUDIO_PORT)
+    speak_as(state, microphone, lane_of(microphone), pcm)
+}
+
+/// Whether `source`'s audio out reaches an armed transmitter through an encoder.
+pub(crate) fn reaches_armed(engine: &Engine, resolved: &Resolved, source: &str) -> bool {
+    reached_from(resolved, source, AUDIO_PORT)
+        .any(|encoder| !transmitters_of(engine, resolved, encoder).is_empty())
+}
+
+/// Carries audio from any node whose audio out reaches armed transmitters through an encoder,
+/// on its own mixing lane. Returns how many took it.
+pub(crate) fn speak_as(state: &AppState, source: &str, lane: u64, pcm: &[f32]) -> usize {
+    let resolved = state.resolved.current();
+    reached_from(&resolved, source, AUDIO_PORT)
         .flat_map(|encoder| transmitters_of(&state.engine, &resolved, encoder))
         .filter(|(device_set, transmitter)| {
             state
                 .engine
-                .transmit_audio(*device_set, transmitter, pcm.to_vec())
+                .transmit_audio(*device_set, transmitter, lane, pcm.to_vec())
                 .is_ok()
         })
         .count()
@@ -257,9 +274,40 @@ pub(crate) fn reconcile(state: &AppState) {
 }
 
 impl TransmitHub {
+    /// Ticks whenever transmitters were armed, disarmed or relinked, so nodes that key them
+    /// look again at once.
+    pub(crate) fn subscribe_armed(&self) -> watch::Receiver<u64> {
+        self.armed.subscribe()
+    }
+
+    fn passes(&self, microphone: &str, node: &MicrophoneNode, pcm: &[f32]) -> bool {
+        if node.send != SendMode::VoiceActivity {
+            return true;
+        }
+        let mut gates = self.gates.lock().unwrap_or_else(PoisonError::into_inner);
+        let gate = gates
+            .entry(microphone.to_owned())
+            .or_insert_with(|| VoiceGate::new(node.threshold_db as f32, node.hang_ms));
+        gate.set(node.threshold_db as f32, node.hang_ms);
+        gate.feed(pcm)
+    }
+
+    fn forget_gates_of_gone_microphones(&self, resolved: &Resolved) {
+        let mut gates = self.gates.lock().unwrap_or_else(PoisonError::into_inner);
+        gates.retain(|id, _| {
+            matches!(
+                resolved.graph.node(id).map(|found| &found.body),
+                Some(NodeBody::Microphone(node)) if node.send == SendMode::VoiceActivity
+            )
+        });
+    }
+
     /// Starts a forwarder for every channel wired into an armed transmitter's encoder and
     /// stops the ones the patch no longer asks for.
     fn relink(&self, state: &AppState, resolved: &Resolved) {
+        self.armed
+            .send_modify(|count| *count = count.wrapping_add(1));
+        self.forget_gates_of_gone_microphones(resolved);
         let wanted = wanted_links(&state.engine, resolved);
         let mut links = self.links.lock().unwrap_or_else(PoisonError::into_inner);
         links.retain(|link, stop| {
@@ -309,13 +357,17 @@ fn mono(block: &PcmBlock) -> Option<Vec<f32>> {
     let PcmPayload::Samples(samples) = &block.payload else {
         return None;
     };
-    let channels = usize::from(block.channels.max(1));
-    Some(
-        samples
-            .chunks_exact(channels)
-            .map(|frame| frame.iter().sum::<f32>() / channels as f32)
-            .collect(),
-    )
+    Some(mono_mix(samples, usize::from(block.channels)))
+}
+
+/// The mixing lane of one channel's audio, the same for every node that carries it.
+pub(crate) fn route_lane(route: &AudioRoute) -> u64 {
+    lane_of(&format!(
+        "{}/{}/{}",
+        route.device_set,
+        route.channel,
+        route.fx.join(",")
+    ))
 }
 
 fn forward(engine: &Arc<Engine>, link: &Link) -> Result<Arc<AtomicBool>, String> {
@@ -323,6 +375,7 @@ fn forward(engine: &Arc<Engine>, link: &Link) -> Result<Arc<AtomicBool>, String>
         .subscribe_route_pcm(&link.route)
         .map_err(|error| error.to_string())?;
     let stop = Arc::new(AtomicBool::new(false));
+    let lane = route_lane(&link.route);
     let (engine, link, halted) = (engine.clone(), link.clone(), stop.clone());
     std::thread::Builder::new()
         .name("sdrmm-tx-audio".to_owned())
@@ -337,7 +390,7 @@ fn forward(engine: &Arc<Engine>, link: &Link) -> Result<Arc<AtomicBool>, String>
                     continue;
                 };
                 if engine
-                    .transmit_audio(link.radio, &link.transmitter, pcm)
+                    .transmit_audio(link.radio, &link.transmitter, lane, pcm)
                     .is_err()
                 {
                     return;

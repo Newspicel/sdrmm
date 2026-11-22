@@ -261,7 +261,7 @@
   {
     "kind": "microphone",
     "data": {
-      "vox": false,
+      "send": "push_to_talk",
       "threshold_db": -35.0,
       "hang_ms": 600
     }
@@ -284,5 +284,25 @@
       "text": ""
     },
     "kind": "note"
+  },
+  {
+    "kind": "voice_chat",
+    "data": {
+      "account": "",
+      "channel": "",
+      "allowed": [],
+      "to_air": {
+        "mode": "voice_activity",
+        "threshold_db": -35.0,
+        "hang_ms": 600,
+        "volume": 1.0
+      },
+      "to_chat": {
+        "mode": "voice_activity",
+        "threshold_db": -35.0,
+        "hang_ms": 600,
+        "volume": 1.0
+      }
+    }
   }
 ]

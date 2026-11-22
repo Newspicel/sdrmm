@@ -15,6 +15,7 @@ import type {
   Bookmark,
   ChannelSettings,
   ChannelTypesResponse,
+  ChatAccount,
   CpsCodeplugDetail,
   CpsCodeplugRequest,
   CpsConvertRequest,
@@ -135,6 +136,7 @@ export const CHANNEL_TYPES_KEY = ["get", "/api/channeltypes"] as const;
 export const ENCODER_TYPES_KEY = ["get", "/api/encodertypes"] as const;
 export const PRESETS_KEY = ["get", "/api/presets"] as const;
 export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
+export const CHAT_ACCOUNTS_KEY = ["get", "/api/chat-accounts"] as const;
 export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
 export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
@@ -359,6 +361,31 @@ export async function deleteBookmark(id: number): Promise<void> {
       params: { path: { id } },
     }),
   );
+}
+
+export function chatAccountsQuery() {
+  return queryOptions({
+    queryKey: CHAT_ACCOUNTS_KEY,
+    queryFn: async (): Promise<ChatAccount[]> =>
+      unwrap(await client.GET("/api/chat-accounts")).accounts,
+  });
+}
+
+export async function createChatAccount(account: ChatAccount): Promise<ChatAccount> {
+  return unwrap(await client.POST("/api/chat-accounts", { body: account }));
+}
+
+export async function updateChatAccount(account: ChatAccount): Promise<ChatAccount> {
+  return unwrap(
+    await client.PUT("/api/chat-accounts/{id}", {
+      params: { path: { id: account.id } },
+      body: account,
+    }),
+  );
+}
+
+export async function deleteChatAccount(id: string): Promise<void> {
+  unwrap(await client.DELETE("/api/chat-accounts/{id}", { params: { path: { id } } }));
 }
 
 export function denoiseModelsQuery(enabled: boolean) {

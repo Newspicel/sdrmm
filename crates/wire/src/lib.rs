@@ -58,6 +58,7 @@ pub use trunk::{
     TrunkScheme, TrunkSite, TrunkSpec, TrunkTalkgroups,
 };
 pub mod units;
+pub mod voice_chat;
 pub mod workspace;
 pub mod workspace_state;
 pub mod ws;
@@ -168,8 +169,8 @@ pub use network::{
 pub use node_action::{NetworkRadioRequest, NodeActed, NodeAction};
 pub use note::{MAX_NOTE_LEN, NoteNode};
 pub use patch::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioRecorderNode, BASEBAND_PORT,
-    BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelAddr, ChannelNode,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, ArrayOffer, AudioOrigin, AudioRecorderNode,
+    BASEBAND_PORT, BEARING_PORT, BasebandRecorderNode, CONTROL_PORT, ChannelAddr, ChannelNode,
     DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ, DEFAULT_SIGNAL_MAP_OFFSET_HZ, DEFAULT_TRUNK_PROBES,
     DecoderLogNode, DeviceNode, DeviceRef, EVENTS_PORT, Face, FaceSize, FamilyEntry, Feed, Held,
     Hue, HuntNode, IQ_PORT, IqOrigin, Keeps, LaneWire, MAX_CHANNELS_PER_RADIO, MAX_EDGES,
@@ -300,11 +301,16 @@ pub use tools::{
     ToolsResponse, UpdateNanoVnaMeasurementRequest, YagiParams,
 };
 pub use transmit::{
-    DEFAULT_TRANSMIT_LEVEL_DB, DEFAULT_TRANSMIT_TIMEOUT_S, DEFAULT_VOX_HANG_MS,
-    DEFAULT_VOX_THRESHOLD_DB, EncoderMessage, EncoderNode, MAX_MICROPHONE_FRAME,
-    MAX_TRANSMIT_TIMEOUT_S, MAX_VOX_HANG_MS, MICROPHONE_RATE_HZ, MIN_TRANSMIT_LEVEL_DB,
+    DEFAULT_TRANSMIT_LEVEL_DB, DEFAULT_TRANSMIT_TIMEOUT_S, EncoderMessage, EncoderNode,
+    MAX_MICROPHONE_FRAME, MAX_TRANSMIT_TIMEOUT_S, MICROPHONE_RATE_HZ, MIN_TRANSMIT_LEVEL_DB,
     MicrophoneNode, TransmitAction, TransmitNode, TransmitPhase, TransmitSettings, TransmitStatus,
     encode_microphone_pcm, microphone_pcm,
+};
+pub use voice_chat::{
+    ChatAccount, ChatAccountsResponse, ChatService, ChatTalker, DEFAULT_VOX_HANG_MS,
+    DEFAULT_VOX_THRESHOLD_DB, MAX_CHAT_ACCOUNT_LEN, MAX_CHAT_ALLOWED, MAX_CHAT_ALLOWED_LEN,
+    MAX_CHAT_CHANNEL_LEN, MAX_VOX_HANG_MS, SendMode, VoiceChatNode, VoiceChatState,
+    VoiceChatStatus, VoiceGateSettings,
 };
 pub use workspace::{
     CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, NoticeWire,

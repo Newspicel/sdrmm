@@ -5,6 +5,7 @@ import type {
   PatchNode,
   TransmitSettings,
   TransmitStatus,
+  VoiceGateSettings,
 } from "../../lib/types";
 
 export const MIN_LEVEL_DB = -60;
@@ -58,4 +59,12 @@ export function withMicrophone(
   next: Partial<Extract<PatchNode, { kind: "microphone" }>["data"]>,
 ): PatchNode {
   return node.kind === "microphone" ? { ...node, data: { ...node.data, ...next } } : node;
+}
+
+/** A gate edit on a microphone, whose gate mode is its `send`. */
+export function withMicrophoneGate(
+  node: PatchNode,
+  { mode, ...levels }: Partial<VoiceGateSettings>,
+): PatchNode {
+  return withMicrophone(node, mode === undefined ? levels : { ...levels, send: mode });
 }

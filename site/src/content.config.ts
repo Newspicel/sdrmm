@@ -5,7 +5,7 @@ import { normalizeDocId } from "./docs/nav";
 
 const docs = defineCollection({
   loader: glob({
-    pattern: "**/*.md",
+    pattern: ["**/*.md", "!superpowers/**"],
     base: "../docs",
     generateId: ({ entry }) => normalizeDocId(entry) || "index",
   }),

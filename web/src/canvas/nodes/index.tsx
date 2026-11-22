@@ -67,6 +67,7 @@ const FACES: Partial<Record<NodeKind, Face>> = {
   encoder: lazyFace(() => import("./EncoderFace"), "EncoderFace"),
   transmit: lazyFace(() => import("./TransmitFace"), "TransmitFace"),
   note: lazyFace(() => import("./NoteFace"), "NoteFace"),
+  voice_chat: lazyFace(() => import("./VoiceChatFace"), "VoiceChatFace"),
 };
 
 const PROCESSOR_FLOW = "processor";

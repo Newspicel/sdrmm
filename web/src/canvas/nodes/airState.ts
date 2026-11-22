@@ -1,5 +1,6 @@
 import { reachesOf } from "../../lib/resolved";
-import type { PatchNode, ResolvedPatch, TransmitStatus } from "../../lib/types";
+import type { DeviceSet, PatchNode, ResolvedPatch, TransmitStatus } from "../../lib/types";
+import { transmitStatusOf } from "./transmit";
 
 export type Air = "armed" | "on air";
 
@@ -23,4 +24,20 @@ export function transmitterOf(
     }
   }
   return null;
+}
+
+/** A voice source's audio reaches, through an Encoder, a transmitter that is armed. */
+export function reachesArmedTransmitter(
+  patch: ResolvedPatch | null,
+  nodes: readonly PatchNode[],
+  sets: readonly Pick<DeviceSet, "transmit">[],
+  node: string,
+): boolean {
+  return reachesOf(patch, node, "audio").some((reach) => {
+    const encoder = nodes.some(
+      (candidate) => candidate.id === reach.sink && candidate.kind === "encoder",
+    );
+    const transmitter = encoder ? transmitterOf(patch, nodes, reach.sink) : null;
+    return transmitter !== null && transmitStatusOf(sets, transmitter) !== null;
+  });
 }

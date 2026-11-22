@@ -6,6 +6,7 @@ import {
   transmitStatusOf,
   withEncoderSettings,
   withMicrophone,
+  withMicrophoneGate,
   withTransmitSettings,
 } from "./transmit";
 
@@ -78,18 +79,30 @@ describe("tooWide", () => {
 });
 
 describe("withMicrophone", () => {
+  const mic = {
+    id: "mic",
+    kind: "microphone",
+    data: { send: "push_to_talk", threshold_db: -35, hang_ms: 600 },
+    position: { x: 0, y: 0 },
+  } as PatchNode;
+
   it("edits a microphone and leaves any other node alone", () => {
-    const mic = {
-      id: "mic",
-      kind: "microphone",
-      data: { vox: false, threshold_db: -35, hang_ms: 600 },
-      position: { x: 0, y: 0 },
-    } as PatchNode;
-    expect(withMicrophone(mic, { vox: true })).toEqual({
+    expect(withMicrophone(mic, { send: "continuous" })).toEqual({
       ...mic,
-      data: { vox: true, threshold_db: -35, hang_ms: 600 },
+      data: { send: "continuous", threshold_db: -35, hang_ms: 600 },
     });
     const other = { id: "s", kind: "scope", position: { x: 0, y: 0 } } as PatchNode;
-    expect(withMicrophone(other, { vox: true })).toBe(other);
+    expect(withMicrophone(other, { send: "continuous" })).toBe(other);
+  });
+
+  it("reads a gate mode as the microphone's send and keeps the rest", () => {
+    expect(withMicrophoneGate(mic, { mode: "voice_activity" })).toEqual({
+      ...mic,
+      data: { send: "voice_activity", threshold_db: -35, hang_ms: 600 },
+    });
+    expect(withMicrophoneGate(mic, { hang_ms: 900 })).toEqual({
+      ...mic,
+      data: { send: "push_to_talk", threshold_db: -35, hang_ms: 900 },
+    });
   });
 });

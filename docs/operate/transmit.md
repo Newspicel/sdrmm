@@ -1,13 +1,13 @@
 ---
 title: Transmit
-description: Arm safely, send APRS, talk over NFM/AM/SSB with PTT or VOX, or relay baseband and lanes.
+description: Arm safely, send APRS, talk over NFM/AM/SSB with PTT, voice activity, or continuous, or relay baseband and lanes.
 ---
 
 > [!CAUTION]
 > Verify licence, band plan, power, and antenna load before pressing **Arm**. Armed state is never saved across reloads.
 
 ```patch
-[source] Microphone : PTT or VOX
+[source] Microphone : Send mode
 [encoder] NFM encoder : Audio FX + limiter
 [output] Transmitter : Arm, level & timeout
 [source] Device : Use = Send or Both
@@ -32,7 +32,7 @@ Set Device **Use** to **Send** or **Both** (**Receive** never keys TX). TX gain 
 ## Ways to feed a Transmitter
 
 - **Message (e.g. APRS):** `Encoder baseband → Transmitter → Device transmit`. Set frequency (empty = Device centre), **Arm**, press **Send**.
-- **Voice (NFM / AM / SSB):** `Microphone audio → Encoder → Transmitter → Device`. Hold key (or `Space`) for PTT, or enable **VOX**. Wiring another channel's `audio` builds a squelch-keyed relay. Voice encoders include the [Audio FX](channels.md#audio) chain plus a hard modulation limiter.
+- **Voice (NFM / AM / SSB):** `Microphone audio → Encoder → Transmitter → Device`. Set **Send** to **Push to talk** (hold key or `Space`), **Voice activity**, or **Continuous**. The mic only opens while it reaches an armed transmitter. See [Voice chat](voice-chat.md) for Discord and TeamSpeak. Wiring another channel's `audio` builds a squelch-keyed relay. Voice encoders include the [Audio FX](channels.md#audio) chain plus a hard modulation limiter.
 - **Channel / lane relay:** wire channel `baseband` or `Device iq` directly into Transmitter (always set an offset frequency unless antennas are isolated).
 
 ## Level, timeout, and width

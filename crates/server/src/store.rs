@@ -45,6 +45,10 @@ pub enum StoreError {
     CpsField(&'static str),
     #[error("that name is already taken")]
     CpsNameTaken,
+    #[error("chat account {0} not found")]
+    ChatAccountNotFound(String),
+    #[error("unusable chat account {0}")]
+    ChatAccountField(&'static str),
     #[error("antenna {0} not found")]
     NanoVnaAntennaNotFound(i64),
     #[error("measurement {0} not found")]
@@ -444,6 +448,13 @@ const MIGRATIONS: &[&str] = &[
     ) WITHOUT ROWID;
     ",
     "
+    CREATE TABLE chat_accounts (
+        id TEXT PRIMARY KEY,
+        body TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    ",
+    "
     CREATE TABLE sessions (
         id_sha256 BLOB PRIMARY KEY,
         subject TEXT NOT NULL,
@@ -496,6 +507,7 @@ pub struct Store {
     run_start: String,
     server_id: std::sync::Arc<str>,
     secret_changes: tokio::sync::watch::Sender<u64>,
+    chat_account_changes: tokio::sync::watch::Sender<u64>,
 }
 
 impl Store {
@@ -517,6 +529,7 @@ impl Store {
             run_start: now_rfc3339(),
             server_id,
             secret_changes: tokio::sync::watch::Sender::new(0),
+            chat_account_changes: tokio::sync::watch::Sender::new(0),
         };
         store.seed_workspaces()?;
         Ok(store)
@@ -2242,6 +2255,7 @@ pub fn rfc3339_now() -> String {
 
 mod arrays;
 mod audio_fx_lift;
+mod chat_accounts;
 mod coherent_break;
 mod cps;
 mod history;

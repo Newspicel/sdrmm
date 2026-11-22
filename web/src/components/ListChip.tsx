@@ -66,6 +66,7 @@ export function ListChip({
   entries,
   empty,
   quiet,
+  max,
   onChange,
 }: {
   label: string;
@@ -74,6 +75,8 @@ export function ListChip({
   entries: readonly Settings[];
   empty?: string | null;
   quiet: boolean;
+  /** The most entries the setting takes; Add stops there. */
+  max?: number;
   onChange: (entries: Settings[]) => void;
 }) {
   return (
@@ -84,7 +87,9 @@ export function ListChip({
       title={title}
       width="w-96"
     >
-      {() => <ListEditor label={label} item={item} entries={entries} onChange={onChange} />}
+      {() => (
+        <ListEditor label={label} item={item} entries={entries} max={max} onChange={onChange} />
+      )}
     </SettingChip>
   );
 }
@@ -93,11 +98,13 @@ function ListEditor({
   label,
   item,
   entries,
+  max = Number.POSITIVE_INFINITY,
   onChange,
 }: {
   label: string;
   item: Form;
   entries: readonly Settings[];
+  max?: number;
   onChange: (entries: Settings[]) => void;
 }) {
   const rows = useEntryIds(entries.length);
@@ -137,7 +144,7 @@ function ListEditor({
       <Button
         type="button"
         className={`${BTN_SM} self-start`}
-        disabled={draft !== null}
+        disabled={draft !== null || entries.length >= max}
         onClick={() => keep(blankEntry(item))}
       >
         <Icon glyph={Plus} size={12} />

@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { encodeMicrophonePcm, VoxGate } from "../../lib/microphone";
+import { useCallback, useEffect, useState } from "react";
+import { encodeMicrophonePcm } from "../../lib/microphone";
 import { type Capture, startCapture } from "../../lib/microphoneCapture";
 import { messageOf } from "../../lib/refusals";
+import type { SendMode } from "../../lib/types";
 import type { SdrSocket } from "../../lib/ws";
 
 export interface MicrophoneOptions {
-  vox: boolean;
-  thresholdDb: number;
-  hangMs: number;
+  send: SendMode;
+  /** The microphone's audio reaches an armed transmitter. */
+  armed: boolean;
   /** The talk key is held for this microphone. */
   held: boolean;
 }
@@ -15,19 +16,22 @@ export interface MicrophoneOptions {
 export interface Microphone {
   /** Keyed by hand: the button or the talk key. */
   keyed: boolean;
-  /** Frames are going up the socket right now. */
-  sending: boolean;
-  /** Captured for the voice key and waiting for sound. */
-  listening: boolean;
+  /** The browser microphone is open and every frame goes up the socket. */
+  live: boolean;
   level: number;
   error: string | null;
   key: () => void;
   unkey: () => void;
 }
 
+/** Push to talk opens on the key; the other modes stay open and leave the gate to the server. */
+export function captures(options: MicrophoneOptions, keyed: boolean): boolean {
+  return options.armed && (keyed || options.send !== "push_to_talk");
+}
+
 /**
- * Captures the microphone while keyed or while the voice key listens, and sends each frame up
- * the socket under `node` while keyed or while the voice key is open.
+ * Opens the microphone only while an armed transmitter hears it, and sends each frame up the
+ * socket under `node`.
  */
 export function useMicrophone(
   node: string,
@@ -35,21 +39,10 @@ export function useMicrophone(
   options: MicrophoneOptions,
 ): Microphone {
   const [pressed, setPressed] = useState(false);
-  const [sending, setSending] = useState(false);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const keyed = pressed || options.held;
-  const capturing = keyed || options.vox;
-  const live = useRef({ keyed, vox: options.vox });
-  const gate = useRef(new VoxGate(options.thresholdDb, options.hangMs));
-
-  useLayoutEffect(() => {
-    live.current = { keyed, vox: options.vox };
-  });
-
-  useEffect(() => {
-    gate.current = new VoxGate(options.thresholdDb, options.hangMs);
-  }, [options.thresholdDb, options.hangMs]);
+  const capturing = captures(options, keyed);
 
   useEffect(() => {
     if (!capturing) {
@@ -58,12 +51,7 @@ export function useMicrophone(
     let stopped = false;
     let capture: Capture | null = null;
     startCapture((frame, peak) => {
-      const voiced = gate.current.feed(peak, performance.now());
-      const open = live.current.keyed || (live.current.vox && voiced);
-      if (open) {
-        socket.send({ type: "Speak", data: { node, pcm: encodeMicrophonePcm(frame) } });
-      }
-      setSending(open);
+      socket.send({ type: "Speak", data: { node, pcm: encodeMicrophonePcm(frame) } });
       setLevel(peak);
     }).then(
       (started) => {
@@ -83,7 +71,6 @@ export function useMicrophone(
     return () => {
       stopped = true;
       capture?.stop();
-      setSending(false);
       setLevel(0);
     };
   }, [capturing, node, socket]);
@@ -96,8 +83,7 @@ export function useMicrophone(
 
   return {
     keyed,
-    sending,
-    listening: capturing && !sending && error === null,
+    live: capturing && error === null,
     level,
     error,
     key,

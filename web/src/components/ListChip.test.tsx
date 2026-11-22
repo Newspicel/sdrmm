@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Form, Settings } from "../lib/settingsForm";
 import type { PresetOption, SettingField } from "../lib/types";
-import { fitIds, ItemControl } from "./ListChip";
+import { ChipRows } from "./face/Chips";
+import { fitIds, ItemControl, ListChip } from "./ListChip";
 
 type Props = Record<string, unknown>;
 
@@ -86,5 +87,32 @@ describe("entry ids", () => {
     expect(grown[0]).toBe("a");
     expect(new Set(grown).size).toBe(3);
     expect(fitIds(["a", "b", "c"], 2)).toEqual(["a", "b"]);
+  });
+});
+
+const addDisabled = (html: string): boolean =>
+  /<button[^>]*disabled=""[^>]*>.*?Add<\/button>/.test(html);
+
+describe("ListChip", () => {
+  const ids: Form = [field("id", { type: "text" })];
+  const editor = (entries: Settings[], max?: number): string =>
+    renderToStaticMarkup(
+      <ChipRows>
+        <ListChip
+          label="Allowed"
+          title="Allowed"
+          item={ids}
+          entries={entries}
+          quiet={false}
+          max={max}
+          onChange={() => {}}
+        />
+      </ChipRows>,
+    );
+
+  it("stops adding at its most entries", () => {
+    expect(addDisabled(editor([{ id: "1" }], 2))).toBe(false);
+    expect(addDisabled(editor([{ id: "1" }, { id: "2" }], 2))).toBe(true);
+    expect(addDisabled(editor([{ id: "1" }, { id: "2" }]))).toBe(false);
   });
 });

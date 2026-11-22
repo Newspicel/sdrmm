@@ -898,6 +898,165 @@
         }
       }
     },
+    "/api/chat-accounts": {
+      "get": {
+        "operationId": "list_chat_accounts",
+        "responses": {
+          "200": {
+            "description": "Chat accounts. Credentials answer as ids, never as values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAccountsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_chat_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Kept under a fresh id, the id in the request is ignored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAccount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable name, server or credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/chat-accounts/{id}": {
+      "put": {
+        "operationId": "update_chat_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat account id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Replaced. A credential left stored or empty is kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAccount"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable name, server or credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Chat account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_chat_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat account id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed with its credentials"
+          },
+          "404": {
+            "description": "Chat account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/clients": {
       "get": {
         "operationId": "get_clients",
@@ -8211,6 +8370,14 @@
           }
         }
       },
+      "AudioOrigin": {
+        "type": "string",
+        "description": "Where audio comes from: a channel the engine runs, or a voice the server carries straight\nto a transmitter (a microphone, a voice chat), which no channel audio input can tap.",
+        "enum": [
+          "channel",
+          "voice"
+        ]
+      },
       "AudioProcessing": {
         "type": "object",
         "properties": {
@@ -10051,6 +10218,114 @@
             "items": {
               "$ref": "#/components/schemas/ChannelDescriptor"
             }
+          }
+        }
+      },
+      "ChatAccount": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatService"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "ChatAccountsResponse": {
+        "type": "object",
+        "required": [
+          "accounts"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatAccount"
+            }
+          }
+        }
+      },
+      "ChatService": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "service"
+            ],
+            "properties": {
+              "service": {
+                "type": "string",
+                "enum": [
+                  "discord"
+                ]
+              },
+              "token": {
+                "$ref": "#/components/schemas/Secret"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "address",
+              "service"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "identity": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "password": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "teamspeak"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "ChatTalker": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "allowed",
+          "verified"
+        ],
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "False while the chat has not tied the voice to a user: `id` is a stand-in."
           }
         }
       },
@@ -15974,24 +16249,26 @@
       },
       "MicrophoneNode": {
         "type": "object",
+        "required": [
+          "send",
+          "threshold_db",
+          "hang_ms"
+        ],
         "properties": {
           "hang_ms": {
             "type": "integer",
             "format": "int32",
             "description": "How long the voice key stays open after the level falls.",
-            "default": 600,
             "minimum": 0
+          },
+          "send": {
+            "$ref": "#/components/schemas/SendMode",
+            "description": "What keys the microphone: the key, the voice, or nothing."
           },
           "threshold_db": {
             "type": "number",
             "format": "double",
-            "description": "Peak level, in dB below full scale, that opens the voice key.",
-            "default": -35.0
-          },
-          "vox": {
-            "type": "boolean",
-            "description": "Keys by itself while the microphone is louder than the threshold.",
-            "default": false
+            "description": "Peak level, in dB below full scale, that opens the voice key."
           }
         }
       },
@@ -18672,6 +18949,24 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/VoiceChatNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "voice_chat"
+                ]
+              }
+            }
           }
         ]
       },
@@ -18722,7 +19017,8 @@
           "microphone",
           "encoder",
           "transmit",
-          "note"
+          "note",
+          "voice_chat"
         ]
       },
       "NodeProblem": {
@@ -19570,9 +19866,16 @@
           {
             "type": "object",
             "required": [
+              "origins",
               "type"
             ],
             "properties": {
+              "origins": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AudioOrigin"
+                }
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -20935,7 +21238,8 @@
           "calls",
           "recorder",
           "transmit",
-          "speaker"
+          "speaker",
+          "voice_chat"
         ]
       },
       "ProcessorAction": {
@@ -23732,6 +24036,15 @@
           }
         }
       },
+      "SendMode": {
+        "type": "string",
+        "description": "How a voice source decides when it is sending.",
+        "enum": [
+          "push_to_talk",
+          "voice_activity",
+          "continuous"
+        ]
+      },
       "SerialDeviceInfo": {
         "type": "object",
         "required": [
@@ -23807,6 +24120,24 @@
                 "type": "string",
                 "enum": [
                   "FeedStatus"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/VoiceChatStatus"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "VoiceChatStatus"
                 ]
               }
             }
@@ -28255,6 +28586,101 @@
           }
         }
       },
+      "VoiceChatNode": {
+        "type": "object",
+        "description": "Voice chat joins one channel of a chat account and trades audio with the patch both ways.\nPush to talk needs a key a server cannot hold, so neither direction accepts it.",
+        "properties": {
+          "account": {
+            "type": "string",
+            "default": ""
+          },
+          "allowed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Chat users whose voice goes to the air. Empty lets anyone through.",
+            "default": []
+          },
+          "channel": {
+            "type": "string",
+            "default": ""
+          },
+          "to_air": {
+            "$ref": "#/components/schemas/VoiceGateSettings",
+            "default": {
+              "hang_ms": 600,
+              "mode": "voice_activity",
+              "threshold_db": -35.0,
+              "volume": 1.0
+            }
+          },
+          "to_chat": {
+            "$ref": "#/components/schemas/VoiceGateSettings",
+            "default": {
+              "hang_ms": 600,
+              "mode": "voice_activity",
+              "threshold_db": -35.0,
+              "volume": 1.0
+            }
+          }
+        }
+      },
+      "VoiceChatState": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "connecting",
+          "joined"
+        ]
+      },
+      "VoiceChatStatus": {
+        "type": "object",
+        "required": [
+          "node",
+          "state"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "node": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/VoiceChatState"
+          },
+          "talking": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatTalker"
+            }
+          },
+          "to_air_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "to_air_open": {
+            "type": "boolean"
+          },
+          "to_chat_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "to_chat_open": {
+            "type": "boolean"
+          }
+        }
+      },
       "VoiceFacts": {
         "type": "object",
         "properties": {
@@ -28285,6 +28711,32 @@
             ],
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "VoiceGateSettings": {
+        "type": "object",
+        "description": "The voice gate of one direction: the mode, the level that opens it, how long it holds and\nthe linear gain applied to what it lets through.",
+        "properties": {
+          "hang_ms": {
+            "type": "integer",
+            "format": "int32",
+            "default": 600,
+            "minimum": 0
+          },
+          "mode": {
+            "$ref": "#/components/schemas/SendMode",
+            "default": "voice_activity"
+          },
+          "threshold_db": {
+            "type": "number",
+            "format": "double",
+            "default": -35.0
+          },
+          "volume": {
+            "type": "number",
+            "format": "double",
+            "default": 1.0
           }
         }
       },

@@ -4,12 +4,15 @@
 
 SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (708)
+## Rust crates (937)
 
 | Component | Version | License |
 | --- | --- | --- |
 | [addr2line](https://github.com/gimli-rs/addr2line) | 0.26.1 | Apache-2.0 OR MIT |
 | [adler2](https://github.com/oyvindln/adler2) | 2.0.1 | 0BSD OR MIT OR Apache-2.0 |
+| [aead](https://github.com/RustCrypto/traits) | 0.5.2 | MIT OR Apache-2.0 |
+| [aes](https://github.com/RustCrypto/block-ciphers) | 0.8.4 | MIT OR Apache-2.0 |
+| [aes-gcm](https://github.com/RustCrypto/AEADs) | 0.10.3 | Apache-2.0 OR MIT |
 | [ahash](https://github.com/tkaitchuck/ahash) | 0.8.12 | MIT OR Apache-2.0 |
 | [aho-corasick](https://github.com/BurntSushi/aho-corasick) | 1.1.5 | Unlicense OR MIT |
 | [allocator-api2](https://github.com/zakarumych/allocator-api2) | 0.2.21 | MIT OR Apache-2.0 |
@@ -51,6 +54,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [axum-core](https://github.com/tokio-rs/axum) | 0.5.6 | MIT |
 | [axum-macros](https://github.com/tokio-rs/axum) | 0.5.1 | MIT |
 | [axum-server](https://github.com/programatik29/axum-server) | 0.9.0 | MIT |
+| [base16ct](https://github.com/RustCrypto/formats/tree/master/base16ct) | 0.2.0 | Apache-2.0 OR MIT |
+| [base16ct](https://github.com/RustCrypto/formats) | 1.0.0 | Apache-2.0 OR MIT |
 | [base64](https://github.com/marshallpierce/rust-base64) | 0.22.1 | MIT OR Apache-2.0 |
 | [base64](https://github.com/marshallpierce/rust-base64) | 0.23.1 | MIT OR Apache-2.0 |
 | [base64ct](https://github.com/RustCrypto/formats) | 1.8.3 | Apache-2.0 OR MIT |
@@ -65,6 +70,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [block-buffer](https://github.com/RustCrypto/utils) | 0.12.1 | MIT OR Apache-2.0 |
 | [block2](https://github.com/madsmtm/objc2) | 0.6.2 | MIT |
 | [blocking](https://github.com/smol-rs/blocking) | 1.7.0 | Apache-2.0 OR MIT |
+| [bs58](https://github.com/Nullus157/bs58-rs) | 0.5.1 | MIT/Apache-2.0 |
 | [bumpalo](https://github.com/fitzgen/bumpalo) | 3.20.3 | MIT OR Apache-2.0 |
 | [bytemuck](https://github.com/Lokathor/bytemuck) | 1.25.2 | Zlib OR Apache-2.0 OR MIT |
 | [bytemuck_derive](https://github.com/Lokathor/bytemuck) | 1.12.1 | Zlib OR Apache-2.0 OR MIT |
@@ -83,13 +89,17 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [cfg-if](https://github.com/rust-lang/cfg-if) | 1.0.5 | MIT OR Apache-2.0 |
 | [cfg_aliases](https://github.com/katharostech/cfg_aliases) | 0.2.2 | MIT |
 | [chacha20](https://github.com/RustCrypto/stream-ciphers) | 0.10.2 | MIT OR Apache-2.0 |
+| [chacha20](https://github.com/RustCrypto/stream-ciphers) | 0.9.1 | Apache-2.0 OR MIT |
+| [chacha20poly1305](https://github.com/RustCrypto/AEADs/tree/master/chacha20poly1305) | 0.10.1 | Apache-2.0 OR MIT |
 | [chrono](https://github.com/chronotope/chrono) | 0.4.45 | MIT OR Apache-2.0 |
+| [cipher](https://github.com/RustCrypto/traits) | 0.4.4 | MIT OR Apache-2.0 |
 | [clang](https://github.com/KyleMayes/clang-rs) | 2.1.0 | Apache-2.0 |
 | [clang-sys](https://github.com/KyleMayes/clang-sys) | 1.9.1 | Apache-2.0 |
 | [clap](https://github.com/clap-rs/clap) | 4.6.7 | MIT OR Apache-2.0 |
 | [clap_builder](https://github.com/clap-rs/clap) | 4.6.7 | MIT OR Apache-2.0 |
 | [clap_derive](https://github.com/clap-rs/clap) | 4.6.7 | MIT OR Apache-2.0 |
 | [clap_lex](https://github.com/clap-rs/clap) | 1.1.1 | MIT OR Apache-2.0 |
+| [cmac](https://github.com/RustCrypto/MACs) | 0.7.2 | MIT OR Apache-2.0 |
 | [cmake](https://github.com/rust-lang/cmake-rs) | 0.1.58 | MIT OR Apache-2.0 |
 | [cmov](https://github.com/RustCrypto/utils) | 0.5.4 | Apache-2.0 OR MIT |
 | [cobs](https://github.com/jamesmunns/cobs.rs) | 0.3.0 | MIT OR Apache-2.0 |
@@ -103,12 +113,16 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [console](https://github.com/console-rs/console) | 0.16.6 | MIT |
 | [const-oid](https://github.com/RustCrypto/formats) | 0.10.2 | Apache-2.0 OR MIT |
 | [const-oid](https://github.com/RustCrypto/formats/tree/master/const-oid) | 0.9.6 | Apache-2.0 OR MIT |
+| [convert_case](https://github.com/rutrum/convert-case) | 0.4.0 | MIT |
 | [cookie](https://github.com/SergioBenitez/cookie-rs) | 0.18.2 | MIT OR Apache-2.0 |
 | [cookie_store](https://github.com/pfernie/cookie_store) | 0.22.1 | MIT OR Apache-2.0 |
 | [core-foundation](https://github.com/servo/core-foundation-rs) | 0.10.1 | MIT OR Apache-2.0 |
+| [core-foundation](https://github.com/servo/core-foundation-rs) | 0.9.4 | MIT OR Apache-2.0 |
 | [core-foundation-sys](https://github.com/servo/core-foundation-rs) | 0.8.7 | MIT OR Apache-2.0 |
+| [core-models](https://github.com/cryspen/libcrux) | 0.0.5 | Apache-2.0 |
 | [core_detect](https://github.com/thomcc/core_detect) | 1.0.0 | MIT/Apache-2.0 |
 | [cpp_demangle](https://github.com/gimli-rs/cpp_demangle) | 0.5.1 | MIT OR Apache-2.0 |
+| [cpubits](https://github.com/RustCrypto/utils) | 0.1.1 | MIT OR Apache-2.0 |
 | [cpufeatures](https://github.com/RustCrypto/utils) | 0.2.17 | MIT OR Apache-2.0 |
 | [cpufeatures](https://github.com/RustCrypto/utils) | 0.3.1 | MIT OR Apache-2.0 |
 | cranelift-assembler-x64 | 0.138.0 | Apache-2.0 WITH LLVM-exception |
@@ -125,34 +139,54 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [cranelift-native](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
 | [cranelift-srcgen](https://github.com/bytecodealliance/wasmtime) | 0.138.0 | Apache-2.0 WITH LLVM-exception |
 | [crc32fast](https://github.com/srijs/rust-crc32fast) | 1.5.4 | MIT OR Apache-2.0 |
+| [critical-section](https://github.com/rust-embedded/critical-section) | 1.2.0 | MIT OR Apache-2.0 |
+| [crossbeam-channel](https://github.com/crossbeam-rs/crossbeam) | 0.5.17 | MIT OR Apache-2.0 |
 | [crossbeam-deque](https://github.com/crossbeam-rs/crossbeam) | 0.8.8 | MIT OR Apache-2.0 |
 | [crossbeam-epoch](https://github.com/crossbeam-rs/crossbeam) | 0.9.21 | MIT OR Apache-2.0 |
 | [crossbeam-utils](https://github.com/crossbeam-rs/crossbeam) | 0.8.23 | MIT OR Apache-2.0 |
 | [crunchy](https://github.com/eira-fransham/crunchy) | 0.2.4 | MIT |
+| [crypto-bigint](https://github.com/RustCrypto/crypto-bigint) | 0.5.5 | Apache-2.0 OR MIT |
+| [crypto-bigint](https://github.com/RustCrypto/crypto-bigint) | 0.7.11 | Apache-2.0 OR MIT |
 | [crypto-common](https://github.com/RustCrypto/traits) | 0.1.7 | MIT OR Apache-2.0 |
 | [crypto-common](https://github.com/RustCrypto/traits) | 0.2.2 | MIT OR Apache-2.0 |
 | [ctor](https://github.com/mmastrac/rust-ctor) | 0.2.9 | Apache-2.0 OR MIT |
+| [ctr](https://github.com/RustCrypto/block-modes) | 0.9.2 | MIT OR Apache-2.0 |
 | [ctutils](https://github.com/RustCrypto/utils) | 0.4.8 | Apache-2.0 OR MIT |
+| [curve25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek) | 4.1.3 | BSD-3-Clause |
+| [curve25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek) | 5.0.0 | BSD-3-Clause |
+| [curve25519-dalek-derive](https://github.com/dalek-cryptography/curve25519-dalek) | 0.1.1 | MIT/Apache-2.0 |
+| [darling](https://github.com/TedDriggs/darling) | 0.10.2 | MIT |
 | [darling](https://github.com/TedDriggs/darling) | 0.20.11 | MIT |
 | [darling](https://github.com/TedDriggs/darling) | 0.24.1 | MIT |
+| [darling_core](https://github.com/TedDriggs/darling) | 0.10.2 | MIT |
 | [darling_core](https://github.com/TedDriggs/darling) | 0.20.11 | MIT |
 | [darling_core](https://github.com/TedDriggs/darling) | 0.24.1 | MIT |
+| [darling_macro](https://github.com/TedDriggs/darling) | 0.10.2 | MIT |
 | [darling_macro](https://github.com/TedDriggs/darling) | 0.20.11 | MIT |
 | [darling_macro](https://github.com/TedDriggs/darling) | 0.24.1 | MIT |
+| [dashmap](https://github.com/xacrimon/dashmap) | 6.2.1 | MIT |
 | [data-encoding](https://github.com/ia0/data-encoding) | 2.11.1 | MIT |
+| [davey](https://github.com/Snazzah/davey) | 0.1.5 | MIT |
+| [dbl](https://github.com/RustCrypto/utils) | 0.3.2 | MIT OR Apache-2.0 |
 | [der](https://github.com/RustCrypto/formats/tree/master/der) | 0.7.10 | Apache-2.0 OR MIT |
+| [der](https://github.com/RustCrypto/formats) | 0.8.3 | Apache-2.0 OR MIT |
 | [der-parser](https://github.com/rusticata/der-parser.git) | 10.0.0 | MIT OR Apache-2.0 |
 | [der_derive](https://github.com/RustCrypto/formats/tree/master/der/derive) | 0.7.3 | Apache-2.0 OR MIT |
 | [deranged](https://github.com/jhpratt/deranged) | 0.5.9 | MIT OR Apache-2.0 |
+| [derivative](https://github.com/mcarton/rust-derivative) | 2.2.0 | MIT/Apache-2.0 |
 | [derive_builder](https://github.com/colin-kiegel/rust-derive-builder) | 0.20.2 | MIT OR Apache-2.0 |
+| [derive_builder](https://github.com/colin-kiegel/rust-derive-builder) | 0.9.0 | MIT/Apache-2.0 |
 | [derive_builder_core](https://github.com/colin-kiegel/rust-derive-builder) | 0.20.2 | MIT OR Apache-2.0 |
+| [derive_builder_core](https://github.com/colin-kiegel/rust-derive-builder) | 0.9.0 | MIT/Apache-2.0 |
 | [derive_builder_macro](https://github.com/colin-kiegel/rust-derive-builder) | 0.20.2 | MIT OR Apache-2.0 |
+| [derive_more](https://github.com/JelteF/derive_more) | 0.99.20 | MIT |
 | [digest](https://github.com/RustCrypto/traits) | 0.10.7 | MIT OR Apache-2.0 |
 | [digest](https://github.com/RustCrypto/traits) | 0.11.3 | MIT OR Apache-2.0 |
 | [dirs](https://github.com/soc/dirs-rs) | 5.0.1 | MIT OR Apache-2.0 |
 | [dirs](https://codeberg.org/dirs/dirs-rs) | 7.0.0 | MIT OR Apache-2.0 |
 | [dirs-sys](https://github.com/dirs-dev/dirs-sys-rs) | 0.4.1 | MIT OR Apache-2.0 |
 | [dirs-sys](https://github.com/dirs-dev/dirs-sys-rs) | 0.5.0 | MIT OR Apache-2.0 |
+| [discortp](https://github.com/FelixMcFelix/discortp.git) | 0.6.0 | ISC |
 | [dispatch2](https://github.com/madsmtm/objc2) | 0.3.1 | Zlib OR Apache-2.0 OR MIT |
 | [displaydoc](https://github.com/yaahc/displaydoc) | 0.2.7 | MIT OR Apache-2.0 |
 | [dlib](https://github.com/elinorbgr/dlib) | 0.5.3 | MIT |
@@ -160,12 +194,23 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [download-cef](https://github.com/tauri-apps/cef-rs) | 3.0.0 | Apache-2.0 OR MIT |
 | [dunce](https://gitlab.com/kornelski/dunce) | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 |
 | [dyn-clone](https://github.com/dtolnay/dyn-clone) | 1.0.20 | MIT OR Apache-2.0 |
+| [earshot](https://github.com/pykeio/earshot) | 1.2.2 | MIT OR Apache-2.0 |
+| [ecdsa](https://github.com/RustCrypto/signatures/tree/master/ecdsa) | 0.16.9 | Apache-2.0 OR MIT |
+| [ecdsa](https://github.com/RustCrypto/signatures) | 0.17.0 | Apache-2.0 OR MIT |
+| [ed25519](https://github.com/RustCrypto/signatures/tree/master/ed25519) | 2.2.3 | Apache-2.0 OR MIT |
+| [ed25519](https://github.com/RustCrypto/signatures) | 3.0.0 | Apache-2.0 OR MIT |
+| [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek) | 2.2.0 | BSD-3-Clause |
+| [ed25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek) | 3.0.0 | BSD-3-Clause |
 | [either](https://github.com/rayon-rs/either) | 1.19.0 | MIT OR Apache-2.0 |
+| [elliptic-curve](https://github.com/RustCrypto/traits/tree/master/elliptic-curve) | 0.13.8 | Apache-2.0 OR MIT |
+| [elliptic-curve](https://github.com/RustCrypto/traits) | 0.14.3 | Apache-2.0 OR MIT |
 | [embedded-io](https://github.com/embassy-rs/embedded-io) | 0.4.0 | MIT OR Apache-2.0 |
 | [embedded-io](https://github.com/rust-embedded/embedded-hal) | 0.6.1 | MIT OR Apache-2.0 |
 | [encode_unicode](https://github.com/tormol/encode_unicode) | 1.0.0 | Apache-2.0 OR MIT |
 | [encoding_rs](https://github.com/hsivonen/encoding_rs) | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause |
 | [endi](https://github.com/zeenix/endi) | 1.1.1 | MIT |
+| [enum-map](https://codeberg.org/xfix/enum-map) | 2.7.3 | MIT OR Apache-2.0 |
+| [enum-map-derive](https://codeberg.org/xfix/enum-map) | 0.17.0 | MIT OR Apache-2.0 |
 | [enumflags2](https://github.com/meithecatte/enumflags2) | 0.7.12 | MIT OR Apache-2.0 |
 | [enumflags2_derive](https://github.com/meithecatte/enumflags2) | 0.7.12 | MIT OR Apache-2.0 |
 | [equivalent](https://github.com/indexmap-rs/equivalent) | 1.0.3 | Apache-2.0 OR MIT |
@@ -177,17 +222,24 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [fallible-streaming-iterator](https://github.com/sfackler/fallible-streaming-iterator) | 0.1.9 | MIT/Apache-2.0 |
 | [fastrand](https://github.com/smol-rs/fastrand) | 2.5.0 | Apache-2.0 OR MIT |
 | [fdeflate](https://github.com/image-rs/fdeflate) | 0.3.7 | MIT OR Apache-2.0 |
+| [ff](https://github.com/zkcrypto/ff) | 0.13.1 | MIT/Apache-2.0 |
+| [ff](https://github.com/zkcrypto/ff) | 0.14.0 | MIT/Apache-2.0 |
 | [ffmpeg-sys-the-third](https://github.com/shssoichiro/ffmpeg-the-third) | 6.0.0+ffmpeg-9.0 | WTFPL |
 | [ffmpeg-the-third](https://github.com/shssoichiro/ffmpeg-the-third) | 6.0.0+ffmpeg-9.0 | WTFPL |
+| [fiat-crypto](https://github.com/mit-plv/fiat-crypto) | 0.2.9 | MIT OR Apache-2.0 OR BSD-1-Clause |
+| [fiat-crypto](https://github.com/mit-plv/fiat-crypto) | 0.3.0 | MIT OR Apache-2.0 OR BSD-1-Clause |
 | [filetime](https://github.com/alexcrichton/filetime) | 0.2.29 | MIT/Apache-2.0 |
 | [find-msvc-tools](https://github.com/rust-lang/cc-rs) | 0.1.15 | MIT OR Apache-2.0 |
 | [fixedbitset](https://github.com/petgraph/fixedbitset) | 0.5.9 | MIT OR Apache-2.0 |
 | [flagset](https://github.com/enarx/flagset) | 0.4.7 | Apache-2.0 |
 | [flate2](https://github.com/rust-lang/flate2-rs) | 1.1.11 | MIT OR Apache-2.0 |
+| [flume](https://github.com/zesterer/flume) | 0.11.1 | Apache-2.0/MIT |
 | [flume](https://github.com/zesterer/flume) | 0.12.0 | Apache-2.0/MIT |
+| [fluvio-wasm-timer](https://github.com/tomaka/wasm-timer) | 0.2.5 | MIT |
 | [fnv](https://github.com/servo/rust-fnv) | 1.0.7 | Apache-2.0 / MIT |
 | [foldhash](https://github.com/orlp/foldhash) | 0.2.0 | Zlib |
 | [form_urlencoded](https://github.com/servo/rust-url) | 1.2.2 | MIT OR Apache-2.0 |
+| [from_map](https://github.com/Luro02/shorthand) | 0.1.0 | Unlicense OR MIT OR Apache-2.0 |
 | [fs-err](https://github.com/andrewhickman/fs-err) | 3.3.2 | MIT OR Apache-2.0 |
 | [fs_extra](https://github.com/webdesus/fs_extra) | 1.3.0 | MIT |
 | [futures](https://github.com/rust-lang/futures-rs) | 0.3.34 | MIT OR Apache-2.0 |
@@ -200,6 +252,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [futures-sink](https://github.com/rust-lang/futures-rs) | 0.3.34 | MIT OR Apache-2.0 |
 | [futures-task](https://github.com/rust-lang/futures-rs) | 0.3.34 | MIT OR Apache-2.0 |
 | [futures-util](https://github.com/rust-lang/futures-rs) | 0.3.34 | MIT OR Apache-2.0 |
+| [generator](https://github.com/Xudong-Huang/generator-rs.git) | 0.7.5 | MIT/Apache-2.0 |
 | [generic-array](https://github.com/fizyk20/generic-array.git) | 0.14.7 | MIT |
 | [gethostname](https://codeberg.org/swsnr/gethostname.rs.git) | 1.1.0 | Apache-2.0 |
 | [getifaddrs](https://github.com/mmastrac/getifaddrs) | 0.6.2 | MIT OR Apache-2.0 |
@@ -207,6 +260,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [getrandom](https://github.com/rust-random/getrandom) | 0.3.4 | MIT OR Apache-2.0 |
 | [getrandom](https://github.com/rust-random/getrandom) | 0.4.3 | MIT OR Apache-2.0 |
 | [getset](https://github.com/jbaublitz/getset) | 0.1.7 | MIT |
+| [ghash](https://github.com/RustCrypto/universal-hashes) | 0.5.1 | Apache-2.0 OR MIT |
 | [gimli](https://github.com/gimli-rs/gimli) | 0.33.0 | MIT OR Apache-2.0 |
 | [gl_generator](https://github.com/brendanzab/gl-rs/) | 0.14.0 | Apache-2.0 |
 | [glob](https://github.com/rust-lang/glob) | 0.3.4 | MIT OR Apache-2.0 |
@@ -214,15 +268,35 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [glutin_wgl_sys](https://github.com/rust-windowing/glutin) | 0.6.1 | Apache-2.0 |
 | [goblin](https://github.com/m4b/goblin) | 0.8.2 | MIT |
 | [gpu-allocator](https://github.com/Traverse-Research/gpu-allocator) | 0.28.0 | MIT OR Apache-2.0 |
+| [group](https://github.com/zkcrypto/group) | 0.13.0 | MIT/Apache-2.0 |
+| [group](https://github.com/zkcrypto/group) | 0.14.0 | MIT/Apache-2.0 |
 | [h2](https://github.com/hyperium/h2) | 0.4.20 | MIT |
 | [half](https://github.com/VoidStarKat/half-rs) | 2.7.1 | MIT OR Apache-2.0 |
+| [hashbrown](https://github.com/rust-lang/hashbrown) | 0.12.3 | MIT OR Apache-2.0 |
+| [hashbrown](https://github.com/rust-lang/hashbrown) | 0.14.5 | MIT OR Apache-2.0 |
 | [hashbrown](https://github.com/rust-lang/hashbrown) | 0.16.1 | MIT OR Apache-2.0 |
 | [hashbrown](https://github.com/rust-lang/hashbrown) | 0.17.1 | MIT OR Apache-2.0 |
 | [hashlink](https://github.com/djc/hashlink) | 0.12.2 | MIT OR Apache-2.0 |
+| [hashmap_derive](https://github.com/Luro02/shorthand) | 0.1.0 | Unlicense OR MIT OR Apache-2.0 |
+| [hax-lib](https://github.com/hacspec/hax) | 0.3.6 | Apache-2.0 |
+| [hax-lib-macros](https://github.com/hacspec/hax) | 0.3.6 | Apache-2.0 |
+| [hax-lib-macros-types](https://github.com/hacspec/hax) | 0.3.6 | Apache-2.0 |
+| [heck](https://github.com/withoutboats/heck) | 0.3.3 | MIT OR Apache-2.0 |
 | [heck](https://github.com/withoutboats/heck) | 0.5.0 | MIT OR Apache-2.0 |
 | [hermit-abi](https://github.com/hermit-os/hermit-rs) | 0.5.3 | MIT OR Apache-2.0 |
 | [hex](https://github.com/KokaKiwi/rust-hex) | 0.4.3 | MIT OR Apache-2.0 |
+| [hex-literal](https://github.com/RustCrypto/utils) | 0.3.4 | MIT OR Apache-2.0 |
+| [hickory-net](https://github.com/hickory-dns/hickory-dns) | 0.26.3 | MIT OR Apache-2.0 |
+| [hickory-proto](https://github.com/hickory-dns/hickory-dns) | 0.26.3 | MIT OR Apache-2.0 |
+| [hickory-resolver](https://github.com/hickory-dns/hickory-dns) | 0.26.3 | MIT OR Apache-2.0 |
+| [hkdf](https://github.com/RustCrypto/KDFs/) | 0.12.4 | MIT OR Apache-2.0 |
+| [hls_m3u8](https://github.com/sile/hls_m3u8) | 0.4.2 | MIT OR Apache-2.0 |
+| [hmac](https://github.com/RustCrypto/MACs) | 0.12.1 | MIT OR Apache-2.0 |
 | [hmac](https://github.com/RustCrypto/MACs) | 0.13.0 | MIT OR Apache-2.0 |
+| [hpke-rs](https://github.com/cryspen/hpke-rs) | 0.6.1 | MPL-2.0 |
+| [hpke-rs-crypto](https://github.com/cryspen/hpke-rs) | 0.6.1 | MPL-2.0 |
+| [hpke-rs-libcrux](https://github.com/cryspen/hpke-rs) | 0.6.1 | MPL-2.0 |
+| [hpke-rs-rust-crypto](https://github.com/cryspen/hpke-rs) | 0.6.1 | MPL-2.0 |
 | [httlib-huffman](https://github.com/xpepermint/httlib-rs) | 0.3.4 | MIT |
 | [http](https://github.com/hyperium/http) | 1.5.0 | MIT OR Apache-2.0 |
 | [http-body](https://github.com/hyperium/http-body) | 1.1.0 | MIT |
@@ -246,22 +320,31 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [idna](https://github.com/servo/rust-url/) | 1.1.0 | MIT OR Apache-2.0 |
 | [idna_adapter](https://github.com/hsivonen/idna_adapter) | 1.2.2 | Apache-2.0 OR MIT |
 | [if-addrs](https://github.com/messense/if-addrs) | 0.15.0 | MIT OR BSD-3-Clause |
+| [indexmap](https://github.com/bluss/indexmap) | 1.9.3 | Apache-2.0 OR MIT |
 | [indexmap](https://github.com/indexmap-rs/indexmap) | 2.14.2 | Apache-2.0 OR MIT |
 | [indicatif](https://github.com/console-rs/indicatif) | 0.18.6 | MIT |
 | [inotify](https://github.com/hannobraun/inotify-rs) | 0.11.5 | ISC |
 | [inotify-sys](https://github.com/hannobraun/inotify-sys) | 0.1.8 | ISC |
+| [inout](https://github.com/RustCrypto/utils) | 0.1.4 | MIT OR Apache-2.0 |
+| [instant](https://github.com/sebcrozet/instant) | 0.1.13 | BSD-3-Clause |
 | [io-kit-sys](https://github.com/jtakakura/io-kit-rs) | 0.4.1 | MIT / Apache-2.0 |
 | [io-kit-sys](https://github.com/jtakakura/io-kit-rs) | 0.5.0 | MIT OR Apache-2.0 |
+| [ipconfig](https://github.com/liranringel/ipconfig) | 0.3.4 | MIT/Apache-2.0 |
 | [ipnet](https://github.com/krisprice/ipnet) | 2.12.2 | MIT OR Apache-2.0 |
 | [is_terminal_polyfill](https://github.com/polyfill-rs/is_terminal_polyfill) | 1.70.2 | MIT OR Apache-2.0 |
 | [itertools](https://github.com/rust-itertools/itertools) | 0.13.0 | MIT OR Apache-2.0 |
 | [itertools](https://github.com/rust-itertools/itertools) | 0.14.0 | MIT OR Apache-2.0 |
 | [itoa](https://github.com/dtolnay/itoa) | 1.0.19 | MIT OR Apache-2.0 |
 | [jiff](https://github.com/BurntSushi/jiff) | 0.2.42 | Unlicense OR MIT |
+| [jiff](https://github.com/BurntSushi/jiff) | 1.0.2 | Unlicense OR MIT |
 | [jiff-core](https://github.com/BurntSushi/jiff) | 0.1.4 | Unlicense OR MIT |
+| [jiff-core](https://github.com/BurntSushi/jiff) | 1.0.1 | Unlicense OR MIT |
 | [jiff-static](https://github.com/BurntSushi/jiff) | 0.2.42 | Unlicense OR MIT |
+| [jiff-static](https://github.com/BurntSushi/jiff) | 1.0.2 | Unlicense OR MIT |
 | [jiff-tzdb](https://github.com/BurntSushi/jiff) | 0.1.9 | Unlicense OR MIT |
+| [jiff-tzdb](https://github.com/BurntSushi/jiff) | 1.0.0 | Unlicense OR MIT |
 | [jiff-tzdb-platform](https://github.com/BurntSushi/jiff) | 0.1.3 | Unlicense OR MIT |
+| [jiff-tzdb-platform](https://github.com/BurntSushi/jiff) | 1.0.0 | Unlicense OR MIT |
 | [jni](https://github.com/jni-rs/jni-rs) | 0.22.4 | MIT OR Apache-2.0 |
 | [jni-macros](https://github.com/jni-rs/jni-rs) | 0.22.4 | MIT OR Apache-2.0 |
 | [jni-sys](https://github.com/jni-rs/jni-sys) | 0.3.1 | MIT OR Apache-2.0 |
@@ -269,6 +352,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [jni-sys-macros](https://github.com/jni-rs/jni-sys) | 0.4.1 | MIT OR Apache-2.0 |
 | [jobserver](https://github.com/rust-lang/jobserver-rs) | 0.1.35 | MIT OR Apache-2.0 |
 | [js-sys](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys) | 0.3.107 | MIT OR Apache-2.0 |
+| [k256](https://github.com/RustCrypto/elliptic-curves/tree/master/k256) | 0.13.4 | Apache-2.0 OR MIT |
 | [khronos-egl](https://github.com/timothee-haudebourg/khronos-egl) | 6.0.0 | MIT/Apache-2.0 |
 | [khronos_api](https://github.com/brendanzab/gl-rs/) | 3.1.0 | Apache-2.0 |
 | [kqueue](https://gitlab.com/rust-kqueue/rust-kqueue) | 1.2.1 | MIT |
@@ -277,9 +361,29 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [leb128fmt](https://github.com/bluk/leb128fmt) | 0.1.0 | MIT OR Apache-2.0 |
 | [libbz2-rs-sys](https://github.com/trifectatechfoundation/libbzip2-rs) | 0.2.6 | bzip2-1.0.6 |
 | [libc](https://github.com/rust-lang/libc) | 0.2.191 | MIT OR Apache-2.0 |
+| [libcrux-aead](https://github.com/cryspen/libcrux) | 0.0.7 | Apache-2.0 |
+| [libcrux-aesgcm](https://github.com/cryspen/libcrux) | 0.0.7 | Apache-2.0 |
+| [libcrux-chacha20poly1305](https://github.com/cryspen/libcrux) | 0.0.7 | Apache-2.0 |
+| [libcrux-curve25519](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-ecdh](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-hacl-rs](https://github.com/cryspen/libcrux) | 0.0.4 | Apache-2.0 |
+| [libcrux-hkdf](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-hmac](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-intrinsics](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-kem](https://github.com/cryspen/libcrux) | 0.0.7 | Apache-2.0 |
+| [libcrux-macros](https://github.com/cryspen/libcrux) | 0.0.3 | Apache-2.0 |
+| [libcrux-ml-kem](https://github.com/cryspen/libcrux) | 0.0.8 | Apache-2.0 |
+| [libcrux-p256](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-platform](https://github.com/cryspen/libcrux) | 0.0.3 | Apache-2.0 |
+| [libcrux-poly1305](https://github.com/cryspen/libcrux) | 0.0.5 | Apache-2.0 |
+| [libcrux-secrets](https://github.com/cryspen/libcrux) | 0.0.5 | Apache-2.0 |
+| [libcrux-sha2](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
+| [libcrux-sha3](https://github.com/cryspen/libcrux) | 0.0.8 | Apache-2.0 |
+| [libcrux-traits](https://github.com/cryspen/libcrux) | 0.0.6 | Apache-2.0 |
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.8.9 | ISC |
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.9.0 | ISC |
 | [libm](https://github.com/rust-lang/compiler-builtins) | 0.2.16 | MIT |
+| [libopus_sys](https://github.com/cijiugechu/libopus_sys.git) | 0.3.3 | MIT |
 | [libredox](https://gitlab.redox-os.org/redox-os/libredox.git) | 0.1.25 | MIT |
 | [libsqlite3-sys](https://github.com/rusqlite/rusqlite) | 0.39.1 | MIT |
 | [linux-raw-sys](https://github.com/sunfishcode/linux-raw-sys) | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
@@ -288,6 +392,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [local-ip-address](https://github.com/LeoBorai/local-ip-address) | 0.6.13 | MIT OR Apache-2.0 |
 | [lock_api](https://github.com/Amanieu/parking_lot) | 0.4.14 | MIT OR Apache-2.0 |
 | [log](https://github.com/rust-lang/log) | 0.4.35 | MIT OR Apache-2.0 |
+| [loom](https://github.com/tokio-rs/loom) | 0.5.6 | MIT |
 | [lru-slab](https://github.com/Ralith/lru-slab) | 0.1.3 | MIT OR Apache-2.0 OR Zlib |
 | [mac-notification-sys](https://github.com/h4llow3En/mac-notification-sys) | 0.6.15 | MIT/Apache-2.0 |
 | [mach2](https://github.com/JohnTitor/mach2) | 0.4.3 | BSD-2-Clause OR MIT OR Apache-2.0 |
@@ -295,6 +400,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [mach2](https://github.com/JohnTitor/mach2) | 0.6.0 | BSD-2-Clause OR MIT OR Apache-2.0 |
 | [matchers](https://github.com/hawkw/matchers) | 0.2.0 | MIT |
 | [matchit](https://github.com/ibraheemdev/matchit) | 0.8.4 | MIT AND BSD-3-Clause |
+| [md-5](https://github.com/RustCrypto/hashes) | 0.10.6 | MIT OR Apache-2.0 |
 | [md-5](https://github.com/RustCrypto/hashes) | 0.11.0 | MIT OR Apache-2.0 |
 | [mdns-sd](https://github.com/keepsimple1/mdns-sd) | 0.21.7 | Apache-2.0 OR MIT |
 | [memchr](https://github.com/BurntSushi/memchr) | 2.8.3 | Unlicense OR MIT |
@@ -308,11 +414,14 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [miniz_oxide](https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide) | 0.9.1 | MIT OR Zlib OR Apache-2.0 |
 | [mio](https://github.com/tokio-rs/mio) | 1.2.4 | MIT |
 | [mio-serial](https://github.com/berkowski/mio-serial) | 5.0.7 | MIT |
+| [moka](https://github.com/moka-rs/moka) | 0.12.16 | (MIT OR Apache-2.0) AND Apache-2.0 |
 | [mqttbytes-core-next](https://github.com/thehouseisonfire/rumqtt) | 0.34.0 | Apache-2.0 |
 | [multer](https://github.com/rwf2/multer) | 3.1.0 | MIT |
 | [multiversion_no_op](https://github.com/hsivonen/multiversion_no_op) | 1.0.0 | Apache-2.0 OR MIT |
 | [naga](https://github.com/gfx-rs/wgpu) | 30.0.1 | MIT OR Apache-2.0 |
 | [naga-types](https://github.com/gfx-rs/wgpu) | 30.0.1 | MIT OR Apache-2.0 |
+| [nanorand](https://github.com/Absolucy/nanorand-rs) | 0.7.0 | Zlib |
+| [ndk-context](https://github.com/rust-windowing/android-ndk-rs) | 0.1.1 | MIT OR Apache-2.0 |
 | [ndk-sys](https://github.com/rust-mobile/ndk) | 0.6.0+11769913 | MIT OR Apache-2.0 |
 | [neli](https://github.com/jbaublitz/neli) | 0.7.5 | BSD-3-Clause |
 | [neli-proc-macros](https://github.com/jbaublitz/neli) | 0.2.2 | BSD-3-Clause |
@@ -326,18 +435,26 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [nix](https://github.com/nix-rust/nix) | 0.26.4 | MIT |
 | [nix](https://github.com/nix-rust/nix) | 0.30.1 | MIT |
 | [nix](https://github.com/nix-rust/nix) | 0.31.3 | MIT |
+| [no-std-net](https://github.com/dunmatt/no-std-net) | 0.6.0 | MIT |
+| [nohash-hasher](https://github.com/paritytech/nohash-hasher) | 0.2.0 | Apache-2.0 OR MIT |
 | [nom](https://github.com/Geal/nom) | 7.1.3 | MIT |
+| [nonmax](https://github.com/LPGhatguy/nonmax) | 0.5.5 | MIT OR Apache-2.0 |
 | [normpath](https://github.com/dylni/normpath) | 1.5.2 | MIT OR Apache-2.0 |
 | [notify](https://github.com/notify-rs/notify.git) | 8.2.2 | CC0-1.0 |
 | [notify-rust](https://github.com/hoodie/notify-rust) | 4.19.0 | MIT OR Apache-2.0 |
 | [notify-types](https://github.com/notify-rs/notify.git) | 2.3.0 | MIT OR Apache-2.0 |
 | [nu-ansi-term](https://github.com/nushell/nu-ansi-term) | 0.50.3 | MIT |
 | [num-bigint](https://github.com/rust-num/num-bigint) | 0.4.8 | MIT OR Apache-2.0 |
+| [num-bigint-dig](https://github.com/dignifiedquire/num-bigint) | 0.8.6 | MIT/Apache-2.0 |
 | [num-complex](https://github.com/rust-num/num-complex) | 0.4.6 | MIT OR Apache-2.0 |
 | [num-conv](https://github.com/jhpratt/num-conv) | 0.2.2 | MIT OR Apache-2.0 |
+| [num-derive](https://github.com/rust-num/num-derive) | 0.4.2 | MIT OR Apache-2.0 |
 | [num-integer](https://github.com/rust-num/num-integer) | 0.1.47 | MIT OR Apache-2.0 |
+| [num-iter](https://github.com/rust-num/num-iter) | 0.1.46 | MIT OR Apache-2.0 |
 | [num-traits](https://github.com/rust-num/num-traits) | 0.2.19 | MIT OR Apache-2.0 |
+| [num_cpus](https://github.com/seanmonstar/num_cpus) | 1.17.0 | MIT OR Apache-2.0 |
 | [nusb](https://github.com/kevinmehall/nusb) | 0.2.9 | Apache-2.0 OR MIT |
+| [oauth2](https://github.com/ramosbugs/oauth2-rs) | 5.0.0 | MIT OR Apache-2.0 |
 | [objc2](https://github.com/madsmtm/objc2) | 0.6.5 | MIT |
 | [objc2-app-kit](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
 | [objc2-core-audio](https://github.com/madsmtm/objc2) | 0.3.2 | Zlib OR Apache-2.0 OR MIT |
@@ -358,30 +475,60 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [oid-registry](https://github.com/rusticata/oid-registry.git) | 0.8.1 | MIT OR Apache-2.0 |
 | [once_cell](https://github.com/matklad/once_cell) | 1.21.4 | MIT OR Apache-2.0 |
 | [once_cell_polyfill](https://github.com/polyfill-rs/once_cell_polyfill) | 1.70.2 | MIT OR Apache-2.0 |
+| [opaque-debug](https://github.com/RustCrypto/utils) | 0.3.1 | MIT OR Apache-2.0 |
 | [opener](https://github.com/Seeker14491/opener) | 0.9.0 | MIT OR Apache-2.0 |
+| [openidconnect](https://github.com/ramosbugs/openidconnect-rs) | 4.1.0 | MIT |
+| [openmls](https://github.com/openmls/openmls/) | 0.8.3 | MIT |
+| [openmls_basic_credential](https://github.com/openmls/openmls/tree/main/basic_credential) | 0.5.0 | MIT |
+| [openmls_memory_storage](https://github.com/openmls/openmls/tree/main/memory_storage) | 0.5.0 | MIT |
+| [openmls_rust_crypto](https://github.com/openmls/openmls/tree/main/openmls_rust_crypto) | 0.5.1 | MIT |
+| [openmls_traits](https://github.com/openmls/openmls/tree/main/traits) | 0.5.0 | MIT |
 | [openssl-probe](https://github.com/rustls/openssl-probe) | 0.2.2 | MIT OR Apache-2.0 |
 | [option-ext](https://github.com/soc/option-ext.git) | 0.2.0 | MPL-2.0 |
 | [opus](https://github.com/SpaceManiac/opus-rs) | 0.4.0 | MIT/Apache-2.0 |
+| [opus2](https://github.com/cijiugechu/opus2) | 0.4.0 | MIT/Apache-2.0 |
 | [opusic-sys](https://github.com/DoumanAsh/opusic-sys) | 0.7.7 | BSD-3-Clause |
+| [ordered-float](https://github.com/reem/rust-ordered-float) | 2.10.1 | MIT |
 | [ordered-float](https://github.com/reem/rust-ordered-float) | 5.5.1 | MIT |
 | [ordered-stream](https://github.com/danieldg/ordered-stream) | 0.2.0 | MIT OR Apache-2.0 |
+| [p256](https://github.com/RustCrypto/elliptic-curves/tree/master/p256) | 0.13.2 | Apache-2.0 OR MIT |
+| [p256](https://github.com/RustCrypto/elliptic-curves) | 0.14.0 | Apache-2.0 OR MIT |
+| [p384](https://github.com/RustCrypto/elliptic-curves/tree/master/p384) | 0.13.1 | Apache-2.0 OR MIT |
+| [p384](https://github.com/RustCrypto/elliptic-curves) | 0.14.0 | Apache-2.0 OR MIT |
 | [parking](https://github.com/smol-rs/parking) | 2.2.1 | Apache-2.0 OR MIT |
+| [parking_lot](https://github.com/Amanieu/parking_lot) | 0.11.2 | Apache-2.0/MIT |
 | [parking_lot](https://github.com/Amanieu/parking_lot) | 0.12.5 | MIT OR Apache-2.0 |
+| [parking_lot_core](https://github.com/Amanieu/parking_lot) | 0.8.6 | Apache-2.0/MIT |
 | [parking_lot_core](https://github.com/Amanieu/parking_lot) | 0.9.12 | MIT OR Apache-2.0 |
 | [paste](https://github.com/dtolnay/paste) | 1.0.15 | MIT OR Apache-2.0 |
 | [pastey](https://github.com/as1100k/pastey) | 0.2.3 | MIT OR Apache-2.0 |
+| [patricia_tree](https://github.com/sile/patricia_tree) | 0.8.0 | MIT |
+| [pbkdf2](https://github.com/RustCrypto/password-hashes/tree/master/pbkdf2) | 0.12.2 | MIT OR Apache-2.0 |
 | [pem](https://github.com/jcreekmore/pem-rs.git) | 3.0.6 | MIT |
 | [pem](https://github.com/jcreekmore/pem-rs.git) | 4.0.0 | MIT |
+| [pem-rfc7468](https://github.com/RustCrypto/formats/tree/master/pem-rfc7468) | 0.7.0 | Apache-2.0 OR MIT |
+| [pem-rfc7468](https://github.com/RustCrypto/formats) | 1.0.0 | Apache-2.0 OR MIT |
 | [percent-encoding](https://github.com/servo/rust-url/) | 2.3.2 | MIT OR Apache-2.0 |
 | [phf](https://github.com/rust-phf/rust-phf) | 0.13.1 | MIT |
 | [phf_shared](https://github.com/rust-phf/rust-phf) | 0.13.1 | MIT |
+| [pin-project](https://github.com/taiki-e/pin-project) | 1.2.0 | Apache-2.0 OR MIT |
+| [pin-project-internal](https://github.com/taiki-e/pin-project) | 1.2.0 | Apache-2.0 OR MIT |
 | [pin-project-lite](https://github.com/taiki-e/pin-project-lite) | 0.2.17 | Apache-2.0 OR MIT |
+| [pin-utils](https://github.com/rust-lang/pin-utils) | 0.1.1 | MIT OR Apache-2.0 |
 | [piper](https://github.com/smol-rs/piper) | 0.2.5 | MIT OR Apache-2.0 |
+| [pkcs1](https://github.com/RustCrypto/formats/tree/master/pkcs1) | 0.7.5 | Apache-2.0 OR MIT |
+| [pkcs8](https://github.com/RustCrypto/formats/tree/master/pkcs8) | 0.10.2 | Apache-2.0 OR MIT |
+| [pkcs8](https://github.com/RustCrypto/formats) | 0.11.0 | Apache-2.0 OR MIT |
 | [pkg-config](https://github.com/rust-lang/pkg-config-rs) | 0.3.34 | MIT OR Apache-2.0 |
 | [plain](https://github.com/randomites/plain) | 0.2.3 | MIT/Apache-2.0 |
+| [pnet_base](https://github.com/libpnet/libpnet) | 0.34.0 | MIT/Apache-2.0 |
+| [pnet_macros](https://github.com/libpnet/libpnet) | 0.34.0 | MIT/Apache-2.0 |
+| [pnet_macros_support](https://github.com/libpnet/libpnet) | 0.34.0 | MIT/Apache-2.0 |
 | [png](https://github.com/image-rs/image-png) | 0.18.1 | MIT OR Apache-2.0 |
 | [polling](https://github.com/smol-rs/polling) | 3.11.0 | Apache-2.0 OR MIT |
 | [pollster](https://github.com/zesterer/pollster) | 1.0.1 | Apache-2.0/MIT |
+| [poly1305](https://github.com/RustCrypto/universal-hashes) | 0.8.0 | Apache-2.0 OR MIT |
+| [polyval](https://github.com/RustCrypto/universal-hashes) | 0.6.2 | Apache-2.0 OR MIT |
 | [portable-atomic](https://github.com/taiki-e/portable-atomic) | 1.15.0 | Apache-2.0 OR MIT |
 | [portable-atomic-util](https://github.com/taiki-e/portable-atomic-util) | 0.2.8 | Apache-2.0 OR MIT |
 | [postcard](https://github.com/jamesmunns/postcard) | 1.1.3 | MIT OR Apache-2.0 |
@@ -390,9 +537,15 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [potential_utf](https://github.com/unicode-org/icu4x) | 0.1.6 | Unicode-3.0 |
 | [powerfmt](https://github.com/jhpratt/powerfmt) | 0.2.1 | MIT OR Apache-2.0 |
 | [ppv-lite86](https://github.com/cryptocorrosion/cryptocorrosion) | 0.2.21 | MIT OR Apache-2.0 |
+| [prefix-trie](https://github.com/tiborschneider/prefix-trie) | 0.8.4 | MIT OR Apache-2.0 |
 | [presser](https://github.com/EmbarkStudios/presser) | 0.3.1 | MIT OR Apache-2.0 |
 | [primal-check](https://github.com/huonw/primal) | 0.3.4 | MIT OR Apache-2.0 |
+| [primefield](https://github.com/RustCrypto/elliptic-curves) | 0.14.0 | Apache-2.0 OR MIT |
+| [primeorder](https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder) | 0.13.6 | Apache-2.0 OR MIT |
+| [primeorder](https://github.com/RustCrypto/elliptic-curves) | 0.14.0 | Apache-2.0 OR MIT |
 | [proc-macro-crate](https://github.com/bkchr/proc-macro-crate) | 3.5.0 | MIT OR Apache-2.0 |
+| [proc-macro-error-attr2](https://github.com/GnomedDev/proc-macro-error-2) | 2.0.0 | MIT OR Apache-2.0 |
+| [proc-macro-error2](https://github.com/GnomedDev/proc-macro-error-2) | 2.0.1 | MIT OR Apache-2.0 |
 | [proc-macro2](https://github.com/dtolnay/proc-macro2) | 1.0.107 | MIT OR Apache-2.0 |
 | [profiling](https://github.com/aclysma/profiling) | 1.0.18 | MIT OR Apache-2.0 |
 | [pulley-interpreter](https://github.com/bytecodealliance/wasmtime/tree/main/pulley) | 51.0.0 | Apache-2.0 WITH LLVM-exception |
@@ -405,9 +558,13 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [r-efi](https://github.com/r-efi/r-efi) | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | [r-efi](https://github.com/r-efi/r-efi) | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | [rand](https://github.com/rust-random/rand) | 0.10.3 | MIT OR Apache-2.0 |
+| [rand](https://github.com/rust-random/rand) | 0.8.8 | MIT OR Apache-2.0 |
 | [rand](https://github.com/rust-random/rand) | 0.9.5 | MIT OR Apache-2.0 |
+| [rand_chacha](https://github.com/rust-random/rand) | 0.10.0 | MIT OR Apache-2.0 |
+| [rand_chacha](https://github.com/rust-random/rand) | 0.3.1 | MIT OR Apache-2.0 |
 | [rand_chacha](https://github.com/rust-random/rand) | 0.9.0 | MIT OR Apache-2.0 |
 | [rand_core](https://github.com/rust-random/rand_core) | 0.10.1 | MIT OR Apache-2.0 |
+| [rand_core](https://github.com/rust-random/rand) | 0.6.4 | MIT OR Apache-2.0 |
 | [rand_core](https://github.com/rust-random/rand) | 0.9.5 | MIT OR Apache-2.0 |
 | [rand_pcg](https://github.com/rust-random/rngs) | 0.10.2 | MIT OR Apache-2.0 |
 | [range-alloc](https://github.com/gfx-rs/range-alloc) | 0.1.5 | MIT OR Apache-2.0 |
@@ -417,6 +574,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [rayon-core](https://github.com/rayon-rs/rayon) | 1.13.0 | MIT OR Apache-2.0 |
 | [rcgen](https://github.com/rustls/rcgen) | 0.14.10 | MIT OR Apache-2.0 |
 | [realfft](https://github.com/HEnquist/realfft) | 3.5.1 | MIT |
+| [redox_syscall](https://gitlab.redox-os.org/redox-os/syscall) | 0.2.16 | MIT |
 | [redox_syscall](https://gitlab.redox-os.org/redox-os/syscall) | 0.5.18 | MIT |
 | [redox_users](https://gitlab.redox-os.org/redox-os/users) | 0.4.6 | MIT |
 | [redox_users](https://gitlab.redox-os.org/redox-os/users) | 0.5.3 | MIT |
@@ -429,13 +587,19 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [renderdoc-sys](https://github.com/ebkalderon/renderdoc-rs) | 1.1.0 | MIT OR Apache-2.0 |
 | [reqwest](https://github.com/seanmonstar/reqwest) | 0.12.28 | MIT OR Apache-2.0 |
 | [reqwest](https://github.com/seanmonstar/reqwest) | 0.13.5 | MIT OR Apache-2.0 |
+| [resolv-conf](https://github.com/hickory-dns/resolv-conf) | 0.7.6 | MIT OR Apache-2.0 |
+| [rfc6979](https://github.com/RustCrypto/signatures/tree/master/rfc6979) | 0.4.0 | Apache-2.0 OR MIT |
+| [rfc6979](https://github.com/RustCrypto/signatures) | 0.6.0 | Apache-2.0 OR MIT |
 | [rfd](https://github.com/PolyMeilex/rfd) | 0.18.0 | MIT |
 | [ring](https://github.com/briansmith/ring) | 0.17.14 | Apache-2.0 AND ISC |
+| [ringbuf](https://github.com/agerasev/ringbuf.git) | 0.4.8 | MIT/Apache-2.0 |
 | [rmcp](https://github.com/modelcontextprotocol/rust-sdk/) | 3.9.0 | Apache-2.0 |
 | [rmcp-macros](https://github.com/modelcontextprotocol/rust-sdk/) | 3.9.0 | Apache-2.0 |
 | [route_manager](https://github.com/tun-rs/route_manager) | 0.2.17 | Apache-2.0 |
+| [rsa](https://github.com/RustCrypto/RSA) | 0.9.10 | MIT OR Apache-2.0 |
 | [rsqlite-vfs](https://github.com/Spxg/sqlite-wasm-rs) | 0.2.0 | MIT |
 | [rtrb](https://github.com/mgeier/rtrb) | 0.4.1 | MIT OR Apache-2.0 |
+| [rubato](https://github.com/HEnquist/rubato) | 0.16.2 | MIT |
 | [rumqttc-core-next](https://github.com/thehouseisonfire/rumqtt) | 0.34.0 | Apache-2.0 |
 | [rumqttc-v4-next](https://github.com/thehouseisonfire/rumqtt) | 0.34.0 | Apache-2.0 |
 | [rusqlite](https://github.com/rusqlite/rusqlite) | 0.41.1 | MIT |
@@ -446,33 +610,53 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [rustfft](https://github.com/ejmahler/RustFFT) | 6.4.1 | MIT OR Apache-2.0 |
 | [rusticata-macros](https://github.com/rusticata/rusticata-macros.git) | 4.1.0 | MIT/Apache-2.0 |
 | [rustix](https://github.com/bytecodealliance/rustix) | 1.1.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| [rustls](https://github.com/rustls/rustls) | 0.22.4 | Apache-2.0 OR ISC OR MIT |
 | [rustls](https://github.com/rustls/rustls) | 0.23.46 | Apache-2.0 OR ISC OR MIT |
 | [rustls-native-certs](https://github.com/rustls/rustls-native-certs) | 0.8.5 | Apache-2.0 OR ISC OR MIT |
 | [rustls-pki-types](https://github.com/rustls/pki-types) | 1.15.1 | MIT OR Apache-2.0 |
 | [rustls-platform-verifier](https://github.com/rustls/rustls-platform-verifier) | 0.7.1 | MIT OR Apache-2.0 |
 | [rustls-platform-verifier-android](https://github.com/rustls/rustls-platform-verifier) | 0.2.0 | MIT OR Apache-2.0 |
+| [rustls-webpki](https://github.com/rustls/webpki) | 0.102.8 | ISC |
 | [rustls-webpki](https://github.com/rustls/webpki) | 0.103.16 | ISC |
 | [rustversion](https://github.com/dtolnay/rustversion) | 1.0.23 | MIT OR Apache-2.0 |
+| [rusty_pool](https://github.com/robinfriedli/rusty_pool) | 0.7.0 | Apache-2.0 |
 | [ryu](https://github.com/dtolnay/ryu) | 1.0.23 | Apache-2.0 OR BSL-1.0 |
+| [salsa20](https://github.com/RustCrypto/stream-ciphers) | 0.10.2 | MIT OR Apache-2.0 |
 | [same-file](https://github.com/BurntSushi/same-file) | 1.0.6 | Unlicense/MIT |
 | [schannel](https://github.com/steffengy/schannel-rs) | 0.1.30 | MIT |
+| [schemars](https://github.com/GREsau/schemars) | 0.9.0 | MIT |
 | [schemars](https://github.com/GREsau/schemars) | 1.2.3 | MIT |
 | [schemars_derive](https://github.com/GREsau/schemars) | 1.2.3 | MIT |
+| [scoped-tls](https://github.com/alexcrichton/scoped-tls) | 1.0.1 | MIT/Apache-2.0 |
 | [scopeguard](https://github.com/bluss/scopeguard) | 1.2.0 | MIT OR Apache-2.0 |
 | [scroll](https://github.com/m4b/scroll) | 0.12.0 | MIT |
 | [scroll_derive](https://github.com/m4b/scroll) | 0.12.1 | MIT |
+| [scrypt](https://github.com/RustCrypto/password-hashes/tree/master/scrypt) | 0.11.0 | MIT OR Apache-2.0 |
+| [sec1](https://github.com/RustCrypto/formats/tree/master/sec1) | 0.7.3 | Apache-2.0 OR MIT |
+| [sec1](https://github.com/RustCrypto/formats) | 0.8.1 | Apache-2.0 OR MIT |
+| [secrecy](https://github.com/iqlusioninc/crates/tree/main/secrecy) | 0.8.0 | Apache-2.0 OR MIT |
 | [security-framework](https://github.com/kornelski/rust-security-framework) | 3.7.0 | MIT OR Apache-2.0 |
 | [security-framework-sys](https://github.com/kornelski/rust-security-framework) | 2.17.0 | MIT OR Apache-2.0 |
 | [semver](https://github.com/dtolnay/semver) | 1.0.28 | MIT OR Apache-2.0 |
 | [serde](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 |
+| [serde-aux](https://github.com/iddm/serde-aux) | 4.7.0 | MIT |
+| [serde-value](https://github.com/arcnmx/serde-value) | 0.7.0 | MIT |
+| [serde_bytes](https://github.com/serde-rs/bytes) | 0.11.19 | MIT OR Apache-2.0 |
 | [serde_core](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 |
+| [serde_cow](https://github.com/GnomedDev/serde_cow) | 0.1.2 | MIT |
 | [serde_derive](https://github.com/serde-rs/serde) | 1.0.229 | MIT OR Apache-2.0 |
 | [serde_derive_internals](https://github.com/serde-rs/serde) | 0.30.0 | MIT OR Apache-2.0 |
 | [serde_json](https://github.com/serde-rs/json) | 1.0.154 | MIT OR Apache-2.0 |
 | [serde_path_to_error](https://github.com/dtolnay/path-to-error) | 0.1.20 | MIT OR Apache-2.0 |
+| [serde_plain](https://github.com/mitsuhiko/serde-plain) | 1.0.2 | MIT/Apache-2.0 |
 | [serde_repr](https://github.com/dtolnay/serde-repr) | 0.1.21 | MIT OR Apache-2.0 |
 | [serde_spanned](https://github.com/toml-rs/toml) | 1.1.3 | MIT OR Apache-2.0 |
 | [serde_urlencoded](https://github.com/nox/serde_urlencoded) | 0.7.1 | MIT/Apache-2.0 |
+| [serde_with](https://github.com/jonasbb/serde_with/) | 3.25.0 | MIT OR Apache-2.0 |
+| [serde_with_macros](https://github.com/jonasbb/serde_with/) | 3.25.0 | MIT OR Apache-2.0 |
+| [serdect](https://github.com/RustCrypto/formats) | 0.4.3 | Apache-2.0 OR MIT |
+| [serenity](https://github.com/serenity-rs/serenity.git) | 0.12.5 | ISC |
+| [serenity-voice-model](https://github.com/serenity-rs/serenity.git) | 0.3.0 | ISC |
 | [serialport](https://github.com/serialport/serialport-rs) | 4.10.1 | MPL-2.0 |
 | [sha1](https://github.com/RustCrypto/hashes) | 0.10.7 | MIT OR Apache-2.0 |
 | [sha1](https://github.com/RustCrypto/hashes) | 0.11.0 | MIT OR Apache-2.0 |
@@ -482,7 +666,10 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [sharded-slab](https://github.com/hawkw/sharded-slab) | 0.1.7 | MIT |
 | [shlex](https://github.com/comex/rust-shlex) | 1.3.0 | MIT OR Apache-2.0 |
 | [shlex](https://github.com/comex/rust-shlex) | 2.0.1 | MIT OR Apache-2.0 |
+| [shorthand](https://github.com/Luro02/shorthand) | 0.1.1 | MIT OR Apache-2.0 |
 | [signal-hook-registry](https://github.com/vorner/signal-hook) | 1.4.8 | MIT OR Apache-2.0 |
+| [signature](https://github.com/RustCrypto/traits/tree/master/signature) | 2.2.0 | Apache-2.0 OR MIT |
+| [signature](https://github.com/RustCrypto/traits) | 3.0.0 | Apache-2.0 OR MIT |
 | [simd-adler32](https://github.com/mcountryman/simd-adler32) | 0.3.10 | MIT |
 | [simd_cesu8](https://github.com/seancroach/simd_cesu8) | 1.2.0 | Apache-2.0 OR MIT |
 | [simdutf8](https://github.com/rusticstuff/simdutf8) | 0.1.5 | MIT OR Apache-2.0 |
@@ -492,26 +679,41 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [smallvec](https://github.com/servo/rust-smallvec) | 1.16.5 | MIT OR Apache-2.0 |
 | [smawk](https://github.com/mgeisler/smawk) | 0.3.3 | MIT |
 | [socket-pktinfo](https://github.com/pixsper/socket-pktinfo) | 0.4.1 | MIT |
+| [socket2](https://github.com/rust-lang/socket2) | 0.5.10 | MIT OR Apache-2.0 |
 | [socket2](https://github.com/rust-lang/socket2) | 0.6.5 | MIT OR Apache-2.0 |
+| [songbird](https://github.com/serenity-rs/songbird.git) | 0.6.1 | ISC |
 | [spin](https://github.com/mvdnes/spin-rs.git) | 0.9.9 | MIT |
 | [spirv](https://github.com/gfx-rs/rspirv) | 0.4.0+sdk-1.4.341.0 | Apache-2.0 |
 | [spki](https://github.com/RustCrypto/formats/tree/master/spki) | 0.7.3 | Apache-2.0 OR MIT |
+| [spki](https://github.com/RustCrypto/formats) | 0.8.1 | Apache-2.0 OR MIT |
 | [sqlite-wasm-rs](https://github.com/Spxg/sqlite-wasm-rs) | 0.6.3 | MIT |
 | [sse-stream](https://github.com/4t145/sse-stream/) | 0.2.6 | MIT OR Apache-2.0 |
+| [stable-vec](https://github.com/LukasKalbertodt/stable-vec) | 0.4.3 | MIT/Apache-2.0 |
 | [stable_deref_trait](https://github.com/storyyeller/stable_deref_trait) | 1.2.1 | MIT OR Apache-2.0 |
 | [static_assertions](https://github.com/nvzqz/static-assertions-rs) | 1.1.0 | MIT OR Apache-2.0 |
+| [stream_lib](https://github.com/Erk-/rsget/tree/master/stream_lib) | 0.5.2 | ISC |
+| [streamcatcher](https://github.com/FelixMcFelix/streamcatcher.git) | 1.0.1 | MIT/Apache-2.0 |
 | [strength_reduce](http://github.com/ejmahler/strength_reduce) | 0.2.4 | MIT OR Apache-2.0 |
 | [stringprep](https://github.com/sfackler/rust-stringprep) | 0.1.5 | MIT/Apache-2.0 |
 | [strsim](https://github.com/rapidfuzz/strsim-rs) | 0.11.1 | MIT |
+| [strsim](https://github.com/dguo/strsim-rs) | 0.9.3 | MIT |
+| strum | 0.17.1 | MIT |
+| strum_macros | 0.17.1 | MIT |
 | [subtle](https://github.com/dalek-cryptography/subtle) | 2.6.1 | BSD-3-Clause |
+| [symphonia](https://github.com/pdeljanov/Symphonia) | 0.5.5 | MPL-2.0 |
 | [symphonia-bundle-mp3](https://github.com/pdeljanov/Symphonia) | 0.6.1 | MPL-2.0 |
+| [symphonia-core](https://github.com/pdeljanov/Symphonia) | 0.5.5 | MPL-2.0 |
 | [symphonia-core](https://github.com/pdeljanov/Symphonia) | 0.6.1 | MPL-2.0 |
+| [symphonia-metadata](https://github.com/pdeljanov/Symphonia) | 0.5.5 | MPL-2.0 |
+| [syn](https://github.com/dtolnay/syn) | 1.0.109 | MIT OR Apache-2.0 |
 | [syn](https://github.com/dtolnay/syn) | 2.0.119 | MIT OR Apache-2.0 |
 | [syn](https://github.com/dtolnay/syn) | 3.0.10 | MIT OR Apache-2.0 |
 | [sync_wrapper](https://github.com/Actyx/sync_wrapper) | 1.0.2 | Apache-2.0 |
 | [synstructure](https://github.com/mystor/synstructure) | 0.13.2 | MIT |
 | [synstructure](https://github.com/mystor/synstructure) | 0.14.0 | MIT |
+| [system-configuration](https://github.com/mullvad/system-configuration-rs) | 0.7.0 | MIT OR Apache-2.0 |
 | [system-configuration-sys](https://github.com/mullvad/system-configuration-rs) | 0.6.0 | MIT OR Apache-2.0 |
+| [tagptr](https://github.com/oliver-giersch/tagptr.git) | 0.2.0 | MIT/Apache-2.0 |
 | [tar](https://github.com/composefs/tar-rs) | 0.4.46 | MIT OR Apache-2.0 |
 | [target-lexicon](https://github.com/bytecodealliance/target-lexicon) | 0.13.5 | Apache-2.0 WITH LLVM-exception |
 | [tauri-winrt-notification](https://github.com/tauri-apps/winrt-notification) | 0.8.1 | MIT OR Apache-2.0 |
@@ -534,12 +736,17 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [tokio-macros](https://github.com/tokio-rs/tokio) | 2.7.2 | MIT |
 | [tokio-postgres](https://github.com/rust-postgres/rust-postgres) | 0.7.18 | MIT OR Apache-2.0 |
 | [tokio-postgres-rustls](https://github.com/jbg/tokio-postgres-rustls) | 0.14.0 | MIT |
+| [tokio-rustls](https://github.com/rustls/tokio-rustls) | 0.25.0 | MIT/Apache-2.0 |
 | [tokio-rustls](https://github.com/rustls/tokio-rustls) | 0.26.6 | MIT OR Apache-2.0 |
 | [tokio-serial](https://github.com/berkowski/tokio-serial) | 5.5.0 | MIT |
 | [tokio-stream](https://github.com/tokio-rs/tokio) | 0.1.19 | MIT |
+| [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) | 0.21.0 | MIT |
+| [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) | 0.26.2 | MIT |
 | [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) | 0.29.0 | MIT |
 | [tokio-tungstenite](https://github.com/snapview/tokio-tungstenite) | 0.30.0 | MIT |
 | [tokio-util](https://github.com/tokio-rs/tokio) | 0.7.20 | MIT |
+| [tokio-websockets](https://github.com/Gelbpunkt/tokio-websockets/) | 0.11.4 | MIT |
+| [tokio-websockets](https://github.com/Gelbpunkt/tokio-websockets/) | 0.13.3 | MIT |
 | [toml](https://github.com/toml-rs/toml) | 1.2.1+spec-1.1.0 | MIT OR Apache-2.0 |
 | [toml_datetime](https://github.com/toml-rs/toml) | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | [toml_edit](https://github.com/toml-rs/toml) | 0.25.19+spec-1.1.0 | MIT OR Apache-2.0 |
@@ -553,13 +760,24 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [tracing](https://github.com/tokio-rs/tracing) | 0.1.44 | MIT |
 | [tracing-attributes](https://github.com/tokio-rs/tracing) | 0.1.31 | MIT |
 | [tracing-core](https://github.com/tokio-rs/tracing) | 0.1.36 | MIT |
+| [tracing-futures](https://github.com/tokio-rs/tracing) | 0.2.5 | MIT |
 | [tracing-log](https://github.com/tokio-rs/tracing) | 0.2.0 | MIT |
 | [tracing-subscriber](https://github.com/tokio-rs/tracing) | 0.3.23 | MIT |
 | [transpose](https://github.com/ejmahler/transpose) | 0.2.3 | MIT OR Apache-2.0 |
 | [try-lock](https://github.com/seanmonstar/try-lock) | 0.2.5 | MIT |
+| [tsclient-rs](https://github.com/dreamhax/tsclient-rs) | 0.3.3 | MIT |
 | [tun-rs](https://github.com/tun-rs/tun-rs) | 2.8.18 | Apache-2.0 |
+| [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.21.0 | MIT OR Apache-2.0 |
+| [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.26.2 | MIT OR Apache-2.0 |
 | [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.29.0 | MIT OR Apache-2.0 |
 | [tungstenite](https://github.com/snapview/tungstenite-rs) | 0.30.0 | MIT OR Apache-2.0 |
+| [twilight-gateway](https://github.com/twilight-rs/twilight.git) | 0.17.1 | ISC |
+| [twilight-gateway-queue](https://github.com/twilight-rs/twilight.git) | 0.17.0 | ISC |
+| [twilight-http](https://github.com/twilight-rs/twilight.git) | 0.17.1 | ISC |
+| [twilight-http-ratelimiting](https://github.com/twilight-rs/twilight.git) | 0.17.1 | ISC |
+| [twilight-model](https://github.com/twilight-rs/twilight.git) | 0.17.1 | ISC |
+| [twilight-validate](https://github.com/twilight-rs/twilight.git) | 0.17.0 | ISC |
+| [typemap_rev](https://github.com/bdashore3/typemap_rev) | 0.3.0 | ISC |
 | [typenum](https://github.com/paholg/typenum) | 1.20.1 | MIT OR Apache-2.0 |
 | [uds_windows](https://github.com/haraldh/rust_uds_windows) | 1.2.1 | MIT |
 | [unescaper](https://github.com/hack-ink/unescaper) | 0.1.10 | MIT OR GPL-3.0-only |
@@ -568,6 +786,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [unicode-ident](https://github.com/dtolnay/unicode-ident) | 1.0.27 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | [unicode-normalization](https://github.com/unicode-rs/unicode-normalization) | 0.1.26 | (MIT OR Apache-2.0) AND Unicode-3.0 |
 | [unicode-properties](https://github.com/unicode-rs/unicode-properties) | 0.1.5 | (MIT OR Apache-2.0) AND Unicode-3.0 |
+| [unicode-segmentation](https://github.com/unicode-rs/unicode-segmentation) | 1.13.3 | MIT OR Apache-2.0 |
 | [unicode-width](https://github.com/unicode-rs/unicode-width) | 0.2.3 | MIT OR Apache-2.0 |
 | [uniffi](https://github.com/mozilla/uniffi-rs) | 0.32.2 | MPL-2.0 |
 | [uniffi_bindgen](https://github.com/mozilla/uniffi-rs) | 0.32.2 | MPL-2.0 |
@@ -578,11 +797,13 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [uniffi_pipeline](https://github.com/mozilla/uniffi-rs) | 0.32.2 | MPL-2.0 |
 | [uniffi_udl](https://github.com/mozilla/uniffi-rs) | 0.32.2 | MPL-2.0 |
 | [unit-prefix](https://codeberg.org/commons-rs/unit-prefix) | 0.5.2 | MIT |
+| [universal-hash](https://github.com/RustCrypto/traits) | 0.5.1 | MIT OR Apache-2.0 |
 | [untrusted](https://github.com/briansmith/untrusted) | 0.7.1 | ISC |
 | [untrusted](https://github.com/briansmith/untrusted) | 0.9.0 | ISC |
 | [ureq](https://github.com/algesten/ureq) | 3.5.1 | MIT OR Apache-2.0 |
 | [ureq-proto](https://github.com/algesten/ureq-proto) | 0.7.1 | MIT OR Apache-2.0 |
 | [url](https://github.com/servo/rust-url) | 2.5.8 | MIT OR Apache-2.0 |
+| [utf-8](https://github.com/SimonSapin/rust-utf8) | 0.7.6 | MIT OR Apache-2.0 |
 | [utf8-zero](https://github.com/algesten/utf8-zero) | 0.8.1 | MIT OR Apache-2.0 |
 | [utf8_iter](https://github.com/hsivonen/utf8_iter) | 1.1.0 | Apache-2.0 OR MIT |
 | [utf8parse](https://github.com/alacritty/vte) | 0.2.2 | Apache-2.0 OR MIT |
@@ -625,6 +846,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [web-sys](https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys) | 0.3.107 | MIT OR Apache-2.0 |
 | [web-time](https://github.com/daxpedda/web-time) | 1.1.0 | MIT OR Apache-2.0 |
 | [webpki-root-certs](https://github.com/rustls/webpki-roots) | 1.0.11 | CDLA-Permissive-2.0 |
+| [webpki-roots](https://github.com/rustls/webpki-roots) | 0.26.11 | CDLA-Permissive-2.0 |
 | [webpki-roots](https://github.com/rustls/webpki-roots) | 1.0.11 | CDLA-Permissive-2.0 |
 | [weedle2](https://github.com/mozilla/uniffi-rs) | 5.0.0 | MIT |
 | [wgpu](https://github.com/gfx-rs/wgpu) | 30.0.1 | MIT OR Apache-2.0 |
@@ -637,7 +859,11 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [wgpu-types](https://github.com/gfx-rs/wgpu) | 30.0.1 | MIT OR Apache-2.0 |
 | [whoami](https://github.com/ardaku/whoami) | 2.1.3 | Apache-2.0 OR BSL-1.0 OR MIT |
 | [widestring](https://github.com/VoidStarKat/widestring-rs) | 1.2.1 | MIT OR Apache-2.0 |
+| [winapi](https://github.com/retep998/winapi-rs) | 0.3.9 | MIT/Apache-2.0 |
+| [winapi-i686-pc-windows-gnu](https://github.com/retep998/winapi-rs) | 0.4.0 | MIT/Apache-2.0 |
 | [winapi-util](https://github.com/BurntSushi/winapi-util) | 0.1.11 | Unlicense OR MIT |
+| [winapi-x86_64-pc-windows-gnu](https://github.com/retep998/winapi-rs) | 0.4.0 | MIT/Apache-2.0 |
+| [windows](https://github.com/microsoft/windows-rs) | 0.48.0 | MIT OR Apache-2.0 |
 | [windows](https://github.com/microsoft/windows-rs) | 0.61.3 | MIT OR Apache-2.0 |
 | [windows](https://github.com/microsoft/windows-rs) | 0.62.2 | MIT OR Apache-2.0 |
 | [windows-collections](https://github.com/microsoft/windows-rs) | 0.2.0 | MIT OR Apache-2.0 |
@@ -652,6 +878,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [windows-link](https://github.com/microsoft/windows-rs) | 0.2.1 | MIT OR Apache-2.0 |
 | [windows-numerics](https://github.com/microsoft/windows-rs) | 0.2.0 | MIT OR Apache-2.0 |
 | [windows-numerics](https://github.com/microsoft/windows-rs) | 0.3.1 | MIT OR Apache-2.0 |
+| [windows-registry](https://github.com/microsoft/windows-rs) | 0.6.1 | MIT OR Apache-2.0 |
 | [windows-result](https://github.com/microsoft/windows-rs) | 0.3.4 | MIT OR Apache-2.0 |
 | [windows-result](https://github.com/microsoft/windows-rs) | 0.4.1 | MIT OR Apache-2.0 |
 | [windows-strings](https://github.com/microsoft/windows-rs) | 0.4.2 | MIT OR Apache-2.0 |
@@ -683,9 +910,11 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [winreg](https://github.com/gentoo90/winreg-rs) | 0.56.0 | MIT |
 | [winresource](https://github.com/BenjaminRi/winresource) | 0.1.34 | MIT |
 | [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen) | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| [wnaf](https://github.com/RustCrypto/elliptic-curves) | 0.14.1 | Apache-2.0 OR MIT |
 | [writeable](https://github.com/unicode-org/icu4x) | 0.6.4 | Unicode-3.0 |
 | [wtransport](https://github.com/BiagioFesta/wtransport) | 0.7.2 | MIT OR Apache-2.0 |
 | [wtransport-proto](https://github.com/BiagioFesta/wtransport) | 0.7.2 | MIT OR Apache-2.0 |
+| [x25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek/tree/main/x25519-dalek) | 2.0.1 | BSD-3-Clause |
 | [x509-cert](https://github.com/RustCrypto/formats/tree/master/x509-cert) | 0.2.5 | Apache-2.0 OR MIT |
 | [x509-parser](https://github.com/rusticata/x509-parser.git) | 0.18.1 | MIT OR Apache-2.0 |
 | [xattr](https://github.com/Stebalien/xattr) | 1.7.0 | MIT OR Apache-2.0 |

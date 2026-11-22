@@ -24,6 +24,7 @@ mod auth_mcp;
 mod calls;
 mod catalog;
 mod channel_capture;
+mod chat_accounts;
 mod contracts;
 mod cps;
 mod decoderlog;

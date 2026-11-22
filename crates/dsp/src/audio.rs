@@ -1,6 +1,9 @@
 pub mod agc;
 pub mod clip;
 pub mod compander;
+pub mod downmix;
 pub mod limiter;
+pub mod mix;
 pub mod noise;
 pub mod squelch;
+pub mod voice_gate;

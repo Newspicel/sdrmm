@@ -774,6 +774,35 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
     assert_eq!(cycle, vec!["event_filter", "triangulation", "bearing_fix"]);
 }
 
+#[test]
+fn voice_chat_takes_only_channel_audio() {
+    let chat = || NodeBody::VoiceChat(crate::VoiceChatNode::default());
+    let into = |source: PatchNode, sink: NodeBody| {
+        let graph = PatchGraph {
+            nodes: vec![source, node("sink", sink)],
+            edges: vec![edge(("src", AUDIO_PORT), ("sink", AUDIO_PORT))],
+        };
+        match graph.validate() {
+            Ok(()) => None,
+            Err(PatchError::Refused { refusal, .. }) => Some(refusal.text()),
+            Err(other) => panic!("expected a refusal, got {other}"),
+        }
+    };
+    let microphone = || {
+        node(
+            "src",
+            NodeBody::Microphone(crate::MicrophoneNode::default()),
+        )
+    };
+    let takes = Some("Voice chat takes channel audio".to_owned());
+    assert_eq!(into(channel("src", "probe_voice"), chat()), None);
+    assert_eq!(into(microphone(), chat()), takes);
+    assert_eq!(into(node("src", chat()), chat()), takes);
+    let encoder = || NodeBody::Encoder(crate::EncoderNode::default());
+    assert_eq!(into(microphone(), encoder()), None);
+    assert_eq!(into(node("src", chat()), encoder()), None);
+}
+
 fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &PortSpec) -> bool {
     if out.port_type != input.port_type {
         return false;
@@ -1430,7 +1459,7 @@ fn the_catalog_describes_every_node_kind_once() {
             .iter()
             .find(|p| p.name == "audio")
             .map(|p| p.payload.clone()),
-        Some(Payload::Audio)
+        Some(Payload::audio(&[crate::AudioOrigin::Channel]))
     );
 
     let json = serde_json::to_value(&catalog).unwrap();

@@ -238,6 +238,7 @@ pub enum ProblemSource {
     Recorder,
     Transmit,
     Speaker,
+    VoiceChat,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

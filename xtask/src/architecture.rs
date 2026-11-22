@@ -19,6 +19,7 @@ pub(crate) const FORBIDDEN_ON_PHONES: &[&str] = &[
     "sdrmm-serial",
     "sdrmm-recorder",
     "sdrmm-audio-out",
+    "sdrmm-voicechat",
     "codec2",
     "ffmpeg-the-third",
     "ffmpeg-sys-the-third",
@@ -150,6 +151,7 @@ fn validate(metadata: &Value) -> Result<()> {
             &["sdrmm-dsp", "sdrmm-modem", "sdrmm-test-support"][..],
         ),
         ("sdrmm-crypto", &[][..]),
+        ("sdrmm-voicechat", &[][..]),
         ("sdrmm-codec", &["sdrmm-dsp"][..]),
         ("sdrmm-aviation", &["sdrmm-dsp"][..]),
         (
@@ -220,7 +222,8 @@ mod tests {
             {"name": "sdrmm-decoder", "dependencies": []},
             {"name": "sdrmm-aviation", "dependencies": []},
             {"name": "sdrmm-media", "dependencies": []},
-            {"name": "sdrmm-array", "dependencies": []}
+            {"name": "sdrmm-array", "dependencies": []},
+            {"name": "sdrmm-voicechat", "dependencies": []}
         ]})
     }
 

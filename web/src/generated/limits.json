@@ -181,5 +181,26 @@
     "min_cos_lat": 0.01
   },
   "decoder_log_rows": 5000,
-  "workspace_state_version": 2
+  "workspace_state_version": 2,
+  "voice_chat": {
+    "threshold_db": {
+      "min": -90.0,
+      "max": 0.0
+    },
+    "threshold_seed_db": -35.0,
+    "hang_ms": {
+      "min": 0,
+      "max": 5000
+    },
+    "hang_seed_ms": 600,
+    "volume": {
+      "min": 0.0,
+      "max": 2.0
+    },
+    "volume_seed": 1.0,
+    "account_len": 64,
+    "channel_len": 255,
+    "allowed": 64,
+    "allowed_len": 64
+  }
 }

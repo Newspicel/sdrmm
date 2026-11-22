@@ -19,7 +19,7 @@ pub use log::Forwarder;
 macro_rules! export_driver {
     ($driver:expr) => {
         /// # Safety
-        /// Called once by the SDRmm host with its own static table.
+        /// Called once by the `SDRmm` host with its own static table.
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn sdrmm_device_plugin_v1(
             host: *const $crate::abi::HostV1,

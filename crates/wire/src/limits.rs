@@ -84,6 +84,7 @@ pub struct Limits {
     pub survey: SurveyLimits,
     pub decoder_log_rows: u32,
     pub workspace_state_version: u32,
+    pub voice_chat: VoiceChatLimits,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -249,6 +250,39 @@ pub const ROTATOR_LIMITS: RotatorLimits = RotatorLimits {
     rotctld_address: crate::rotator::DEFAULT_ROTCTLD_ADDRESS,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct VoiceChatLimits {
+    pub threshold_db: Bounds<f64>,
+    pub threshold_seed_db: f64,
+    pub hang_ms: Bounds<u32>,
+    pub hang_seed_ms: u32,
+    pub volume: Bounds<f64>,
+    pub volume_seed: f64,
+    pub account_len: usize,
+    pub channel_len: usize,
+    pub allowed: usize,
+    pub allowed_len: usize,
+}
+
+pub const VOICE_CHAT_LIMITS: VoiceChatLimits = VoiceChatLimits {
+    threshold_db: Bounds::new(
+        crate::voice_chat::MIN_VOX_THRESHOLD_DB,
+        crate::voice_chat::MAX_VOX_THRESHOLD_DB,
+    ),
+    threshold_seed_db: crate::voice_chat::DEFAULT_VOX_THRESHOLD_DB,
+    hang_ms: Bounds::new(0, crate::voice_chat::MAX_VOX_HANG_MS),
+    hang_seed_ms: crate::voice_chat::DEFAULT_VOX_HANG_MS,
+    volume: Bounds::new(
+        crate::voice_chat::MIN_VOICE_VOLUME,
+        crate::voice_chat::MAX_VOICE_VOLUME,
+    ),
+    volume_seed: crate::voice_chat::DEFAULT_VOICE_VOLUME,
+    account_len: crate::voice_chat::MAX_CHAT_ACCOUNT_LEN,
+    channel_len: crate::voice_chat::MAX_CHAT_CHANNEL_LEN,
+    allowed: crate::voice_chat::MAX_CHAT_ALLOWED,
+    allowed_len: crate::voice_chat::MAX_CHAT_ALLOWED_LEN,
+};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct PresenceLimits {
     pub name_len: usize,
@@ -364,6 +398,7 @@ pub const LIMITS: Limits = Limits {
     survey: SURVEY_LIMITS,
     decoder_log_rows: crate::rest::MAX_DECODER_LOG_ROWS,
     workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,
+    voice_chat: VOICE_CHAT_LIMITS,
 };
 
 pub fn generated() -> Result<String, serde_json::Error> {

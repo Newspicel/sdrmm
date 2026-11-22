@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::{
-    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioRecorderNode, BASEBAND_PORT,
+    ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioOrigin, AudioRecorderNode, BASEBAND_PORT,
     BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode, EVENTS_PORT,
     EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory, POSITION_PORT,
     Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RecorderNode, ScannerNode,
@@ -26,6 +26,7 @@ use crate::{
     schedule::ScheduleNode,
     sky_scan::SkyScanNode,
     transmit::{EncoderNode, MicrophoneNode, TransmitNode},
+    voice_chat::VoiceChatNode,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -223,6 +224,9 @@ impl std::fmt::Display for NodeKind {
 }
 
 const ANY_IQ: &[IqOrigin] = IqOrigin::ALL;
+const ANY_AUDIO: &[AudioOrigin] = AudioOrigin::ALL;
+const CHANNEL_AUDIO: &[AudioOrigin] = &[AudioOrigin::Channel];
+const VOICE: &[AudioOrigin] = &[AudioOrigin::Voice];
 const RADIO_IQ: &[IqOrigin] = &[IqOrigin::Radio];
 const CHANNEL_VERBS: &[ControlVerb] =
     &[ControlVerb::Tune, ControlVerb::Doppler, ControlVerb::Sweep];
@@ -251,12 +255,12 @@ fn position_in() -> PortSpec {
     input(POSITION_PORT, Payload::Position)
 }
 
-fn audio_in() -> PortSpec {
-    input(AUDIO_PORT, Payload::Audio).many()
+fn audio_in(origins: &[AudioOrigin]) -> PortSpec {
+    input(AUDIO_PORT, Payload::audio(origins)).many()
 }
 
-fn audio_out() -> PortSpec {
-    output(AUDIO_PORT, Payload::Audio)
+fn audio_out(origins: &[AudioOrigin]) -> PortSpec {
+    output(AUDIO_PORT, Payload::audio(origins))
 }
 
 fn run_in(note: &'static str) -> PortSpec {
@@ -421,7 +425,7 @@ nodes! {
                 ),
                 position_in(),
                 output(BASEBAND_PORT, Payload::Baseband),
-                audio_out(),
+                audio_out(CHANNEL_AUDIO),
                 events_out(Accept::Any).noted("Decoded messages and calls. Analog calls need squelch"),
                 output(VIDEO_PORT, Payload::Video),
             ]),
@@ -431,7 +435,7 @@ nodes! {
             ]),
             (Speaker(SpeakerNode), "speaker", Output, "Speaker", "Plays channel audio", Role::Plain,
                 Face::fit(320), [
-                audio_in(),
+                audio_in(ANY_AUDIO),
             ]),
             (Map, "map", Output, "Map", "Decoded positions on a map", Role::Plain,
                 Face::sized(520, 380).min(300, 220), [
@@ -472,7 +476,7 @@ nodes! {
                     "the radio the control channel sits on; the system runs its own decoders",
                 ),
                 events_out(kinds!(DV, CALL)),
-                audio_out(),
+                audio_out(CHANNEL_AUDIO),
             ]),
             (EventFilter(EventFilterNode), "event_filter", Tool, "Event filter",
                 "Passes only matching events", Role::Pass(P::Events), Face::fit(380), [
@@ -496,7 +500,7 @@ nodes! {
             ]),
             (AudioRecorder(AudioRecorderNode), "audio_recorder", Output, "Audio recorder",
                 "Records channel audio to WAV", Role::Plain, Face::fit(340), [
-                audio_in(),
+                audio_in(ANY_AUDIO),
                 run_in(RUN_TAKE),
             ]),
             (BasebandRecorder(BasebandRecorderNode), "baseband_recorder", Output,
@@ -575,12 +579,12 @@ nodes! {
                 events_out(kinds!(BEARING_FIX)),
             ]),
             (Microphone(MicrophoneNode), "microphone", Source, "Microphone",
-                "Your voice while you hold the key", Role::Plain, Face::fit(300), [
-                audio_out(),
+                "Your voice on the air", Role::Plain, Face::fit(300), [
+                audio_out(VOICE),
             ]),
             (Encoder(EncoderNode), "encoder", Encoder, "Encoder",
                 "Turns audio or a message into a signal", Role::Plain, Face::fit(320).dial(), [
-                audio_in().noted("Voice for an analog mode"),
+                audio_in(ANY_AUDIO).noted("Voice for an analog mode"),
                 output(BASEBAND_PORT, Payload::Baseband).one(),
             ]),
             (Transmit(TransmitNode), "transmit", Output, "Transmitter",
@@ -591,6 +595,11 @@ nodes! {
             ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
+            (VoiceChat(VoiceChatNode), "voice_chat", Output, "Voice chat",
+                "Discord or TeamSpeak, both ways", Role::Plain, Face::fit(340), [
+                audio_in(CHANNEL_AUDIO),
+                audio_out(VOICE),
+            ]),
 }
 
 impl NodeKind {
@@ -749,7 +758,7 @@ fn narrow_channel(
         .into_iter()
         .filter(|port| match port.payload {
             Payload::Position => descriptor.needs_position,
-            Payload::Audio => descriptor.has_audio,
+            Payload::Audio { .. } => descriptor.has_audio,
             Payload::Video => descriptor.has_video,
             Payload::Events { .. } => !emitted.is_empty(),
             _ => true,

@@ -15,7 +15,7 @@ const audioIn: PortSpec = {
   port_type: "audio",
   direction: "in",
   multi: "many",
-  payload: { type: "audio" },
+  payload: { type: "audio", origins: ["channel", "voice"] },
 };
 
 const from = { node: "dev", port: "iq2" };

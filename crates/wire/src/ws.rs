@@ -165,6 +165,7 @@ pub struct PortActivity {
 #[serde(tag = "type", content = "data")]
 pub enum ServerEvent {
     FeedStatus(crate::event_output::FeedStatus),
+    VoiceChatStatus(crate::voice_chat::VoiceChatStatus),
     EventOutputStatus(crate::event_output::EventOutputStatus),
     PipelineHealth {
         queues: Vec<crate::PipelineQueue>,

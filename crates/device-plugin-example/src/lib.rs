@@ -1,6 +1,6 @@
 //! A radio that hears one tone: the smallest complete device plugin. Copy this crate, swap the
 //! tone for your hardware, build it with `cargo build --release` and drop the library into the
-//! SDRmm plugins folder.
+//! `SDRmm` plugins folder.
 
 use std::{
     sync::{

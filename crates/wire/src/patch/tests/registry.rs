@@ -37,6 +37,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("microphone", Face::fit(300)),
     ("encoder", Face::fit(320).dial()),
     ("transmit", Face::fit(320).dial()),
+    ("voice_chat", Face::fit(340)),
 ];
 
 fn as_sent(body: &NodeBody) -> serde_json::Value {

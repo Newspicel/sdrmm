@@ -6,7 +6,6 @@ import {
   MICROPHONE_FRAME_SAMPLES,
   peakDb,
   peakOf,
-  VoxGate,
 } from "./microphone";
 
 describe("encodeMicrophonePcm", () => {
@@ -72,25 +71,8 @@ describe("peakOf", () => {
   });
 });
 
-describe("VoxGate", () => {
-  it("opens at the threshold and not below it", () => {
-    const gate = new VoxGate(-20, 500);
-    expect(gate.feed(0.05, 0)).toBe(false);
-    expect(gate.feed(0.1, 20)).toBe(true);
-  });
-
-  it("holds for the hang time, closes after it and opens again", () => {
-    const gate = new VoxGate(-20, 500);
-    expect(gate.feed(0.5, 0)).toBe(true);
-    expect(gate.feed(0, 500)).toBe(true);
-    expect(gate.feed(0, 501)).toBe(false);
-    expect(gate.feed(0.5, 900)).toBe(true);
-    expect(gate.feed(0.01, 1_000)).toBe(true);
-  });
-
-  it("stays shut on silence and reads silence as the floor", () => {
-    const gate = new VoxGate(-90, 5_000);
-    expect(gate.feed(0, 0)).toBe(false);
+describe("peakDb", () => {
+  it("reads silence as the floor", () => {
     expect(peakDb(0)).toBe(-120);
     expect(peakDb(1)).toBe(0);
     expect(peakDb(0.1)).toBeCloseTo(-20, 6);

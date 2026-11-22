@@ -5,7 +5,7 @@ use sdrmm_wire::Direction;
 
 /// The version of [`PluginV1`] and of every wire type that crosses it as JSON. A host refuses
 /// a plugin built for another.
-pub const DEVICE_ABI_VERSION: u32 = 2;
+pub const DEVICE_ABI_VERSION: u32 = 3;
 
 /// The one symbol a device plugin exports, as `extern "C" fn(*const HostV1) -> *const PluginV1`.
 pub const ENTRY_SYMBOL: &str = "sdrmm_device_plugin_v1";

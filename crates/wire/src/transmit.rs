@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+use crate::voice_chat::{
+    DEFAULT_VOX_HANG_MS, DEFAULT_VOX_THRESHOLD_DB, SendMode, VoiceGateSettings,
+};
+
 pub const DEFAULT_TRANSMIT_TIMEOUT_S: u32 = 180;
 pub const MAX_TRANSMIT_TIMEOUT_S: u32 = 3_600;
 pub const DEFAULT_TRANSMIT_LEVEL_DB: f64 = -3.0;
@@ -74,15 +78,11 @@ pub struct EncoderNode {
     pub audio: crate::AudioProcessing,
 }
 
-pub const DEFAULT_VOX_THRESHOLD_DB: f64 = -35.0;
-pub const DEFAULT_VOX_HANG_MS: u32 = 600;
-pub const MAX_VOX_HANG_MS: u32 = 5_000;
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(default)]
+#[serde(from = "MicrophoneSaved")]
 pub struct MicrophoneNode {
-    /// Keys by itself while the microphone is louder than the threshold.
-    pub vox: bool,
+    /// What keys the microphone: the key, the voice, or nothing.
+    pub send: SendMode,
     /// Peak level, in dB below full scale, that opens the voice key.
     pub threshold_db: f64,
     /// How long the voice key stays open after the level falls.
@@ -91,18 +91,59 @@ pub struct MicrophoneNode {
 
 impl Default for MicrophoneNode {
     fn default() -> Self {
+        Self::from(MicrophoneSaved::default())
+    }
+}
+
+impl MicrophoneNode {
+    #[must_use]
+    pub fn gate(&self) -> VoiceGateSettings {
+        VoiceGateSettings {
+            mode: self.send,
+            threshold_db: self.threshold_db,
+            hang_ms: self.hang_ms,
+            ..VoiceGateSettings::default()
+        }
+    }
+
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.gate().valid()
+    }
+}
+
+/// A microphone as saved, including the `vox` flag older workspaces hold in place of `send`.
+#[derive(Deserialize)]
+#[serde(default)]
+struct MicrophoneSaved {
+    send: Option<SendMode>,
+    vox: Option<bool>,
+    threshold_db: f64,
+    hang_ms: u32,
+}
+
+impl Default for MicrophoneSaved {
+    fn default() -> Self {
         Self {
-            vox: false,
+            send: None,
+            vox: None,
             threshold_db: DEFAULT_VOX_THRESHOLD_DB,
             hang_ms: DEFAULT_VOX_HANG_MS,
         }
     }
 }
 
-impl MicrophoneNode {
-    #[must_use]
-    pub fn valid(&self) -> bool {
-        (-90.0..=0.0).contains(&self.threshold_db) && self.hang_ms <= MAX_VOX_HANG_MS
+impl From<MicrophoneSaved> for MicrophoneNode {
+    fn from(saved: MicrophoneSaved) -> Self {
+        let send = saved.send.unwrap_or(match saved.vox {
+            Some(true) => SendMode::VoiceActivity,
+            _ => SendMode::PushToTalk,
+        });
+        Self {
+            send,
+            threshold_db: saved.threshold_db,
+            hang_ms: saved.hang_ms,
+        }
     }
 }
 
@@ -228,6 +269,7 @@ pub struct TransmitStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::voice_chat::MAX_VOX_HANG_MS;
 
     #[test]
     fn settings_default_to_a_backed_off_level_and_refuse_what_they_cannot_hold() {
@@ -296,7 +338,7 @@ mod tests {
     fn a_microphone_defaults_to_the_key_and_refuses_a_voice_key_out_of_range() {
         let node: MicrophoneNode = serde_json::from_str("{}").expect("defaults");
         assert_eq!(node, MicrophoneNode::default());
-        assert!(!node.vox);
+        assert_eq!(node.send, SendMode::PushToTalk);
         assert!(node.valid());
         for bad in [
             MicrophoneNode {

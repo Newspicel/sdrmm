@@ -13,7 +13,8 @@
   decoder API, on `dsp`, `modem`, `codec` and `wire`; `media` (native broadcast playout) builds on
   `decoder`; `channels` pulls no internal crates beyond `dsp`, `modem`, `codec`, `crypto`,
   `aviation`, `decoder`, `media` and `wire`; `array` (array processors and their registry)
-  builds on `dsp`, `modem`, `decoder` and `wire`, and nothing outside it names a processor.
+  builds on `dsp`, `modem`, `decoder` and `wire`, and nothing outside it names a processor;
+  `voicechat` (Discord and TeamSpeak voice links) has no internal deps.
 - A decoder is one module in `channels` (or one WASM plugin): its settings struct, event
   payloads, presenters and registration live there. Nothing else names it: not `engine`, not
   `server`, not `wire`, not the frontend. Shared behavior is a capability or facet the decoder

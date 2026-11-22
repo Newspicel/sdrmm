@@ -37,6 +37,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 mod actions;
 mod arrays;
 mod audio_recordings;
+mod chat_accounts;
 mod cps;
 mod decoderlog;
 mod denoise;
@@ -350,6 +351,7 @@ impl From<StoreError> for AppError {
             | StoreError::CpsUserNotFound(_)
             | StoreError::CpsDeviceNotFound(_)
             | StoreError::CpsCodeplugNotFound(_)
+            | StoreError::ChatAccountNotFound(_)
             | StoreError::NanoVnaAntennaNotFound(_)
             | StoreError::NanoVnaMeasurementNotFound(_) => {
                 (StatusCode::NOT_FOUND, ErrorCode::NotFound)
@@ -358,6 +360,7 @@ impl From<StoreError> for AppError {
             | StoreError::Sources(_)
             | StoreError::WorkspaceLayout(_)
             | StoreError::CpsField(_)
+            | StoreError::ChatAccountField(_)
             | StoreError::NanoVnaField(_) => (StatusCode::BAD_REQUEST, ErrorCode::Request),
             StoreError::WorkspaceNameTaken(_)
             | StoreError::WorkspaceConflict { .. }
@@ -577,4 +580,5 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .merge(denoise::routes())
         .merge(nanovna::routes())
         .merge(secrets::routes())
+        .merge(chat_accounts::routes())
 }

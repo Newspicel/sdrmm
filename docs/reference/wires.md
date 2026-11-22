@@ -130,11 +130,11 @@ Your station location, live or fixed
 
 ### Microphone
 
-Your voice while you hold the key
+Your voice on the air
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | out | Audio | Live audio | many |
+| `audio` | out | Audio | voice | many |
 
 ## Channels
 
@@ -150,7 +150,7 @@ Ports follow the decoder the node runs.
 | `control` | in | Control | tune, doppler, sweep | one. a scanner, signal hunt or satellite drives this decoder; its radio follows |
 | `position` | in | Position | A live fix and the heading it comes with | one |
 | `baseband` | out | Baseband | One channel, filtered and decimated | many |
-| `audio` | out | Audio | Live audio | many |
+| `audio` | out | Audio | channel | many |
 | `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video | Decoded video frames and pictures | many |
 
@@ -162,7 +162,7 @@ Turns audio or a message into a signal
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | Live audio | many. Voice for an analog mode |
+| `audio` | in | Audio | channel, voice | many. Voice for an analog mode |
 | `baseband` | out | Baseband | One channel, filtered and decimated | one |
 
 ## Tools
@@ -194,7 +194,7 @@ Follows calls across a trunked radio system
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one. the radio the control channel sits on; the system runs its own decoders |
 | `events` | out | Events | Call, Digital voice | many |
-| `audio` | out | Audio | Live audio | many |
+| `audio` | out | Audio | channel | many |
 
 ### Event filter
 
@@ -312,7 +312,7 @@ Plays channel audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | Live audio | many |
+| `audio` | in | Audio | channel, voice | many |
 
 ### Map
 
@@ -389,7 +389,7 @@ Records channel audio to WAV
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | Live audio | many |
+| `audio` | in | Audio | channel, voice | many |
 | `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Baseband recorder
@@ -435,6 +435,15 @@ Puts an encoder or a lane on the air
 | `iq` | in | IQ | radio, synthetic, derived | one. A lane to send as it is |
 | `baseband` | in | Baseband | One channel, filtered and decimated | one |
 | `transmit` | out | Transmit | What a radio puts on the air | one |
+
+### Voice chat
+
+Discord or TeamSpeak, both ways
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `audio` | in | Audio | channel | many |
+| `audio` | out | Audio | voice | many |
 
 ## Processors
 

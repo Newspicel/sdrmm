@@ -103,11 +103,11 @@ impl TransmitState {
         Ok(())
     }
 
-    fn speak(&self, pcm: Vec<f32>) -> Result<(), EngineError> {
+    fn speak(&self, lane: u64, pcm: Vec<f32>) -> Result<(), EngineError> {
         let Some(voice) = &self.voice else {
             return Err(refused("this transmitter takes no audio"));
         };
-        if self.shared.stopped() || !voice.speak(pcm) {
+        if self.shared.stopped() || !voice.speak(lane, pcm) {
             return Err(self.disarmed());
         }
         Ok(())
@@ -519,8 +519,15 @@ impl Engine {
         transmit.send(TxCommand::Payload(payload))
     }
 
-    /// Feeds mono audio at the encoder's rate to a voice transmitter.
-    pub fn transmit_audio(&self, ds: u32, node: &str, pcm: Vec<f32>) -> Result<(), EngineError> {
-        self.lock().transmitter(ds, node)?.speak(pcm)
+    /// Feeds mono audio at the encoder's rate to a voice transmitter. Audio from different
+    /// `lane`s is summed in time.
+    pub fn transmit_audio(
+        &self,
+        ds: u32,
+        node: &str,
+        lane: u64,
+        pcm: Vec<f32>,
+    ) -> Result<(), EngineError> {
+        self.lock().transmitter(ds, node)?.speak(lane, pcm)
     }
 }

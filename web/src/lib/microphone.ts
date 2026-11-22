@@ -32,24 +32,6 @@ export function peakDb(peak: number): number {
   return peak > 0 ? Math.max(SILENT_DB, 20 * Math.log10(peak)) : SILENT_DB;
 }
 
-/** The voice key: open from the first frame at the threshold until the hang time after the last. */
-export class VoxGate {
-  private loudAt: number | null = null;
-
-  constructor(
-    private readonly thresholdDb: number,
-    private readonly hangMs: number,
-  ) {}
-
-  feed(peak: number, nowMs: number): boolean {
-    if (peakDb(peak) >= this.thresholdDb) {
-      this.loudAt = nowMs;
-      return true;
-    }
-    return this.loudAt !== null && nowMs - this.loudAt <= this.hangMs;
-  }
-}
-
 /** Brings capture blocks at any rate to whole 20 ms frames at the uplink rate. */
 export class FrameChunker {
   private readonly step: number;

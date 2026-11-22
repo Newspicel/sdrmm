@@ -45,6 +45,7 @@ members = [
     "crates/cps",
     "crates/recorder",
     "crates/audio-out",
+    "crates/voicechat",
     "crates/engine",
     "crates/tools",
     "crates/server",
@@ -100,6 +101,7 @@ default-members = [
     "crates/cps",
     "crates/recorder",
     "crates/audio-out",
+    "crates/voicechat",
     "crates/engine",
     "crates/tools",
     "crates/server",
@@ -130,9 +132,9 @@ sdrmm-modem = { path = "crates/modem" }
 sdrmm-modem-test-support = { path = "crates/modem-test-support" }
 sdrmm-decoder-test-support = { path = "crates/decoder-test-support" }
 sdrmm-device = { path = "crates/device" }
+sdrmm-device-plugin = { path = "crates/device-plugin" }
 sdrmm-device-virtual = { path = "crates/device-virtual" }
 sdrmm-device-recording = { path = "crates/device-recording" }
-sdrmm-device-plugin = { path = "crates/device-plugin" }
 sdrmm-device-ad936x = { path = "crates/device-ad936x" }
 sdrmm-device-airspy = { path = "crates/device-airspy" }
 sdrmm-device-airspyhf = { path = "crates/device-airspyhf" }
@@ -164,6 +166,7 @@ sdrmm-plugins = { path = "crates/plugins" }
 sdrmm-cps = { path = "crates/cps" }
 sdrmm-recorder = { path = "crates/recorder" }
 sdrmm-audio-out = { path = "crates/audio-out" }
+sdrmm-voicechat = { path = "crates/voicechat" }
 sdrmm-tools = { path = "crates/tools" }
 # default-features = false so binaries opt into `soapy` themselves: a member manifest cannot
 # disable a workspace dep's defaults, only add to them (needed for the minimal build).
@@ -225,6 +228,7 @@ rustfft = "6"
 tract-onnx = { version = "0.23.10", default-features = false }
 tract-nnef = "0.23.10"
 realfft = "3"
+earshot = "1.2.2"
 mfsk-core = { version = "0.15.1", default-features = false, features = ["std", "fft-rustfft", "ft8", "ft4", "wspr", "internal-testing"] }
 xng-mode-dsc = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
 xng-mode-stdc = { git = "https://github.com/airframesio/xng", rev = "096c805278faa0a904de7d98066bf4cf395cb6c2" }
@@ -246,6 +250,14 @@ codec2 = "0.3.1"
 symphonia-core = "0.6.1"
 symphonia-bundle-mp3 = { version = "0.6.1", default-features = false, features = ["mp2"] }
 ffmpeg-the-third = { version = "6.0.0", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
+
+# Voice chat: Discord voice with DAVE E2EE (songbird's twilight glue caps twilight at 0.17) and a
+# pure Rust TeamSpeak client.
+songbird = { version = "0.6.1", default-features = false, features = ["driver", "gateway", "twilight", "rustls", "receive", "tws"] }
+twilight-gateway = { version = "0.17.1", default-features = false, features = ["rustls-native-roots"] }
+twilight-http = { version = "0.17.1", default-features = false, features = ["rustls-webpki-roots"] }
+twilight-model = "0.17.1"
+tsclient-rs = "0.3.3"
 
 # Persistence
 rusqlite = { version = "0.41", features = ["bundled"] }
@@ -282,6 +294,7 @@ socket2 = { version = "0.6", features = ["all"] }
 rustix = { version = "1.1.6", default-features = false, features = ["std", "fs", "process", "thread"] }
 thiserror = "2"
 anyhow = "1"
+async-trait = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 arc-swap = "1"

@@ -1,4 +1,5 @@
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@ui-sdk/react/tabs";
+import { AccountsPanel } from "../components/AccountsPanel";
 import { BandsPanel } from "../components/BandsPanel";
 import { BookmarksPanel } from "../components/BookmarksPanel";
 import { TAB_BAR, tab } from "../components/controls";
@@ -26,6 +27,7 @@ const TABS = [
   { id: "recordings", label: "Recordings" },
   { id: "tools", label: "Tools" },
   { id: "phones", label: "Phones" },
+  { id: "accounts", label: "Accounts" },
 ] as const;
 
 export function Library({
@@ -88,6 +90,9 @@ export function Library({
       </TabsPanel>
       <TabsPanel value="phones" className="max-h-[28rem] overflow-y-auto">
         <PhonesPanel />
+      </TabsPanel>
+      <TabsPanel value="accounts" className="max-h-[28rem] overflow-y-auto">
+        <AccountsPanel />
       </TabsPanel>
     </Tabs>
   );

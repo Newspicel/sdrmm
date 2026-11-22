@@ -479,8 +479,8 @@ fn device_abi_types_are_pinned() {
     assert_eq!(
         (crate::abi::DEVICE_ABI_VERSION, hex.as_str()),
         (
-            2,
-            "25571f55867ff61d550fd5a925fb0bb216257f9778695609b045926166c43994"
+            3,
+            "25447e4a5fa99918d0ca9ff42cb6534d8a475d3ee4bee65a44911ffc1fc90d28"
         ),
         "a wire type crossing the device plugin boundary changed: bump DEVICE_ABI_VERSION, then this pin"
     );

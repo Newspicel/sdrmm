@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PatchNode, ResolvedPatch, TransmitStatus } from "../../lib/types";
-import { airOf, transmitterOf } from "./airState";
+import { airOf, reachesArmedTransmitter, transmitterOf } from "./airState";
 
 const status = (phase: TransmitStatus["phase"]): TransmitStatus => ({
   node: "tx",
@@ -46,5 +46,46 @@ describe("transmitterOf", () => {
     expect(transmitterOf(PATCH, NODES, "enc")).toBe("tx");
     expect(transmitterOf(PATCH, NODES, "tx")).toBeNull();
     expect(transmitterOf(null, NODES, "enc")).toBeNull();
+  });
+});
+
+const reaching = (sinks: string[]) =>
+  ({
+    nodes: [
+      {
+        id: "mic",
+        ports: [
+          {
+            name: "audio",
+            direction: "out",
+            reaches: sinks.map((sink) => ({ port: "audio", sink })),
+          },
+        ],
+      },
+      ...PATCH.nodes,
+    ],
+  }) as unknown as ResolvedPatch;
+
+describe("reachesArmedTransmitter", () => {
+  const nodes = [
+    { id: "mic", kind: "microphone", position: { x: 0, y: 0 }, data: {} },
+    { id: "spk", kind: "speaker", position: { x: 0, y: 0 }, data: {} },
+    ...NODES,
+  ] as unknown as PatchNode[];
+  const armed = [{ transmit: status("idle") }];
+
+  it("holds while an encoder it feeds drives an armed transmitter", () => {
+    expect(reachesArmedTransmitter(reaching(["enc"]), nodes, armed, "mic")).toBe(true);
+    expect(reachesArmedTransmitter(reaching(["spk", "enc"]), nodes, armed, "mic")).toBe(true);
+  });
+
+  it("fails while the transmitter is disarmed, unreached or reached without an encoder", () => {
+    expect(reachesArmedTransmitter(reaching(["enc"]), nodes, [{ transmit: null }], "mic")).toBe(
+      false,
+    );
+    expect(reachesArmedTransmitter(reaching(["spk"]), nodes, armed, "mic")).toBe(false);
+    expect(reachesArmedTransmitter(reaching(["tx"]), nodes, armed, "mic")).toBe(false);
+    expect(reachesArmedTransmitter(reaching([]), nodes, armed, "mic")).toBe(false);
+    expect(reachesArmedTransmitter(null, nodes, armed, "mic")).toBe(false);
   });
 });

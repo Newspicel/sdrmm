@@ -356,6 +356,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_chat_accounts"];
+        put?: never;
+        post: operations["create_chat_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat-accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_chat_account"];
+        post?: never;
+        delete: operations["delete_chat_account"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/clients": {
         parameters: {
             query?: never;
@@ -2478,6 +2510,12 @@ export interface components {
             /** Format: double */
             low_hz?: number;
         };
+        /**
+         * @description Where audio comes from: a channel the engine runs, or a voice the server carries straight
+         *     to a transmitter (a microphone, a voice chat), which no channel audio input can tap.
+         * @enum {string}
+         */
+        AudioOrigin: "channel" | "voice";
         AudioProcessing: {
             agc?: components["schemas"]["AudioAgcMode"];
             auto_notch?: boolean;
@@ -2992,6 +3030,32 @@ export interface components {
         };
         ChannelTypesResponse: {
             types: components["schemas"]["ChannelDescriptor"][];
+        };
+        ChatAccount: components["schemas"]["ChatService"] & {
+            id: string;
+            name: string;
+        };
+        ChatAccountsResponse: {
+            accounts: components["schemas"]["ChatAccount"][];
+        };
+        ChatService: {
+            /** @enum {string} */
+            service: "discord";
+            token?: components["schemas"]["Secret"];
+        } | {
+            address: string;
+            identity?: components["schemas"]["Secret"];
+            nickname?: string;
+            password?: components["schemas"]["Secret"];
+            /** @enum {string} */
+            service: "teamspeak";
+        };
+        ChatTalker: {
+            allowed: boolean;
+            id: string;
+            name: string;
+            /** @description False while the chat has not tied the voice to a user: `id` is a stand-in. */
+            verified: boolean;
         };
         /** @enum {string} */
         CheckStatus: "ok" | "warn" | "fail";
@@ -4577,20 +4641,15 @@ export interface components {
             /**
              * Format: int32
              * @description How long the voice key stays open after the level falls.
-             * @default 600
              */
             hang_ms: number;
+            /** @description What keys the microphone: the key, the voice, or nothing. */
+            send: components["schemas"]["SendMode"];
             /**
              * Format: double
              * @description Peak level, in dB below full scale, that opens the voice key.
-             * @default -35
              */
             threshold_db: number;
-            /**
-             * @description Keys by itself while the microphone is louder than the threshold.
-             * @default false
-             */
-            vox: boolean;
         };
         Mission: components["schemas"]["MissionBody"] & {
             controls?: components["schemas"]["MissionControl"][];
@@ -5202,11 +5261,15 @@ export interface components {
             data: components["schemas"]["NoteNode"];
             /** @enum {string} */
             kind: "note";
+        } | {
+            data: components["schemas"]["VoiceChatNode"];
+            /** @enum {string} */
+            kind: "voice_chat";
         };
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "encoder" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note" | "voice_chat";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -5421,6 +5484,7 @@ export interface components {
             /** @enum {string} */
             type: "baseband";
         } | {
+            origins: components["schemas"]["AudioOrigin"][];
             /** @enum {string} */
             type: "audio";
         } | {
@@ -5766,7 +5830,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker" | "voice_chat";
         /**
          * @description Something an operator asks a running processor to do.
          * @enum {string}
@@ -6544,6 +6608,11 @@ export interface components {
         SecretValue: {
             value: string;
         };
+        /**
+         * @description How a voice source decides when it is sending.
+         * @enum {string}
+         */
+        SendMode: "push_to_talk" | "voice_activity" | "continuous";
         SerialDeviceInfo: {
             manufacturer?: string | null;
             path: string;
@@ -6561,6 +6630,10 @@ export interface components {
             data: components["schemas"]["FeedStatus"];
             /** @enum {string} */
             type: "FeedStatus";
+        } | {
+            data: components["schemas"]["VoiceChatStatus"];
+            /** @enum {string} */
+            type: "VoiceChatStatus";
         } | {
             data: components["schemas"]["EventOutputStatus"];
             /** @enum {string} */
@@ -7834,6 +7907,53 @@ export interface components {
             /** Format: int32 */
             stream: number;
         };
+        /**
+         * @description Voice chat joins one channel of a chat account and trades audio with the patch both ways.
+         *     Push to talk needs a key a server cannot hold, so neither direction accepts it.
+         */
+        VoiceChatNode: {
+            /** @default  */
+            account: string;
+            /**
+             * @description Chat users whose voice goes to the air. Empty lets anyone through.
+             * @default []
+             */
+            allowed: string[];
+            /** @default  */
+            channel: string;
+            /**
+             * @default {
+             *       "hang_ms": 600,
+             *       "mode": "voice_activity",
+             *       "threshold_db": -35,
+             *       "volume": 1
+             *     }
+             */
+            to_air: components["schemas"]["VoiceGateSettings"];
+            /**
+             * @default {
+             *       "hang_ms": 600,
+             *       "mode": "voice_activity",
+             *       "threshold_db": -35,
+             *       "volume": 1
+             *     }
+             */
+            to_chat: components["schemas"]["VoiceGateSettings"];
+        };
+        /** @enum {string} */
+        VoiceChatState: "idle" | "connecting" | "joined";
+        VoiceChatStatus: {
+            error?: string | null;
+            node: string;
+            state: components["schemas"]["VoiceChatState"];
+            talking?: components["schemas"]["ChatTalker"][];
+            /** Format: float */
+            to_air_db?: number | null;
+            to_air_open?: boolean;
+            /** Format: float */
+            to_chat_db?: number | null;
+            to_chat_open?: boolean;
+        };
         VoiceFacts: {
             /** Format: int32 */
             destination?: number | null;
@@ -7841,6 +7961,29 @@ export interface components {
             encrypted?: boolean | null;
             /** Format: int32 */
             source?: number | null;
+        };
+        /**
+         * @description The voice gate of one direction: the mode, the level that opens it, how long it holds and
+         *     the linear gain applied to what it lets through.
+         */
+        VoiceGateSettings: {
+            /**
+             * Format: int32
+             * @default 600
+             */
+            hang_ms: number;
+            /** @default voice_activity */
+            mode: components["schemas"]["SendMode"];
+            /**
+             * Format: double
+             * @default -35
+             */
+            threshold_db: number;
+            /**
+             * Format: double
+             * @default 1
+             */
+            volume: number;
         };
         /**
          * @description A voice privacy key as the radios are programmed with it: the key ID a call names and the key
@@ -8812,6 +8955,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelTypesResponse"];
+                };
+            };
+        };
+    };
+    list_chat_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chat accounts. Credentials answer as ids, never as values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatAccountsResponse"];
+                };
+            };
+        };
+    };
+    create_chat_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatAccount"];
+            };
+        };
+        responses: {
+            /** @description Kept under a fresh id, the id in the request is ignored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatAccount"];
+                };
+            };
+            /** @description Unusable name, server or credential */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    update_chat_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat account id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatAccount"];
+            };
+        };
+        responses: {
+            /** @description Replaced. A credential left stored or empty is kept */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatAccount"];
+                };
+            };
+            /** @description Unusable name, server or credential */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Chat account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    delete_chat_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat account id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed with its credentials */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Chat account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

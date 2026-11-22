@@ -77,6 +77,7 @@ mod templates;
 pub mod tls;
 mod transmit;
 mod trunking;
+mod voice_chat;
 mod workspace;
 mod ws;
 
@@ -352,6 +353,7 @@ fn start_runtime(state: &AppState) -> Background {
     schedules::follow(state);
     audio_fx::follow(state);
     speakers::follow(state);
+    voice_chat::follow(state);
     array::start_pump(state);
     reports::start(state);
     aims::start(state);

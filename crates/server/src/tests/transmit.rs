@@ -361,3 +361,99 @@ async fn a_channels_baseband_wired_to_a_transmitter_is_what_it_sends() {
     assert_eq!(sending.error, None);
     assert_eq!(acted(&app, "tx", disarm()).await, NodeActed::Disarmed);
 }
+
+fn microphone_send(snapshot: &mut WorkspaceSnapshot, send: sdrmm_wire::SendMode) {
+    for held in &mut snapshot.graph.nodes {
+        if let NodeBody::Microphone(body) = &mut held.body {
+            body.send = send;
+        }
+    }
+}
+
+#[tokio::test]
+async fn voice_activity_microphone_drops_quiet_frames() {
+    let (app, state) = test_router_with_state();
+    let mut snapshot = station("nfm");
+    microphone_send(&mut snapshot, sdrmm_wire::SendMode::VoiceActivity);
+    on_the_bench(&app, &snapshot).await;
+    acted(&app, "tx", arm()).await;
+    assert_eq!(
+        crate::transmit::speak(&state, "mic", &vec![0.0005; 4_800]),
+        0
+    );
+}
+
+/// A loud vowel-like buzz: a 120 Hz pulse train through two formants, as speech scores.
+fn voiced(samples: usize) -> Vec<f32> {
+    let rate = 48_000.0_f32;
+    let formant = |hz: f32| std::f32::consts::TAU * hz / rate;
+    let (w1, w2) = (formant(730.0), formant(1_090.0));
+    let (mut a, mut av, mut b, mut bv, mut phase) = (0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32);
+    let raw: Vec<f32> = (0..samples)
+        .map(|i| {
+            let last = phase;
+            phase = (phase + (120.0 + 30.0 * (i as f32 / rate * 1.3).sin()) / rate).fract();
+            let pulse = f32::from(phase < last);
+            av = av * 0.993 - w1 * a + pulse;
+            a += w1 * av;
+            bv = bv * 0.993 - w2 * b + pulse;
+            b += w2 * bv;
+            a + 0.5 * b
+        })
+        .collect();
+    let peak = raw
+        .iter()
+        .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+    raw.iter().map(|sample| sample * 0.5 / peak).collect()
+}
+
+#[tokio::test]
+async fn voice_activity_microphone_opens_on_a_loud_voice() {
+    let (app, state) = test_router_with_state();
+    let mut snapshot = station("nfm");
+    microphone_send(&mut snapshot, sdrmm_wire::SendMode::VoiceActivity);
+    on_the_bench(&app, &snapshot).await;
+    acted(&app, "tx", arm()).await;
+    let taken: usize = voiced(100 * 960)
+        .chunks(960)
+        .map(|frame| crate::transmit::speak(&state, "mic", frame))
+        .sum();
+    assert!(taken > 0, "a loud voice never opened the microphone");
+}
+
+#[tokio::test]
+async fn continuous_microphone_passes_quiet_frames() {
+    let (app, state) = test_router_with_state();
+    let mut snapshot = station("nfm");
+    microphone_send(&mut snapshot, sdrmm_wire::SendMode::Continuous);
+    on_the_bench(&app, &snapshot).await;
+    acted(&app, "tx", arm()).await;
+    assert_eq!(
+        crate::transmit::speak(&state, "mic", &vec![0.0005; 4_800]),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_source_reaches_armed_only_while_its_transmitter_is_armed() {
+    let (app, state) = test_router_with_state();
+    on_the_bench(&app, &station("nfm")).await;
+    let reaches =
+        || crate::transmit::reaches_armed(&state.engine, &state.resolved.current(), "mic");
+    let mut armed = state.transmit.subscribe_armed();
+    armed.mark_unchanged();
+    assert!(!reaches(), "nothing is armed yet");
+    acted(&app, "tx", arm()).await;
+    assert!(reaches());
+    assert!(
+        armed.has_changed().expect("hub"),
+        "arming wakes who keys it"
+    );
+    assert!(!crate::transmit::reaches_armed(
+        &state.engine,
+        &state.resolved.current(),
+        "mod"
+    ));
+    acted(&app, "tx", disarm()).await;
+    assert!(!reaches());
+}
