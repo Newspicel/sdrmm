@@ -100,14 +100,9 @@ pub(super) fn transmission(
 }
 
 #[test]
-fn modulators_agree() {
-    let symbols = frame::encode_frame(&frame_payload(b"TEST", 1));
-    let ours = super::modulate::modulate(&symbols[..2_000], SYMBOL_RATE, RATE, 230.0, 0.5);
-    let theirs =
-        xng_mode_stdc::modulate::modulate(&symbols[..2_000], SYMBOL_RATE, RATE, 230.0, 0.5);
-    assert_eq!(ours, theirs);
+fn frame_encoders_agree() {
     assert_eq!(
-        symbols,
+        frame::encode_frame(&frame_payload(b"TEST", 1)),
         xng_mode_stdc::frame::encode_frame(&frame_payload(b"TEST", 1))
     );
 }

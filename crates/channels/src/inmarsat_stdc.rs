@@ -443,7 +443,7 @@ mod tests {
             tap.symbols.len()
         );
         assert_eq!(tap.symbol_rate, SYMBOL_RATE);
-        assert!(tap.evm < 0.2, "EVM {}", tap.evm);
+        assert!(tap.evm < 0.05, "EVM {}", tap.evm);
     }
 
     #[test]
@@ -502,5 +502,24 @@ mod tests {
             signalling.details["tdm_slots"].as_array().map(Vec::len),
             Some(28)
         );
+    }
+
+    #[test]
+    fn the_scope_sees_two_tight_bpsk_clusters_off_air() {
+        let mut channel = InmarsatStdcChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(
+                ChannelParams::new("inmarsat_stdc", &InmarsatStdcParams::default())
+                    .expect("inmarsat_stdc settings"),
+            ),
+        )
+        .expect("channel");
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in offair_channel_iq().chunks(4_096) {
+            out.symbols.clear();
+            channel.process(block, &mut out);
+        }
+        assert!(out.symbols.evm < 0.15, "EVM {}", out.symbols.evm);
     }
 }

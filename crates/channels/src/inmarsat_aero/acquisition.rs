@@ -2,6 +2,16 @@ use num_complex::Complex;
 use sdrmm_dsp::math::fft::Transform;
 
 const BLOCKS: u32 = 2;
+const LINE_BALANCE: f32 = 4.0;
+
+/// Both lines of the pair must stand up. Unscrambled data puts a strong line at the carrier
+/// itself, which alone would win half the line spacing off; summing keeps noise sensitivity.
+fn pair_score(left: f32, right: f32) -> f32 {
+    if LINE_BALANCE * left.min(right) < left.max(right) {
+        return 0.0;
+    }
+    left + right
+}
 
 pub(super) struct CoarseAcquisition {
     size: usize,
@@ -68,14 +78,16 @@ impl CoarseAcquisition {
         }
         let size = self.size as i64;
         let bin = |k: i64| self.spectrum[k.rem_euclid(size) as usize];
-        let mut best = (f32::MIN, 0i64);
+        let line = |center: i64| (-1..=1).map(|j| bin(center + j)).sum::<f32>();
+        let mut best = (0.0f32, 0i64);
         for k in -self.range_bins..=self.range_bins {
-            let score = (-1..=1).fold(0.0f32, |score, j| {
-                score + bin(k - self.tone_bins + j) + bin(k + self.tone_bins + j)
-            });
+            let score = pair_score(line(k - self.tone_bins), line(k + self.tone_bins));
             if score > best.0 {
                 best = (score, k);
             }
+        }
+        if best.0 <= 0.0 {
+            return None;
         }
         let shift = best.1 as f64 * self.resolution / 2.0;
         if self

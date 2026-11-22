@@ -148,10 +148,16 @@ pub fn plane_code(plane: Option<SymbolPlane>) -> u32 {
     plane.map_or(0, |plane| u32::from(plane as u8) + 1)
 }
 
-#[must_use]
-pub fn plane_of(code: u32) -> Option<SymbolPlane> {
-    let code = u8::try_from(code.checked_sub(1)?).ok()?;
-    SymbolPlane::from_u8(code)
+/// The plane a header's `plane` word names, refusing a code this ABI does not define.
+pub fn plane_of(code: u32) -> Result<Option<SymbolPlane>, String> {
+    let Some(index) = code.checked_sub(1) else {
+        return Ok(None);
+    };
+    u8::try_from(index)
+        .ok()
+        .and_then(SymbolPlane::from_u8)
+        .map(Some)
+        .ok_or_else(|| format!("unknown symbol plane {code}"))
 }
 
 /// What makes a picture a finished image rather than a video frame.
@@ -290,10 +296,13 @@ mod tests {
 
     #[test]
     fn a_plane_reads_back_from_its_code() {
-        for plane in [None, Some(SymbolPlane::Complex), Some(SymbolPlane::Level)] {
-            assert_eq!(plane_of(plane_code(plane)), plane);
+        for plane in [None].into_iter().chain(SymbolPlane::ALL.map(Some)) {
+            assert_eq!(plane_of(plane_code(plane)), Ok(plane));
         }
-        assert_eq!(plane_of(9), None);
+        assert_eq!(plane_code(Some(SymbolPlane::Carriers)), 3);
+        for code in [4, 9, 257, u32::MAX] {
+            assert!(plane_of(code).is_err(), "{code}");
+        }
     }
 
     #[test]

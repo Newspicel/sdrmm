@@ -1219,4 +1219,36 @@ mod tests {
         assert_eq!(tap.symbol_rate, synth::datv::SYMBOL_RATE);
         assert!(tap.evm < 0.1, "EVM {}", tap.evm);
     }
+
+    #[test]
+    fn the_scope_draws_very_low_signal_frames_on_their_own_constellation() {
+        for (header, points) in [(9u8, 2), (4, 2), (0, 4)] {
+            let iq = synth::datv::dvbs2_very_low(2, header).expect("a synthetic signal");
+            let tap = scope(&mut second_generation(), &iq);
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+            assert_eq!(tap.reference.len(), 2 * points, "header {header}");
+            assert!(
+                tap.symbols.len() >= 2 * 100,
+                "header {header}: {} values",
+                tap.symbols.len()
+            );
+            assert!(tap.evm < 0.1, "header {header}: EVM {}", tap.evm);
+        }
+    }
+
+    #[test]
+    fn the_scope_draws_superframe_bursts() {
+        let iq = synth::datv::dvbs2_annex_e(2, 3).expect("a synthetic signal");
+        let mut channel = open(DatvParams {
+            standard: DatvStandard::DvbS2,
+            superframes: true,
+            symbol_rate: synth::datv::SYMBOL_RATE,
+            ..DatvParams::default()
+        });
+        let tap = scope(&mut channel, &iq);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 2 * 4);
+        assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+        assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+    }
 }

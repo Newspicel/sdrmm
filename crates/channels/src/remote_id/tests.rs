@@ -17,6 +17,7 @@ use super::{RemoteIdChannel, input_rate};
 use crate::synth::remote_id::{self as tx, BlePhy, WifiPhy};
 use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, channel_filter};
 use sdrmm_decoder_test_support::{complex_noise, settings};
+use sdrmm_modem::wifi::Grid;
 
 const ADDRESS: [u8; 6] = [0xC2, 0x11, 0x22, 0x33, 0x44, 0x55];
 const WIFI_ADDRESS: [u8; 6] = [0x60, 0x60, 0x1F, 0x12, 0x34, 0x56];
@@ -239,6 +240,56 @@ fn long_range_packs_decode_on_a_data_channel_at_both_coding_rates() {
 }
 
 #[test]
+fn the_scope_reads_a_long_range_pack_as_its_coded_bits() {
+    let rate = RemoteIdLink::Bluetooth.input_rate_hz();
+    let pdu = tx::aux_adv_pdu(ADDRESS, 9, &pack());
+    let iq = on_air(
+        sdrmm_modem::ble::transmit::rf_packet(&pdu, 9, BlePhy::CodedS8, rate),
+        rate,
+        -60e3,
+        0.01,
+    );
+    let (frames, tap) = scope(RemoteIdLink::Bluetooth, DATA_8_HZ, &iq);
+    assert_eq!(frames, 1);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert_eq!(tap.symbols.len(), 2 * ((pdu.len() + 3) * 8 + 3));
+    assert_eq!(tap.symbol_rate, BlePhy::CodedS8.soft_rate_hz());
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz + 60e3).abs() < 5e3,
+        "{} Hz",
+        tap.freq_error_hz
+    );
+}
+
+/// The frames heard and the scope's last fill, as a watched channel sees them.
+fn scope(
+    link: RemoteIdLink,
+    frequency_hz: f64,
+    iq: &[Complex<f32>],
+) -> (usize, sdrmm_decoder::SymbolTap) {
+    let params = RemoteIdParams { link };
+    let channel_params = ChannelParams::new("remote_id", &params).expect("remote_id settings");
+    let tuned = ChannelSettings {
+        frequency_hz,
+        ..settings(channel_params.clone())
+    };
+    let ctx = ChannelCtx {
+        input_rate: input_rate(params),
+    };
+    let mut channel = RemoteIdChannel::new(ctx, tuned).expect("builds");
+    let mut filtered = Vec::new();
+    channel_filter(&channel_params)
+        .expect("filter")
+        .process(iq, &mut filtered);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    channel.process(&filtered, &mut out);
+    (out.events.len(), out.symbols)
+}
+
+#[test]
 fn a_primary_channel_pointer_carries_no_pack() {
     let rate = RemoteIdLink::Bluetooth.input_rate_hz();
     let pdu = tx::ext_adv_pdu(8, BlePhy::CodedS8);
@@ -336,6 +387,37 @@ fn wifi_beacons_decode_at_every_rate() {
         assert_eq!(frame.counter, Some(17));
         assert_eq!(frame.messages, pack(), "{phy:?}");
         assert_eq!(frame.phy, wire);
+    }
+}
+
+#[test]
+fn the_scope_reads_wifi_beacons_on_their_own_grid() {
+    use sdrmm_wire::SymbolPlane::{Carriers, Complex};
+    let beacon = tx::build::beacon(
+        WIFI_ADDRESS,
+        "RID-1581F5FJD",
+        17,
+        &tx::encode::pack(&pack()),
+    );
+    for (phy, grid, rate_hz, plane) in [
+        (WifiPhy::Dsss1m, Grid::Bpsk, 1e6, Complex),
+        (WifiPhy::Ofdm { mbps: 6 }, Grid::Bpsk, 12e6, Carriers),
+        (WifiPhy::Ofdm { mbps: 12 }, Grid::Qpsk, 12e6, Carriers),
+    ] {
+        let iq = wifi(phy, false, &beacon);
+        let (frames, tap) = scope(RemoteIdLink::Wifi, WIFI_6_HZ, &iq);
+        assert_eq!(frames, 1, "{phy:?}");
+        let table = grid.table().expect("table");
+        assert_eq!(tap.plane, Some(plane), "{phy:?}");
+        assert_eq!(tap.reference.len(), table.len() * 2, "{phy:?}");
+        assert_eq!(tap.symbol_rate, rate_hz, "{phy:?}");
+        assert!(!tap.symbols.is_empty(), "{phy:?}");
+        assert!(tap.evm < 0.2, "{phy:?} EVM {}", tap.evm);
+        assert!(
+            (tap.freq_error_hz - 35e3).abs() < 5e3,
+            "{phy:?} at {} Hz",
+            tap.freq_error_hz
+        );
     }
 }
 

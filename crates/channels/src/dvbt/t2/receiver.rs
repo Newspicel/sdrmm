@@ -143,7 +143,7 @@ impl Receiver {
         let Some((points, constellation)) = self.scheduler.tapped() else {
             return;
         };
-        out.linear(
+        out.carriers(
             points,
             &self.tables[constellation.bits() / 2 - 1],
             self.cells_per_sample * rate,

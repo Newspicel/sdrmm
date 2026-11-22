@@ -1,9 +1,9 @@
 ---
 title: Plugins in any language
-description: Freestanding WebAssembly ABI v4 reference for C, C++, Zig, Go, and AssemblyScript plugins.
+description: Freestanding WebAssembly ABI v5 reference for C, C++, Zig, Go, and AssemblyScript plugins.
 ---
 
-Authoritative contract: `crates/wire/src/plugin.rs`. Must export linear `memory` (≤ 256 MiB), import only `sdrmm` below (no WASI/`env`), use little-endian numbers and UTF-8 JSON, and finish every call within 500 ms. One host instance serves control calls; each channel gets its own instance.
+Authoritative contract: `crates/wire/src/plugin.rs`. Must export linear `memory` (≤ 256 MiB), import only `sdrmm` below (no WASI/`env`), use little-endian numbers and UTF-8 JSON, and finish every call within 500 ms. The host loads ABI 4 and 5; 4 lacks symbol plane `3`, and a host older than 5 refuses a v5 plugin. An unknown plane code stops the channel with an error. One host instance serves control calls; each channel gets its own instance.
 
 ## Toolchains
 
@@ -18,7 +18,7 @@ Authoritative contract: `crates/wire/src/plugin.rs`. Must export linear `memory`
 
 `ptr`/`len` are `u32`, `handle` is `i32`, packed `i64` is `(ptr << 32) | len`. Returned buffers stay valid until the next host call on that instance.
 
-- **Common:** `sdrmm_abi() -> 4`, `sdrmm_alloc(len) -> ptr`, `sdrmm_manifest() -> i64`, `sdrmm_present(ptr, len) -> i64` (if `kinds`), `sdrmm_error() -> i64`, `sdrmm_call(op, ptr, len) -> i64` (`{"ok": ...}` or `{"err": "..."}`).
+- **Common:** `sdrmm_abi() -> 5`, `sdrmm_alloc(len) -> ptr`, `sdrmm_manifest() -> i64`, `sdrmm_present(ptr, len) -> i64` (if `kinds`), `sdrmm_error() -> i64`, `sdrmm_call(op, ptr, len) -> i64` (`{"ok": ...}` or `{"err": "..."}`).
 - **Control ops (`sdrmm_call`):** `1` layout, `2` normalize, `3` filter, `4` tune, `5` feed, `6` width, `7` compose.
 - **Decoder:** `sdrmm_open(rate, ptr, len) -> handle`, `sdrmm_apply(handle, ptr, len) -> i32`, `sdrmm_input(handle, samples) -> ptr`, `sdrmm_process(handle, samples, flags) -> ptr` (flag `1` = fill symbols), `sdrmm_close(handle)`, plus optional `sdrmm_retuned`, `sdrmm_position`, `sdrmm_clock`, `sdrmm_lo_artifact`, `sdrmm_gated`.
 - **Encoder (`crates/wire/src/plugin/encoder.rs`):** `sdrmm_encoder_open`, `sdrmm_encoder_submit` (kind `0` `f32` audio / `1` bytes), `sdrmm_encoder_generate`, `sdrmm_encoder_close`.
@@ -34,7 +34,7 @@ Returned by `sdrmm_process` (`crates/wire/src/plugin/output.rs`; floats as raw I
 | `3, 4` / `5, 6` | Events JSON array ptr/len; Status JSON ptr/len (`0` = none/unchanged) |
 | `7, 8` | Cumulative rejected frames, dropped blocks |
 | `9, 10` | Picture records ptr/len (5 `u32` header + luma + RGB + optional image JSON) |
-| `11..15` | Symbols ptr/count, reference ptr/count, plane (`0` none, `1` complex, `2` levels) |
+| `11..15` | Symbols ptr/count, reference ptr/count, plane (`0` none, `1` complex, `2` levels, `3` carriers) |
 | `16, 17` / `18..21` | Symbol rate (`f64`, low word first); EVM, MER dB, margin, freq error Hz (`f32`) |
 
 ## Host imports (`sdrmm` module)

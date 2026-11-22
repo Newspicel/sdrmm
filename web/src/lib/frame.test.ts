@@ -207,6 +207,11 @@ describe("decodeSymbols", () => {
     expect(frame?.plane).toBe("complex");
   });
 
+  it("reads a carrier plane as such", () => {
+    const frame = decodeSymbols(symbolBuffer([1, 0, -1, 0], [0.9, 0.1], 2));
+    expect(frame?.plane).toBe("carriers");
+  });
+
   it("refuses a plane it cannot draw", () => {
     expect(decodeSymbols(symbolBuffer([1], [1], 7))).toBeNull();
   });

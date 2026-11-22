@@ -622,7 +622,7 @@ impl DabChannel {
         self.points.extend(self.demod.points());
         let carrier_symbols =
             self.mode.carriers() as f64 * INPUT_RATE_HZ / self.mode.symbol() as f64;
-        out.symbols.linear(
+        out.symbols.carriers(
             &self.points,
             &self.dqpsk,
             carrier_symbols,
@@ -939,7 +939,7 @@ mod tests {
             channel.process(block, &mut out);
         }
         let tap = &out.symbols;
-        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Carriers));
         assert_eq!(tap.reference.len(), 8);
         assert!(
             tap.symbols.len() >= 2 * 1536,

@@ -4,7 +4,8 @@ mod french;
 use crate::remote_id::RemoteIdFrame;
 use crate::remote_id::RemoteIdPhy;
 use crate::remote_id::RemoteIdTransport;
-use sdrmm_modem::wifi::{self as phy, WifiPhy};
+use sdrmm_decoder::SymbolTap;
+use sdrmm_modem::wifi::{self as phy, Grids, WifiPhy};
 use sdrmm_wire::DecoderEvent;
 
 use super::{
@@ -160,6 +161,8 @@ pub(crate) struct Events<'a> {
     pub tracker: &'a mut Tracker,
     pub out: &'a mut Vec<DecoderEvent>,
     pub channel: Option<u8>,
+    pub tap: &'a mut SymbolTap,
+    pub grids: &'a Grids,
 }
 
 impl phy::Sink for Events<'_> {
@@ -176,6 +179,17 @@ impl phy::Sink for Events<'_> {
         };
         if let Some(event) = self::frame(&mpdu, self.tracker) {
             self.out.push(DecoderEvent::of(&event));
+        }
+    }
+
+    fn points(&mut self, points: phy::Points<'_>) {
+        let table = self.grids.table(points.grid);
+        if points.multicarrier {
+            self.tap
+                .carriers(points.symbols, table, points.rate_hz, points.offset_hz);
+        } else {
+            self.tap
+                .linear(points.symbols, table, points.rate_hz, points.offset_hz);
         }
     }
 }

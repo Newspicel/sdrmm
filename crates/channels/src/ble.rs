@@ -166,9 +166,9 @@ impl Sink for EventSink<'_> {
             .push(DecoderEvent::of(&advert(&pdu, &packet, repeats, fields)));
     }
 
-    fn symbols(&mut self, soft: &[f32], offset_hz: f64) {
+    fn symbols(&mut self, soft: &[f32], phy: phy::BlePhy, offset_hz: f64) {
         self.tap
-            .levels(soft, &[], self.mapping, phy::SYMBOL_RATE_HZ, offset_hz);
+            .levels(soft, &[], self.mapping, phy.soft_rate_hz(), offset_hz);
     }
 }
 

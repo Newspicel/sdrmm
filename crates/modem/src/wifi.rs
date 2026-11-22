@@ -2,6 +2,7 @@ pub mod channel;
 pub mod dsss;
 pub mod mac;
 pub mod ofdm;
+mod points;
 mod receiver;
 mod scrambler;
 pub mod transmit;
@@ -9,7 +10,10 @@ pub mod transmit;
 use num_complex::Complex;
 use sdrmm_dsp::{crc32_ieee, math::complex::mean_power, power_db};
 
-pub use self::receiver::Receiver;
+pub use self::{
+    points::{Grid, Grids, Points},
+    receiver::Receiver,
+};
 
 pub const RATE_HZ: f64 = 20_000_000.0;
 pub const MAX_MPDU_BYTES: usize = 4_095;
@@ -37,6 +41,9 @@ pub struct Frame<'a> {
 pub trait Sink {
     fn accepts(&self, frame_control: u8) -> bool;
     fn frame(&mut self, frame: Frame<'_>);
+
+    /// The decision points of the frame just handed to [`Sink::frame`].
+    fn points(&mut self, _points: Points<'_>) {}
 }
 
 #[must_use]

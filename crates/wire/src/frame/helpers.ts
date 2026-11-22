@@ -1,4 +1,3 @@
-export type SymbolPlane = "complex" | "level";
 export function frameKind(buffer: ArrayBuffer): number | null {
   if (buffer.byteLength < HEADER_LEN) return null;
   const view = new DataView(buffer);
@@ -30,9 +29,9 @@ class FrameReader {
   f32(): number { const at = this.take(4); return at < 0 ? 0 : this.view.getFloat32(at, true); }
   f64(): number { const at = this.take(8); return at < 0 ? 0 : this.view.getFloat64(at, true); }
   plane(): SymbolPlane {
-    const plane = this.u8();
-    if (plane !== 0 && plane !== 1) this.valid = false;
-    return plane === 0 ? "complex" : "level";
+    const plane = SYMBOL_PLANES[this.u8()];
+    if (plane === undefined) this.valid = false;
+    return plane ?? "complex";
   }
   bytes(count = this.buffer.byteLength - this.at): Uint8Array {
     const at = this.take(count);

@@ -17,6 +17,19 @@ impl Sink for Collect {
     }
 }
 
+#[derive(Default)]
+struct Scope {
+    heard: Vec<(BlePhy, Vec<f32>, f64)>,
+}
+
+impl Sink for Scope {
+    fn packet(&mut self, _: Packet<'_>) {}
+
+    fn symbols(&mut self, soft: &[f32], phy: BlePhy, offset_hz: f64) {
+        self.heard.push((phy, soft.to_vec(), offset_hz));
+    }
+}
+
 pub(crate) fn pdu(length: usize) -> Vec<u8> {
     let mut pdu = vec![0x42, length as u8];
     pdu.extend((0..length).map(|k| (k * 29 + 7) as u8));
@@ -65,6 +78,33 @@ fn every_phy_loops_back_with_an_offset_carrier() {
         let pdu = pdu(37);
         let found = receive(&on_air(&pdu, 12, phy, 61e3, 25.0, 3), 12);
         assert_eq!(found.packets, vec![(pdu.clone(), phy)], "{phy:?}");
+    }
+}
+
+#[test]
+fn every_phy_hands_the_scope_tight_soft_decisions() {
+    let pdu = pdu(37);
+    let bits = (pdu.len() + super::CRC_BYTES) * 8;
+    for (phy, count) in [
+        (BlePhy::Le1m, bits),
+        (BlePhy::CodedS8, 2 * (bits + super::coded::TERM_BITS)),
+        (BlePhy::CodedS2, 2 * (bits + super::coded::TERM_BITS)),
+    ] {
+        let mut lane = Lane::new(Some(12), channel_index(12)).unwrap();
+        let mut scope = Scope::default();
+        for block in on_air(&pdu, 12, phy, 61e3, 25.0, 3).chunks(2_048) {
+            lane.process(block, &mut scope);
+        }
+        assert_eq!(scope.heard.len(), 1, "{phy:?}");
+        let (heard, soft, offset_hz) = &scope.heard[0];
+        assert_eq!(*heard, phy);
+        assert_eq!(soft.len(), count, "{phy:?}");
+        let worst = soft
+            .iter()
+            .map(|value| (value.abs() - 1.0).abs())
+            .fold(0.0, f32::max);
+        assert!(worst < 0.5, "{phy:?} strays {worst} off its level");
+        assert!((offset_hz - 61e3).abs() < 5e3, "{phy:?} at {offset_hz} Hz");
     }
 }
 

@@ -126,7 +126,7 @@ impl Receiver {
         if self.tapping || self.tap.is_empty() {
             return;
         }
-        out.linear(
+        out.carriers(
             &self.tap,
             &self.tables[self.tap_table],
             self.tap.len() as f64 * rate / self.tap_period as f64,

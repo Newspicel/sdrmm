@@ -10,7 +10,9 @@ import {
   decayBasebandGrid,
   type EyeComponent,
   eyeScale,
+  foldRate,
   iqScale,
+  planeWidth,
   type SymbolState,
   samplesPerSymbol,
   symbolHistogram,
@@ -73,6 +75,7 @@ const SCATTER_PAD = 12;
 const PLOT_INSET: PlotInset = { top: 10, bottom: 4 };
 
 const PORT = "baseband";
+const NO_EYE = "Many carriers, no single eye";
 
 export function BasebandView({
   node,
@@ -108,11 +111,12 @@ export function BasebandView({
   const spectrumRef = useRef<SpectrumFrame | null>(null);
   const dbRef = useRef<Float32Array | null>(null);
   const railRef = useRef<Float32Array | null>(null);
-  const settingsRef = useRef({ view, eyeComponent, symbolRate, decimate });
+  const fold = foldRate(symbols, symbolRate);
+  const settingsRef = useRef({ view, eyeComponent, symbolRate, fold, decimate });
   const colormapRef = useRef(colormap);
   const loopRef = useRef<DrawLoop | null>(null);
   useLayoutEffect(() => {
-    settingsRef.current = { view, eyeComponent, symbolRate, decimate };
+    settingsRef.current = { view, eyeComponent, symbolRate, fold, decimate };
     colormapRef.current = colormap;
   });
 
@@ -125,7 +129,7 @@ export function BasebandView({
     }
     loopRef.current?.invalidate();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the settings are what the clear reacts to
-  }, [view, eyeComponent, symbolRate, decimate]);
+  }, [view, eyeComponent, symbolRate, fold, decimate]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the recolour is the effect
   useEffect(() => {
@@ -142,6 +146,7 @@ export function BasebandView({
         view: mode,
         eyeComponent: rail,
         symbolRate: rate,
+        fold: eyeRate,
         decimate: sparse,
       } = settingsRef.current;
       if (SCATTER_VIEWS.includes(mode)) {
@@ -162,8 +167,9 @@ export function BasebandView({
               sparse ? symbolPhase(burst.samples, period) : 0,
             );
           }
-        } else {
-          addEye(grid, burst.samples, period, rail, eyeScale(burst.samples, rail));
+        } else if (eyeRate !== null) {
+          const eyePeriod = samplesPerSymbol(burst.sampleRate, eyeRate);
+          addEye(grid, burst.samples, eyePeriod, rail, eyeScale(burst.samples, rail));
         }
       }
       loopRef.current?.invalidate();
@@ -232,7 +238,7 @@ export function BasebandView({
   }, [trends]);
 
   const nyquist = frame === null ? Number.POSITIVE_INFINITY : frame.sampleRate / 2;
-  const period = frame === null ? 0 : samplesPerSymbol(frame.sampleRate, symbolRate);
+  const period = frame === null || fold === null ? null : samplesPerSymbol(frame.sampleRate, fold);
 
   const shown = symbols === null && SYMBOL_VIEWS.includes(view) ? "spectrum" : view;
   const pickView = (name: BasebandView): void => {
@@ -267,7 +273,12 @@ export function BasebandView({
         onSymbolRate={setSymbolRate}
         nyquist={nyquist}
       />
-      <ChartPlot canvas={canvasRef} hint={hint} rows={rows} />
+      <ChartPlot
+        canvas={canvasRef}
+        hint={hint}
+        rows={rows}
+        title={shown === "eye" && fold === null ? NO_EYE : undefined}
+      />
     </div>
   );
 }
@@ -333,14 +344,16 @@ function ChartPlot({
   canvas,
   hint,
   rows,
+  title,
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
   hint: string | null;
   rows: readonly Measurement[];
+  title?: string;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="relative min-h-0 min-w-0 flex-1 bg-plot-bg">
+      <div className="relative min-h-0 min-w-0 flex-1 bg-plot-bg" title={title}>
         <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
         {hint !== null && (
           <span className="legend font-mono text-2xs pointer-events-none absolute inset-0 flex items-center justify-center text-plot-ink-dim">
@@ -429,7 +442,7 @@ function ViewOptions({
   nyquist: number;
 }) {
   const needsRate =
-    view === "eye" || (!symbols && (view === "levels" || (view === "constellation" && decimate)));
+    !symbols && (view === "eye" || view === "levels" || (view === "constellation" && decimate));
   const decimates = view === "constellation" && !symbols;
   if (view !== "eye" && !decimates && !needsRate) {
     return null;
@@ -514,7 +527,7 @@ function recordTrends(trends: Trends, block: SymbolFrame): void {
 }
 
 export function paired(block: SymbolFrame): Float32Array {
-  if (block.plane === "complex") {
+  if (planeWidth(block) === 2) {
     return block.symbols;
   }
   const out = new Float32Array(block.symbols.length * 2);
@@ -526,7 +539,7 @@ export function paired(block: SymbolFrame): Float32Array {
 
 export function referenceScale(block: SymbolFrame): number {
   let peak = 0;
-  if (block.plane === "complex") {
+  if (planeWidth(block) === 2) {
     for (let i = 0; i + 1 < block.reference.length; i += 2) {
       peak = Math.max(peak, Math.hypot(block.reference[i] ?? 0, block.reference[i + 1] ?? 0));
     }
@@ -577,7 +590,12 @@ function draw(
     return;
   }
   if (view === "states") {
-    drawStates(canvas, block === null ? [] : statesOf(block), block?.plane !== "complex", inset);
+    drawStates(
+      canvas,
+      block === null ? [] : statesOf(block),
+      block === null || planeWidth(block) === 1,
+      inset,
+    );
     return;
   }
   if (view === "levels") {
@@ -622,10 +640,9 @@ function drawLevels(
 ): void {
   if (block !== null) {
     const scale = referenceScale(block);
-    const stride = block.plane === "complex" ? 2 : 1;
     drawHistogram(
       canvas,
-      symbolHistogram(block.symbols, stride, scale),
+      symbolHistogram(block.symbols, planeWidth(block), scale),
       block.reference,
       scale,
       inset,

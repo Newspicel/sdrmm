@@ -196,7 +196,7 @@ impl WasmChannel {
         for picture in read_pictures(slice(header.pictures_ptr, header.pictures_len as usize)?) {
             collect_picture(picture?, out);
         }
-        if let Some(plane) = plane_of(header.plane) {
+        if let Some(plane) = plane_of(header.plane)? {
             let symbols = slice(header.symbols_ptr, header.symbols_len as usize * 4)?;
             let reference = slice(header.reference_ptr, header.reference_len as usize * 4)?;
             let tap = &mut out.symbols;

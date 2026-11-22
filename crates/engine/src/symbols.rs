@@ -67,11 +67,10 @@ impl SymbolBatcher {
         self.mer_db = tap.mer_db;
         self.margin = tap.margin;
         self.freq_error_hz = tap.freq_error_hz;
-        self.per_block = block_size(tap.symbol_rate, plane);
+        self.per_block = block_size(tap.symbol_rate);
         self.pending.extend_from_slice(&tap.symbols);
 
-        let width = usize::from(plane == SymbolPlane::Complex) + 1;
-        let per_block = self.per_block * width;
+        let per_block = self.per_block * plane.width();
         while self.pending.len() >= per_block && per_block > 0 {
             let block = SymbolBlock {
                 seq: self.seq,
@@ -99,8 +98,7 @@ impl SymbolBatcher {
     }
 }
 
-fn block_size(symbol_rate: f64, plane: SymbolPlane) -> usize {
-    let _ = plane;
+fn block_size(symbol_rate: f64) -> usize {
     let requested = (symbol_rate / SYMBOL_BLOCKS_PER_SEC) as usize;
     requested.clamp(1, MAX_SYMBOLS_PER_BLOCK)
 }
@@ -163,6 +161,37 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].symbols.len(), 2 * 480);
         assert_eq!(blocks[0].timestamp, 0);
+    }
+
+    #[test]
+    fn a_carrier_block_counts_pairs_and_keeps_its_plane() {
+        let mut batcher = SymbolBatcher::new();
+        let mut blocks = Vec::new();
+        batcher.push(
+            &tap(SymbolPlane::Carriers, vec![0.7; 2 * 480], 4800.0),
+            |b| blocks.push(b),
+        );
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].plane, SymbolPlane::Carriers);
+        assert_eq!(blocks[0].symbols.len(), 2 * 480);
+    }
+
+    #[test]
+    fn a_changed_plane_starts_a_fresh_cloud() {
+        let mut batcher = SymbolBatcher::new();
+        let mut blocks = Vec::new();
+        batcher.push(
+            &tap(SymbolPlane::Complex, vec![0.7; 2 * 400], 4800.0),
+            |b| blocks.push(b),
+        );
+        batcher.push(
+            &tap(SymbolPlane::Carriers, vec![0.7; 2 * 400], 4800.0),
+            |b| blocks.push(b),
+        );
+        assert!(
+            blocks.is_empty(),
+            "a complex remainder leaked into a carrier block"
+        );
     }
 
     #[test]

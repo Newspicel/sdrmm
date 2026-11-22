@@ -59,6 +59,11 @@ describe("measurements", () => {
     expect(value(rows, "Offset")).toBe("+7 Hz");
   });
 
+  it("keeps the fold readout empty when there is no single eye", () => {
+    const rows = measurements("eye", burst, block({ plane: "carriers" }), null);
+    expect(value(rows, "Sam/sym")).toBe("");
+  });
+
   it("folds at the set rate when no decoder reports symbols", () => {
     expect(labels(measurements("constellation", burst, null, 10))).toContain("Sam/sym");
   });

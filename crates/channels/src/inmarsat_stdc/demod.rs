@@ -54,11 +54,6 @@ impl SampleFir {
         }
         acc
     }
-
-    #[cfg(test)]
-    pub fn filter(&mut self, input: &[Complex<f32>]) -> Vec<Complex<f32>> {
-        input.iter().map(|&sample| self.push(sample)).collect()
-    }
 }
 
 pub struct BpskDemod {

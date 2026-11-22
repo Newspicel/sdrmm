@@ -336,7 +336,7 @@ mod tests {
             channel.process(block, &mut out);
         }
         let tap = &out.symbols;
-        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Carriers));
         assert_eq!(tap.reference.len(), 2 * 16);
         assert_eq!(tap.symbols.len(), 2 * 1512);
         assert!(tap.evm < 0.05, "EVM {}", tap.evm);
@@ -387,7 +387,7 @@ mod tests {
             ),
         ] {
             let tap = t2_scope(bytes);
-            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Carriers));
             assert_eq!(tap.reference.len(), 2 * points);
             assert!(!tap.symbols.is_empty());
             assert!(tap.evm < 0.05, "{points} points: EVM {}", tap.evm);

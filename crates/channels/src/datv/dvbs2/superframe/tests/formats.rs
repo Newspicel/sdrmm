@@ -28,6 +28,28 @@ fn format_two_bundles_round_trip_through_noise_and_offset() {
 }
 
 #[test]
+fn bursts_feed_the_scope_the_constellation_of_their_coding() {
+    let mut source = Source::new();
+    let bundles = vec![
+        source.bundle(2, 108),
+        source.bundle(2, 4),
+        source.bundle(2, 111),
+    ];
+    let mut signal = Transmitter::new(Codes::default()).bundled(2, &bundles);
+    impair(&mut signal, FREQUENCY, 0.0, 19);
+    signal.extend(std::iter::repeat_n(Complex::new(0.0, 0.0), 4096));
+    let mut decoder = Dvbs2Decoder::new();
+    decoder.superframes(true);
+    let seen = scoped(&mut decoder, &signal, 8191);
+    let mut sizes: Vec<usize> = seen.iter().map(|&(size, _)| size).collect();
+    sizes.dedup();
+    assert_eq!(sizes, [2, 4, 2]);
+    for (size, evm) in seen {
+        assert!(evm < 0.05, "{size} points at {evm} EVM");
+    }
+}
+
+#[test]
 fn format_three_bundles_round_trip_through_noise_and_offset() {
     let mut source = Source::new();
     let bundles = vec![
@@ -267,7 +289,7 @@ fn unknown_scrambling_codes_are_found_by_searching() {
 }
 
 #[test]
-fn zz_probe() {
+fn formats_six_and_seven_carry_legacy_frames_through_noise_and_offset() {
     for format in [6u8, 7] {
         let mut source = Source::new();
         let frames: Vec<Plframe> = (0..12)
@@ -280,11 +302,7 @@ fn zz_probe() {
         let mut signal = Transmitter::new(Codes::default()).flexible(format, &frames, options);
         impair(&mut signal, FREQUENCY, NOISE, 3);
         let (decoder, output) = receive_flushed(&signal, Settings::default());
-        eprintln!(
-            "format {format}: {} of {} {:?}",
-            output.packets.len(),
-            source.sent.len(),
-            decoder.metrics
-        );
+        assert_delivered(&source, &decoder, &output, &format!("format {format}"));
+        assert_eq!(decoder.metrics.frames_ok, 12, "format {format}");
     }
 }

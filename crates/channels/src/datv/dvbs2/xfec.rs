@@ -1,18 +1,15 @@
 use num_complex::Complex;
 
-#[cfg(any(test, feature = "synth"))]
-use super::frame::modulate;
 use super::{
     bb::{BaseBandData, BaseBandFrame},
     bch::Bch,
-    frame::{Constellation, Modulation, column_order, demodulate},
+    frame::{Constellation, Modulation, column_order},
     ldpc::{Frame, Ldpc, Rate},
     pl, s2x,
     superframe::coding::Coding,
     vlsnr::Carrier,
 };
 
-const NOISE: f32 = 0.25;
 const ROBUST_CORRECT: usize = 12;
 
 pub struct Decoded {
@@ -137,30 +134,8 @@ impl Xfec {
 
     pub fn soft(&mut self, symbols: &[Complex<f32>]) {
         self.llrs.clear();
-        match self.carrier {
-            Carrier::Qpsk => demodulate(symbols, &self.constellation, NOISE, &mut self.llrs),
-            Carrier::Bpsk => self.llrs.extend(
-                symbols
-                    .iter()
-                    .enumerate()
-                    .map(|(index, &symbol)| (symbol * pl::bpsk(index, false).conj()).re / NOISE),
-            ),
-            Carrier::BpskSpread => {
-                self.llrs
-                    .extend(
-                        symbols
-                            .as_chunks::<2>()
-                            .0
-                            .iter()
-                            .enumerate()
-                            .map(|(index, pair)| {
-                                let first = (pair[0] * pl::bpsk(2 * index, false).conj()).re;
-                                let second = (pair[1] * pl::bpsk(2 * index + 1, false).conj()).re;
-                                (first + second) / NOISE
-                            }),
-                    );
-            }
-        }
+        self.carrier
+            .soft(symbols, &self.constellation, &mut self.llrs);
     }
 
     pub fn decode(&mut self, index: usize, compact: bool) -> Option<Decoded> {
@@ -208,20 +183,7 @@ impl Xfec {
 
     #[cfg(any(test, feature = "synth"))]
     fn map(&self, bits: &[bool], out: &mut Vec<Complex<f32>>) {
-        match self.carrier {
-            Carrier::Qpsk => modulate(bits, &self.constellation, out),
-            Carrier::Bpsk => out.extend(
-                bits.iter()
-                    .enumerate()
-                    .map(|(index, &bit)| pl::bpsk(index, bit)),
-            ),
-            Carrier::BpskSpread => {
-                for (index, &bit) in bits.iter().enumerate() {
-                    out.push(pl::bpsk(2 * index, bit));
-                    out.push(pl::bpsk(2 * index + 1, bit));
-                }
-            }
-        }
+        self.carrier.map(bits, &self.constellation, out);
     }
 
     #[cfg(any(test, feature = "synth"))]

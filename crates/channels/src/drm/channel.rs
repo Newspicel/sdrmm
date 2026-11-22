@@ -84,7 +84,7 @@ fn tap_frame(
     };
     points.clear();
     points.extend(cells.take(TAP_CELLS));
-    out.symbols.linear(
+    out.symbols.carriers(
         points,
         &grids[qam.levels() - 1],
         locked.receiver.msc_rate(),

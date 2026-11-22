@@ -116,6 +116,88 @@ impl Carrier {
             Self::BpskSpread => coded * 2,
         }
     }
+
+    /// Keeps every `every`th decision point of a descrambled payload, up to `out`'s capacity,
+    /// with the pi/2 turn and the spreading undone so BPSK lands on [`bpsk_decisions`].
+    pub fn decisions(self, payload: &[Complex<f32>], every: usize, out: &mut Vec<Complex<f32>>) {
+        let room = out.capacity() - out.len();
+        let every = every.max(1);
+        match self {
+            Self::Qpsk => out.extend(payload.iter().step_by(every).take(room).copied()),
+            Self::Bpsk => out.extend(
+                payload
+                    .iter()
+                    .enumerate()
+                    .step_by(every)
+                    .take(room)
+                    .map(|(index, &symbol)| symbol * pl::bpsk(index, false).conj()),
+            ),
+            Self::BpskSpread => out.extend(
+                payload
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .enumerate()
+                    .step_by(every)
+                    .take(room)
+                    .map(|(index, pair)| {
+                        let first = pair[0] * pl::bpsk(2 * index, false).conj();
+                        let second = pair[1] * pl::bpsk(2 * index + 1, false).conj();
+                        (first + second) * 0.5
+                    }),
+            ),
+        }
+    }
+
+    /// Appends one LLR per coded bit, positive for a 0, with the pi/2 turn and the spreading
+    /// undone.
+    pub fn soft(
+        self,
+        payload: &[Complex<f32>],
+        constellation: &Constellation,
+        llrs: &mut Vec<f32>,
+    ) {
+        match self {
+            Self::Qpsk => demodulate(payload, constellation, NOISE, llrs),
+            Self::Bpsk => llrs.extend(
+                payload
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &symbol)| (symbol * pl::bpsk(index, false).conj()).re / NOISE),
+            ),
+            Self::BpskSpread => llrs.extend(payload.as_chunks::<2>().0.iter().enumerate().map(
+                |(index, pair)| {
+                    let first = (pair[0] * pl::bpsk(2 * index, false).conj()).re;
+                    let second = (pair[1] * pl::bpsk(2 * index + 1, false).conj()).re;
+                    (first + second) / NOISE
+                },
+            )),
+        }
+    }
+
+    #[cfg(any(test, feature = "synth"))]
+    pub fn map(self, bits: &[bool], constellation: &Constellation, out: &mut Vec<Complex<f32>>) {
+        match self {
+            Self::Qpsk => modulate(bits, constellation, out),
+            Self::Bpsk => out.extend(
+                bits.iter()
+                    .enumerate()
+                    .map(|(index, &bit)| pl::bpsk(index, bit)),
+            ),
+            Self::BpskSpread => {
+                for (index, &bit) in bits.iter().enumerate() {
+                    out.push(pl::bpsk(2 * index, bit));
+                    out.push(pl::bpsk(2 * index + 1, bit));
+                }
+            }
+        }
+    }
+}
+
+/// The two points [`Carrier::decisions`] puts a BPSK carrier on.
+#[must_use]
+pub fn bpsk_decisions() -> Constellation {
+    Constellation::from_points(&[(1.0, 0.0), (-1.0, 0.0)])
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +499,11 @@ impl VlSnrCodec {
         })
     }
 
+    #[must_use]
+    pub const fn constellation(&self) -> &Constellation {
+        &self.constellation
+    }
+
     #[cfg(any(test, feature = "synth"))]
     #[must_use]
     pub const fn capacity(&self) -> usize {
@@ -430,51 +517,20 @@ impl VlSnrCodec {
     }
 
     #[cfg(any(test, feature = "synth"))]
-    fn map(&self, out: &mut Vec<Complex<f32>>) {
-        match self.mode.carrier {
-            Carrier::Qpsk => modulate(&self.coded, &self.constellation, out),
-            Carrier::Bpsk => {
-                for (index, &bit) in self.coded.iter().enumerate() {
-                    out.push(pl::bpsk(index, bit));
-                }
-            }
-            Carrier::BpskSpread => {
-                for (index, &bit) in self.coded.iter().enumerate() {
-                    out.push(pl::bpsk(2 * index, bit));
-                    out.push(pl::bpsk(2 * index + 1, bit));
-                }
-            }
-        }
-    }
-
-    #[cfg(any(test, feature = "synth"))]
     pub fn encode(&mut self, baseband: &[bool], out: &mut Vec<Complex<f32>>) {
         let mut protected = Vec::new();
         self.bch.encode(baseband, &mut protected);
         self.coded.clear();
         self.ldpc
             .encode_shaped(&protected, self.mode.shape, &mut self.coded);
-        self.map(out);
+        self.mode.carrier.map(&self.coded, &self.constellation, out);
     }
 
     fn soft(&mut self, payload: &[Complex<f32>]) {
         self.llrs.clear();
-        match self.mode.carrier {
-            Carrier::Qpsk => demodulate(payload, &self.constellation, NOISE, &mut self.llrs),
-            Carrier::Bpsk => {
-                for (index, &symbol) in payload.iter().enumerate() {
-                    self.llrs
-                        .push((symbol * pl::bpsk(index, false).conj()).re / NOISE);
-                }
-            }
-            Carrier::BpskSpread => {
-                for (index, pair) in payload.as_chunks::<2>().0.iter().enumerate() {
-                    let first = (pair[0] * pl::bpsk(2 * index, false).conj()).re;
-                    let second = (pair[1] * pl::bpsk(2 * index + 1, false).conj()).re;
-                    self.llrs.push((first + second) / NOISE);
-                }
-            }
-        }
+        self.mode
+            .carrier
+            .soft(payload, &self.constellation, &mut self.llrs);
     }
 
     pub fn decode(&mut self, payload: &[Complex<f32>]) -> Option<BaseBandData> {
@@ -620,6 +676,37 @@ pub fn scramble(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_clean_carrier_softens_to_signed_llrs() {
+        let bits = [false, true, true, false, true, false, false, true];
+        let qpsk = Constellation::new(Modulation::Qpsk, Rate::R1_2);
+        for (carrier, strength) in [(Carrier::Bpsk, 1.0), (Carrier::BpskSpread, 2.0)] {
+            let mut symbols = Vec::new();
+            carrier.map(&bits, &qpsk, &mut symbols);
+            assert_eq!(symbols.len(), carrier.symbols(bits.len()));
+            let mut llrs = vec![7.0];
+            carrier.soft(&symbols, &qpsk, &mut llrs);
+            assert_eq!(llrs.len(), bits.len() + 1, "{carrier:?} appends");
+            for (&bit, &llr) in bits.iter().zip(&llrs[1..]) {
+                let want = if bit { -strength } else { strength } / NOISE;
+                assert!((llr - want).abs() < 1e-5, "{carrier:?}: {llr} for {bit}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_qpsk_carrier_softens_like_the_constellation() {
+        let bits = [false, true, true, false, true, true, false, false];
+        let qpsk = Constellation::new(Modulation::Qpsk, Rate::R1_2);
+        let mut symbols = Vec::new();
+        Carrier::Qpsk.map(&bits, &qpsk, &mut symbols);
+        let mut llrs = Vec::new();
+        Carrier::Qpsk.soft(&symbols, &qpsk, &mut llrs);
+        let mut want = Vec::new();
+        demodulate(&symbols, &qpsk, NOISE, &mut want);
+        assert_eq!(llrs, want);
+    }
 
     #[test]
     fn every_pattern_differs_from_every_other_in_half_its_bits() {

@@ -1,7 +1,8 @@
 use num_complex::Complex;
 
 use super::{
-    CHIP_SAMPLES, SYMBOL, SymbolReader, WifiPhy, byte, nearest_quadrant, plcp::Header, quadrant,
+    CHIP_SAMPLES, SYMBOL, SymbolReader, WifiPhy, byte, nearest_quadrant, offset_hz, plcp::Header,
+    quadrant,
 };
 use crate::{
     linear::PhaseTracker,
@@ -10,13 +11,14 @@ use crate::{
         cck::{CHIPS, MAX_WORDS},
         integrate_chips,
     },
-    wifi::Sink,
+    wifi::{Sink, points::Cloud},
 };
 
 /// Bits a CCK symbol carries in its DQPSK phase; the rest pick the codeword.
 const PHASE_BITS: usize = 2;
 const MAX_LABEL_BITS: usize = 6;
 const SYMBOL_SAMPLES: f64 = CHIPS as f64 * CHIP_SAMPLES;
+pub(crate) const SYMBOL_RATE_HZ: f64 = crate::wifi::RATE_HZ / SYMBOL_SAMPLES;
 const TIMING_GAIN: f64 = 0.1;
 const TIMING_SPREAD: f64 = CHIP_SAMPLES / 2.0;
 
@@ -138,6 +140,7 @@ impl Cck {
         reader: &mut SymbolReader<'_>,
         header: &Header,
         bytes: &mut Vec<u8>,
+        cloud: &mut Cloud,
         sink: &impl Sink,
     ) -> bool {
         let book = if header.phy == WifiPhy::Cck11m {
@@ -162,6 +165,7 @@ impl Cck {
             book.correlate(&on_time, &mut self.bank);
             let (index, decided) = decide(&self.bank[..words]);
             tracker.steer(self.bank[index as usize], decided, SYMBOL_SAMPLES as f32);
+            cloud.push(self.bank[index as usize]);
             let mut step = decided * point.conj();
             if symbol % 2 == 1 {
                 step = -step;
@@ -192,6 +196,7 @@ impl Cck {
             }
         }
         reader.advance_to(start.max(end));
+        cloud.heard_at(offset_hz(&tracker));
         true
     }
 }

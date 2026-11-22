@@ -65,29 +65,37 @@ impl Search {
         self.primed = false;
     }
 
+    /// Learns the floor while a burst is tracked, so its carrier and sidebands, still in the
+    /// window when it ends, do not read as a new burst.
     pub(crate) fn feed(&mut self, iq: &[Complex<f32>]) {
         for &sample in iq {
-            self.store(sample);
+            if self.hop(sample) {
+                self.measure();
+                self.learn();
+            }
         }
-        self.since_hop = 0;
     }
 
-    fn store(&mut self, sample: Complex<f32>) {
+    fn hop(&mut self, sample: Complex<f32>) -> bool {
         self.recent[self.at] = sample;
         self.at = (self.at + 1) % FFT_LEN;
+        self.since_hop += 1;
+        if self.since_hop < HOP {
+            return false;
+        }
+        self.since_hop = 0;
+        true
     }
 
     pub(crate) fn push(&mut self, sample: Complex<f32>) -> Option<f64> {
-        self.store(sample);
-        self.since_hop += 1;
-        if self.since_hop < HOP {
+        if !self.hop(sample) {
             return None;
         }
-        self.since_hop = 0;
+        self.measure();
         self.scan()
     }
 
-    fn scan(&mut self) -> Option<f64> {
+    fn measure(&mut self) {
         for (k, slot) in self.spectrum.iter_mut().enumerate() {
             *slot = self.recent[(self.at + k) % FFT_LEN] * self.window[k];
         }
@@ -95,6 +103,9 @@ impl Search {
         for (power, bin) in self.power.iter_mut().zip(&self.spectrum) {
             *power = bin.norm_sqr();
         }
+    }
+
+    fn scan(&mut self) -> Option<f64> {
         let found = self.primed.then(|| self.strongest_new_bin()).flatten();
         if let Some(bin) = found {
             Some(self.frequency(bin))

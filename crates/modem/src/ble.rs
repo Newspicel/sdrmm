@@ -53,6 +53,18 @@ pub enum BlePhy {
     CodedS2,
 }
 
+impl BlePhy {
+    /// How often a packet of this PHY yields a soft decision. Every PHY sends 1 Msym/s, but
+    /// S8 spreads each coded bit over a four symbol block and decides once per block.
+    #[must_use]
+    pub const fn soft_rate_hz(self) -> f64 {
+        match self {
+            Self::Le1m | Self::CodedS2 => SYMBOL_RATE_HZ,
+            Self::CodedS8 => SYMBOL_RATE_HZ / coded::S8_SYMBOLS as f64,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Packet<'a> {
     pub pdu: &'a [u8],
@@ -65,9 +77,10 @@ pub struct Packet<'a> {
 pub trait Sink {
     fn packet(&mut self, packet: Packet<'_>);
 
-    /// The soft symbols an LE 1M packet was read from, sign the bit and near the carrier's
-    /// level when clean, with the carrier offset it was heard at.
-    fn symbols(&mut self, _soft: &[f32], _offset_hz: f64) {}
+    /// The soft decisions a packet was read from, sign the bit, scaled to a mean magnitude of
+    /// one, with the carrier offset it was heard at. LE 1M gives its data symbols, the coded PHYs their
+    /// coded bits before the Viterbi decoder, at [`BlePhy::soft_rate_hz`].
+    fn symbols(&mut self, _soft: &[f32], _phy: BlePhy, _offset_hz: f64) {}
 }
 
 #[must_use]

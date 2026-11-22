@@ -1,10 +1,10 @@
 use num_complex::Complex;
 use sdrmm_dsp::Descrambler;
 
-use super::{SYMBOL, WifiPhy, byte, plcp::Header};
+use super::{SYMBOL, WifiPhy, byte, offset_hz, plcp::Header};
 use crate::{
     linear::PhaseTracker,
-    wifi::{Sink, scrambler::SCRAMBLER_TAPS},
+    wifi::{Sink, points::Cloud, scrambler::SCRAMBLER_TAPS},
 };
 
 const TIMING_GAIN: f64 = 0.1;
@@ -23,6 +23,7 @@ pub(crate) struct SymbolReader<'a> {
     rotation: Complex<f32>,
     tracker: PhaseTracker,
     point: Complex<f32>,
+    derotated: Complex<f32>,
     descrambler: Descrambler,
 }
 
@@ -40,6 +41,7 @@ impl<'a> SymbolReader<'a> {
             rotation: Complex::new(1.0, 0.0),
             tracker: PhaseTracker::new(PHASE_GAIN, FREQ_GAIN),
             point: Complex::new(1.0, 0.0),
+            derotated: Complex::new(0.0, 0.0),
             descrambler: Descrambler::new(&SCRAMBLER_TAPS),
         };
         reader.position = reader.best_phase(start) as f64;
@@ -109,6 +111,7 @@ impl<'a> SymbolReader<'a> {
         let centre = self.locate()?;
         self.tracker.advance(SYMBOL as f32);
         let derotated = centre * self.tracker.derotator(0.0);
+        self.derotated = derotated;
         let decided = points.nearest(derotated);
         self.tracker.steer(derotated, decided, SYMBOL as f32);
         let step = decided * self.point.conj();
@@ -160,7 +163,13 @@ impl<'a> SymbolReader<'a> {
         self.position = position;
     }
 
-    pub(super) fn psdu(&mut self, header: &Header, bytes: &mut Vec<u8>, sink: &impl Sink) -> bool {
+    pub(super) fn psdu(
+        &mut self,
+        header: &Header,
+        bytes: &mut Vec<u8>,
+        cloud: &mut Cloud,
+        sink: &impl Sink,
+    ) -> bool {
         let mut bits = [false; 8];
         let mut filled = 0;
         while bytes.len() < header.bytes {
@@ -171,6 +180,7 @@ impl<'a> SymbolReader<'a> {
             let Some((pair, count)) = decided else {
                 return false;
             };
+            cloud.push(self.derotated);
             for &bit in &pair[..count] {
                 bits[filled] = bit;
                 filled += 1;
@@ -184,6 +194,7 @@ impl<'a> SymbolReader<'a> {
                 }
             }
         }
+        cloud.heard_at(offset_hz(&self.tracker));
         true
     }
 }

@@ -13,13 +13,14 @@ use sdrmm_dsp::{
 use self::{
     plateau::{PLATEAU_SAMPLES, PROBE, Plateau, Probe, WINDOW},
     tables::{
-        CONV_POLYS, CP, EDGE, FFT, OCCUPIED, PILOT_CARRIERS, PILOT_VALUES, POLARITY_LEN, RATES,
-        Rate, SERVICE_BITS, SHORT, SYMBOL, bin, interleave_table, long_training, occupied_carriers,
-        polarity, rate_for,
+        CONV_POLYS, CP, DATA_CARRIERS, EDGE, FFT, Modulation, OCCUPIED, PILOT_CARRIERS,
+        PILOT_VALUES, POLARITY_LEN, RATES, Rate, SERVICE_BITS, SHORT, SYMBOL, bin, data_carriers,
+        interleave_table, long_training, occupied_carriers, polarity, rate_for,
     },
 };
 use super::{
-    Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs, scrambler::descramble,
+    Frame, Grid, MAX_MPDU_BYTES, RATE_HZ, Sink, WifiPhy, byte, fcs_ok, level_dbfs, points::Cloud,
+    scrambler::descramble,
 };
 
 pub use self::demap::map as map_point;
@@ -39,7 +40,9 @@ const LOOKAHEAD: usize = WINDOW + SHORT + LTF_SEARCH + 2 * FFT + SYMBOL;
 const MAX_HISTORY: usize = 600_000;
 const PEEK_BITS: usize = SERVICE_BITS + 16 + 96;
 const MAX_CODED_BITS: usize = 288;
-const MAX_DATA_BITS: usize = 24 * 1_366;
+const MAX_SYMBOLS: usize = 1_366;
+const MAX_DATA_BITS: usize = 24 * MAX_SYMBOLS;
+const POINT_RATE_HZ: f64 = RATE_HZ / SYMBOL as f64 * DATA_CARRIERS as f64;
 const MAX_CODED_STREAM: usize = 66_000;
 
 #[derive(Clone, Copy)]
@@ -64,6 +67,7 @@ struct Scratch {
     bits: Vec<bool>,
     bytes: Vec<u8>,
     tables: Vec<Vec<usize>>,
+    cloud: Cloud,
 }
 
 impl Scratch {
@@ -77,6 +81,7 @@ impl Scratch {
             bits: Vec::with_capacity(MAX_DATA_BITS + MAX_CODED_BITS),
             bytes: Vec::with_capacity(MAX_MPDU_BYTES),
             tables: RATES.iter().map(|&rate| interleave_table(rate)).collect(),
+            cloud: Cloud::across_carriers(MAX_SYMBOLS * DATA_CARRIERS),
         }
     }
 }
@@ -176,6 +181,7 @@ impl Ofdm {
                             level_dbfs: level_dbfs(&self.history[start..end]),
                             sample: self.consumed + start as u64,
                         });
+                        self.scratch.cloud.hand(sink);
                         self.resume(end, false);
                     }
                     Outcome::Skip(end) => self.resume(end, false),
@@ -357,6 +363,11 @@ impl Ofdm {
                 .iter()
                 .map(|&position| demap::soft(scratch.received[position])),
         );
+        if index > 0 {
+            scratch
+                .cloud
+                .extend(data_carriers().map(|carrier| points[bin(carrier)]));
+        }
     }
 
     fn decode(&mut self, lock: &Lock, rate: Rate, symbols: usize, first: usize, already: usize) {
@@ -366,6 +377,9 @@ impl Ofdm {
             .unwrap_or(0);
         if already == 0 {
             self.scratch.coded.clear();
+            self.scratch
+                .cloud
+                .start(grid(rate.modulation), POINT_RATE_HZ);
         }
         for index in first + already..first + symbols {
             self.soft_symbol(lock, index, rate, table);
@@ -441,6 +455,7 @@ impl Ofdm {
             self.rejected = self.rejected.saturating_add(1);
             return Outcome::Skip(end);
         }
+        scratch.cloud.heard_at(f64::from(lock.cfo) * RATE_HZ);
         Outcome::Frame(rate, end)
     }
 
@@ -460,6 +475,15 @@ impl Ofdm {
         if let State::Pending(start) = &mut self.state {
             *start = start.saturating_sub(drop);
         }
+    }
+}
+
+fn grid(modulation: Modulation) -> Grid {
+    match modulation {
+        Modulation::Bpsk => Grid::Bpsk,
+        Modulation::Qpsk => Grid::Qpsk,
+        Modulation::Qam16 => Grid::Qam16,
+        Modulation::Qam64 => Grid::Qam64,
     }
 }
 

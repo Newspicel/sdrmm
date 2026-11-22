@@ -3,7 +3,7 @@ use crate::remote_id::RemoteIdPhy;
 use crate::remote_id::RemoteIdTransport;
 use sdrmm_decoder::SymbolTap;
 use sdrmm_modem::ble::{
-    BlePhy, Packet, SYMBOL_RATE_HZ, Sink,
+    BlePhy, Packet, Sink,
     ad::{SERVICE_DATA_16, structures},
     channel_index, pdu,
 };
@@ -70,9 +70,9 @@ impl Sink for Events<'_> {
         }
     }
 
-    fn symbols(&mut self, soft: &[f32], offset_hz: f64) {
+    fn symbols(&mut self, soft: &[f32], phy: BlePhy, offset_hz: f64) {
         self.tap
-            .levels(soft, &[], self.mapping, SYMBOL_RATE_HZ, offset_hz);
+            .levels(soft, &[], self.mapping, phy.soft_rate_hz(), offset_hz);
     }
 }
 

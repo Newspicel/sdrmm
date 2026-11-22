@@ -100,7 +100,7 @@ fn picture(frame: &VideoPicture, image: Option<PictureImage>) -> Picture<'_> {
 mod tests {
     use sdrmm_decoder::DecodedImage;
     use sdrmm_wire::{
-        ChannelStatus, DecoderEvent, EventKind,
+        ChannelStatus, DecoderEvent, EventKind, SymbolPlane,
         plugin::{plane_of, read_pictures},
     };
 
@@ -156,10 +156,22 @@ mod tests {
         assert_eq!(pictures[0].luma, [1, 2]);
         let image = pictures[1].image.as_ref().expect("an image");
         assert_eq!((image.source.as_str(), image.lines), ("probe", 1));
-        assert_eq!(plane_of(header.plane), out.symbols.plane);
+        assert_eq!(plane_of(header.plane), Ok(out.symbols.plane));
         assert_eq!(header.symbols_len, 2);
         assert_eq!(header.symbol_rate, 4_800.0);
         assert_eq!(header.freq_error_hz, 3.0);
+    }
+
+    #[test]
+    fn a_carrier_tap_crosses_on_its_own_plane() {
+        let table = sdrmm_modem::constellation::tables::psk(4).expect("qpsk");
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        out.symbols
+            .carriers(table.points(), &table, 1_536_000.0, 0.0);
+        let header = OutputWire::default().encode(&out, 0, 0);
+        assert_eq!(header.plane, 3);
+        assert_eq!(plane_of(header.plane), Ok(Some(SymbolPlane::Carriers)));
     }
 
     #[test]

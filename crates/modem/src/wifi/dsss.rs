@@ -3,6 +3,8 @@ mod detect;
 mod plcp;
 mod reader;
 
+use std::f64::consts::TAU;
+
 use num_complex::Complex;
 
 use self::{
@@ -11,8 +13,13 @@ use self::{
     plcp::Header,
     reader::SymbolReader,
 };
-use super::{Frame, MAX_MPDU_BYTES, Sink, WifiPhy, byte, fcs_ok, level_dbfs};
-use crate::spread::{PnError, PnSequence};
+use super::{
+    Frame, Grid, MAX_MPDU_BYTES, RATE_HZ, Sink, WifiPhy, byte, fcs_ok, level_dbfs, points::Cloud,
+};
+use crate::{
+    linear::PhaseTracker,
+    spread::{PnError, PnSequence},
+};
 
 pub use self::cck::codeword as cck_codeword;
 pub(crate) use self::plcp::{LENGTH_EXTENSION, LONG_SFD, SHORT_SFD, signal_code};
@@ -26,6 +33,7 @@ const MAX_PREAMBLE_SYMBOLS: usize = 160;
 const LOOKAHEAD: usize = SYMBOL * (DETECT_SYMBOLS + 2);
 const MAX_HISTORY: usize = 450_000;
 const MARGIN: usize = SYMBOL + 2;
+const BARKER_RATE_HZ: f64 = RATE_HZ / SYMBOL as f64;
 
 pub fn barker() -> Result<[f32; BARKER_CHIPS], PnError> {
     let sequence = PnSequence::barker(BARKER_CHIPS)?;
@@ -68,6 +76,7 @@ pub struct Dsss {
     cck: Cck,
     history: Vec<Complex<f32>>,
     bytes: Vec<u8>,
+    cloud: Cloud,
     restart: usize,
     consumed: u64,
     cursor: usize,
@@ -83,6 +92,7 @@ impl Dsss {
             cck: Cck::new(),
             history: Vec::with_capacity(MAX_HISTORY),
             bytes: Vec::with_capacity(MAX_MPDU_BYTES),
+            cloud: Cloud::with_capacity(MAX_MPDU_BYTES * 8),
             restart: 0,
             consumed: 0,
             cursor: 0,
@@ -126,6 +136,8 @@ impl Dsss {
                             level_dbfs: level_dbfs(&self.history[start..end]),
                             sample: self.consumed + start as u64,
                         });
+                        self.cloud.unit_mean();
+                        self.cloud.hand(sink);
                         self.resume(end);
                     }
                     Outcome::Skip(end) => self.resume(end),
@@ -166,6 +178,7 @@ impl Dsss {
             matched,
             cck,
             bytes,
+            cloud,
             rejected,
             ..
         } = self;
@@ -187,8 +200,18 @@ impl Dsss {
         }
         bytes.clear();
         let complete = match header.phy {
-            WifiPhy::Cck5m5 | WifiPhy::Cck11m => cck.psdu(&mut reader, &header, bytes, sink),
-            _ => reader.psdu(&header, bytes, sink),
+            WifiPhy::Cck5m5 | WifiPhy::Cck11m => {
+                cloud.start(Grid::Quadrants, cck::SYMBOL_RATE_HZ);
+                cck.psdu(&mut reader, &header, bytes, cloud, sink)
+            }
+            WifiPhy::Dsss2m => {
+                cloud.start(Grid::Quadrants, BARKER_RATE_HZ);
+                reader.psdu(&header, bytes, cloud, sink)
+            }
+            _ => {
+                cloud.start(Grid::Bpsk, BARKER_RATE_HZ);
+                reader.psdu(&header, bytes, cloud, sink)
+            }
         };
         let end = reader.position().min(history.len());
         if !complete {
@@ -224,6 +247,11 @@ impl Dsss {
             *start = start.saturating_sub(drop);
         }
     }
+}
+
+/// The carrier offset a tracker settled on, in hertz.
+fn offset_hz(tracker: &PhaseTracker) -> f64 {
+    f64::from(tracker.freq()) * RATE_HZ / TAU
 }
 
 fn duration(header: &Header) -> usize {

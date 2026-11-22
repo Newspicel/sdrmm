@@ -176,6 +176,26 @@ fn a_level_plane_frame_needs_no_reference_pairs() {
 }
 
 #[test]
+fn every_plane_reads_back_from_its_byte() {
+    for plane in SymbolPlane::ALL {
+        assert_eq!(SymbolPlane::from_u8(plane as u8), Some(plane));
+    }
+    assert_eq!(SymbolPlane::from_u8(SymbolPlane::ALL.len() as u8), None);
+    assert_eq!(SymbolPlane::Carriers.width(), SymbolPlane::Complex.width());
+    assert_eq!(SymbolPlane::Level.width(), 1);
+}
+
+#[test]
+fn typescript_planes_follow_the_byte_order() {
+    let ts = typescript_frames();
+    assert!(
+        ts.contains(
+            "export const SYMBOL_PLANES = [\"complex\", \"level\", \"carriers\"] as const;"
+        )
+    );
+}
+
+#[test]
 fn iq_samples_travel_as_sixteen_bits_beside_their_scale() {
     let samples: Vec<i16> = (0..32).map(|i| i * 1000 - 16_000).collect();
     let frame = IqFrame {

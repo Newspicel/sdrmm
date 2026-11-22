@@ -113,7 +113,7 @@ fn the_scope_sees_four_qpsk_clusters_off_air() {
         channel.process(&filtered, &mut out);
     }
     let tap = &out.symbols;
-    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Carriers));
     assert_eq!(tap.reference.len(), 8);
     assert!(
         tap.symbols.len() >= 2 * 4 * 360,

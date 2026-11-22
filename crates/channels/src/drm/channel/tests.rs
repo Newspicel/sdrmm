@@ -132,7 +132,7 @@ fn the_scope_sees_tight_16_qam_msc_cells() {
     let tap = &out.symbols;
     let layout = crate::drm::cells::Layout::new(Robustness::B, 5).expect("a mode B layout");
     let superframe = 3.0 * 15.0 * Robustness::B.symbol() as f64 / Robustness::B.rate_hz();
-    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Carriers));
     assert_eq!(tap.reference.len(), 2 * 16);
     assert!(!tap.symbols.is_empty());
     assert!(tap.evm < 0.05, "EVM {}", tap.evm);

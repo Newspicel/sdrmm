@@ -202,10 +202,8 @@ impl Lane {
                         level_dbfs: power_db(mean_power(window), LEVEL_FLOOR_DB),
                         sample: self.consumed + start as u64,
                     });
-                    if phy == BlePhy::Le1m {
-                        let offset_hz = f64::from(self.omega) * RATE_HZ / TAU;
-                        sink.symbols(&self.scratch.levels, offset_hz);
-                    }
+                    let offset_hz = f64::from(self.omega) * RATE_HZ / TAU;
+                    sink.symbols(self.scratch.unit_levels(), phy, offset_hz);
                     at = end.max(at + 1);
                 }
                 Attempt::Wait(needed) => {

@@ -6,7 +6,8 @@ use std::{
 use sdrmm_wire::{
     EventKind,
     plugin::{
-        ABI_VERSION, Op, PluginManifest, PresentRequest, Reply, decoder, encoder, export, unpack,
+        ABI_VERSION, OLDEST_ABI_VERSION, Op, PluginManifest, PresentRequest, Reply, decoder,
+        encoder, export, unpack,
     },
     present::Presentation,
 };
@@ -182,11 +183,11 @@ pub(crate) fn plugin_name(path: &Path) -> String {
 }
 
 fn check_abi(version: u32) -> Result<(), String> {
-    if version == ABI_VERSION {
+    if (OLDEST_ABI_VERSION..=ABI_VERSION).contains(&version) {
         Ok(())
     } else {
         Err(format!(
-            "built for plugin ABI {version}, this server speaks ABI {ABI_VERSION}"
+            "built for plugin ABI {version}, this server loads ABI {OLDEST_ABI_VERSION} to {ABI_VERSION}"
         ))
     }
 }

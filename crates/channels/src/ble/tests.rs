@@ -274,6 +274,47 @@ fn the_scope_reads_an_le_1m_advert_as_two_tight_levels() {
 }
 
 #[test]
+fn the_scope_reads_long_range_adverts_as_their_coded_bits() {
+    let rate = BleLink::Channel.input_rate_hz();
+    let pdu = advert(0x02, &ibeacon());
+    let coded_bits = 2 * ((pdu.len() + 3) * 8 + 3);
+    for (phy, soft_rate_hz) in [(ModemPhy::CodedS8, 250e3), (ModemPhy::CodedS2, 1e6)] {
+        let iq = air(&[rf_packet(&pdu, 12, phy, rate)], rate, 0.001);
+        let out = scope_of(&iq, rate);
+        let tap = &out.symbols;
+        assert_eq!(out.events.len(), 1, "{phy:?}");
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert_eq!(tap.symbols.len(), coded_bits, "{phy:?}");
+        assert_eq!(tap.symbol_rate, soft_rate_hz);
+        assert!(tap.evm < 0.15, "{phy:?} EVM {}", tap.evm);
+    }
+}
+
+fn scope_of(iq: &[Complex<f32>], rate: f64) -> ChannelOutputs {
+    let channel_params = ChannelParams::new(
+        "ble",
+        &BleParams {
+            link: BleLink::Channel,
+        },
+    )
+    .expect("ble settings");
+    let tuned = ChannelSettings {
+        frequency_hz: CHANNEL_38_HZ,
+        ..settings(channel_params.clone())
+    };
+    let mut channel = BleChannel::new(ChannelCtx { input_rate: rate }, tuned).expect("builds");
+    let mut filtered = Vec::new();
+    channel_filter(&channel_params)
+        .expect("filter")
+        .process(iq, &mut filtered);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    channel.process(&filtered, &mut out);
+    out
+}
+
+#[test]
 fn packets_that_fail_their_crc_are_counted_with_nothing_heard() {
     let rate = BleLink::Channel.input_rate_hz();
     let mut packet = rf_packet(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);

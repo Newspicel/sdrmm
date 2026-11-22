@@ -9,8 +9,10 @@ import {
   decayBasebandGrid,
   decisionDistance,
   eyeScale,
+  foldRate,
   IQ_HEADROOM,
   iqScale,
+  planeWidth,
   samplesPerSymbol,
   stateBits,
   symbolGain,
@@ -359,6 +361,40 @@ function cloud(symbols: number[]): SymbolFrame {
     symbols: Float32Array.from(symbols),
   };
 }
+
+describe("foldRate", () => {
+  it("folds at the chosen rate until a decoder reports symbols", () => {
+    expect(foldRate(null, 1200)).toBe(1200);
+  });
+
+  it("folds at the decoder's own rate once it does", () => {
+    expect(foldRate({ ...rail([]), symbolRate: 9600 }, 4800)).toBe(9600);
+    expect(foldRate({ ...cloud([]), symbolRate: 2400 }, 4800)).toBe(2400);
+  });
+
+  it("folds nothing for a cloud spread over many carriers", () => {
+    expect(foldRate({ ...cloud([]), plane: "carriers", symbolRate: 1.5e6 }, 4800)).toBeNull();
+  });
+
+  it("folds nothing when the decoder gives no rate", () => {
+    expect(foldRate({ ...rail([]), symbolRate: 0 }, 4800)).toBeNull();
+  });
+});
+
+describe("planeWidth", () => {
+  it("reads carriers as I and Q pairs like a complex cloud", () => {
+    expect(planeWidth(rail([]))).toBe(1);
+    expect(planeWidth(cloud([]))).toBe(2);
+    expect(planeWidth({ ...cloud([]), plane: "carriers" })).toBe(2);
+  });
+
+  it("finds a carrier cloud's states like a complex one", () => {
+    const points = [1, 1, -1, 1, -1, -1, 1, -1];
+    const complex = symbolStates(cloud(points));
+    const carriers = symbolStates({ ...cloud(points), plane: "carriers" });
+    expect(carriers).toEqual(complex);
+  });
+});
 
 describe("decisionDistance", () => {
   it("is half the gap between neighbouring levels", () => {

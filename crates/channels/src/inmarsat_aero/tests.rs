@@ -469,8 +469,14 @@ fn the_scope_sees_two_tight_msk_levels_at_1200_bps() {
 
 #[test]
 fn the_scope_sees_four_tight_qpsk_clusters_on_the_c_channel() {
-    let bits: Vec<u8> = (0..30_000u32)
-        .map(|index| u8::from(index.wrapping_mul(2_654_435_761).rotate_left(7) & 4 != 0))
+    let mut scrambled = 0x0fed_cba9_8765_4321u64;
+    let bits: Vec<u8> = (0..30_000)
+        .map(|_| {
+            scrambled = scrambled
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((scrambled >> 33) & 1) as u8
+        })
         .collect();
     let iq = oqpsk::modulate_oqpsk_rate(&bits, 8_400.0, 0.6, oqpsk::CHANNEL_RATE_HR, 60.0, 0.5);
     let tap = scope_of(super::AeroChannel::C, &iq);
@@ -478,7 +484,7 @@ fn the_scope_sees_four_tight_qpsk_clusters_on_the_c_channel() {
     assert_eq!(tap.reference.len(), 8);
     assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
     assert_eq!(tap.symbol_rate, 4_200.0);
-    assert!(tap.evm < 0.6, "EVM {}", tap.evm);
+    assert!(tap.evm < 0.05, "EVM {}", tap.evm);
 }
 
 #[test]

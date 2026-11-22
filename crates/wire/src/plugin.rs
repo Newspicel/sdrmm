@@ -22,8 +22,11 @@ pub mod processor;
 
 pub use output::{OutputHeader, Picture, PictureImage, plane_code, plane_of, read_pictures};
 
-/// The ABI this server and the SDK speak; a plugin built for any other is refused.
-pub const ABI_VERSION: u32 = 4;
+/// The ABI the SDK builds plugins for. A host speaking an older one refuses them, so a plugin
+/// never sends that host a symbol plane it cannot read.
+pub const ABI_VERSION: u32 = 5;
+/// The oldest ABI this server still loads. 4 lacks only the carriers symbol plane.
+pub const OLDEST_ABI_VERSION: u32 = 4;
 pub const IMPORT_MODULE: &str = "sdrmm";
 
 /// Guest exports every plugin has, by name.

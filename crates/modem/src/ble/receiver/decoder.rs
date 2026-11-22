@@ -27,6 +27,17 @@ pub(super) struct Scratch {
 }
 
 impl Scratch {
+    /// The last packet's soft decisions, scaled to a mean magnitude of one, since each
+    /// detector reads them at its own carrier level.
+    pub(super) fn unit_levels(&mut self) -> &[f32] {
+        let total: f32 = self.levels.iter().map(|level| level.abs()).sum();
+        let mean = total / self.levels.len().max(1) as f32;
+        if mean > 0.0 {
+            self.levels.iter_mut().for_each(|level| *level /= mean);
+        }
+        &self.levels
+    }
+
     pub(super) fn new() -> Self {
         let coded = 2 * ((MAX_PDU_BYTES + CRC_BYTES) * 8 + TERM_BITS) + INDICATOR_BLOCKS;
         Self {
@@ -34,7 +45,7 @@ impl Scratch {
             pilots: Vec::with_capacity(coded),
             data: Vec::with_capacity(coded),
             soft: Vec::with_capacity(coded),
-            levels: Vec::with_capacity((MAX_PDU_BYTES + CRC_BYTES) * 8),
+            levels: Vec::with_capacity(coded),
             bits: Vec::with_capacity(coded),
             viterbi: Viterbi::new(),
         }
@@ -238,9 +249,12 @@ impl Decoder<'_> {
         Some(usize::from(whitener.byte(byte_of(&scratch.bits[8..16]))))
     }
 
+    /// Decodes the coded bits from `first` and keeps them for the scope.
     fn finish(&mut self, first: usize, coded: usize, length: usize, end: f64) -> Option<Outcome> {
         let scratch = &mut *self.scratch;
         let soft = scratch.soft.get(first..first + coded)?;
+        scratch.levels.clear();
+        scratch.levels.extend_from_slice(soft);
         scratch.bits.clear();
         scratch.viterbi.decode(soft, true, &mut scratch.bits);
         let total = HEADER_BYTES + length + CRC_BYTES;

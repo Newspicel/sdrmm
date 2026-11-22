@@ -79,15 +79,33 @@ pub fn peek_header(buf: &[u8]) -> Result<FrameHeader, FrameError> {
 pub enum SymbolPlane {
     Complex = 0,
     Level = 1,
+    /// Complex points gathered across many subcarriers, so the IQ has no one eye to fold.
+    Carriers = 2,
 }
 
 impl SymbolPlane {
+    pub const ALL: [Self; 3] = [Self::Complex, Self::Level, Self::Carriers];
+
     #[must_use]
     pub fn from_u8(v: u8) -> Option<Self> {
-        match v {
-            0 => Some(Self::Complex),
-            1 => Some(Self::Level),
-            _ => None,
+        Self::ALL.get(usize::from(v)).copied()
+    }
+
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Complex => "complex",
+            Self::Level => "level",
+            Self::Carriers => "carriers",
+        }
+    }
+
+    /// Floats per symbol: an I and Q pair, or one level.
+    #[must_use]
+    pub fn width(self) -> usize {
+        match self {
+            Self::Level => 1,
+            Self::Complex | Self::Carriers => 2,
         }
     }
 }

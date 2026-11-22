@@ -13,7 +13,7 @@ use super::{
     gse::{Gse, GseMetrics, GsePdu},
     ldpc::{Frame, Ldpc, Rate},
     pl::{self, Scrambler, Signalling},
-    superframe::{Burst, Container, Content, Identity, Settings, Unit},
+    superframe::{Burst, Container, Content, Identity, Settings, Unit, coding::Coding},
     vlsnr::{self, Carrier, Piece, VlMode, VlSnrCodec},
     xfec::Xfec,
 };
@@ -52,6 +52,50 @@ impl Dvbs2Output {
     pub fn clear(&mut self) {
         self.packets.clear();
         self.pdus.clear();
+    }
+}
+
+/// The kind of frame the scope's points came from; a new kind starts a fresh cloud.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tapped {
+    Plain(ModCod),
+    VeryLow(VlMode),
+    Burst(Coding),
+}
+
+struct Tap {
+    every: usize,
+    points: Vec<Complex<f32>>,
+    source: Option<Tapped>,
+    carrier: Carrier,
+    bpsk: Constellation,
+}
+
+impl Tap {
+    fn new() -> Self {
+        Self {
+            every: 0,
+            points: Vec::with_capacity(TAP_CAPACITY),
+            source: None,
+            carrier: Carrier::Qpsk,
+            bpsk: vlsnr::bpsk_decisions(),
+        }
+    }
+
+    fn forget(&mut self) {
+        self.source = None;
+        self.points.clear();
+    }
+
+    fn keep(&mut self, source: Tapped, carrier: Carrier, payload: &[Complex<f32>]) {
+        if self.source != Some(source) {
+            self.source = Some(source);
+            self.points.clear();
+        }
+        self.carrier = carrier;
+        if self.every > 0 {
+            carrier.decisions(payload, self.every, &mut self.points);
+        }
     }
 }
 
@@ -224,8 +268,7 @@ pub struct Dvbs2Decoder {
     very_low: Option<VlSnrCodec>,
     xfec: Option<Xfec>,
     burst_mode: Option<(Modulation, Rate)>,
-    tap_every: usize,
-    points: Vec<Complex<f32>>,
+    tap: Tap,
     pub metrics: Dvbs2Metrics,
     pub signalling: Option<Signalling>,
     pub stream: Option<StreamKind>,
@@ -264,8 +307,7 @@ impl Dvbs2Decoder {
             very_low: None,
             xfec: None,
             burst_mode: None,
-            tap_every: 0,
-            points: Vec::with_capacity(TAP_CAPACITY),
+            tap: Tap::new(),
             metrics: Dvbs2Metrics::default(),
             signalling: None,
             stream: None,
@@ -293,6 +335,7 @@ impl Dvbs2Decoder {
         self.codec = None;
         self.very_low = None;
         self.burst_mode = None;
+        self.tap.forget();
         self.pending.clear();
         self.searched = 0;
         self.frequency = 0.0;
@@ -332,20 +375,29 @@ impl Dvbs2Decoder {
 
     /// Keeps every `every`th payload symbol of each frame for the scope; zero keeps none.
     pub fn tap(&mut self, every: usize) {
-        self.tap_every = every;
-        self.points.clear();
+        self.tap.every = every;
+        self.tap.points.clear();
     }
 
-    /// The payload symbols kept since the last [`Self::tap`], after carrier recovery.
+    /// The decision points kept since the last [`Self::tap`], after carrier recovery.
     #[must_use]
     pub fn points(&self) -> &[Complex<f32>] {
-        &self.points
+        &self.tap.points
     }
 
-    /// The constellation of the last frame read, the one [`Self::points`] sit on.
+    /// The constellation [`Self::points`] sit on: that of the last frame read, or
+    /// [`vlsnr::bpsk_decisions`] for a BPSK carrier.
     #[must_use]
     pub fn constellation(&self) -> Option<&Constellation> {
-        self.codec.as_ref().map(|codec| &codec.constellation)
+        let source = self.tap.source?;
+        if self.tap.carrier != Carrier::Qpsk {
+            return Some(&self.tap.bpsk);
+        }
+        match source {
+            Tapped::Plain(_) => self.codec.as_ref().map(|codec| &codec.constellation),
+            Tapped::VeryLow(_) => self.very_low.as_ref().map(VlSnrCodec::constellation),
+            Tapped::Burst(_) => self.xfec.as_ref().map(Xfec::constellation),
+        }
     }
 
     #[must_use]
@@ -439,6 +491,8 @@ impl Dvbs2Decoder {
         if !burst.tracked {
             self.track_burst(&codec);
         }
+        self.tap
+            .keep(Tapped::Burst(burst.coding), codec.carrier(), &self.payload);
         codec.soft(&self.payload);
         for index in 0..burst.frames {
             match codec.decode(index, burst.compact) {
@@ -721,6 +775,8 @@ impl Dvbs2Decoder {
             }
             at += piece.len();
         }
+        self.tap
+            .keep(Tapped::VeryLow(mode), mode.carrier, &self.payload);
         if let Some(codec) = &mut self.very_low {
             codec.layout = if self.content == Content::Extended {
                 vlsnr::superframe_layout(mode.set)
@@ -788,7 +844,6 @@ impl Dvbs2Decoder {
             .is_none_or(|codec| codec.modcod != modcod || codec.short != signalling.short)
         {
             self.codec = Codec::new(modcod, signalling.short);
-            self.points.clear();
         }
         if self.codec.is_none() {
             self.fail();
@@ -829,16 +884,8 @@ impl Dvbs2Decoder {
             track_decisions(&mut self.payload, &codec.constellation);
             None
         };
-        if self.tap_every > 0 {
-            let room = self.points.capacity() - self.points.len();
-            self.points.extend(
-                self.payload
-                    .iter()
-                    .step_by(self.tap_every)
-                    .take(room)
-                    .copied(),
-            );
-        }
+        self.tap
+            .keep(Tapped::Plain(modcod), Carrier::Qpsk, &self.payload);
         self.llrs.clear();
         demodulate(&self.payload, &codec.constellation, NOISE, &mut self.llrs);
         match super::s2x::mode(modcod.index) {
@@ -903,6 +950,47 @@ impl Default for Dvbs2Decoder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Pushes `signal` in blocks of `block` symbols and reads the scope after each: the size of
+/// the table its points sit on and their EVM.
+#[cfg(test)]
+pub(crate) fn scoped(
+    decoder: &mut Dvbs2Decoder,
+    signal: &[Complex<f32>],
+    block: usize,
+) -> Vec<(usize, f32)> {
+    let mut out = Dvbs2Output::default();
+    let mut seen = Vec::new();
+    for chunk in signal.chunks(block) {
+        decoder.tap(1);
+        decoder.push(chunk, &mut out);
+        let Some(table) = decoder.constellation() else {
+            continue;
+        };
+        let points = decoder.points();
+        if points.is_empty() {
+            continue;
+        }
+        let labels = 0..table.count();
+        let power = labels
+            .clone()
+            .map(|label| table.point(label).norm_sqr())
+            .sum::<f32>()
+            / table.count() as f32;
+        let error = points
+            .iter()
+            .map(|point| {
+                labels
+                    .clone()
+                    .map(|label| (point - table.point(label)).norm_sqr())
+                    .fold(f32::INFINITY, f32::min)
+            })
+            .sum::<f32>()
+            / points.len() as f32;
+        seen.push((table.count(), (error / power).sqrt()));
+    }
+    seen
 }
 
 #[cfg(test)]
@@ -1455,5 +1543,51 @@ mod tests {
         decoder.push(&noise, &mut received);
         assert!(received.packets.is_empty());
         assert_eq!(decoder.metrics.frames_ok, 0);
+    }
+
+    fn assert_scoped(seen: &[(usize, f32)], sizes: &[usize], what: &str) {
+        let mut order: Vec<usize> = seen.iter().map(|&(size, _)| size).collect();
+        order.dedup();
+        assert_eq!(order, sizes, "{what}");
+        for &(size, evm) in seen {
+            assert!(evm < 0.05, "{what}: {size} points at {evm} EVM");
+        }
+    }
+
+    #[test]
+    fn very_low_signal_frames_feed_the_scope_their_own_constellation() {
+        use super::super::vlsnr::{VlMode, VlSnrEncoder};
+
+        for (header, size) in [(0u8, 4), (9, 2), (4, 2)] {
+            let mode = VlMode::from_header(header).expect("a catalogued mode");
+            let mut encoder = VlSnrEncoder::new(mode).expect("a supported mode");
+            let mut symbols = Vec::new();
+            for chunk in transport(3 * encoder.capacity(), 61).chunks(encoder.capacity()) {
+                encoder.frame(chunk, &mut symbols);
+            }
+            let seen = scoped(&mut Dvbs2Decoder::new(), &symbols, 4096);
+            assert_scoped(&seen, &[size], mode.label);
+        }
+    }
+
+    #[test]
+    fn the_scope_table_follows_the_frame_type() {
+        use super::super::vlsnr::{VlMode, VlSnrEncoder};
+
+        let mode = VlMode::from_header(9).expect("BPSK 1/5 short");
+        let mut very_low = VlSnrEncoder::new(mode).expect("a supported mode");
+        let modcod = ModCod::find(Modulation::Apsk16, Rate::R3_4).expect("16APSK 3/4");
+        let mut normal = Dvbs2Encoder::new(modcod, false, true).expect("an encoder");
+        let mut symbols = Vec::new();
+        for _ in 0..2 {
+            very_low.frame(&transport(very_low.capacity(), 63), &mut symbols);
+        }
+        for _ in 0..2 {
+            normal.frame(&transport(normal.capacity(), 65), &mut symbols);
+        }
+        very_low.frame(&transport(very_low.capacity(), 67), &mut symbols);
+        very_low.frame(&transport(very_low.capacity(), 69), &mut symbols);
+        let seen = scoped(&mut Dvbs2Decoder::new(), &symbols, 4096);
+        assert_scoped(&seen, &[2, 16, 2], "BPSK, 16APSK, BPSK");
     }
 }

@@ -25,6 +25,11 @@ describe("paired", () => {
     expect(paired(cloud)).toBe(cloud.symbols);
   });
 
+  it("leaves a carrier cloud as its pairs too", () => {
+    const cloud = block({ plane: "carriers", symbols: Float32Array.from([0.7, -0.7]) });
+    expect(paired(cloud)).toBe(cloud.symbols);
+  });
+
   it("lays a level rail along the real axis so it plots as a line", () => {
     expect(Array.from(paired(block()))).toEqual([1, 0, -1, 0, 3, 0, -3, 0]);
   });
@@ -38,6 +43,13 @@ describe("referenceScale", () => {
   it("measures a complex reference by its radius", () => {
     const scale = referenceScale(
       block({ plane: "complex", reference: Float32Array.from([3, 4, -3, -4]) }),
+    );
+    expect(scale).toBeCloseTo(5 * 1.4);
+  });
+
+  it("measures a carrier reference by its radius too", () => {
+    const scale = referenceScale(
+      block({ plane: "carriers", reference: Float32Array.from([3, 4, -3, -4]) }),
     );
     expect(scale).toBeCloseTo(5 * 1.4);
   });

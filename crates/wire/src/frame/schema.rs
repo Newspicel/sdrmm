@@ -111,11 +111,23 @@ pub fn typescript_frames() -> String {
             kind as u8
         ));
     }
+    out.push_str(&symbol_planes());
     out.push_str(include_str!("helpers.ts"));
     for frame in emitted() {
         emit(&mut out, &frame);
     }
     out
+}
+
+fn symbol_planes() -> String {
+    let names: Vec<String> = super::SymbolPlane::ALL
+        .iter()
+        .map(|plane| format!("{:?}", plane.name()))
+        .collect();
+    format!(
+        "export const SYMBOL_PLANES = [{}] as const;\nexport type SymbolPlane = (typeof SYMBOL_PLANES)[number];\n",
+        names.join(", ")
+    )
 }
 
 fn ts_type(ty: &str) -> &'static str {

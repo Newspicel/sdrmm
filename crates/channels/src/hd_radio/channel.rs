@@ -91,7 +91,7 @@ impl HdRadioChannel {
         }
         self.points.clear();
         self.points.extend(self.receiver.points(TAP_SYMBOLS));
-        out.symbols.linear(
+        out.symbols.carriers(
             &self.points,
             &self.qpsk,
             self.receiver.data_carriers() as f64 * INPUT_RATE_HZ / SYMBOL as f64,

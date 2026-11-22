@@ -11,7 +11,7 @@ export function measurements(
   view: string,
   frame: IqFrame | null,
   block: SymbolFrame | null,
-  period: number,
+  period: number | null,
 ): Measurement[] {
   return [...signalRows(view, frame, block, period), ...symbolRows(view, block)];
 }
@@ -20,7 +20,7 @@ function signalRows(
   view: string,
   frame: IqFrame | null,
   block: SymbolFrame | null,
-  period: number,
+  period: number | null,
 ): Measurement[] {
   if (frame === null) {
     return [];
@@ -30,11 +30,11 @@ function signalRows(
     { label: "Rate", value: formatSampleRate(frame.sampleRate) },
   ];
   const folded = view === "eye" || (block === null && view !== "spectrum");
-  if (folded && period > 0) {
+  if (folded) {
     rows.push({
       label: "Sam/sym",
-      value: period.toFixed(2),
-      hint: "Samples per symbol at the chosen symbol rate",
+      value: period === null ? "" : period.toFixed(2),
+      hint: block === null ? "Samples per symbol at the chosen rate" : "Samples per symbol",
     });
   }
   return rows;

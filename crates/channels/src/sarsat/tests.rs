@@ -180,3 +180,52 @@ fn the_scope_sees_the_two_chip_phases() {
     );
     assert!(tap.evm < 0.15, "EVM {}", tap.evm);
 }
+
+fn locks(iq: &[Complex<f32>]) -> (Vec<f64>, usize) {
+    let mut chan = channel();
+    let mut out = ChannelOutputs::default();
+    let mut carriers = Vec::new();
+    let mut tracking = false;
+    for chunk in iq.chunks(997) {
+        chan.process(chunk, &mut out);
+        let now = matches!(chan.state, State::Tracking { .. });
+        if now && !tracking {
+            carriers.push(chan.carrier_hz);
+        }
+        tracking = now;
+    }
+    (carriers, out.events.len())
+}
+
+fn shifted(hz: f64) -> Vec<Complex<f32>> {
+    let mut iq = synth::sarsat::transmission(&synth::sarsat::epirb_location(fix()), false, RATE);
+    sdrmm_modem::synth::shift(&mut iq, hz, RATE);
+    iq
+}
+
+#[test]
+fn the_end_of_a_burst_is_not_a_new_carrier() {
+    for noise in [0.0, 0.01] {
+        let mut iq = shifted(2_000.0);
+        iq.extend(sdrmm_modem::synth::silence(RATE as usize * 2));
+        if noise > 0.0 {
+            sdrmm_modem::synth::add_noise(&mut iq, 0x5A75, noise);
+        }
+        let (carriers, decoded) = locks(&iq);
+        assert_eq!(decoded, 1, "noise {noise}");
+        assert_eq!(carriers.len(), 1, "noise {noise}: {carriers:?}");
+    }
+}
+
+#[test]
+fn back_to_back_bursts_each_lock_once() {
+    for second_hz in [2_000.0, -1_500.0] {
+        let mut iq = shifted(2_000.0);
+        iq.extend(shifted(second_hz));
+        sdrmm_modem::synth::add_noise(&mut iq, 0xB2B, 0.01);
+        let (carriers, decoded) = locks(&iq);
+        assert_eq!(decoded, 2, "second at {second_hz} Hz");
+        assert_eq!(carriers.len(), 2, "{carriers:?}");
+        assert!((carriers[1] - second_hz).abs() < 20.0, "{carriers:?}");
+    }
+}

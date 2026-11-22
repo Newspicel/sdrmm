@@ -1,7 +1,10 @@
 use num_complex::Complex;
 use sdrmm_modem_test_support::ber::rng::Rng;
 
-use super::{Frame, Receiver, Sink, WifiPhy, append_fcs, fcs_ok, transmit};
+use super::{
+    Frame, Grid, Grids, Points, RATE_HZ, Receiver, Sink, WifiPhy, append_fcs, fcs_ok, transmit,
+};
+use crate::quality;
 
 #[derive(Default)]
 struct Collect {
@@ -16,6 +19,28 @@ impl Sink for Collect {
 
     fn frame(&mut self, frame: Frame<'_>) {
         self.frames.push((frame.mpdu.to_vec(), frame.phy));
+    }
+}
+
+struct Scope {
+    grids: Grids,
+    heard: Vec<(Grid, Vec<Complex<f32>>, f64, f64)>,
+}
+
+impl Sink for Scope {
+    fn accepts(&self, _: u8) -> bool {
+        true
+    }
+
+    fn frame(&mut self, _: Frame<'_>) {}
+
+    fn points(&mut self, points: Points<'_>) {
+        self.heard.push((
+            points.grid,
+            points.symbols.to_vec(),
+            points.rate_hz,
+            points.offset_hz,
+        ));
     }
 }
 
@@ -56,6 +81,68 @@ fn every_rate_loops_back() {
         let mut sink = Collect::default();
         receive(&wave, &mut sink);
         assert_eq!(sink.frames, vec![(frame.clone(), phy)], "{phy:?}");
+    }
+}
+
+#[test]
+fn every_rate_hands_its_decision_points_on_its_own_grid() {
+    let frame = mpdu(0x80, 120);
+    let barker = RATE_HZ / 20.0;
+    let cck = RATE_HZ / (8.0 * 20.0 / 11.0);
+    let carriers = RATE_HZ / 80.0 * 48.0;
+    let waves = [
+        (WifiPhy::Dsss1m, Grid::Bpsk, barker, frame.len() * 8),
+        (WifiPhy::Dsss2m, Grid::Quadrants, barker, frame.len() * 4),
+        (WifiPhy::Cck5m5, Grid::Quadrants, cck, frame.len() * 2),
+        (WifiPhy::Cck11m, Grid::Quadrants, cck, frame.len()),
+    ]
+    .map(|(phy, grid, rate, count)| {
+        let wave = transmit::dsss(&frame, phy, false).unwrap();
+        (phy, wave, grid, rate, count)
+    })
+    .into_iter()
+    .chain(
+        [
+            (6, Grid::Bpsk),
+            (12, Grid::Qpsk),
+            (24, Grid::Qam16),
+            (54, Grid::Qam64),
+        ]
+        .map(|(mbps, grid)| {
+            let wave = transmit::ofdm(&frame, mbps);
+            let symbols = (16 + frame.len() * 8 + 6).div_ceil(usize::from(mbps) * 4);
+            (WifiPhy::Ofdm { mbps }, wave, grid, carriers, symbols * 48)
+        }),
+    );
+    for (phy, wave, grid, rate, count) in waves {
+        let mut scope = Scope {
+            grids: Grids::new().unwrap(),
+            heard: Vec::new(),
+        };
+        let mut padded = vec![Complex::new(0.0, 0.0); 4_000];
+        padded.extend(impaired(&wave, 40_000.0, 0.0, 0.02, 3));
+        padded.extend(vec![Complex::new(0.0, 0.0); 30_000]);
+        let mut receiver = Receiver::new().unwrap();
+        for block in padded.chunks(4_096) {
+            receiver.process(block, &mut scope);
+        }
+        assert_eq!(scope.heard.len(), 1, "{phy:?}");
+        let (heard, points, heard_rate, offset_hz) = &scope.heard[0];
+        assert_eq!((*heard, *heard_rate), (grid, rate), "{phy:?}");
+        assert_eq!(points.len(), count, "{phy:?}");
+        let table = scope.grids.table(grid);
+        let measured = quality::measure_complex(points, table).unwrap();
+        assert!(measured.evm < 0.2, "{phy:?} EVM {}", measured.evm);
+        let half_spacing = (table.min_distance() / 2.0) as f32;
+        let fitted = points
+            .iter()
+            .filter(|&&point| (point - table.nearest(point)).norm() < half_spacing)
+            .count();
+        assert!(
+            fitted * 10 >= count * 9,
+            "{phy:?}: {fitted} of {count} on the grid"
+        );
+        assert!((offset_hz - 40e3).abs() < 5e3, "{phy:?} at {offset_hz} Hz");
     }
 }
 

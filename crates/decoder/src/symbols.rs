@@ -67,6 +67,41 @@ impl SymbolTap {
         symbol_rate: f64,
         freq_error_hz: f64,
     ) {
+        self.complex(
+            SymbolPlane::Complex,
+            symbols,
+            table,
+            symbol_rate,
+            freq_error_hz,
+        );
+    }
+
+    /// Points from many subcarriers: `symbol_rate` counts every carrier's symbols, so the
+    /// scope draws the cloud but folds no eye at it.
+    pub fn carriers(
+        &mut self,
+        symbols: &[Complex<f32>],
+        table: &Constellation,
+        symbol_rate: f64,
+        freq_error_hz: f64,
+    ) {
+        self.complex(
+            SymbolPlane::Carriers,
+            symbols,
+            table,
+            symbol_rate,
+            freq_error_hz,
+        );
+    }
+
+    fn complex(
+        &mut self,
+        plane: SymbolPlane,
+        symbols: &[Complex<f32>],
+        table: &Constellation,
+        symbol_rate: f64,
+        freq_error_hz: f64,
+    ) {
         if !self.wanted {
             return;
         }
@@ -80,7 +115,7 @@ impl SymbolTap {
             self.symbols.push(symbol.im);
         }
         let measured = quality::measure_complex(symbols, table);
-        self.record(SymbolPlane::Complex, symbol_rate, freq_error_hz, measured);
+        self.record(plane, symbol_rate, freq_error_hz, measured);
     }
 
     pub fn levels(
@@ -183,6 +218,32 @@ mod tests {
         assert!(tap.evm < 1e-5, "a clean cloud measured {} EVM", tap.evm);
         assert_eq!(tap.margin, READOUT_CEILING as f32);
         assert_eq!(tap.mer_db, READOUT_CEILING as f32);
+    }
+
+    #[test]
+    fn a_carrier_tap_measures_like_a_linear_one_but_says_it_spans_carriers() {
+        let table = tables::psk(4).expect("qpsk");
+        let mut linear = SymbolTap::default();
+        linear.set_wanted(true);
+        linear.linear(table.points(), &table, 1536.0 * 1000.0, 3.0);
+        let mut carriers = SymbolTap::default();
+        carriers.set_wanted(true);
+        carriers.carriers(table.points(), &table, 1536.0 * 1000.0, 3.0);
+
+        assert_eq!(carriers.plane, Some(SymbolPlane::Carriers));
+        assert_eq!(carriers.symbols, linear.symbols);
+        assert_eq!(carriers.reference, linear.reference);
+        assert_eq!(carriers.evm, linear.evm);
+        assert_eq!(carriers.symbol_rate, linear.symbol_rate);
+    }
+
+    #[test]
+    fn an_unwatched_carrier_tap_stays_empty() {
+        let table = tables::psk(4).expect("qpsk");
+        let mut tap = SymbolTap::default();
+        tap.carriers(table.points(), &table, 1000.0, 0.0);
+        assert_eq!(tap.plane, None);
+        assert!(tap.symbols.is_empty());
     }
 
     #[test]

@@ -15,7 +15,7 @@ enum { OP_LAYOUT = 1, OP_NORMALIZE = 2, OP_FILTER = 3 };
 enum { HEADER_WORDS = 22 };
 
 static const char MANIFEST[] =
-    "{\"abi\":3,"
+    "{\"abi\":5,"
     "\"decoder\":{\"descriptor\":{\"type_id\":\"burst\",\"name\":\"Burst\",\"summary\":\"Strong bursts\","
     "\"family\":\"utility\",\"bandwidth_hz\":12000.0,\"input_rate_hz\":48000.0,"
     "\"emits\":[\"burst\"]}},"
@@ -68,7 +68,7 @@ static int64_t pack(const void *ptr, size_t len) {
     return ((int64_t)(uintptr_t)ptr << 32) | (int64_t)len;
 }
 
-EXPORT uint32_t sdrmm_abi(void) { return 3; }
+EXPORT uint32_t sdrmm_abi(void) { return 5; }
 
 EXPORT uint32_t sdrmm_alloc(uint32_t len) { return (uint32_t)(uintptr_t)fit(&inbox, len); }
 

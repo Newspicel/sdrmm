@@ -161,7 +161,7 @@ impl FreeDvChannel {
             return;
         }
         let offset = f64::from(self.modem.frequency_offset_hz());
-        out.symbols.linear(
+        out.symbols.carriers(
             &self.points,
             &self.dqpsk,
             fdmdv::DATA_CARRIERS as f64 * fdmdv::SYMBOL_RATE_HZ,
@@ -389,7 +389,7 @@ mod tests {
             channel.process(&filtered, &mut out);
         }
         let tap = &out.symbols;
-        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Carriers));
         assert_eq!(tap.reference.len(), 8);
         assert!(
             tap.symbols.len() >= 2 * 16 * 40,

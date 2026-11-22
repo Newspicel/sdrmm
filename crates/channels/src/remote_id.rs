@@ -13,7 +13,7 @@ pub(crate) mod wifi;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_modem::wifi::{Receiver as Wifi, channel::channel_at};
+use sdrmm_modem::wifi::{Grids, Receiver as Wifi, channel::channel_at};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily, EventKind};
 
 use self::tracker::Tracker;
@@ -101,6 +101,7 @@ pub struct RemoteIdChannel {
     front: Front,
     tracker: Tracker,
     mapping: Mapping,
+    grids: Grids,
 }
 
 impl NativeChannel for RemoteIdChannel {
@@ -116,6 +117,7 @@ impl NativeChannel for RemoteIdChannel {
             front: Front::new(params.link, settings.frequency_hz)?,
             tracker: Tracker::default(),
             mapping: Mapping::natural(2),
+            grids: Grids::new().map_err(invalid)?,
         })
     }
 }
@@ -158,6 +160,8 @@ impl Channel for RemoteIdChannel {
                     tracker: &mut self.tracker,
                     out: &mut out.events,
                     channel: channel_at(self.frequency_hz).map(|channel| channel.number),
+                    tap: &mut out.symbols,
+                    grids: &self.grids,
                 },
             ),
         }

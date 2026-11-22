@@ -283,8 +283,17 @@ export interface SymbolState {
   peak: number;
 }
 
-function planeWidth(block: SymbolFrame): number {
-  return block.plane === "complex" ? 2 : 1;
+export function planeWidth(block: SymbolFrame): number {
+  return block.plane === "level" ? 1 : 2;
+}
+
+/** The symbol rate the eye folds IQ at: the decoder's own when it reports one, none for a
+ * cloud spread over many carriers, else the operator's. */
+export function foldRate(block: SymbolFrame | null, chosen: number): number | null {
+  if (block === null) {
+    return chosen;
+  }
+  return block.plane === "carriers" || !(block.symbolRate > 0) ? null : block.symbolRate;
 }
 
 function axis(values: Float32Array, index: number, width: number, part: number): number {

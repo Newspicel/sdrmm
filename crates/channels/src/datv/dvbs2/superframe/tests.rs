@@ -4,7 +4,7 @@ use super::{
 };
 use crate::datv::dvbs2::{
     frame::{ModCod, Modulation},
-    receiver::{Dvbs2Decoder, Dvbs2Encoder, Dvbs2Output},
+    receiver::{Dvbs2Decoder, Dvbs2Encoder, Dvbs2Output, scoped},
     vlsnr::Carrier,
     xfec::Xfec,
 };

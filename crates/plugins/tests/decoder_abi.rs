@@ -1,12 +1,12 @@
 //! What crosses the decoder ABI beyond audio and events: pictures, symbols, the symbol request
-//! and the squelch default, and what a manifest may not declare.
+//! and the squelch default, which ABIs load, and what a manifest may not declare.
 
 use num_complex::Complex;
 use sdrmm_decoder::{ChannelCtx, ChannelOutputs, Decoder};
 use sdrmm_plugins::{PluginModule, WasmDecoder};
 use sdrmm_wire::{
     SymbolPlane,
-    plugin::{OutputHeader, Picture, PictureImage, plane_code},
+    plugin::{ABI_VERSION, OLDEST_ABI_VERSION, OutputHeader, Picture, PictureImage, plane_code},
 };
 
 mod common;
@@ -56,8 +56,14 @@ fn floats(values: &[f32]) -> Vec<u8> {
         .collect()
 }
 
-/// A plugin whose every block draws a frame and an image, and taps symbols only when asked.
 fn painter() -> WasmDecoder {
+    painting(common::ABI, plane_code(Some(SymbolPlane::Level)))
+        .unwrap_or_else(|error| panic!("{error}"))
+}
+
+/// A plugin built for `abi` whose every block draws a frame and an image, and taps symbols on
+/// plane word `plane` only when asked.
+fn painting(abi: u32, plane: u32) -> Result<WasmDecoder, String> {
     let pictures = pictures();
     let header = OutputHeader {
         pictures_ptr: PICTURES_AT,
@@ -66,7 +72,7 @@ fn painter() -> WasmDecoder {
         symbols_len: SYMBOLS.len() as u32,
         reference_ptr: REFERENCE_AT,
         reference_len: REFERENCE.len() as u32,
-        plane: plane_code(Some(SymbolPlane::Level)),
+        plane,
         symbol_rate: 4_800.0,
         mer_db: 21.0,
         freq_error_hz: -7.5,
@@ -85,14 +91,17 @@ fn painter() -> WasmDecoder {
     let process = format!(
         "local.get 2\n    i32.const 1\n    i32.and\n    if (result i32) i32.const {HEADER_AT} else i32.const 0 end"
     );
-    let text = common::wat_text(common::ABI, MANIFEST, &process, &extra);
+    let text = common::wat_text(abi, MANIFEST, &process, &extra);
     let module = PluginModule::from_bytes("painter".to_owned(), text.as_bytes(), None)
-        .unwrap_or_else(|error| panic!("{error}"));
-    WasmDecoder::of(&module).unwrap_or_else(|| panic!("the plugin declares a decoder"))
+        .map_err(|error| error.to_string())?;
+    Ok(WasmDecoder::of(&module).unwrap_or_else(|| panic!("the plugin declares a decoder")))
 }
 
 fn run(wanted: bool) -> ChannelOutputs {
-    let decoder = painter();
+    run_on(&painter(), wanted)
+}
+
+fn run_on(decoder: &WasmDecoder, wanted: bool) -> ChannelOutputs {
     let Some(settings) = decoder.descriptor().defaults.clone() else {
         panic!("defaults");
     };
@@ -137,6 +146,44 @@ fn the_symbol_request_reaches_the_plugin() {
     assert!(out.video.is_empty() && out.images.is_empty());
     assert_eq!(out.symbols.plane, None);
     assert!(out.status.is_none(), "{:?}", out.status);
+}
+
+#[test]
+fn carriers_cross_on_their_own_plane() {
+    let decoder = painting(ABI_VERSION, plane_code(Some(SymbolPlane::Carriers)))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let out = run_on(&decoder, true);
+    assert_eq!(out.symbols.plane, Some(SymbolPlane::Carriers));
+    assert_eq!(out.symbols.symbols, SYMBOLS);
+}
+
+#[test]
+fn a_plugin_of_the_oldest_abi_still_taps_symbols() {
+    let decoder = painting(OLDEST_ABI_VERSION, plane_code(Some(SymbolPlane::Level)))
+        .unwrap_or_else(|error| panic!("{error}"));
+    let out = run_on(&decoder, true);
+    assert_eq!(out.symbols.plane, Some(SymbolPlane::Level));
+    assert_eq!(out.symbols.symbols, SYMBOLS);
+}
+
+#[test]
+fn a_plugin_newer_or_older_than_the_host_is_refused() {
+    for abi in [OLDEST_ABI_VERSION - 1, ABI_VERSION + 1] {
+        let refused = painting(abi, 0);
+        let Err(error) = refused else {
+            panic!("ABI {abi} must be refused");
+        };
+        assert!(error.contains(&format!("ABI {abi}")), "{error}");
+    }
+}
+
+#[test]
+fn an_unknown_plane_stops_the_channel_on_its_face() {
+    let decoder = painting(ABI_VERSION, 9).unwrap_or_else(|error| panic!("{error}"));
+    let out = run_on(&decoder, true);
+    assert_eq!(out.symbols.plane, None);
+    let face = format!("{:?}", out.status);
+    assert!(face.contains("unknown symbol plane 9"), "{face}");
 }
 
 #[test]

@@ -17,7 +17,7 @@ pub(super) const BIT_RATE: u32 = HIGH_RATE_BPS;
 pub(super) const CHANNEL_RATE_HR: f64 = 48_000.0;
 pub(super) const HR_SKIP_BITS: usize = 16 + 178;
 pub(super) const HR_CODED_BITS: usize = 64 * 78;
-const STROBE_POINT: f64 = 0.65;
+const STROBE_POINT: f64 = 0.85;
 const LOCK_MSE: f32 = 0.5;
 const LOCK_QUAD: f32 = 0.4;
 const ACQ_FFT: usize = 16_384;
@@ -27,14 +27,9 @@ const RRC_TAPS: usize = 55;
 const AGC_CLIP: f32 = 2.84;
 const BIAS_WINDOW: usize = 800;
 const UW_TOLERANCE: u32 = 2;
-const HIGH_RATE_RESONATOR: ([f32; 3], [f32; 2]) = (
-    [0.000_327_142_2, 0.0, 0.000_327_142_2],
-    [-0.390_053, 0.999_345_7],
-);
-const C_CHANNEL_RESONATOR: ([f32; 3], [f32; 2]) = (
-    [0.001_284_585_8, 0.0, -0.001_284_585_8],
-    [-0.906_814_63, 0.997_430_8],
-);
+const GARDNER_GAIN: f64 = 0.005;
+const HIGH_RATE_RESONATOR_HZ: f64 = 5.0;
+const C_CHANNEL_RESONATOR_HZ: f64 = 20.0;
 const CARRIER_LOOP: ([f32; 3], [f32; 2]) = (
     [0.001_027_561, 0.002_055_122, 0.001_027_561],
     [-1.920_738_7, 0.925_092_46],
@@ -44,6 +39,18 @@ const fn biquad((b, a): ([f32; 3], [f32; 2])) -> Biquad {
     Biquad::from_coefficients(b, a)
 }
 
+/// A band-pass resonator on the bit-rate tone whose phase there is zero, so one strobe point
+/// fits every rate.
+fn timing_resonator(bit_rate: f64, fs: f64, bandwidth_hz: f64) -> Biquad {
+    let radius = (-std::f64::consts::PI * bandwidth_hz / fs).exp();
+    let gain = (1.0 - radius * radius) / 2.0;
+    let a1 = -2.0 * radius * (TAU * bit_rate / fs).cos();
+    biquad((
+        [gain as f32, 0.0, -gain as f32],
+        [a1 as f32, (radius * radius) as f32],
+    ))
+}
+
 struct SymbolTiming {
     power_delay: FracDelay,
     quarter_first: FracDelay,
@@ -51,6 +58,8 @@ struct SymbolTiming {
     eighth: FracDelay,
     resonator: Biquad,
     phase: f64,
+    strobe_phase: f64,
+    pending: f64,
     freq_hz: f64,
     bit_rate: f64,
 }
@@ -64,6 +73,8 @@ impl SymbolTiming {
             eighth: FracDelay::new(samples_per_symbol / 8.0),
             resonator,
             phase: 0.0,
+            strobe_phase: 1.0 - STROBE_POINT,
+            pending: 0.0,
             freq_hz: bit_rate,
             bit_rate,
         }
@@ -80,21 +91,21 @@ impl SymbolTiming {
         let error = f64::from(fast_arg(rotation * detector));
         self.freq_hz =
             (self.freq_hz - error * 1e-8).clamp(self.bit_rate - 0.1, self.bit_rate + 0.1);
-        let previous = self.phase;
-        self.phase += self.freq_hz / fs - error * 0.01 / 360.0;
-        let from = previous.rem_euclid(1.0);
-        let to = self.phase.rem_euclid(1.0);
-        let passed = if from <= to {
-            from < STROBE_POINT && STROBE_POINT <= to
-        } else {
-            from < STROBE_POINT || STROBE_POINT <= to
-        };
-        self.phase = to;
-        if !passed {
+        let advance = self.freq_hz / fs - error * 0.01 / 360.0;
+        self.phase = (self.phase + advance).rem_euclid(1.0);
+        self.strobe_phase += advance + std::mem::take(&mut self.pending);
+        if self.strobe_phase < 1.0 {
             return None;
         }
+        self.strobe_phase = self.strobe_phase.rem_euclid(1.0);
         let step = self.freq_hz / fs;
-        Some((((self.phase - STROBE_POINT).rem_euclid(1.0)) / step).clamp(0.0, 1.0) as f32)
+        Some((self.strobe_phase / step).clamp(0.0, 1.0) as f32)
+    }
+
+    /// Shifts the strobe against the envelope tone through the next step, so a nudge never
+    /// fires a strobe twice; a positive error means the strobe is late.
+    fn nudge(&mut self, error: f32) {
+        self.pending += f64::from(error.clamp(-1.0, 1.0)) * GARDNER_GAIN;
     }
 }
 
@@ -109,6 +120,7 @@ pub(super) struct OqpskDemod {
     last_sample: Complex<f32>,
     pair_toggle: bool,
     held: Complex<f32>,
+    recent: [Complex<f32>; 2],
     carrier_loop: Biquad,
     bias: MovingAverage,
     mse: f32,
@@ -119,19 +131,19 @@ pub(super) struct OqpskDemod {
 
 impl OqpskDemod {
     pub(super) fn new(channel_rate: f64) -> Self {
-        Self::with_rate(channel_rate, f64::from(BIT_RATE), HIGH_RATE_RESONATOR, 1.0)
+        Self::with_rate(
+            channel_rate,
+            f64::from(BIT_RATE),
+            HIGH_RATE_RESONATOR_HZ,
+            1.0,
+        )
     }
 
     pub(super) fn new_c_channel(channel_rate: f64) -> Self {
-        Self::with_rate(channel_rate, 8_400.0, C_CHANNEL_RESONATOR, 0.6)
+        Self::with_rate(channel_rate, 8_400.0, C_CHANNEL_RESONATOR_HZ, 0.6)
     }
 
-    fn with_rate(
-        channel_rate: f64,
-        bit_rate: f64,
-        resonator: ([f32; 3], [f32; 2]),
-        rrc_beta: f64,
-    ) -> Self {
+    fn with_rate(channel_rate: f64, bit_rate: f64, resonator_hz: f64, rrc_beta: f64) -> Self {
         let samples_per_symbol = channel_rate / (bit_rate / 2.0);
         Self {
             fs: channel_rate,
@@ -143,10 +155,15 @@ impl OqpskDemod {
             nco_phase: 0.0,
             phase_trim: 0.0,
             agc: 1.0,
-            timing: SymbolTiming::new(samples_per_symbol, bit_rate, biquad(resonator)),
+            timing: SymbolTiming::new(
+                samples_per_symbol,
+                bit_rate,
+                timing_resonator(bit_rate, channel_rate, resonator_hz),
+            ),
             last_sample: Complex::new(0.0, 0.0),
             pair_toggle: false,
             held: Complex::new(0.0, 0.0),
+            recent: [Complex::new(0.0, 0.0); 2],
             carrier_loop: biquad(CARRIER_LOOP),
             bias: MovingAverage::new(BIAS_WINDOW),
             mse: 100.0,
@@ -220,6 +237,7 @@ impl OqpskDemod {
 
     fn strobe(&mut self, point: Complex<f32>, out: &mut Vec<(f32, u8)>) {
         self.pair_toggle = !self.pair_toggle;
+        self.track_timing(point);
         if self.pair_toggle {
             self.held = point;
             return;
@@ -239,8 +257,32 @@ impl OqpskDemod {
         self.mse += 0.0025 * ((pair - ideal).norm_sqr() - self.mse);
         let unit = pair / pair.norm().max(1e-9);
         self.quad += 0.0025 * ((unit * unit) * (unit * unit) - self.quad);
+        if self.locked() && self.quad.re > LOCK_QUAD {
+            self.slip_half_bit();
+        }
         out.push((pair.im, u8::from(pair.im > 0.0)));
         out.push((pair.re, u8::from(pair.re > 0.0)));
+    }
+
+    /// Pairs on the axes instead of the diagonals mean a lock half a bit off with the carrier 45
+    /// degrees out, a state structured data holds both loops in. A half-bit jump leaves it.
+    fn slip_half_bit(&mut self) {
+        self.timing.pending += 0.5;
+        self.quad = Complex::new(0.0, 0.0);
+    }
+
+    /// Gardner on the rail centred at this strobe, whose transition sat on the one before. The
+    /// envelope tone alone flips half a bit on unscrambled data; in lock the pairing names the
+    /// rails, so this pulls the strobe onto the symbol centres whatever the data.
+    fn track_timing(&mut self, point: Complex<f32>) {
+        let [before, middle] = self.recent;
+        self.recent = [middle, point];
+        if !self.locked() {
+            return;
+        }
+        let rail = |z: Complex<f32>| if self.pair_toggle { z.im } else { z.re };
+        let error = rail(middle) * (rail(point) - rail(before));
+        self.timing.nudge(error);
     }
 }
 
@@ -309,8 +351,12 @@ pub(super) use modulator::{hr_frame_bits, modulate_oqpsk, modulate_oqpsk_rate};
 
 #[cfg(test)]
 mod modulator {
+    use sdrmm_dsp::filter::fir::rrc_pulse;
+
     use super::*;
     use crate::inmarsat_aero::frame::FrameEncoder;
+
+    const PULSE_SPAN_SYMBOLS: f64 = 6.0;
 
     pub fn hr_frame_bits(encoder: &mut FrameEncoder, su_bytes: &[u8], counter: u8) -> Vec<u8> {
         let low = encoder.encode(su_bytes, counter);
@@ -350,32 +396,31 @@ mod modulator {
         freq_offset_hz: f64,
         amplitude: f32,
     ) -> Vec<Complex<f32>> {
-        let symbol_rate = bit_rate / 2.0;
-        let half = sample_rate / symbol_rate / 2.0;
+        let samples_per_symbol = sample_rate / (bit_rate / 2.0);
+        let half = samples_per_symbol / 2.0;
+        let span = (PULSE_SPAN_SYMBOLS * samples_per_symbol).ceil() as i64;
+        let energy = (-span..=span)
+            .map(|n| rrc_pulse(n as f64 / samples_per_symbol, rrc_beta).powi(2))
+            .sum::<f64>()
+            .sqrt();
         let total = ((bits.len() + 4) as f64 * half) as usize;
-        let mut in_phase = vec![Complex::new(0.0f32, 0.0); total];
-        let mut quadrature = vec![Complex::new(0.0f32, 0.0); total];
+        let mut rails = vec![[0.0f64; 2]; total];
         for (k, &bit) in bits.iter().enumerate() {
-            let value = if bit == 1 { 1.0 } else { -1.0 };
-            let at = ((k + 1) as f64 * half) as usize;
-            if at < total {
-                if k % 2 == 0 {
-                    in_phase[at].re = value;
-                } else {
-                    quadrature[at].re = value;
-                }
+            let value = if bit == 1 { 1.0 } else { -1.0 } / energy;
+            let center = (k + 1) as f64 * half + span as f64;
+            let first = (center as i64 - span).max(0);
+            let last = (center as i64 + span).min(total as i64 - 1);
+            for n in first..=last {
+                rails[n as usize][k % 2] +=
+                    value * rrc_pulse((n as f64 - center) / samples_per_symbol, rrc_beta);
             }
         }
-        let taps = design_rrc_unit_energy(sample_rate / symbol_rate, rrc_beta, 129);
-        let mut shaped_i = Vec::new();
-        let mut shaped_q = Vec::new();
-        Fir::new(taps.clone(), 1).process(&in_phase, &mut shaped_i);
-        Fir::new(taps, 1).process(&quadrature, &mut shaped_q);
-        (0..total)
-            .map(|n| {
+        rails
+            .iter()
+            .enumerate()
+            .map(|(n, &[i, q])| {
                 let phase = TAU * freq_offset_hz * n as f64 / sample_rate;
-                Complex::new(shaped_i[n].re, shaped_q[n].re)
-                    * Complex::from_polar(amplitude, phase as f32)
+                Complex::new(i as f32, q as f32) * Complex::from_polar(amplitude, phase as f32)
             })
             .collect()
     }
@@ -440,6 +485,36 @@ mod tests {
             let soft: Vec<f32> = out.iter().map(|&(soft, _)| soft).collect();
             let ber = rail_ber(&bits, &soft);
             assert!(ber < 0.001, "cfo={cfo}: BER {ber}");
+        }
+    }
+
+    fn hashed_bits(count: u32) -> Vec<u8> {
+        (0..count)
+            .map(|index| u8::from(index.wrapping_mul(2_654_435_761).rotate_left(7) & 4 != 0))
+            .collect()
+    }
+
+    #[test]
+    fn locks_on_unscrambled_bits_at_both_rates() {
+        let bits = hashed_bits(40_000);
+        for (bit_rate, beta) in [(8_400.0, 0.6), (f64::from(BIT_RATE), 1.0)] {
+            for cfo in [0.0_f64, 60.0, -300.0, 700.0, 1_500.0] {
+                let iq = modulate_oqpsk_rate(&bits, bit_rate, beta, CHANNEL_RATE_HR, cfo, 0.5);
+                let mut demod = if bit_rate == 8_400.0 {
+                    OqpskDemod::new_c_channel(CHANNEL_RATE_HR)
+                } else {
+                    OqpskDemod::new(CHANNEL_RATE_HR)
+                };
+                let mut out = Vec::new();
+                demod.process(&iq, &mut out);
+                let case = format!("{bit_rate} bps, cfo {cfo}");
+                assert!(demod.locked(), "{case}: mse {}", demod.mse);
+                let error = demod.frequency_error_hz() - cfo;
+                assert!(error.abs() < 5.0, "{case}: off by {error} Hz");
+                let soft: Vec<f32> = out.iter().map(|&(soft, _)| soft).collect();
+                let ber = rail_ber(&bits, &soft);
+                assert!(ber < 0.001, "{case}: BER {ber}");
+            }
         }
     }
 }
