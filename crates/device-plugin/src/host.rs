@@ -37,7 +37,7 @@ pub struct Loaded {
     pub spec: BackendSpec,
     /// The plugin's crate name and version.
     pub plugin: String,
-    /// The SDRmm revision it was built against, or empty.
+    /// The `SDRmm` revision it was built against, or empty.
     pub sdk_build: String,
 }
 

@@ -338,7 +338,7 @@ pub struct PluginV1 {
     pub size: u32,
     /// The plugin's crate name and version.
     pub plugin: Str,
-    /// The SDRmm revision the plugin was built against, or empty.
+    /// The `SDRmm` revision the plugin was built against, or empty.
     pub sdk_build: Str,
     /// Whether the plugin unwinds panics. One built with `panic = "abort"` would take the host
     /// down with it, so the host refuses it.

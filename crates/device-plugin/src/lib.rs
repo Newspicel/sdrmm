@@ -1,4 +1,4 @@
-//! Write an SDRmm radio driver as a native plugin, and load one.
+//! Write an `SDRmm` radio driver as a native plugin, and load one.
 //!
 //! A plugin's driver is written exactly like a built-in one, against [`sdrmm_device`]: a
 //! [`DeviceDriver`] that opens [`SdrDevice`]s. Declare its backend with
