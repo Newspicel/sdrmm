@@ -69,6 +69,7 @@ mod satellites;
 mod schedules;
 mod sinks;
 mod sky_scans;
+mod speakers;
 mod store;
 mod surfaces;
 mod survey;
@@ -336,6 +337,7 @@ fn start_runtime(state: &AppState) -> Background {
     run_gate::follow(state);
     schedules::follow(state);
     audio_fx::follow(state);
+    speakers::follow(state);
     array::start_pump(state);
     reports::start(state);
     aims::start(state);

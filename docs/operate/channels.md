@@ -44,4 +44,4 @@ The **Audio** chain at the end of a decoder (or voice encoder) processes its `au
 
 ## Speaker output
 
-Pick output device under **Out** (in browsers, press **Show device names** once). For external apps, route a Speaker to a virtual cable: **Linux** `pactl load-module module-null-sink sink_name=js8` (`js8.monitor`), **Windows** VB-Cable, **macOS** BlackHole.
+Pick output device under **Out** (in browsers, press **Show device names** once). **Server** plays on the server's own sound card instead, for headless receivers; in Docker, pass `--device /dev/snd --group-add audio`. For external apps, route a Speaker to a virtual cable: **Linux** `pactl load-module module-null-sink sink_name=js8` (`js8.monitor`), **Windows** VB-Cable, **macOS** BlackHole.

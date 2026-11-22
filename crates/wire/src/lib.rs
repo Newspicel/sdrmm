@@ -78,7 +78,7 @@ pub use audio::{
     MAX_AUDIO_FX_CHAIN, MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD,
     MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ, MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ,
     MIN_BLANKER_THRESHOLD, MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB,
-    NoiseBlankerSettings, NotchSettings, PeakSettings,
+    NoiseBlankerSettings, NotchSettings, PeakSettings, ServerOutputsResponse,
 };
 pub use bandplan::{
     BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,
@@ -182,9 +182,9 @@ pub use patch::{
     PortTypeInfo, Position, ProblemSource, RACK_COLS, RACK_ROWS, REFUSALS, RackCell, RackLayout,
     RackSlot, Reach, RecorderNode, Refusal, RefusedEdge, ResolveCtx, ResolvedEdge, ResolvedNode,
     ResolvedPatch, ResolvedPort, ResolvedState, Role, Runs, STEER_PORT, ScannerNode, SignalMapNode,
-    Size, SpeakerNode, TRANSMIT_PORT, Tap, TriangulationNode, TrunkBand, TrunkChannelEntry,
-    TrunkDiscovery, TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT, channel_ports,
-    generator_key, port_index, port_lane, port_stream, stream_port,
+    Size, SpeakerNode, SpeakerOutput, TRANSMIT_PORT, Tap, TriangulationNode, TrunkBand,
+    TrunkChannelEntry, TrunkDiscovery, TrunkNode, TrunkSearchRange, UnboundReason, VIDEO_PORT,
+    channel_ports, generator_key, port_index, port_lane, port_stream, stream_port,
 };
 #[cfg(feature = "pin")]
 pub use phone::PinError;

@@ -1,0 +1,26 @@
+[package]
+name = "sdrmm-audio-out"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+rtrb.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-audio.workspace = true
+objc2-core-audio-types.workspace = true
+objc2-core-foundation = { workspace = true, features = ["CFString"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+libloading.workspace = true

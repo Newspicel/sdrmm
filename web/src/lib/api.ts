@@ -79,6 +79,7 @@ import type {
   ScannerStatus,
   Secret,
   SerialDevicesResponse,
+  ServerOutputsResponse,
   SkyScanStatus,
   StateSnapshot,
   SurveyAction,
@@ -127,6 +128,7 @@ export const STATE_KEY = ["get", "/api/state"] as const;
 export const DEVICES_KEY = ["get", "/api/devices"] as const;
 export const NMEA_DEVICES_KEY = ["get", "/api/position/nmea-devices"] as const;
 export const SERIAL_PORTS_KEY = ["get", "/api/serial/ports"] as const;
+export const SERVER_OUTPUTS_KEY = ["get", "/api/audio/outputs"] as const;
 export const CHANNEL_TYPES_KEY = ["get", "/api/channeltypes"] as const;
 export const ENCODER_TYPES_KEY = ["get", "/api/encodertypes"] as const;
 export const PRESETS_KEY = ["get", "/api/presets"] as const;
@@ -243,6 +245,15 @@ export function serialPortsQuery() {
     queryKey: SERIAL_PORTS_KEY,
     queryFn: async (): Promise<SerialDevicesResponse> =>
       unwrap(await client.GET("/api/serial/ports")),
+    staleTime: 5_000,
+  });
+}
+
+export function serverOutputsQuery() {
+  return queryOptions({
+    queryKey: SERVER_OUTPUTS_KEY,
+    queryFn: async (): Promise<ServerOutputsResponse> =>
+      unwrap(await client.GET("/api/audio/outputs")),
     staleTime: 5_000,
   });
 }

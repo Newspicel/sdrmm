@@ -1,66 +1,98 @@
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
 import { BTN } from "../../components/controls";
 import { ChoiceChip } from "../../components/face/Chips";
 import { SettingRow } from "../../components/Settings";
+import { serverOutputsQuery } from "../../lib/api";
 import { outputsSupported, revealOutputNames } from "../../lib/audio/outputs";
-import type { PatchNode } from "../../lib/types";
+import type { PatchNode, SpeakerOutput } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import {
+  choiceOf,
+  listenerOutputOf,
   outputMissing,
+  outputOfChoice,
   SYSTEM_OUTPUT,
+  serverLabel,
+  serverOutputOf,
   speakerOutputOf,
   useAudioOutputs,
   withSpeakerOutput,
 } from "./speakerOutput";
 
-const TITLE = "Where this speaker plays. Pick a virtual device to feed another program";
+const TITLE = "Where this speaker plays. Server plays on the server's sound card";
 
-/** The system output as a choice, since a device name is never empty. */
-const SYSTEM = "";
-
-function titleOf(output: string | null, missing: boolean): string {
-  if (!outputsSupported()) {
-    return "This browser plays only on the system output";
-  }
-  return missing ? `${output} is not connected` : TITLE;
+interface Choice {
+  readonly value: string;
+  readonly label: string;
 }
 
-function choicesOf(names: readonly string[], output: string | null, missing: boolean) {
-  const choices = [
-    { value: SYSTEM, label: SYSTEM_OUTPUT },
-    ...names.map((name) => ({ value: name, label: name })),
+export function choicesOf(
+  listener: readonly string[],
+  server: readonly string[] | null,
+  output: SpeakerOutput | null,
+  missing: boolean,
+): Choice[] {
+  const choices: Choice[] = [
+    { value: choiceOf(null), label: SYSTEM_OUTPUT },
+    ...listener.map((name) => ({ value: choiceOf(name), label: name })),
   ];
-  if (output !== null && !names.includes(output)) {
-    choices.push({ value: output, label: missing ? `${output} (not connected)` : output });
+  if (server !== null) {
+    choices.push({ value: choiceOf({ server: null }), label: serverLabel(null) });
+    choices.push(
+      ...server.map((name) => ({ value: choiceOf({ server: name }), label: serverLabel(name) })),
+    );
+  }
+  const current = choiceOf(output);
+  if (!choices.some((choice) => choice.value === current)) {
+    const name = listenerOutputOf(output) ?? serverLabel(serverOutputOf(output) ?? null);
+    choices.push({ value: current, label: missing ? `${name} (not connected)` : name });
   }
   return choices;
+}
+
+function titleOf(output: SpeakerOutput | null, missing: boolean, serverError: string | null) {
+  if (missing) {
+    return `${listenerOutputOf(output) ?? serverOutputOf(output)} is not connected`;
+  }
+  if (serverError !== null) {
+    return `${TITLE}. ${serverError}`;
+  }
+  return TITLE;
 }
 
 export function SpeakerOutputChip({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const { listed, refresh } = useAudioOutputs();
+  const served = useQuery(serverOutputsQuery());
   const output = speakerOutputOf(node);
-  const missing = outputMissing(output, listed);
+  const server = served.data?.outputs ?? null;
+  const serverName = serverOutputOf(output);
+  const missing =
+    serverName === undefined
+      ? outputMissing(listenerOutputOf(output), listed)
+      : serverName !== null && server !== null && !server.includes(serverName);
   const pick = (next: string) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
-        withSpeakerOutput(current, next === SYSTEM ? null : next),
+        withSpeakerOutput(current, outputOfChoice(next)),
       ),
     }));
   };
   const names = listed?.outputs.map((candidate) => candidate.name) ?? [];
+  const serverError = served.error === null ? null : served.error.message;
   return (
     <>
       <ChoiceChip
         label="Out"
-        value={output ?? SYSTEM}
-        options={choicesOf(names, output, missing)}
-        title={titleOf(output, missing)}
+        value={choiceOf(output)}
+        options={choicesOf(names, server, output, missing)}
+        title={titleOf(output, missing, serverError)}
         quiet={output === null}
         tone={missing ? "warn" : undefined}
-        disabled={!outputsSupported()}
+        disabled={!outputsSupported() && server === null}
         onChange={pick}
       />
       {listed !== null && !listed.named && (

@@ -5,16 +5,42 @@ import {
   onOutputsChanged,
   outputsSupported,
 } from "../../lib/audio/outputs";
-import type { PatchNode } from "../../lib/types";
+import type { PatchNode, SpeakerOutput } from "../../lib/types";
 
 export const SYSTEM_OUTPUT = "System";
+export const SERVER_OUTPUT = "Server";
 
-export function speakerOutputOf(node: PatchNode): string | null {
+/** The system output as a choice; every other choice is its output as JSON, so never empty. */
+const SYSTEM_CHOICE = "";
+
+export function speakerOutputOf(node: PatchNode): SpeakerOutput | null {
   return node.kind === "speaker" ? (node.data ?? null) : null;
 }
 
-export function withSpeakerOutput(node: PatchNode, output: string | null): PatchNode {
+export function withSpeakerOutput(node: PatchNode, output: SpeakerOutput | null): PatchNode {
   return node.kind === "speaker" ? { ...node, data: output } : node;
+}
+
+/** The device this machine plays on, or null for its default or when the server plays. */
+export function listenerOutputOf(output: SpeakerOutput | null): string | null {
+  return typeof output === "string" ? output : null;
+}
+
+/** The server device, null for the server's default, undefined when this machine plays. */
+export function serverOutputOf(output: SpeakerOutput | null): string | null | undefined {
+  return output !== null && typeof output === "object" ? (output.server ?? null) : undefined;
+}
+
+export function choiceOf(output: SpeakerOutput | null): string {
+  return output === null ? SYSTEM_CHOICE : JSON.stringify(output);
+}
+
+export function outputOfChoice(choice: string): SpeakerOutput | null {
+  return choice === SYSTEM_CHOICE ? null : (JSON.parse(choice) as SpeakerOutput);
+}
+
+export function serverLabel(name: string | null): string {
+  return name === null ? SERVER_OUTPUT : `${SERVER_OUTPUT}: ${name}`;
 }
 
 export function outputMissing(output: string | null, listed: AudioOutputs | null): boolean {

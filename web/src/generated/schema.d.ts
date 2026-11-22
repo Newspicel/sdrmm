@@ -100,6 +100,22 @@ export interface paths {
         patch: operations["tune_array"];
         trace?: never;
     };
+    "/api/audio/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_server_outputs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/audiorecordings": {
         parameters: {
             query?: never;
@@ -5660,7 +5676,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker";
         /**
          * @description Something an operator asks a running processor to do.
          * @enum {string}
@@ -6706,6 +6722,10 @@ export interface components {
             /** @enum {string} */
             type: "Error";
         };
+        /** @description The sound cards a speaker can play on at the server, by the names their system gives them. */
+        ServerOutputsResponse: {
+            outputs: string[];
+        };
         ServerStatus: {
             platform: string;
             /** Format: int64 */
@@ -6931,12 +6951,11 @@ export interface components {
             descending?: boolean;
             field: string;
         };
-        /**
-         * @description The output device's name as the operating system lists it, or None for the system default.
-         *     Kept by name, since a browser salts device ids per origin and the app's port changes between
-         *     runs. Transparent, so a speaker saved with no `data` at all still loads.
-         */
-        SpeakerNode: string | null;
+        SpeakerNode: components["schemas"]["SpeakerOutput"] | null;
+        /** @description A bare name is a device of the listener's own machine, as a speaker always stored it. */
+        SpeakerOutput: string | {
+            server?: string | null;
+        };
         SpectrumMonitorNode: {
             disabled_protocols?: string[];
             /** Format: float */
@@ -8146,6 +8165,35 @@ export interface operations {
             };
             /** @description Malformed request body */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    get_server_outputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sound cards a speaker can play on at the server */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerOutputsResponse"];
+                };
+            };
+            /** @description The server could not list its sound cards */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

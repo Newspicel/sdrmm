@@ -100,6 +100,7 @@ LABEL org.opencontainers.image.url="https://sdrmm.com" \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates curl \
+       libasound2t64 \
        libsoapysdr0.8 \
        soapysdr-module-bladerf \
        soapysdr-module-lms7 \

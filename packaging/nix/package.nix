@@ -2,6 +2,7 @@
   lib,
   stdenv,
   rustPlatform,
+  alsa-lib,
   aws-lc,
   pkg-config,
   cmake,
@@ -27,6 +28,7 @@ let
     libGL
     vulkan-loader
   ]
+  ++ lib.optional stdenv.hostPlatform.isLinux alsa-lib
   ++ lib.optional (sdrplayApi != null) sdrplayApi;
 
   # The Chromium build `cef-dll-sys` in Cargo.lock was generated for. Nix has no network in the

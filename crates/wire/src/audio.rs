@@ -469,6 +469,12 @@ fn check_tone_hz(what: &str, hz: f64) -> Result<(), String> {
     }
 }
 
+/// The sound cards a speaker can play on at the server, by the names their system gives them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ServerOutputsResponse {
+    pub outputs: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

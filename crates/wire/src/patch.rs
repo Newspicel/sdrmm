@@ -399,19 +399,44 @@ pub struct AudioRecorderNode {
 
 pub const MAX_SPEAKER_OUTPUT_LEN: usize = 256;
 
-/// The output device's name as the operating system lists it, or None for the system default.
-/// Kept by name, since a browser salts device ids per origin and the app's port changes between
-/// runs. Transparent, so a speaker saved with no `data` at all still loads.
+/// Where a speaker plays, or None for the listener's system default. Devices are kept by name,
+/// since a browser salts device ids per origin and the app's port changes between runs.
+/// Transparent, so a speaker saved with no `data` at all still loads.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(transparent)]
-pub struct SpeakerNode(pub Option<String>);
+pub struct SpeakerNode(pub Option<SpeakerOutput>);
+
+/// A bare name is a device of the listener's own machine, as a speaker always stored it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum SpeakerOutput {
+    Listener(String),
+    /// The server's own sound card: a device by name, or None for the server's default.
+    Server {
+        server: Option<String>,
+    },
+}
 
 impl SpeakerNode {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.0
-            .as_ref()
-            .is_none_or(|name| !name.is_empty() && name.chars().count() <= MAX_SPEAKER_OUTPUT_LEN)
+        let name = match &self.0 {
+            None | Some(SpeakerOutput::Server { server: None }) => return true,
+            Some(SpeakerOutput::Listener(name) | SpeakerOutput::Server { server: Some(name) }) => {
+                name
+            }
+        };
+        !name.is_empty() && name.chars().count() <= MAX_SPEAKER_OUTPUT_LEN
+    }
+
+    /// The server device this speaker plays on, None for the default; absent when it plays on
+    /// the listener's machine.
+    #[must_use]
+    pub fn server_output(&self) -> Option<Option<&str>> {
+        match &self.0 {
+            Some(SpeakerOutput::Server { server }) => Some(server.as_deref()),
+            _ => None,
+        }
     }
 }
 

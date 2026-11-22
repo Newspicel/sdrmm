@@ -307,6 +307,33 @@
         }
       }
     },
+    "/api/audio/outputs": {
+      "get": {
+        "operationId": "get_server_outputs",
+        "responses": {
+          "200": {
+            "description": "Sound cards a speaker can play on at the server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerOutputsResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The server could not list its sound cards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audiorecordings": {
       "get": {
         "operationId": "list_audio_recordings",
@@ -20694,7 +20721,8 @@
           "apply",
           "calls",
           "recorder",
-          "transmit"
+          "transmit",
+          "speaker"
         ]
       },
       "ProcessorAction": {
@@ -24638,6 +24666,21 @@
           }
         ]
       },
+      "ServerOutputsResponse": {
+        "type": "object",
+        "description": "The sound cards a speaker can play on at the server, by the names their system gives them.",
+        "required": [
+          "outputs"
+        ],
+        "properties": {
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ServerStatus": {
         "type": "object",
         "required": [
@@ -25366,11 +25409,35 @@
         }
       },
       "SpeakerNode": {
-        "type": [
-          "string",
-          "null"
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/SpeakerOutput",
+            "description": "Where a speaker plays, or None for the listener's system default. Devices are kept by name,\nsince a browser salts device ids per origin and the app's port changes between runs.\nTransparent, so a speaker saved with no `data` at all still loads."
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "SpeakerOutput": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "description": "The server's own sound card: a device by name, or None for the server's default.",
+            "properties": {
+              "server": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
         ],
-        "description": "The output device's name as the operating system lists it, or None for the system default.\nKept by name, since a browser salts device ids per origin and the app's port changes between\nruns. Transparent, so a speaker saved with no `data` at all still loads."
+        "description": "A bare name is a device of the listener's own machine, as a speaker always stored it."
       },
       "SpectrumMonitorNode": {
         "type": "object",

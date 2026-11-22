@@ -44,6 +44,7 @@ sdrmm-array.workspace = true
 sdrmm-device.workspace = true
 sdrmm-cps.workspace = true
 sdrmm-recorder.workspace = true
+sdrmm-audio-out.workspace = true
 sdrmm-serial.workspace = true
 sdrmm-dvsi = { workspace = true, optional = true }
 sdrmm-codec = { workspace = true, optional = true }

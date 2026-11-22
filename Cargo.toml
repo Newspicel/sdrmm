@@ -42,6 +42,7 @@ members = [
     "crates/plugin-example",
     "crates/cps",
     "crates/recorder",
+    "crates/audio-out",
     "crates/engine",
     "crates/tools",
     "crates/server",
@@ -96,6 +97,7 @@ default-members = [
     "crates/plugin-example",
     "crates/cps",
     "crates/recorder",
+    "crates/audio-out",
     "crates/engine",
     "crates/tools",
     "crates/server",
@@ -158,6 +160,7 @@ sdrmm-plugin = { path = "crates/plugin-sdk" }
 sdrmm-plugins = { path = "crates/plugins" }
 sdrmm-cps = { path = "crates/cps" }
 sdrmm-recorder = { path = "crates/recorder" }
+sdrmm-audio-out = { path = "crates/audio-out" }
 sdrmm-tools = { path = "crates/tools" }
 # default-features = false so binaries opt into `soapy` themselves: a member manifest cannot
 # disable a workspace dep's defaults, only add to them (needed for the minimal build).

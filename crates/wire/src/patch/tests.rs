@@ -2210,7 +2210,7 @@ fn a_speaker_saved_before_outputs_loads_on_the_system_output() {
 
 #[test]
 fn a_speaker_keeps_its_output_by_name() {
-    let body = NodeBody::Speaker(SpeakerNode(Some("js8".to_owned())));
+    let body = NodeBody::Speaker(SpeakerNode(Some(SpeakerOutput::Listener("js8".to_owned()))));
     let json = serde_json::to_string(&body).expect("speaker json");
     assert_eq!(json, r#"{"kind":"speaker","data":"js8"}"#);
     assert_eq!(
@@ -2220,12 +2220,37 @@ fn a_speaker_keeps_its_output_by_name() {
 }
 
 #[test]
+fn a_speaker_on_the_server_round_trips() {
+    for (server, json) in [
+        (None, r#"{"kind":"speaker","data":{"server":null}}"#),
+        (
+            Some("hw".to_owned()),
+            r#"{"kind":"speaker","data":{"server":"hw"}}"#,
+        ),
+    ] {
+        let speaker = SpeakerNode(Some(SpeakerOutput::Server { server }));
+        let body = NodeBody::Speaker(speaker.clone());
+        assert_eq!(serde_json::to_string(&body).expect("speaker json"), json);
+        assert_eq!(
+            serde_json::from_str::<NodeBody>(json).expect("speaker"),
+            body
+        );
+        assert!(speaker.server_output().is_some());
+    }
+    assert_eq!(SpeakerNode::default().server_output(), None);
+}
+
+#[test]
 fn a_speaker_output_name_is_bounded() {
-    let named = |name: String| SpeakerNode(Some(name));
+    let named = |name: String| SpeakerNode(Some(SpeakerOutput::Listener(name)));
+    let served = |name: String| SpeakerNode(Some(SpeakerOutput::Server { server: Some(name) }));
     assert!(SpeakerNode::default().valid());
+    assert!(SpeakerNode(Some(SpeakerOutput::Server { server: None })).valid());
     assert!(named("ä".repeat(MAX_SPEAKER_OUTPUT_LEN)).valid());
     assert!(!named("x".repeat(MAX_SPEAKER_OUTPUT_LEN + 1)).valid());
     assert!(!named(String::new()).valid());
+    assert!(!served(String::new()).valid());
+    assert!(!served("x".repeat(MAX_SPEAKER_OUTPUT_LEN + 1)).valid());
 }
 
 fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {

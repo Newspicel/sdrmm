@@ -5322,6 +5322,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-audio-out"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "libloading 0.9.0",
+ "objc2-core-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "rtrb",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "sdrmm-aviation"
 version = "0.0.0"
 dependencies = [
@@ -5970,6 +5984,7 @@ dependencies = [
  "rustls-platform-verifier",
  "schemars",
  "sdrmm-array",
+ "sdrmm-audio-out",
  "sdrmm-channels",
  "sdrmm-codec",
  "sdrmm-cps",

@@ -56,6 +56,7 @@ mod satellites;
 mod secrets;
 mod sinks;
 mod sky_scan;
+mod speakers;
 mod survey;
 mod workspaces;
 
@@ -473,6 +474,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(write_serial))
         .routes(routes!(get_nmea_devices))
         .routes(routes!(get_serial_ports))
+        .routes(routes!(speakers::get_server_outputs))
         .routes(routes!(get_channel_types))
         .routes(routes!(get_encoder_types))
         .routes(routes!(call_audio))

@@ -18,6 +18,7 @@ pub(crate) const FORBIDDEN_ON_PHONES: &[&str] = &[
     "sdrmm-usb-stream",
     "sdrmm-serial",
     "sdrmm-recorder",
+    "sdrmm-audio-out",
     "codec2",
     "ffmpeg-the-third",
     "ffmpeg-sys-the-third",

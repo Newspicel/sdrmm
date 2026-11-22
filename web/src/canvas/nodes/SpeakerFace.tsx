@@ -27,13 +27,15 @@ import {
   useAudioPeakDb,
   useSpeakerHealth,
 } from "./speaker";
-import { speakerOutputOf } from "./speakerOutput";
+import { listenerOutputOf, serverOutputOf, speakerOutputOf } from "./speakerOutput";
 
 export function SpeakerFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "audio");
   const health = useSpeakerHealth(node.id, inputs, import.meta.env.DEV);
   const output = speakerOutputOf(node);
-  useEffect(() => audioEngine.setOutput(node.id, output), [node.id, output]);
+  const listener = listenerOutputOf(output);
+  const onServer = serverOutputOf(output) !== undefined;
+  useEffect(() => audioEngine.setOutput(node.id, listener), [node.id, listener]);
   return (
     <NodeShell node={node} title="Speaker" category="output">
       <Inspect node={node.id}>
@@ -53,6 +55,7 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
               node={node.id}
               input={input}
               port={index === 0 ? "audio" : undefined}
+              onServer={onServer}
             />
           ))
         )}
@@ -76,11 +79,27 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
   );
 }
 
-function AudioInput({ node, input, port }: { node: string; input: Input; port?: string }) {
+function AudioInput({
+  node,
+  input,
+  port,
+  onServer,
+}: {
+  node: string;
+  input: Input;
+  port?: string;
+  onServer: boolean;
+}) {
   const workspace = useWorkspaceContext();
   const tap = { node, port: "audio", source: input.source };
   const audio = useChannelAudio(workspace.socket, tap);
   const active = audio.playing || audio.pending || audio.suspended;
+  const { stop } = audio;
+  useEffect(() => {
+    if (onServer) {
+      stop();
+    }
+  }, [onServer, stop]);
   const source = tapKey(tap);
   const peakDb = useAudioPeakDb(source, audio.playing);
   const name =
@@ -103,45 +122,49 @@ function AudioInput({ node, input, port }: { node: string; input: Input; port?: 
             fill={TONE[meterTone(peakDb, false)]}
           />
         }
-        readout={`${Math.round(audio.volume * 100)}%`}
+        readout={onServer ? undefined : `${Math.round(audio.volume * 100)}%`}
         trailing={
-          <PlayToggle
-            active={active}
-            onToggle={() => {
-              audio.resumeOutput();
-              if (active) {
-                audio.stop();
-              } else {
-                audio.start();
-              }
-            }}
-          />
+          !onServer && (
+            <PlayToggle
+              active={active}
+              onToggle={() => {
+                audio.resumeOutput();
+                if (active) {
+                  audio.stop();
+                } else {
+                  audio.start();
+                }
+              }}
+            />
+          )
         }
       />
-      <Inspect node={node}>
-        <InspectSection label={name}>
-          <Chips inset="none">
-            <SettingRow label="Volume">
-              <GainMeter
-                label={`${name} volume`}
-                className="min-w-0 flex-1"
-                min={0}
-                max={1}
-                step={0.01}
-                value={audio.volume}
-                peakDb={peakDb ?? null}
-                tone={meterTone(peakDb, false)}
-                onChange={audio.setVolume}
-              />
-            </SettingRow>
-          </Chips>
-        </InspectSection>
-      </Inspect>
+      {!onServer && (
+        <Inspect node={node}>
+          <InspectSection label={name}>
+            <Chips inset="none">
+              <SettingRow label="Volume">
+                <GainMeter
+                  label={`${name} volume`}
+                  className="min-w-0 flex-1"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={audio.volume}
+                  peakDb={peakDb ?? null}
+                  tone={meterTone(peakDb, false)}
+                  onChange={audio.setVolume}
+                />
+              </SettingRow>
+            </Chips>
+          </InspectSection>
+        </Inspect>
+      )}
       <AudioSpectrogramView
         node={node}
         port="audio"
         source={input.source}
-        playing={audio.playing}
+        playing={onServer || audio.playing}
       />
       {audio.error !== null && <FaceFault message={audio.error} />}
     </div>
