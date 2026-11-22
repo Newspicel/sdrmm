@@ -11,6 +11,14 @@ First step: click **Check hardware** on an empty Device node, or run `sdrmm --do
 - Non-loopback binds serve `https://` (accept self-signed warning once). Behind a reverse proxy, mount at `/` (no path prefix).
 - `Host not allowed`: open servers restrict `Host` names; connect by IP or set a [token](../server/configuration.md#token). API callers send `Authorization: Bearer <token>`.
 
+## AppImage prints squashfuse or `(null) compression` errors
+
+AppImageLauncher 2.x intercepts the AppImage and cannot read its zstd image. Update AppImageLauncher to 3.x, uninstall it, or run:
+
+```sh
+./sdrmm-app_*.AppImage --appimage-extract-and-run
+```
+
 ## Blank window or missing waterfall
 
 Disable hardware WebGL2 if a graphics driver breaks rendering:
