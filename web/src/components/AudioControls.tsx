@@ -350,48 +350,58 @@ function PeakChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
       title="Peak filter"
     >
       {() => (
-        <ChipField label="Peak filter">
-          <Checkbox
-            label="Peak filter"
-            checked={enabled}
-            onChange={(next) => edit({ peak: { ...peak, enabled: next } })}
-          />
-          <NumberField
-            label="Peak frequency"
-            unit="Hz"
-            value={freqHz}
-            min={AUDIO_LIMITS.toneHz.min}
-            max={AUDIO_LIMITS.toneHz.max}
-            step={10}
-            className="w-20"
-            onCommit={(freq_hz) => edit({ peak: { ...peak, freq_hz } })}
-          />
-          <NumberField
-            label="Peak width"
-            unit="Hz"
-            value={peak.width_hz ?? AUDIO_DEFAULTS.peakWidthHz}
-            min={AUDIO_LIMITS.notchWidthHz.min}
-            max={AUDIO_LIMITS.notchWidthHz.max}
-            step={10}
-            className="w-20"
-            onCommit={(width_hz) => edit({ peak: { ...peak, width_hz } })}
-          />
-          <SliderField
-            label="Peak gain"
-            disabled={!enabled}
-            min={AUDIO_LIMITS.peakGainDb.min}
-            max={AUDIO_LIMITS.peakGainDb.max}
-            step={1}
-            value={shown}
-            onChange={slider.change}
-            readout={
-              <>
-                {shown.toFixed(0)}
-                <span className="text-ink-faint">dB</span>
-              </>
-            }
-          />
-        </ChipField>
+        <>
+          <ChipField label="Peak filter">
+            <Checkbox
+              label="Peak filter"
+              checked={enabled}
+              onChange={(next) => edit({ peak: { ...peak, enabled: next } })}
+            />
+          </ChipField>
+          <ChipField label="Frequency">
+            <NumberField
+              label="Peak frequency"
+              unit="Hz"
+              value={freqHz}
+              min={AUDIO_LIMITS.toneHz.min}
+              max={AUDIO_LIMITS.toneHz.max}
+              step={10}
+              disabled={!enabled}
+              className="w-28"
+              onCommit={(freq_hz) => edit({ peak: { ...peak, freq_hz } })}
+            />
+          </ChipField>
+          <ChipField label="Width">
+            <NumberField
+              label="Peak width"
+              unit="Hz"
+              value={peak.width_hz ?? AUDIO_DEFAULTS.peakWidthHz}
+              min={AUDIO_LIMITS.notchWidthHz.min}
+              max={AUDIO_LIMITS.notchWidthHz.max}
+              step={10}
+              disabled={!enabled}
+              className="w-28"
+              onCommit={(width_hz) => edit({ peak: { ...peak, width_hz } })}
+            />
+          </ChipField>
+          <ChipField label="Gain">
+            <SliderField
+              label="Peak gain"
+              disabled={!enabled}
+              min={AUDIO_LIMITS.peakGainDb.min}
+              max={AUDIO_LIMITS.peakGainDb.max}
+              step={1}
+              value={shown}
+              onChange={slider.change}
+              readout={
+                <>
+                  {shown.toFixed(0)}
+                  <span className="text-ink-faint">dB</span>
+                </>
+              }
+            />
+          </ChipField>
+        </>
       )}
     </SettingChip>
   );

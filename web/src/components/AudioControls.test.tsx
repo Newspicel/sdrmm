@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { DENOISE_MODELS_KEY } from "../lib/api";
 import type { AudioProcessing, DenoiseModelsResponse } from "../lib/types";
 import { AudioControls, NotchFields } from "./AudioControls";
+import { ChipRows } from "./face/Chips";
 
 function render(audio: AudioProcessing, models?: DenoiseModelsResponse): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -49,6 +50,20 @@ describe("AudioControls", () => {
 
   it("shows the peak tone when the peak filter is on", () => {
     expect(render({ peak: { enabled: true } })).toContain("700 Hz");
+  });
+
+  it("names each peak setting above its own control", () => {
+    const client = new QueryClient();
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <ChipRows>
+          <AudioControls audio={{ peak: { enabled: true } }} onAudio={() => undefined} />
+        </ChipRows>
+      </QueryClientProvider>,
+    );
+    for (const label of ["Frequency", "Width", "Gain"]) {
+      expect(html).toContain(`>${label}</span>`);
+    }
   });
 
   it("flags a DPDFNet model that is not downloaded", () => {
