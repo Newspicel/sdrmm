@@ -70,6 +70,29 @@ fn several_satellites_are_tracked_at_once() {
     }
 }
 
+#[test]
+fn the_scope_sees_the_strongest_satellites_bpsk_prompts() {
+    let iq = sky(&[(13, 2_345.0, 100.3)], 0.02, 1_200);
+    let mut channel = GnssChannel::build(GnssParams::default());
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(100 * SAMPLES_PER_MS) {
+        out.symbols.clear();
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 4);
+    assert_eq!(tap.symbols.len(), 2 * 100, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, PROMPTS_PER_S);
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz - 2_345.0).abs() < 5.0,
+        "{}",
+        tap.freq_error_hz
+    );
+}
+
 fn sorted(trackers: &[Tracker]) -> Vec<&Tracker> {
     let mut sorted: Vec<&Tracker> = trackers.iter().collect();
     sorted.sort_by_key(|t| t.prn);

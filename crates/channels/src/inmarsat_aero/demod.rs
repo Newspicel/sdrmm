@@ -22,6 +22,7 @@ pub(super) struct MskDemod {
     accumulator: f32,
     accumulated: u32,
     magnitude: f32,
+    raw: Vec<f32>,
 }
 
 impl MskDemod {
@@ -43,7 +44,13 @@ impl MskDemod {
             accumulator: 0.0,
             accumulated: 0,
             magnitude: 1e-3,
+            raw: Vec::new(),
         }
+    }
+
+    /// The last block's integrated discriminator per bit, before any level control.
+    pub(super) fn raw(&self) -> &[f32] {
+        &self.raw
     }
 
     pub(super) fn reset(&mut self) {
@@ -59,6 +66,7 @@ impl MskDemod {
     }
 
     pub(super) fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<(f32, u8)>) {
+        self.raw.clear();
         self.filtered.clear();
         self.lowpass.process(input, &mut self.filtered);
         for index in 0..self.filtered.len() {
@@ -93,6 +101,7 @@ impl MskDemod {
         let level = self.accumulator / self.accumulated.max(1) as f32;
         self.accumulator = 0.0;
         self.accumulated = 0;
+        self.raw.push(level);
         self.magnitude += MAG_ALPHA * (level.abs() - self.magnitude);
         let soft = (level / self.magnitude.max(1e-9)).clamp(-1.0, 1.0);
         Some((soft, u8::from(soft > 0.0)))

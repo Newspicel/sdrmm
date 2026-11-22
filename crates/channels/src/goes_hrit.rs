@@ -40,6 +40,8 @@ pub(crate) const ROLL_OFF: f64 = 0.3;
 pub(crate) const PRECODING: Precoding = Precoding::Nrzm;
 const FILTER_TAPS: usize = 63;
 const CHUNK: usize = 16_384;
+/// One decision point in this many reaches the scope, some fourteen thousand a second.
+const TAP_EVERY: usize = 64;
 /// Files assembled at once: every virtual channel can have one or two going.
 const SESSIONS: usize = 32;
 const CANVASES: usize = 6;
@@ -277,7 +279,25 @@ pub struct GoesHritChannel {
     params: GoesHritParams,
     link: XritLink,
     pictures: Pictures,
+    points: Vec<Complex<f32>>,
     closing: bool,
+}
+
+impl GoesHritChannel {
+    fn tap_symbols(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        self.points.clear();
+        self.points
+            .extend(self.link.symbols().iter().step_by(TAP_EVERY).copied());
+        out.symbols.linear(
+            &self.points,
+            self.link.constellation(),
+            SYMBOL_RATE,
+            self.link.frequency_offset_cycles_per_sample() * INPUT_RATE_HZ,
+        );
+    }
 }
 
 impl NativeChannel for GoesHritChannel {
@@ -291,6 +311,7 @@ impl NativeChannel for GoesHritChannel {
             params: params(&settings)?,
             link: link()?,
             pictures: Pictures::new(),
+            points: Vec::with_capacity(CHUNK),
             closing: false,
         })
     }
@@ -321,6 +342,7 @@ impl Channel for GoesHritChannel {
             let pictures = &mut self.pictures;
             self.link
                 .process(chunk, &mut |file| pictures.take(&file, picture, out));
+            self.tap_symbols(out);
         }
     }
 }

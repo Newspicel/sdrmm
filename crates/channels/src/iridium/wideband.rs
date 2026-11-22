@@ -10,7 +10,7 @@ use self::detect::{DEPTH, Detector};
 use super::CHANNEL_RATE;
 use super::decode::Reassembly;
 use super::ira::IridiumFrame;
-use super::receiver::{Heard, WindowDemod, reassemble};
+use super::receiver::{Heard, Shown, WindowDemod, reassemble};
 use sdrmm_decoder::ChannelError;
 
 pub const USABLE_FRACTION: f64 = 0.4;
@@ -35,6 +35,7 @@ pub struct WidebandDecoder {
     spare: Vec<Vec<Complex<f32>>>,
     found: Vec<usize>,
     rejected: u32,
+    pub shown: Shown,
 }
 
 pub fn decimation(input_rate: f64) -> Result<usize, ChannelError> {
@@ -66,6 +67,7 @@ impl WidebandDecoder {
             spare: Vec::new(),
             found: Vec::new(),
             rejected: 0,
+            shown: Shown::default(),
         })
     }
 
@@ -74,6 +76,7 @@ impl WidebandDecoder {
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<IridiumFrame>) {
+        self.shown.points.clear();
         self.channelizer.push(input);
         while let Some(frame) = self.channelizer.next_frame() {
             self.step(frame, out);
@@ -151,7 +154,9 @@ impl WidebandDecoder {
                 freq: center_hz + demodulated.cfo_hz,
                 center_hz,
             };
-            if !reassemble(&mut self.reassembly, &demodulated, &heard, out) {
+            if reassemble(&mut self.reassembly, &demodulated, &heard, out) {
+                self.shown.keep(&demodulated, &heard);
+            } else {
                 self.rejected = self.rejected.saturating_add(1);
             }
         }

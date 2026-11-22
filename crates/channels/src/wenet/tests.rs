@@ -219,3 +219,25 @@ fn decodes_a_real_balloon_picture_off_air() {
         std::fs::write(out, ppm).expect("ppm written");
     }
 }
+
+#[test]
+fn the_scope_follows_the_framing_heard_and_sees_two_tones() {
+    let iq = wenet_synth::transmission(WenetMode::I2s, RATE);
+    let mut chan = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut tap = sdrmm_decoder::SymbolTap::default();
+    for block in iq.as_chunks::<CHUNK>().0 {
+        out.reset();
+        chan.process(block, &mut out);
+        if out.symbols.plane.is_some() {
+            tap = std::mem::take(&mut out.symbols);
+            out.symbols.set_wanted(true);
+        }
+    }
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() >= 40, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, WenetMode::I2s.baud());
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+}

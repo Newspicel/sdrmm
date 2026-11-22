@@ -23,12 +23,14 @@ use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 use sdrmm_media::Media;
+use sdrmm_modem::constellation::{Constellation, tables};
 
 const DECIMATION: usize = 4;
 const DECIMATOR_TAPS: usize = 63;
 const DECIMATOR_CUTOFF_HZ: f64 = 24_000.0;
 const ACQUIRE_INPUT: usize = ACQUIRE_SAMPLES * DECIMATION;
 const LOST_INPUT: usize = 4 * ACQUIRE_INPUT;
+const TAP_CELLS: usize = 2048;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "drm".to_owned(),
@@ -63,6 +65,37 @@ pub struct DrmChannel {
     pacer: Pacer,
     silent: usize,
     frames: usize,
+    grids: [Constellation; 3],
+    points: Vec<Complex<f32>>,
+}
+
+/// Shows up to `TAP_CELLS` MSC cells of each frame on the grid the FAC names.
+fn tap_frame(
+    locked: &Locked,
+    grids: &[Constellation; 3],
+    points: &mut Vec<Complex<f32>>,
+    out: &mut ChannelOutputs,
+) {
+    if !out.symbols.wanted() {
+        return;
+    }
+    let Some((qam, cells)) = locked.receiver.msc_points() else {
+        return;
+    };
+    points.clear();
+    points.extend(cells.take(TAP_CELLS));
+    out.symbols.linear(
+        points,
+        &grids[qam.levels() - 1],
+        locked.receiver.msc_rate(),
+        locked.demod.frequency_offset_hz(),
+    );
+}
+
+fn grids() -> Result<[Constellation; 3], ChannelError> {
+    let grid =
+        |m| tables::qam_square(m).map_err(|error| ChannelError::InvalidSettings(error.to_string()));
+    Ok([grid(4)?, grid(16)?, grid(64)?])
 }
 
 fn decimator() -> Decimator {
@@ -185,6 +218,7 @@ impl DrmChannel {
                 if let Some(occupancy) = locked.receiver.frame(&mut self.media) {
                     locked.demod.set_occupancy(occupancy);
                 }
+                tap_frame(locked, &self.grids, &mut self.points, out);
                 if locked.receiver.changed {
                     locked.receiver.changed = false;
                     self.media.reset();
@@ -395,6 +429,8 @@ impl NativeChannel for DrmChannel {
             pacer: Pacer::new(INPUT_RATE_HZ),
             silent: 0,
             frames: 0,
+            grids: grids()?,
+            points: Vec::with_capacity(TAP_CELLS),
         })
     }
 }

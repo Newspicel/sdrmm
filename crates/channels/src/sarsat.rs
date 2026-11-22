@@ -13,11 +13,12 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::SyncDetector;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use demod::{BIT_RATE, PHASE_DEVIATION, PREAMBLE_S};
-use demod::{Demod, RATE, Search};
+use demod::{CHIP_RATE, Demod, RATE, Search};
 use message::{Bits, LONG_BITS, PDF1_BITS, SHORT_BITS};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
@@ -138,6 +139,9 @@ pub struct SarsatChannel {
     state: State,
     frame: Frame,
     chips: Vec<f32>,
+    chip_levels: Mapping,
+    levels: Vec<f32>,
+    carrier_hz: f64,
     history: [f32; HISTORY_CHIPS],
     chip_clock: u64,
     clock: u64,
@@ -234,6 +238,7 @@ impl SarsatChannel {
     }
 
     fn start(&mut self, carrier_hz: f64) {
+        self.carrier_hz = carrier_hz;
         self.demod.start(carrier_hz);
         self.syncs.reset();
         self.frame = Frame::Hunting;
@@ -251,12 +256,15 @@ impl SarsatChannel {
         self.search.feed(iq);
         let mut chips = std::mem::take(&mut self.chips);
         self.demod.chips(iq, &mut chips);
+        let mut used = 0;
         for &chip in &chips {
+            used += 1;
             self.chip(chip, out);
             if matches!(self.state, State::Searching) {
                 break;
             }
         }
+        self.tap_symbols(&chips[..used], out);
         self.chips = chips;
         self.clock += iq.len() as u64;
         if let State::Tracking { until } = self.state
@@ -265,6 +273,24 @@ impl SarsatChannel {
         {
             self.stop();
         }
+    }
+
+    /// The chips scaled to their mean size, so the two phases sit near plus and minus one.
+    fn tap_symbols(&mut self, chips: &[f32], out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() || chips.is_empty() {
+            return;
+        }
+        let size = chips.iter().map(|chip| chip.abs()).sum::<f32>() / chips.len() as f32;
+        let scale = if size > 0.0 { size.recip() } else { 0.0 };
+        self.levels.clear();
+        self.levels.extend(chips.iter().map(|chip| chip * scale));
+        out.symbols.levels(
+            &self.levels,
+            &[],
+            &self.chip_levels,
+            CHIP_RATE,
+            self.carrier_hz,
+        );
     }
 
     fn hunt(&mut self, iq: &[Complex<f32>]) -> usize {
@@ -300,6 +326,9 @@ impl NativeChannel for SarsatChannel {
             state: State::Searching,
             frame: Frame::Hunting,
             chips: Vec::new(),
+            chip_levels: Mapping::natural(2),
+            levels: Vec::new(),
+            carrier_hz: 0.0,
             history: [0.0; HISTORY_CHIPS],
             chip_clock: 0,
             clock: 0,

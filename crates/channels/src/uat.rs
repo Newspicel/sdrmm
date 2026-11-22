@@ -12,13 +12,14 @@ pub mod synth;
 mod uplink;
 pub use model::*;
 
-use std::sync::LazyLock;
+use std::{f64::consts::TAU, sync::LazyLock};
 
 use num_complex::Complex;
 use sdrmm_decoder::aircraft::adsb_kind;
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::packet::RecentFrames;
 
 use self::receiver::{Heard, Receiver, SAMPLES_PER_BIT, Sink};
@@ -49,6 +50,7 @@ pub struct UatChannel {
     receiver: Receiver,
     recent: RecentFrames,
     reports: Vec<FisbReport>,
+    mapping: Mapping,
 }
 
 fn params(settings: &ChannelSettings) -> Result<UatParams, ChannelError> {
@@ -68,6 +70,7 @@ impl NativeChannel for UatChannel {
             receiver: Receiver::new(),
             recent: RecentFrames::new((REPEAT_HOLD_S * INPUT_RATE_HZ) as u64),
             reports: Vec::new(),
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -90,8 +93,19 @@ impl Channel for UatChannel {
             reports: &mut self.reports,
             events: &mut out.events,
         };
+        self.receiver.set_tapping(out.symbols.wanted());
         self.receiver.process(iq, &mut sink);
         self.recent.advance(iq.len());
+        let offset_hz = f64::from(self.receiver.centre()) * INPUT_RATE_HZ / TAU;
+        if !self.receiver.soft().is_empty() {
+            out.symbols.levels(
+                self.receiver.soft(),
+                &[],
+                &self.mapping,
+                BIT_RATE_HZ,
+                offset_hz,
+            );
+        }
     }
 
     fn rejected(&self) -> u32 {

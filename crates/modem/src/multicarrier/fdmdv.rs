@@ -22,7 +22,8 @@ use sync::SyncTracker;
 use timing::TimingEstimator;
 
 pub const BITS: usize = DATA_CARRIERS * 2;
-const DATA_CARRIERS: usize = 16;
+pub const DATA_CARRIERS: usize = 16;
+pub const SYMBOL_RATE_HZ: f64 = SAMPLE_RATE_HZ / SYMBOL_SAMPLES as f64;
 const CARRIERS: usize = DATA_CARRIERS + 1;
 const PILOT: usize = DATA_CARRIERS;
 const CARRIER_SPACING_HZ: f32 = 75.0;
@@ -73,9 +74,12 @@ impl FrameLength {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frame {
     pub bits: [bool; BITS],
+    /// Each data carrier's symbol over the one before, on the unit circle at 0, 90, 180 and
+    /// 270 degrees.
+    pub points: [Complex<f32>; DATA_CARRIERS],
     pub sync: bool,
     pub reliable_sync: bool,
 }
@@ -124,6 +128,12 @@ impl Demodulator {
         *self = Self::new();
     }
 
+    /// The carrier offset being corrected, in Hz.
+    #[must_use]
+    pub fn frequency_offset_hz(&self) -> f32 {
+        self.frequency_offset
+    }
+
     pub fn push(&mut self, sample: Sample) -> Option<Frame> {
         self.input[self.filled] = if sample.is_finite() {
             sample
@@ -163,6 +173,7 @@ impl Demodulator {
         self.track_frequency(decision.frequency_error);
         Frame {
             bits: decision.bits,
+            points: decision.points,
             sync,
             reliable_sync,
         }
@@ -288,6 +299,20 @@ mod tests {
             received.extend(signal.iter().filter_map(|&s| demodulator.push(s)));
         }
         (sent, received)
+    }
+
+    #[test]
+    fn a_clean_signal_lands_on_the_four_dqpsk_points() {
+        let (_, received) = loopback(60, 0.0);
+        let table = crate::constellation::tables::psk(4).expect("qpsk");
+        let points: Vec<_> = received[30..]
+            .iter()
+            .flat_map(|frame| frame.points)
+            .collect();
+        let quality = crate::quality::measure_complex(&points, &table).expect("a measurement");
+        assert!(quality.evm < 0.1, "EVM {}", quality.evm);
+        let power = points.iter().map(Complex::norm_sqr).sum::<f32>() / points.len() as f32;
+        assert!((power - 1.0).abs() < 0.1, "power {power}");
     }
 
     fn decodes_with_modem_delay(sent: &[[bool; BITS]], received: &[Frame]) -> bool {

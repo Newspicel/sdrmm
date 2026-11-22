@@ -6,7 +6,7 @@ use crate::ccsds::{
     Basis, Deframer, Depacketizer, FILL_VCID, FrameOutcome, MpduLayout, Precoding, VCID_COUNT,
     VcduHeader,
 };
-use crate::constellation::tables;
+use crate::constellation::{Constellation, tables};
 use crate::linear::{CarrierLoop, LinearDemod, LinearParams, LinearTiming, PhaseDetector};
 use crate::pulse::{Norm, root_raised_cosine};
 
@@ -71,6 +71,7 @@ impl std::error::Error for LinkError {}
 /// The receive side of an LRIT or HRIT downlink: BPSK to soft symbols, CADUs, the space packets
 /// of every virtual channel, and the files they carry.
 pub struct XritLink {
+    sps: usize,
     coarse: CoarseTune,
     since_frame: usize,
     demod: LinearDemod,
@@ -92,6 +93,7 @@ impl XritLink {
             .map_err(|error| LinkError::Waveform(error.to_string()))?;
         let carrier = CarrierLoop::new(PhaseDetector::MthPower { m: 2 }, CARRIER_BW);
         Ok(Self {
+            sps: config.sps,
             coarse: CoarseTune::new(),
             since_frame: 0,
             demod: LinearDemod::new(&params, &pulse, LinearTiming::CONTINUOUS, Some(carrier)),
@@ -117,6 +119,23 @@ impl XritLink {
             packets_dropped: self.channel_drops(),
             session: self.sessions.stats(),
         }
+    }
+
+    /// The decision points of the last block, after timing and carrier recovery.
+    #[must_use]
+    pub fn symbols(&self) -> &[Complex<f32>] {
+        &self.symbols
+    }
+
+    #[must_use]
+    pub fn constellation(&self) -> &Constellation {
+        self.demod.params().constellation()
+    }
+
+    /// The carrier offset taken out, coarse and fine together.
+    #[must_use]
+    pub fn frequency_offset_cycles_per_sample(&self) -> f64 {
+        self.coarse.turns() + self.demod.carrier_freq_cycles_per_symbol() / self.sps as f64
     }
 
     fn channel_drops(&self) -> u32 {

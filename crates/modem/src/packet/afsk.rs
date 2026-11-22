@@ -8,6 +8,8 @@ use super::{AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ, lane::Lane};
 /// pre-emphasis or a receiver's de-emphasis left on the tones.
 const TWIST_LANES: usize = 9;
 const TWIST_SPAN_DB: f32 = 6.0;
+/// The lane that weighs both tones alike, the one a scope watches.
+const FLAT_LANE: usize = TWIST_LANES / 2;
 const CLIP: f32 = 1.2;
 const DECIMATION: usize = 4;
 const CUTOFF_HZ: f64 = 4_800.0;
@@ -55,7 +57,12 @@ impl Afsk {
         }
     }
 
-    pub(super) fn frames(&mut self, discriminated: &mut [f32], heard: &mut impl FnMut(&[u8])) {
+    pub(super) fn frames(
+        &mut self,
+        discriminated: &mut [f32],
+        mut levels: Option<&mut Vec<f32>>,
+        heard: &mut impl FnMut(&[u8]),
+    ) {
         for v in &mut *discriminated {
             *v = v.clamp(-CLIP, CLIP);
         }
@@ -63,8 +70,12 @@ impl Afsk {
         self.band.process(&self.decimated, &mut self.filtered);
         for &s in &self.filtered {
             let (m, sp) = (self.mark.push(s), self.space.push(s));
-            for lane in &mut self.lanes {
-                lane.push(m - lane.space_gain * sp, heard);
+            for (k, lane) in self.lanes.iter_mut().enumerate() {
+                let sample = m - lane.space_gain * sp;
+                match levels.as_deref_mut() {
+                    Some(levels) if k == FLAT_LANE => lane.push_watched(sample, levels, heard),
+                    _ => lane.push(sample, heard),
+                }
             }
         }
     }

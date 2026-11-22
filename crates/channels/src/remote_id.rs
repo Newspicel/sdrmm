@@ -19,6 +19,7 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderFamily, EventKind};
 use self::tracker::Tracker;
 use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
 use sdrmm_modem::ble as bluetooth;
+use sdrmm_modem::cpm::Mapping;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "remote_id".to_owned(),
@@ -99,6 +100,7 @@ pub struct RemoteIdChannel {
     frequency_hz: f64,
     front: Front,
     tracker: Tracker,
+    mapping: Mapping,
 }
 
 impl NativeChannel for RemoteIdChannel {
@@ -113,6 +115,7 @@ impl NativeChannel for RemoteIdChannel {
             frequency_hz: settings.frequency_hz,
             front: Front::new(params.link, settings.frequency_hz)?,
             tracker: Tracker::default(),
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -145,6 +148,8 @@ impl Channel for RemoteIdChannel {
                 &mut ble::Events {
                     tracker: &mut self.tracker,
                     out: &mut out.events,
+                    tap: &mut out.symbols,
+                    mapping: &self.mapping,
                 },
             ),
             Front::Wifi(receiver) => receiver.process(

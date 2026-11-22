@@ -86,10 +86,11 @@ use serde::Serialize;
 use serde_json::Value;
 
 use self::ira::IridiumFrame;
-use self::receiver::ChannelDecoder;
+use self::receiver::{ChannelDecoder, Shown};
 use self::wideband::{USABLE_FRACTION, WidebandDecoder};
 use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
 use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
+use sdrmm_modem::constellation::{Constellation, tables};
 
 const CHANNEL_RATE: f64 = 250_000.0;
 const HALF_BANDWIDTH: f64 = 25_000.0;
@@ -143,12 +144,20 @@ impl Decoder {
             Self::Wide(decoder) => decoder.rejected(),
         }
     }
+
+    fn shown(&self) -> &Shown {
+        match self {
+            Self::Channel(decoder) => &decoder.shown,
+            Self::Wide(decoder) => &decoder.shown,
+        }
+    }
 }
 
 pub struct IridiumChannel {
     span: IridiumSpan,
     decoder: Decoder,
     frames: Vec<IridiumFrame>,
+    qpsk: Constellation,
 }
 
 fn params(settings: &ChannelSettings) -> Result<IridiumParams, ChannelError> {
@@ -224,6 +233,8 @@ impl NativeChannel for IridiumChannel {
             span: params.span,
             decoder: Decoder::new(params.span)?,
             frames: Vec::new(),
+            qpsk: tables::psk(4)
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
         })
     }
 }
@@ -242,6 +253,15 @@ impl Channel for IridiumChannel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.frames.clear();
         self.decoder.process(iq, &mut self.frames);
+        let shown = self.decoder.shown();
+        if out.symbols.wanted() && !shown.points.is_empty() {
+            out.symbols.linear(
+                &shown.points,
+                &self.qpsk,
+                demod::SYMBOL_RATE,
+                shown.offset_hz,
+            );
+        }
         out.events.extend(
             self.frames
                 .iter()

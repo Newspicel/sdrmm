@@ -507,6 +507,16 @@ impl Channel for PocsagChannel {
             }
             soft.clear();
             self.candidates[index].demod.process(iq, &mut soft);
+            if index == self.locked.unwrap_or(0) {
+                let candidate = &self.candidates[index];
+                out.symbols.cpm(
+                    &candidate.demod,
+                    &soft,
+                    &self.slicer,
+                    f64::from(candidate.baud),
+                    DESCRIPTOR.input_rate_hz,
+                );
+            }
             for &symbol in &soft {
                 let symbol = if self.invert { -symbol } else { symbol };
                 let bit = self.slicer.slice(symbol) == 1;
@@ -1118,6 +1128,25 @@ mod tests {
         let mut chan = channel();
         assert!(run(&mut chan, &burst(&[long], 2_400)).is_empty());
         assert_eq!(chan.rejected(), 1);
+    }
+
+    #[test]
+    fn the_scope_sees_two_clean_levels_at_the_page_rate() {
+        let mut chan = channel_with(&PocsagParams {
+            baud: PocsagBaud::B1200,
+            ..PocsagParams::default()
+        });
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in burst(&pages(), 1_200).chunks(2_048) {
+            chan.process(block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() > 500, "{} symbols", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, 1_200.0);
+        assert!(tap.evm < 0.15, "EVM {}", tap.evm);
     }
 
     #[test]

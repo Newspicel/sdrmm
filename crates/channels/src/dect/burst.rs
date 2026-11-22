@@ -19,7 +19,7 @@ pub(crate) const RFP_SYNC: u32 = 0xAAAA_E98A;
 pub(crate) const PP_SYNC: u32 = 0x5555_1675;
 
 const S_FIELD_BITS: usize = 32;
-const A_FIELD_BITS: usize = 64;
+pub(crate) const A_FIELD_BITS: usize = 64;
 const BURST_BITS: usize = S_FIELD_BITS + A_FIELD_BITS;
 const BURST_SAMPLES: usize = BURST_BITS * SPS;
 const PACKET_SAMPLES: usize = (BURST_BITS + FIELD_BITS) * SPS;
@@ -34,6 +34,9 @@ const GATE_THRESHOLD: f64 = 0.35;
 pub(crate) struct Burst {
     pub from_rfp: bool,
     pub a_field: u64,
+    /// The A field's discriminator readings at each bit, the slicer's threshold taken off.
+    pub levels: [f32; A_FIELD_BITS],
+    pub offset_hz: f32,
     pub b_field: Option<BField>,
     pub carrier: Option<u8>,
     pub level_dbfs: f32,
@@ -171,9 +174,11 @@ impl Detector {
         }
         let (start, fraction, score) = self.peak(start, from_rfp, score);
         let offset = self.dc(start);
-        let a_field = (0..A_FIELD_BITS).fold(0u64, |acc, index| {
-            (acc << 1) | u64::from(self.bit(start, fraction, S_FIELD_BITS + index, offset))
-        });
+        let levels: [f32; A_FIELD_BITS] =
+            std::array::from_fn(|index| self.soft(start, fraction, S_FIELD_BITS + index) - offset);
+        let a_field = levels
+            .iter()
+            .fold(0u64, |acc, &level| (acc << 1) | u64::from(level > 0.0));
         let b_field = (a_field_crc_ok(a_field) && field(a_field, 4, 3) != NO_B_FIELD).then(|| {
             BField::from_bits(
                 (0..FIELD_BITS).map(|index| self.bit(start, fraction, BURST_BITS + index, offset)),
@@ -182,6 +187,8 @@ impl Detector {
         Some(Burst {
             from_rfp,
             a_field,
+            levels,
+            offset_hz: offset * DEVIATION_HZ as f32,
             b_field,
             carrier: self.carrier,
             level_dbfs: self.level(start),
@@ -191,11 +198,14 @@ impl Detector {
     }
 
     fn bit(&self, start: usize, fraction: f32, index: usize, offset: f32) -> bool {
+        self.soft(start, fraction, index) - offset > 0.0
+    }
+
+    fn soft(&self, start: usize, fraction: f32, index: usize) -> f32 {
         let position = start as f32 + fraction + 0.5 + (index * SPS) as f32;
         let at = position.floor().max(0.0) as usize;
         let weight = position - at as f32;
-        let value = self.history[at] * (1.0 - weight) + self.history[at + 1] * weight;
-        value - offset > 0.0
+        self.history[at] * (1.0 - weight) + self.history[at + 1] * weight
     }
 
     fn dc(&self, start: usize) -> f32 {

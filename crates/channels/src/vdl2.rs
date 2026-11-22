@@ -75,6 +75,7 @@ use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::constellation::{Constellation, tables};
 
 const RATE: f64 = 100_000.0;
 const HALF_BANDWIDTH: f64 = 8_500.0;
@@ -96,6 +97,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 pub struct Vdl2Channel {
     decoder: Vdl2Decoder,
     frames: Vec<Vdl2Frame>,
+    d8psk: Constellation,
 }
 
 fn params(settings: &ChannelSettings) -> Result<Vdl2Params, ChannelError> {
@@ -120,6 +122,8 @@ impl NativeChannel for Vdl2Channel {
         Ok(Self {
             decoder: Vdl2Decoder::new(ctx.input_rate),
             frames: Vec::new(),
+            d8psk: tables::psk(8)
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
         })
     }
 }
@@ -132,6 +136,14 @@ impl Channel for Vdl2Channel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.frames.clear();
         self.decoder.process(iq, &mut self.frames);
+        if out.symbols.wanted() && !self.decoder.points().is_empty() {
+            out.symbols.linear(
+                self.decoder.points(),
+                &self.d8psk,
+                demod::SYMBOL_RATE,
+                f64::from(self.decoder.freq_skew_hz()),
+            );
+        }
         out.events.extend(
             self.frames
                 .iter()

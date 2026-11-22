@@ -8,6 +8,7 @@ const NOMINAL_DEVIATION_HZ: f64 = 2_400.0;
 const DC_TRACK_SAMPLES: f32 = 2_400.0;
 const BOXCAR_MAX: usize = 32;
 const TIMING_GAIN: f64 = 0.12;
+const RECORD_LIMIT: usize = 4_096;
 
 pub(super) struct FrontEnd {
     fm: FmDemod,
@@ -31,6 +32,41 @@ impl FrontEnd {
             *sample -= self.dc;
         }
         &self.audio
+    }
+
+    /// The carrier offset, read off the DC the discriminator settles on.
+    pub(super) fn frequency_error_hz(&self) -> f64 {
+        f64::from(self.dc) * NOMINAL_DEVIATION_HZ
+    }
+}
+
+/// The soft symbols one sonde demod decided in a block, kept only while a scope looks.
+pub(super) struct Recorder {
+    on: bool,
+    symbols: Vec<f32>,
+}
+
+impl Recorder {
+    pub(super) fn new() -> Self {
+        Self {
+            on: false,
+            symbols: Vec::with_capacity(RECORD_LIMIT),
+        }
+    }
+
+    pub(super) fn start(&mut self, on: bool) {
+        self.on = on;
+        self.symbols.clear();
+    }
+
+    pub(super) fn push(&mut self, symbol: f32) {
+        if self.on && self.symbols.len() < RECORD_LIMIT {
+            self.symbols.push(symbol);
+        }
+    }
+
+    pub(super) fn symbols(&self) -> &[f32] {
+        &self.symbols
     }
 }
 

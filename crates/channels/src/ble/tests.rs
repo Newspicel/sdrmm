@@ -241,6 +241,39 @@ fn air(packets: &[Vec<Complex<f32>>], rate: f64, gap_s: f64) -> Vec<Complex<f32>
 }
 
 #[test]
+fn the_scope_reads_an_le_1m_advert_as_two_tight_levels() {
+    let rate = BleLink::Channel.input_rate_hz();
+    let packet = rf_packet(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);
+    let iq = air(&[packet], rate, 0.001);
+    let channel_params = ChannelParams::new(
+        "ble",
+        &BleParams {
+            link: BleLink::Channel,
+        },
+    )
+    .expect("ble settings");
+    let tuned = ChannelSettings {
+        frequency_hz: CHANNEL_38_HZ,
+        ..settings(channel_params.clone())
+    };
+    let mut channel = BleChannel::new(ChannelCtx { input_rate: rate }, tuned).expect("builds");
+    let mut filtered = Vec::new();
+    channel_filter(&channel_params)
+        .expect("filter")
+        .process(&iq, &mut filtered);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    channel.process(&filtered, &mut out);
+    let tap = &out.symbols;
+    assert_eq!(out.events.len(), 1);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert_eq!(tap.symbols.len(), (advert(0x02, &ibeacon()).len() + 3) * 8);
+    assert_eq!(tap.symbol_rate, sdrmm_modem::ble::SYMBOL_RATE_HZ);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+}
+
+#[test]
 fn packets_that_fail_their_crc_are_counted_with_nothing_heard() {
     let rate = BleLink::Channel.input_rate_hz();
     let mut packet = rf_packet(&advert(0x02, &ibeacon()), 12, ModemPhy::Le1m, rate);

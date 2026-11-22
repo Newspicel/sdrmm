@@ -410,3 +410,25 @@ fn mcus_survive_the_jpeg_round_trip() {
         assert!(error / MCU_PIXELS as u32 <= 3, "mean error {error}");
     }
 }
+
+#[test]
+fn the_scope_sees_four_tight_qpsk_clusters() {
+    let iq = synth::lrpt::transmission(LrptMode::Oqpsk72, 2, RATE);
+    let mut chan = channel(LrptMode::Oqpsk72);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut tap = sdrmm_decoder::SymbolTap::default();
+    for block in iq.as_chunks::<CHUNK>().0 {
+        out.reset();
+        chan.process(block, &mut out);
+        if out.symbols.plane.is_some() {
+            tap = std::mem::take(&mut out.symbols);
+            out.symbols.set_wanted(true);
+        }
+    }
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 8);
+    assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, 72_000.0);
+    assert!(tap.evm < 0.05, "EVM {}", tap.evm);
+}

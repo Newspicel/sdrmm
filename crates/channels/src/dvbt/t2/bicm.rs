@@ -107,22 +107,12 @@ impl Decoder {
             return Err(DecodeError::NonFinite);
         }
         let shift = interleave::cell_shift(cells.len(), block)?;
-        let rotation = Complex::from_polar(1.0, -self.coding.constellation.rotation());
+        let rotation = self.rotation();
         let bits = self.coding.constellation.bits();
         let gain = |index: usize| gains.map_or(1.0, |gains| gains[index].max(MIN_GAIN));
         for i in 0..cells.len() {
-            let here = (self.cell_map[i] + shift) % cells.len();
-            let p = cells[here];
-            let (p, reliability) = if self.coding.rotated {
-                let there = (self.cell_map[(i + 1) % cells.len()] + shift) % cells.len();
-                let next = cells[there];
-                (
-                    Complex::new(p.re, next.im) * rotation,
-                    f32::midpoint(gain(here), gain(there)),
-                )
-            } else {
-                (p, gain(here))
-            };
+            let (p, here, there) = self.cell(cells, shift, rotation, i);
+            let reliability = f32::midpoint(gain(here), gain(there));
             let soft = soften(p, &self.points, bits, noise_variance / reliability);
             for (bit, &llr) in soft[..bits].iter().enumerate() {
                 self.llrs[self.bit_map[i * bits + bit]] = llr;
@@ -142,6 +132,49 @@ impl Decoder {
             ldpc_iterations: iterations,
             corrected_bits: corrected,
         })
+    }
+
+    /// Fills `out` up to its capacity with a block's first cells, deinterleaved and turned
+    /// back onto the plain QAM grid, as the demapper sees them.
+    pub fn derotated_into(
+        &self,
+        cells: &[Complex<f32>],
+        block: usize,
+        out: &mut Vec<Complex<f32>>,
+    ) -> Result<(), DecodeError> {
+        if cells.len() != self.coding.cells() {
+            return Err(DecodeError::Length);
+        }
+        let shift = interleave::cell_shift(cells.len(), block)?;
+        let rotation = self.rotation();
+        let room = out.capacity() - out.len();
+        out.extend((0..cells.len().min(room)).map(|i| self.cell(cells, shift, rotation, i).0));
+        Ok(())
+    }
+
+    fn rotation(&self) -> Complex<f32> {
+        Complex::from_polar(1.0, -self.coding.constellation.rotation())
+    }
+
+    /// Cell `i` in coded order, with where its I and its Q came from: a rotated
+    /// constellation sends Q one cell later.
+    fn cell(
+        &self,
+        cells: &[Complex<f32>],
+        shift: usize,
+        rotation: Complex<f32>,
+        i: usize,
+    ) -> (Complex<f32>, usize, usize) {
+        let here = (self.cell_map[i] + shift) % cells.len();
+        if !self.coding.rotated {
+            return (cells[here], here, here);
+        }
+        let there = (self.cell_map[(i + 1) % cells.len()] + shift) % cells.len();
+        (
+            Complex::new(cells[here].re, cells[there].im) * rotation,
+            here,
+            there,
+        )
     }
 }
 

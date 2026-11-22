@@ -76,12 +76,13 @@ mod modulate;
 #[cfg(test)]
 mod sensitivity;
 
-use demod::{BpskDemod, RATE};
+use demod::{BpskDemod, RATE, SYMBOL_RATE};
 use frame::{
     CODED_SYMBOLS, FRAME_SYMBOLS, FrameDecoder, UW_ACQUIRE_MATCH, UW_TRACK_MATCH, uw_ber_ppt,
     uw_score,
 };
 use packet::{PacketParser, StdcPacket, details_with_uw_ber};
+use sdrmm_modem::constellation::{Constellation, tables};
 
 const HALF_BANDWIDTH: f64 = 2_000.0;
 const MID_FRAME_FLIP_MIN_GAIN: u32 = 24;
@@ -284,6 +285,7 @@ pub fn to_datalink(packet: &StdcPacket) -> StdcMessage {
 pub struct InmarsatStdcChannel {
     decoder: StdcDecoder,
     packets: Vec<StdcPacket>,
+    bpsk: Constellation,
 }
 
 fn params(settings: &ChannelSettings) -> Result<InmarsatStdcParams, ChannelError> {
@@ -308,6 +310,7 @@ impl NativeChannel for InmarsatStdcChannel {
         Ok(Self {
             decoder: StdcDecoder::new(),
             packets: Vec::new(),
+            bpsk: tables::bpsk(),
         })
     }
 }
@@ -319,6 +322,14 @@ impl Channel for InmarsatStdcChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.decoder.process(iq, &mut self.packets);
+        if out.symbols.wanted() {
+            out.symbols.linear(
+                self.decoder.demod.points(),
+                &self.bpsk,
+                SYMBOL_RATE,
+                self.decoder.demod.frequency_error_hz(),
+            );
+        }
         out.events.extend(self.packets.drain(..).map(|packet| {
             DecoderEvent::tagged(EventKind::named("inmarsat_stdc"), &to_datalink(&packet))
         }));
@@ -402,6 +413,37 @@ mod tests {
         assert_eq!(message.details["details"]["frame_number"], 1000);
         assert!(message.details["details"]["uw_ber_ppt"].is_number());
         assert_eq!(message.fec_corrected, Some(0));
+    }
+
+    #[test]
+    fn the_scope_sees_two_tight_bpsk_clusters() {
+        let symbols = bulletin_board_frame();
+        let mut bits: Vec<u8> = (0..4_000).map(|index| (index % 2) as u8).collect();
+        bits.extend(&symbols);
+        let iq = modulate::modulate(&bits, 1_200.0, RATE, 0.0, 0.5);
+        let mut channel = InmarsatStdcChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(
+                ChannelParams::new("inmarsat_stdc", &InmarsatStdcParams::default())
+                    .expect("inmarsat_stdc settings"),
+            ),
+        )
+        .expect("channel");
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in iq.chunks(4_096) {
+            channel.process(block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 4);
+        assert!(
+            tap.symbols.len() >= 2 * 4_000,
+            "{} values",
+            tap.symbols.len()
+        );
+        assert_eq!(tap.symbol_rate, SYMBOL_RATE);
+        assert!(tap.evm < 0.2, "EVM {}", tap.evm);
     }
 
     #[test]

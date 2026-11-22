@@ -77,6 +77,7 @@ pub struct BpskDemod {
     prev_symbol: f32,
     agc: f32,
     carrier_error: f32,
+    points: Vec<Complex<f32>>,
 }
 
 impl BpskDemod {
@@ -106,7 +107,17 @@ impl BpskDemod {
             prev_symbol: 0.0,
             agc: 1e-3,
             carrier_error: 1.0,
+            points: Vec::new(),
         }
+    }
+
+    /// The last block's decision points, carrier and level corrected, before slicing.
+    pub fn points(&self) -> &[Complex<f32>] {
+        &self.points
+    }
+
+    pub fn frequency_error_hz(&self) -> f64 {
+        -f64::from(self.nco_freq) * self.samples_per_symbol * SYMBOL_RATE / f64::from(TAU)
     }
 
     fn past(&self, delay: f64) -> Complex<f32> {
@@ -158,6 +169,7 @@ impl BpskDemod {
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<f32>) {
+        self.points.clear();
         for &sample in input {
             if !self.locked {
                 self.acquire(sample);
@@ -183,6 +195,7 @@ impl BpskDemod {
         let mid = self.past(self.timing + self.samples_per_symbol / 2.0);
         self.agc += AGC_ALPHA * (now.re.abs() - self.agc);
         let gain = self.agc.max(1e-9);
+        self.points.push(now / gain);
         let symbol = now.re / gain;
         let phase_error = now.im / gain * symbol.signum();
         self.nco_phase -= PHASE_GAIN * phase_error;

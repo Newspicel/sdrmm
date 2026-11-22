@@ -15,6 +15,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{CrcParity, bits_be};
 use sdrmm_modem::{
     constellation::tables::gray_inverse,
+    cpm::Mapping,
     ppm::{PpmDemod, SlotDetector, magnitudes},
     soft::argmax,
 };
@@ -138,6 +139,8 @@ pub struct AdsbChannel {
     evicted: u32,
     short_flips: Vec<u32>,
     long_flips: Vec<u32>,
+    chips: Vec<f32>,
+    on_off: Mapping,
 }
 
 struct Sliced {
@@ -723,6 +726,30 @@ impl AdsbChannel {
         None
     }
 
+    /// Shows each chip's share of its bit's envelope against the on and off levels of pulse
+    /// position keying, so a strong and a faint aircraft land on the same rails. At 2.4 MS/s a
+    /// chip is 1.2 samples, so a little of each neighbour always shows in it.
+    fn tap_chips(&mut self, at: usize, index: usize, len: usize, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        let receiver = &self.receivers[index];
+        let Some(window) = self.mag.get(at..at + receiver.grid().span()) else {
+            return;
+        };
+        self.chips.clear();
+        let mut slots = [0.0f32; 2];
+        for bit in 0..len * 8 {
+            receiver.envelope_at(window, PREAMBLE_CHIPS + bit * 2, &mut slots);
+            let total = slots[0] + slots[1];
+            if total > 0.0 {
+                self.chips.extend(slots.map(|slot| slot / total));
+            }
+        }
+        out.symbols
+            .levels(&self.chips, &[], &self.on_off, 1.0 / CHIP_S, 0.0);
+    }
+
     fn try_frame(&mut self, at: usize, phases: Phases, out: &mut ChannelOutputs) -> Option<usize> {
         let stamp = self.stream_pos + at as u64;
         let mut hit = None;
@@ -762,6 +789,7 @@ impl AdsbChannel {
         let consumed = self.receivers[index]
             .grid()
             .start(PREAMBLE_CHIPS + len * 8 * 2);
+        self.tap_chips(at, index, len, out);
         self.observe(icao, stamp, proved);
         let mut message = self.message(frame.get(..len)?, df, icao, stamp);
         message.timestamp_12mhz = Some(stamp.wrapping_mul(5) & 0xFFFF_FFFF_FFFF);
@@ -801,6 +829,8 @@ impl NativeChannel for AdsbChannel {
             evicted: 0,
             short_flips: PARITY.bit_overlays(SHORT_BYTES),
             long_flips: PARITY.bit_overlays(LONG_BYTES),
+            chips: Vec::with_capacity(2 * LONG_BITS),
+            on_off: Mapping::new(vec![0.0, 1.0]),
         })
     }
 }
@@ -992,6 +1022,24 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn the_scope_reads_every_chip_as_on_or_off() {
+        let frames = [squitter(0x3C_6444, me_identification("DLH123"))];
+        let iq = transmission(&frames, GAP_US, LEVEL, INPUT_RATE_HZ);
+        let mut chan = channel(&AdsbParams::default());
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        chan.process(&iq, &mut out);
+        let tap = &out.symbols;
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference, [0.0, 1.0]);
+        assert_eq!(tap.symbols.len(), 2 * LONG_BITS);
+        assert_eq!(tap.symbol_rate, 2_000_000.0);
+        assert!(tap.evm < 0.4, "EVM {}", tap.evm);
+        assert!(tap.margin > 1.5, "margin {}", tap.margin);
     }
 
     #[test]

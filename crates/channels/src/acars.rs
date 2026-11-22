@@ -53,7 +53,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::DcBlocker;
-use sdrmm_modem::cpm::MskDetector;
+use sdrmm_modem::cpm::{Mapping, MskDetector};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use sdrmm_decoder::{
@@ -94,6 +94,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 pub struct AcarsChannel {
     envelope: Vec<f32>,
     bits: Vec<bool>,
+    soft: Vec<f32>,
+    mapping: Mapping,
     dc: DcBlocker,
     detector: MskDetector,
     framer: Framer,
@@ -137,6 +139,8 @@ impl NativeChannel for AcarsChannel {
         Ok(Self {
             envelope: Vec::new(),
             bits: Vec::new(),
+            soft: Vec::new(),
+            mapping: Mapping::natural(2),
             dc: DcBlocker::new(),
             detector: MskDetector::new(ctx.input_rate, CENTRE_HZ, BAUD),
             framer: Framer::new(),
@@ -161,7 +165,20 @@ impl Channel for AcarsChannel {
         self.envelope.extend(iq.iter().map(|s| s.norm_sqr().sqrt()));
         self.dc.process(&mut self.envelope);
         self.bits.clear();
-        self.detector.process(&self.envelope, &mut self.bits);
+        if out.symbols.wanted() {
+            self.soft.clear();
+            self.detector
+                .process_soft(&self.envelope, &mut self.bits, &mut self.soft);
+            out.symbols.levels(
+                &self.soft,
+                &[],
+                &self.mapping,
+                BAUD,
+                self.detector.offset_hz(),
+            );
+        } else {
+            self.detector.process(&self.envelope, &mut self.bits);
+        }
         for &bit in &self.bits {
             self.framer.push(bit, out);
         }
@@ -442,6 +459,26 @@ mod tests {
             text: "CLEARANCE DELIVERED",
             more: false,
         }
+    }
+
+    #[test]
+    fn the_scope_reads_the_msk_bits_as_two_tight_levels() {
+        let iq = transmission(&downlink(), RATE);
+        let mut chan = channel();
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        let mut cleanest = f32::INFINITY;
+        for block in iq.chunks(2_400) {
+            out.reset();
+            chan.process(block, &mut out);
+            let tap = &out.symbols;
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+            assert_eq!(tap.reference.len(), 2);
+            assert!(!tap.symbols.is_empty());
+            assert_eq!(tap.symbol_rate, BAUD);
+            cleanest = cleanest.min(tap.evm);
+        }
+        assert!(cleanest < 0.15, "EVM {cleanest}");
     }
 
     #[test]

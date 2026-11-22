@@ -121,6 +121,25 @@ fn a_mode_b_multiplex_names_its_services_and_plays_the_first() {
 }
 
 #[test]
+fn the_scope_sees_tight_16_qam_msc_cells() {
+    let iq = synth::drm::signal(two_services(Robustness::B), 3).expect("a synthetic signal");
+    let mut channel = channel(DrmMode::Drm30, None);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(9_973) {
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    let layout = crate::drm::cells::Layout::new(Robustness::B, 5).expect("a mode B layout");
+    let superframe = 3.0 * 15.0 * Robustness::B.symbol() as f64 / Robustness::B.rate_hz();
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 2 * 16);
+    assert!(!tap.symbols.is_empty());
+    assert!(tap.evm < 0.05, "EVM {}", tap.evm);
+    assert!((tap.symbol_rate - layout.msc_cells as f64 / superframe).abs() < 1.0);
+}
+
+#[test]
 fn choosing_a_service_switches_the_audio() {
     let iq = synth::drm::signal(two_services(Robustness::B), 6).expect("a synthetic signal");
     let mut channel = channel(DrmMode::Drm30, Some(1));

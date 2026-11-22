@@ -10,6 +10,7 @@ use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 use sdrmm_dsp::{SyncDetector, SyndromeDecoder};
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ffsk::{FfskDemod, FfskTones};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventContract, FilterSpec,
@@ -111,6 +112,7 @@ impl Framer {
 }
 
 struct Lane {
+    baud: f64,
     demod: FfskDemod,
     framer: Framer,
 }
@@ -118,11 +120,15 @@ struct Lane {
 pub struct FleetSyncChannel {
     lanes: [Lane; 2],
     symbols: Vec<f32>,
+    rail: Mapping,
+    /// The lane the scope shows: the last one to find a sync word.
+    watched: usize,
 }
 
 impl FleetSyncChannel {
     fn lanes() -> [Lane; 2] {
         LANES.map(|tones| Lane {
+            baud: tones.baud,
             demod: FfskDemod::new(RATE, DEVIATION_HZ, tones),
             framer: Framer::new(tones.baud as u32),
         })
@@ -146,6 +152,8 @@ impl NativeChannel for FleetSyncChannel {
         Ok(Self {
             lanes: Self::lanes(),
             symbols: Vec::new(),
+            rail: Mapping::natural(2),
+            watched: 0,
         })
     }
 }
@@ -163,9 +171,16 @@ impl Channel for FleetSyncChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        for lane in &mut self.lanes {
+        for (index, lane) in self.lanes.iter_mut().enumerate() {
             lane.demod.symbols(iq, &mut self.symbols);
+            if index == self.watched {
+                out.symbols
+                    .levels(&self.symbols, &[], &self.rail, lane.baud, 0.0);
+            }
             Self::slice(lane, &self.symbols, out);
+        }
+        if let Some(gathering) = self.lanes.iter().position(|lane| lane.framer.gathering) {
+            self.watched = gathering;
         }
     }
 

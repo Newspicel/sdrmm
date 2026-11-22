@@ -146,6 +146,25 @@ fn decodes_the_identity_of_a_modulated_dummy_bearer() {
 }
 
 #[test]
+fn the_scope_reads_an_a_field_as_two_tight_levels() {
+    let station = sig::Station {
+        rfpi: CLASS_A_RFPI,
+        ..sig::Station::default()
+    };
+    let iq = sig::dummy_bearer(&station, 9);
+    let mut chan = channel(DectParams::default());
+    let mut out = sdrmm_decoder::ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    chan.process(&iq, &mut out);
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert_eq!(tap.symbols.len(), super::burst::A_FIELD_BITS);
+    assert_eq!(tap.symbol_rate, super::burst::BIT_RATE_HZ);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+}
+
+#[test]
 fn reports_the_static_system_information_of_a_base_station() {
     let station = sig::Station {
         rfpi: CLASS_A_RFPI,

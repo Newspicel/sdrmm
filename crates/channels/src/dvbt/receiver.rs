@@ -1,5 +1,7 @@
 use num_complex::Complex;
+use sdrmm_decoder::SymbolTap;
 use sdrmm_dsp::{Nco, Soft, math::fft::Transform};
+use sdrmm_modem::constellation::{Constellation, ConstellationError};
 
 use super::{
     acquire::{self, Timing},
@@ -34,7 +36,11 @@ pub struct Receiver {
     words: Vec<[Soft; 6]>,
     reordered: Vec<[Soft; 6]>,
     soft: Vec<Soft>,
-    tables: [Vec<Complex<f32>>; 9],
+    tables: Vec<Constellation>,
+    tap: Vec<Complex<f32>>,
+    tapping: bool,
+    tap_table: usize,
+    tap_period: usize,
     tps: Tps,
     timing: Option<Timing>,
     integer_offset: Option<isize>,
@@ -50,8 +56,8 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    pub fn new(low_priority: bool) -> Self {
-        Self {
+    pub fn new(low_priority: bool) -> Result<Self, ConstellationError> {
+        Ok(Self {
             maps: [Mapping::new(2048), Mapping::new(8192)],
             transforms: [Transform::forward(2048), Transform::forward(8192)],
             cfo_nco: Nco::new(0.0, 1.0),
@@ -67,13 +73,11 @@ impl Receiver {
             words: vec![[0; 6]; 6048],
             reordered: vec![[0; 6]; 6048],
             soft: Vec::with_capacity(6048 * 6),
-            tables: std::array::from_fn(|i| {
-                let bits = 2 + 2 * (i / 3);
-                let alpha = 1 << (i % 3);
-                (0..1 << bits)
-                    .map(|w| mapping::point(w, bits, alpha))
-                    .collect()
-            }),
+            tables: tables()?,
+            tap: Vec::with_capacity(6048),
+            tapping: false,
+            tap_table: 0,
+            tap_period: 1,
             tps: Tps::default(),
             timing: None,
             integer_offset: None,
@@ -86,7 +90,7 @@ impl Receiver {
             snr: 0.0,
             frequency: 0.0,
             bad_symbols: 0,
-        }
+        })
     }
 
     pub fn reset(&mut self) {
@@ -107,6 +111,28 @@ impl Receiver {
         for estimator in &mut self.estimators {
             estimator.reset();
         }
+        self.tap.clear();
+        self.tapping = false;
+    }
+
+    /// Asks the next decoded symbol to keep its equalised data carriers for the scope.
+    pub fn request_tap(&mut self) {
+        self.tapping = true;
+        self.tap.clear();
+    }
+
+    /// Hands the kept symbol to the scope once, at `rate` samples a second.
+    pub fn tap(&mut self, out: &mut SymbolTap, rate: f64) {
+        if self.tapping || self.tap.is_empty() {
+            return;
+        }
+        out.linear(
+            &self.tap,
+            &self.tables[self.tap_table],
+            self.tap.len() as f64 * rate / self.tap_period as f64,
+            f64::from(self.frequency) * rate / std::f64::consts::TAU,
+        );
+        self.tap.clear();
     }
 
     fn compact_pending(&mut self) {
@@ -333,7 +359,8 @@ impl Receiver {
         packets: &mut Vec<[u8; PACKET]>,
     ) {
         let map = &self.maps[index];
-        let table = &self.tables[(params.bits / 2 - 1) * 3 + params.alpha.ilog2() as usize];
+        let table_index = (params.bits / 2 - 1) * 3 + params.alpha.ilog2() as usize;
+        let table = self.tables[table_index].points();
         let estimates = self.estimators[index].estimates();
         let carriers = map.data[phase].len().max(1) as f32;
         let reference = if self.noise > 0.0 {
@@ -356,6 +383,14 @@ impl Receiver {
             let (soft, nearest) = mapping::soften(point, table, params.bits, scale);
             self.words[i] = soft;
             noise += nearest * gain;
+            if self.tapping {
+                self.tap.push(point);
+            }
+        }
+        if self.tapping {
+            self.tapping = false;
+            self.tap_table = table_index;
+            self.tap_period = params.fft + params.guard;
         }
         let noise = noise / carriers;
         if noise.is_finite() {
@@ -388,4 +423,21 @@ impl Receiver {
         };
         self.fec.push_soft(&self.soft, rate, packets);
     }
+}
+
+/// The QPSK, 16-QAM and 64-QAM grids at each hierarchy alpha, indexed by bits then alpha.
+fn tables() -> Result<Vec<Constellation>, ConstellationError> {
+    let mut tables = Vec::with_capacity(9);
+    for i in 0..9 {
+        let bits = 2 + 2 * (i / 3);
+        let alpha = 1 << (i % 3);
+        let points = (0..1 << bits)
+            .map(|w| mapping::point(w, bits, alpha))
+            .collect();
+        tables.push(Constellation::from_points(
+            points,
+            (0..1 << bits).collect(),
+        )?);
+    }
+    Ok(tables)
 }

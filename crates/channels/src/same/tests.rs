@@ -36,6 +36,22 @@ fn a_bit_is_exactly_twenty_four_samples_of_the_audio_rate() {
 }
 
 #[test]
+fn the_scope_sees_two_clean_levels_at_the_same_baud_rate() {
+    let mut channel = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in synth::same::burst(TORNADO, RATE).chunks(4_096) {
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() > 400, "{} symbols", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, SAME_BAUD);
+    assert!(tap.evm < 0.2, "EVM {}", tap.evm);
+}
+
+#[test]
 fn three_matching_bursts_decode_to_one_alert() {
     let (decoded, rejected) = messages(&synth::same::alert(TORNADO, RATE));
     assert_eq!(decoded.len(), 1);

@@ -1,7 +1,7 @@
 use crate::dvbt::DvbtParams;
 use crate::dvbt::DvbtStandard;
 use num_complex::Complex;
-use sdrmm_decoder::broadcast::BroadcastStatus;
+use sdrmm_decoder::{SymbolTap, broadcast::BroadcastStatus};
 
 use super::{receiver::Receiver, t2};
 use sdrmm_decoder::ChannelError;
@@ -15,7 +15,9 @@ pub enum Frontend {
 impl Frontend {
     pub fn new(params: DvbtParams) -> Result<Self, ChannelError> {
         match params.standard {
-            DvbtStandard::DvbT => Ok(Self::T(Box::new(Receiver::new(params.low_priority)))),
+            DvbtStandard::DvbT => Receiver::new(params.low_priority)
+                .map(|r| Self::T(Box::new(r)))
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string())),
             DvbtStandard::DvbT2 => t2::receiver::Receiver::new(params.plp)
                 .map(|r| Self::T2(Box::new(r)))
                 .map_err(|error| ChannelError::InvalidSettings(error.to_string())),
@@ -57,6 +59,20 @@ impl Frontend {
         match self {
             Self::T(r) => r.push(iq, packets),
             Self::T2(r) => r.push(iq, packets),
+        }
+    }
+
+    pub fn request_tap(&mut self) {
+        match self {
+            Self::T(r) => r.request_tap(),
+            Self::T2(r) => r.request_tap(),
+        }
+    }
+
+    pub fn tap(&mut self, out: &mut SymbolTap, rate: f64) {
+        match self {
+            Self::T(r) => r.tap(out, rate),
+            Self::T2(r) => r.tap(out, rate),
         }
     }
 

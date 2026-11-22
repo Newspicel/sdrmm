@@ -156,6 +156,34 @@ fn descriptor_runs_at_two_samples_per_symbol() {
 }
 
 #[test]
+fn the_scope_reads_equalised_bursts_as_tight_bpsk() {
+    let mut filtered = Vec::new();
+    sdrmm_decoder_test_support::built_filter(
+        super::channel_filter(),
+        super::DESCRIPTOR.input_rate_hz,
+    )
+    .process(&cell().modulate(), &mut filtered);
+    let mut channel = channel(GsmParams::default());
+    let mut out = sdrmm_decoder::ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut shown = 0;
+    for block in filtered.chunks(8_192) {
+        out.reset();
+        channel.process(block, &mut out);
+        let tap = &out.symbols;
+        if tap.symbols.is_empty() {
+            continue;
+        }
+        shown += 1;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 4);
+        assert_eq!(tap.symbol_rate, crate::gsm::GSM_SYMBOL_RATE_HZ);
+        assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+    }
+    assert!(shown > 10, "{shown} blocks showed a burst");
+}
+
+#[test]
 fn a_clean_cell_tells_the_whole_story() {
     let (frames, rejected) = decode(GsmParams::default(), &cell().modulate());
     assert_full_story(&frames);

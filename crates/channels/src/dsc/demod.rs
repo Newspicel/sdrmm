@@ -77,6 +77,11 @@ impl FskDemod {
         )
     }
 
+    /// The carrier's offset from the centre of the tone pair, as the tracker last measured it.
+    pub fn frequency_error_hz(&self) -> f64 {
+        f64::from(self.freq_offset) * RATE / f64::from(TAU)
+    }
+
     pub fn process(&mut self, input: &[Complex<f32>], soft: &mut Vec<f32>) {
         let samples_per_bit = SAMPLES_PER_BIT as f64;
         for &sample in input {

@@ -26,12 +26,21 @@ impl G3ruh {
         }
     }
 
-    pub(super) fn frames(&mut self, discriminated: &[f32], heard: &mut impl FnMut(&[u8])) {
+    pub(super) fn frames(
+        &mut self,
+        discriminated: &[f32],
+        mut levels: Option<&mut Vec<f32>>,
+        heard: &mut impl FnMut(&[u8]),
+    ) {
         self.lowpass.process(discriminated, &mut self.filtered);
         self.dc.process(&mut self.filtered);
         for &s in &self.filtered {
-            if let Some(level) = self.lane.sync.push(s) {
-                self.lane.push_level(self.descrambler.push(level), heard);
+            if let Some(level) = self.lane.sync.push_soft(s) {
+                if let Some(levels) = levels.as_deref_mut() {
+                    levels.push(level);
+                }
+                self.lane
+                    .push_level(self.descrambler.push(level >= 0.0), heard);
             }
         }
     }

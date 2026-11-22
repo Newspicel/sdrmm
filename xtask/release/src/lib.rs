@@ -106,10 +106,21 @@ pub fn run(root: &Path, cmd: &Cmd) -> Result<()> {
     }
 }
 
+/// Found at run time: a path baked in at compile time goes stale when worktrees share a
+/// target directory, and then writes land in the wrong checkout.
 pub fn root() -> Result<PathBuf> {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    let start = match std::env::var_os("CARGO_MANIFEST_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => std::env::current_dir()?,
+    };
+    start
         .ancestors()
-        .nth(2)
+        .find(|dir| is_workspace_root(dir))
         .map(Path::to_path_buf)
-        .ok_or_else(|| anyhow::anyhow!("xtask-release sits two levels below the workspace root"))
+        .ok_or_else(|| anyhow::anyhow!("no workspace root above {}", start.display()))
+}
+
+fn is_workspace_root(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("Cargo.toml"))
+        .is_ok_and(|manifest| manifest.lines().any(|line| line.trim() == "[workspace]"))
 }

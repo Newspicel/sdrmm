@@ -1,11 +1,14 @@
 use std::f32::consts::TAU;
 
 use num_complex::Complex;
+use sdrmm_decoder::SymbolTap;
 use sdrmm_dsp::math::fft::Transform;
+use sdrmm_modem::constellation::Constellation as Table;
 
 use super::{
-    DecodeError,
+    Constellation, DecodeError,
     acquire::{Acquisition, Preamble},
+    bicm,
     common::Multiplex,
     equalize::{Equalizer, Shape},
     mapping::Mapping,
@@ -58,6 +61,8 @@ pub struct Receiver {
     fef: usize,
     consumed: u64,
     origin: u64,
+    tables: Vec<Table>,
+    cells_per_sample: f64,
 }
 
 impl Receiver {
@@ -96,6 +101,8 @@ impl Receiver {
             fef: 0,
             consumed: 0,
             origin: 0,
+            tables: tables()?,
+            cells_per_sample: 0.0,
         })
     }
 
@@ -126,6 +133,25 @@ impl Receiver {
     pub fn plp(&self) -> Option<super::signalling::Plp> {
         self.scheduler.selected()
     }
+    /// Asks the selected PLP's next FEC block to keep its cells for the scope.
+    pub fn request_tap(&mut self) {
+        self.scheduler.request_tap();
+    }
+
+    /// Hands the kept cells to the scope once, at `rate` samples a second.
+    pub fn tap(&mut self, out: &mut SymbolTap, rate: f64) {
+        let Some((points, constellation)) = self.scheduler.tapped() else {
+            return;
+        };
+        out.linear(
+            points,
+            &self.tables[constellation.bits() / 2 - 1],
+            self.cells_per_sample * rate,
+            f64::from(self.frequency) * rate / std::f64::consts::TAU,
+        );
+        self.scheduler.release_tap();
+    }
+
     pub fn snr(&self) -> f32 {
         -10.0 * self.equalizer.noise.max(1e-6).log10()
     }
@@ -392,6 +418,7 @@ impl Receiver {
         map.deinterleave(&self.equalized[..map.data], symbol, &mut self.cells)?;
         map.deinterleave(&self.gains[..map.data], symbol, &mut self.cell_gains)?;
         let active = map.active;
+        self.cells_per_sample = active as f64 / length as f64;
         let previous = self.scheduler.report().packets;
         self.scheduler.push(
             address,
@@ -469,4 +496,25 @@ fn prefix(
     let residual =
         (correlation * Complex::from_polar(1.0, -frequency * fft as f32)).arg() / fft as f32;
     (quality, residual)
+}
+
+/// The four PLP grids, indexed by bits per cell over two, less one.
+fn tables() -> Result<Vec<Table>, DecodeError> {
+    let mut tables = Vec::with_capacity(4);
+    for constellation in [
+        Constellation::Qpsk,
+        Constellation::Qam16,
+        Constellation::Qam64,
+        Constellation::Qam256,
+    ] {
+        let size = 1 << constellation.bits();
+        let points = (0..size)
+            .map(|word| bicm::point(word, constellation))
+            .collect();
+        tables.push(
+            Table::from_points(points, (0..size as u32).collect())
+                .map_err(|_| DecodeError::Parameters)?,
+        );
+    }
+    Ok(tables)
 }

@@ -80,6 +80,34 @@ impl Equalizer {
         })
     }
 
+    /// The last burst's symbols with the echoes of their decided neighbours taken off and
+    /// every path combined, one point near ±1 a symbol, for a scope.
+    pub(crate) fn equalised(&self, soft: &[f32; BURST_SYMBOLS], out: &mut Vec<Complex<f32>>) {
+        let power: f32 = self.taps.iter().map(Complex::norm_sqr).sum();
+        if power <= NOISE_FLOOR {
+            return;
+        }
+        let decided = |k: usize, back: usize| {
+            k.checked_sub(back)
+                .and_then(|k| soft.get(k))
+                .map_or(0.0, |&llr| level(llr < 0.0))
+        };
+        for j in 0..BURST_SYMBOLS - (TAPS - 1) {
+            let mut sum = Complex::<f32>::default();
+            for (l, tap) in self.taps.iter().enumerate() {
+                let at = j + l;
+                let mut residual = self.symbols[at];
+                for (m, other) in self.taps.iter().enumerate() {
+                    if m != l {
+                        residual -= other * decided(at, m);
+                    }
+                }
+                sum += tap.conj() * residual;
+            }
+            out.push(sum / power);
+        }
+    }
+
     fn derotate(&mut self, window: &[Complex<f32>], frequency: f32) {
         let step = Complex::from_polar(1.0, -(FRAC_PI_2 / SPS as f32 + frequency));
         let mut phasor = Complex::new(1.0f32, 0.0);

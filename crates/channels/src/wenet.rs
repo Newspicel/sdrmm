@@ -29,6 +29,7 @@ use sdrmm_decoder::{
     check_input_rate,
 };
 use sdrmm_dsp::demod::sync::CrossingClock;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ssdv::{Assembler, Header, PacketChecker};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventContract};
 
@@ -39,6 +40,8 @@ const SIGNAL_LOSS_S: f64 = 5.0;
 const PROGRESS_S: f64 = 1.0;
 const SOURCE: &str = "wenet";
 const WENET_BAND: &[HzRange] = &[HzRange::mhz(430.0, 450.0)];
+/// One symbol in this many reaches the scope, some fourteen thousand a second.
+const TAP_EVERY: usize = 8;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "wenet".to_owned(),
@@ -270,10 +273,39 @@ impl Sink {
     }
 }
 
+/// The symbols of the lane that last decoded a packet, for the scope.
+struct Scope {
+    heard: usize,
+    count: usize,
+    tones: Mapping,
+    levels: Vec<f32>,
+}
+
+impl Scope {
+    fn hear(&mut self, lane: usize) {
+        if lane != self.heard {
+            self.heard = lane;
+            self.levels.clear();
+        }
+    }
+
+    fn keep(&mut self, lane: usize, symbol: f32) {
+        if lane != self.heard || self.levels.len() == self.levels.capacity() {
+            return;
+        }
+        self.count += 1;
+        if self.count >= TAP_EVERY {
+            self.count = 0;
+            self.levels.push(symbol);
+        }
+    }
+}
+
 pub struct WenetChannel {
     front: FrontEnd,
     lanes: [Lane; 2],
     sink: Sink,
+    scope: Scope,
     samples: u64,
     closing: bool,
 }
@@ -288,15 +320,22 @@ impl WenetChannel {
     }
 
     fn run_chunk(&mut self, chunk: &[Complex<f32>], out: &mut ChannelOutputs) {
+        let wanted = out.symbols.wanted();
+        self.scope.levels.clear();
         let audio = self.front.demodulate(chunk);
         for (offset, &sample) in audio.iter().enumerate() {
-            for lane in &mut self.lanes {
-                if let Some(symbol) = lane.clock.push(sample)
-                    && let Some(outcome) = lane.deframer.push(symbol)
-                {
+            for (index, lane) in self.lanes.iter_mut().enumerate() {
+                let Some(symbol) = lane.clock.push(sample) else {
+                    continue;
+                };
+                if wanted {
+                    self.scope.keep(index, symbol);
+                }
+                if let Some(outcome) = lane.deframer.push(symbol) {
                     let now = self.samples + offset as u64;
                     match outcome {
                         Outcome::Decoded { .. } => {
+                            self.scope.hear(index);
                             self.sink
                                 .on_packet(lane.mode, lane.deframer.packet(), now, out);
                         }
@@ -305,9 +344,23 @@ impl WenetChannel {
                 }
             }
         }
+        if wanted {
+            self.tap_symbols(out);
+        }
         self.samples += chunk.len() as u64;
         self.sink.picture.progress(self.samples, out);
         self.check_signal(out);
+    }
+
+    fn tap_symbols(&self, out: &mut ChannelOutputs) {
+        let scope = &self.scope;
+        out.symbols.levels(
+            &scope.levels,
+            &[],
+            &scope.tones,
+            self.lanes[scope.heard].mode.baud(),
+            self.front.offset_hz(),
+        );
     }
 
     fn check_signal(&mut self, out: &mut ChannelOutputs) {
@@ -342,6 +395,12 @@ impl NativeChannel for WenetChannel {
                 picture: Picture::new(),
                 callsign: None,
                 ssdv_callsign: None,
+            },
+            scope: Scope {
+                heard: 0,
+                count: 0,
+                tones: Mapping::natural(2),
+                levels: Vec::with_capacity(CHUNK),
             },
             samples: 0,
             closing: false,

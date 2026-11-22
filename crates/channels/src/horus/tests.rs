@@ -81,6 +81,31 @@ fn decodes_the_v3_reference() {
 }
 
 #[test]
+fn the_scope_sees_four_tight_tone_levels() {
+    let mut receiver = HorusReceiver::new(AUDIO_SEARCH_HZ).expect("receiver");
+    receiver.watch(true);
+    let mut frames = Vec::new();
+    let iq = cf32_le(include_bytes!(
+        "../../../../fixtures/horus/horus_v2_8k.sigmf-data"
+    ));
+    let (mut seen, mut worst) = (0, 0.0f32);
+    for block in iq.chunks(4_000) {
+        receiver.process(block, &mut frames);
+        let mut tap = sdrmm_decoder::SymbolTap::default();
+        tap.set_wanted(true);
+        receiver.tap(&mut tap);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 4);
+        assert_eq!(tap.symbol_rate, f64::from(BAUD));
+        seen += tap.symbols.len();
+        worst = worst.max(tap.evm);
+    }
+    assert_eq!(frames.len(), 1);
+    assert!(seen > 0);
+    assert!(worst < 0.35, "measured {worst} EVM");
+}
+
+#[test]
 fn noise_alone_decodes_nothing() {
     let mut receiver = HorusReceiver::new((-3_000.0, 3_000.0)).expect("receiver");
     let mut frames = Vec::new();

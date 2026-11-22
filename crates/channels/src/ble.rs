@@ -23,7 +23,10 @@ use self::{
     ad::Fields,
     repeats::{Fnv, Repeats},
 };
-use sdrmm_decoder::{Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_rate};
+use sdrmm_decoder::{
+    Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, SymbolTap, check_rate,
+};
+use sdrmm_modem::cpm::Mapping;
 
 const REPEAT_HOLD_S: f64 = 1.0;
 
@@ -79,6 +82,7 @@ pub struct BleChannel {
     front: Front,
     repeats: Repeats,
     unreadable: u32,
+    mapping: Mapping,
 }
 
 impl NativeChannel for BleChannel {
@@ -94,6 +98,7 @@ impl NativeChannel for BleChannel {
             front: front(params.link, settings.frequency_hz)?,
             repeats: Repeats::new((phy::RATE_HZ * REPEAT_HOLD_S) as u64),
             unreadable: 0,
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -126,6 +131,8 @@ impl Channel for BleChannel {
             repeats: &mut self.repeats,
             events: &mut out.events,
             unreadable: &mut self.unreadable,
+            tap: &mut out.symbols,
+            mapping: &self.mapping,
         };
         self.front.process(iq, &mut events);
     }
@@ -139,6 +146,8 @@ struct EventSink<'a> {
     repeats: &'a mut Repeats,
     events: &'a mut Vec<DecoderEvent>,
     unreadable: &'a mut u32,
+    tap: &'a mut SymbolTap,
+    mapping: &'a Mapping,
 }
 
 impl Sink for EventSink<'_> {
@@ -155,6 +164,11 @@ impl Sink for EventSink<'_> {
         *self.unreadable = self.unreadable.saturating_add(fields.truncated);
         self.events
             .push(DecoderEvent::of(&advert(&pdu, &packet, repeats, fields)));
+    }
+
+    fn symbols(&mut self, soft: &[f32], offset_hz: f64) {
+        self.tap
+            .levels(soft, &[], self.mapping, phy::SYMBOL_RATE_HZ, offset_hz);
     }
 }
 

@@ -30,6 +30,18 @@ impl Lane {
         }
     }
 
+    pub(super) fn push_watched(
+        &mut self,
+        sample: f32,
+        levels: &mut Vec<f32>,
+        heard: &mut impl FnMut(&[u8]),
+    ) {
+        if let Some(level) = self.sync.push_soft(sample) {
+            levels.push(level);
+            self.push_level(level >= 0.0, heard);
+        }
+    }
+
     pub(super) fn push_level(&mut self, level: bool, heard: &mut impl FnMut(&[u8])) {
         if let Some(frame) = self.deframer.push(self.nrzi.decode(level)) {
             heard(frame);

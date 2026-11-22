@@ -27,7 +27,7 @@ use num_complex::Complex;
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, DecodedImage, NativeChannel, check_rate,
 };
-use sdrmm_modem::split_phase::SplitPhaseDemod;
+use sdrmm_modem::{cpm::Mapping, split_phase::SplitPhaseDemod};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind, HzRange,
     Modulation, SignalSignature,
@@ -44,6 +44,10 @@ const MIN_COMPLETE_LINES: u16 = 32;
 /// A picture redraws each time this many new lines have come in.
 const REDRAW_LINES: u16 = 16;
 const SOURCE: &str = "hrpt";
+/// One split-phase bit in this many reaches the scope, some fourteen thousand a second.
+const BIT_TAP_EVERY: usize = 48;
+/// One `MetOp` QPSK symbol in this many reaches the scope, some eighteen thousand a second.
+const SYMBOL_TAP_EVERY: usize = 128;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "hrpt".to_owned(),
@@ -312,6 +316,9 @@ pub struct HrptChannel {
     picture: Picture,
     scan: Box<Scan>,
     soft: Vec<f32>,
+    bits: Mapping,
+    levels: Vec<f32>,
+    points: Vec<Complex<f32>>,
     samples: u64,
     closing: bool,
     /// Frames lost before this link: kept on position alone, or dropped by a link since replaced.
@@ -370,8 +377,37 @@ impl HrptChannel {
         self.picture.last_frame = self.samples;
     }
 
+    fn tap_symbols(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        if let Downlink::Metop(link) = &self.downlink {
+            self.points.clear();
+            self.points
+                .extend(link.symbols().iter().step_by(SYMBOL_TAP_EVERY).copied());
+            out.symbols.linear(
+                &self.points,
+                link.constellation(),
+                metop::SYMBOL_RATE,
+                link.frequency_offset_hz(),
+            );
+            return;
+        }
+        self.levels.clear();
+        self.levels
+            .extend(self.soft.iter().step_by(BIT_TAP_EVERY).copied());
+        out.symbols.levels(
+            &self.levels,
+            &[],
+            &self.bits,
+            BIT_RATE,
+            self.demod.carrier().offset_hz(),
+        );
+    }
+
     fn run_chunk(&mut self, chunk: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.downlink.feed(chunk, &mut self.demod, &mut self.soft);
+        self.tap_symbols(out);
         self.samples += chunk.len() as u64;
         self.take_frames(out);
         self.picture.progress(self.params.picture, out);
@@ -396,6 +432,9 @@ impl NativeChannel for HrptChannel {
             picture: Picture::new(params.satellite),
             scan: Box::new(Scan::new()),
             soft: Vec::with_capacity(CHUNK),
+            bits: Mapping::natural(2),
+            levels: Vec::with_capacity(CHUNK),
+            points: Vec::with_capacity(CHUNK),
             samples: 0,
             closing: false,
             lost: 0,

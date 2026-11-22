@@ -91,6 +91,10 @@ use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::{
+    constellation::{Constellation, tables},
+    cpm::Mapping,
+};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -116,6 +120,22 @@ enum Receiver {
     Forward(Box<AeroChannelDecoder>, Vec<AeroEvent>),
     Burst(Box<BurstReceiver>),
     Circuit(Box<CircuitReceiver>, Vec<CircuitEvent>),
+}
+
+/// The references the scope measures Aero symbols against.
+struct Scope {
+    qpsk: Constellation,
+    binary: Mapping,
+}
+
+impl Scope {
+    fn new() -> Result<Self, ChannelError> {
+        Ok(Self {
+            qpsk: tables::psk_rotated(4, std::f64::consts::FRAC_PI_4)
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
+            binary: Mapping::natural(2),
+        })
+    }
 }
 
 impl Receiver {
@@ -145,11 +165,23 @@ impl Receiver {
                 .map(|message| DecoderEvent::tagged(EventKind::named("inmarsat_aero"), &message)),
         );
     }
+
+    fn tap(&self, out: &mut ChannelOutputs, scope: &Scope) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        match self {
+            Self::Forward(decoder, _) => decoder.tap(&mut out.symbols, scope),
+            Self::Burst(receiver) => receiver.tap(&mut out.symbols, scope),
+            Self::Circuit(receiver, _) => receiver.tap(&mut out.symbols, scope),
+        }
+    }
 }
 
 pub struct InmarsatAeroChannel {
     channel: AeroChannel,
     receiver: Receiver,
+    scope: Scope,
 }
 
 fn params(settings: &ChannelSettings) -> Result<InmarsatAeroParams, ChannelError> {
@@ -312,6 +344,7 @@ impl NativeChannel for InmarsatAeroChannel {
         Ok(Self {
             channel,
             receiver: Receiver::new(channel),
+            scope: Scope::new()?,
         })
     }
 }
@@ -328,5 +361,6 @@ impl Channel for InmarsatAeroChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.receiver.process(iq, out);
+        self.receiver.tap(out, &self.scope);
     }
 }

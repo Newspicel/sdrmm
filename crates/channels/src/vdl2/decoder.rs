@@ -66,6 +66,14 @@ impl Vdl2Decoder {
         }
     }
 
+    pub fn points(&self) -> &[Complex<f32>] {
+        self.demod.points()
+    }
+
+    pub fn freq_skew_hz(&self) -> f32 {
+        self.bursts.last().map_or(0.0, |burst| burst.freq_skew_hz)
+    }
+
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<Vdl2Frame>) {
         self.samples_seen += input.len() as u64;
         let now = self.samples_seen as f64 / self.input_rate;

@@ -93,6 +93,35 @@ fn hears_fleetsync_ii_at_2400_baud() {
 }
 
 #[test]
+fn the_scope_follows_the_lane_that_found_a_2400_baud_sync() {
+    let blocks = frame::encode_fs2(
+        u32::from_be_bytes([ANI[0], ANI[1], ANI[2], ANI[3]]),
+        frame::encode(ANI).1,
+    );
+    let iq = transmission(FfskTones::MSK_2400, &blocks);
+    let mut channel = FleetSyncChannel::new(
+        ChannelCtx { input_rate: RATE },
+        settings(ChannelParams::of(&FleetSyncParams::default()).expect("fleetsync settings")),
+    )
+    .expect("fleetsync channel");
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut best = f32::INFINITY;
+    for block in iq[4_800..iq.len() - 9_600].chunks(1_021) {
+        out.reset();
+        channel.process(block, &mut out);
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(!tap.symbols.is_empty());
+        if tap.symbol_rate == 2_400.0 {
+            best = best.min(tap.evm);
+        }
+    }
+    assert!(best < 0.2, "best 2400 baud EVM {best}");
+}
+
+#[test]
 fn a_text_message_reads_through_its_blocks() {
     let blocks = [
         frame::encode([0x00, 0x42, 0x08, 0x30, 0x53, 0x05]),

@@ -15,6 +15,7 @@ mod transport;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use self::{
@@ -58,10 +59,18 @@ pub(crate) fn channel_filter() -> FilterSpec {
 struct Decoder {
     keys: Keys,
     rejected: u32,
+    mapping: Mapping,
 }
 
 impl Decoder {
     fn burst(&mut self, burst: &Burst<'_>, out: &mut ChannelOutputs) {
+        out.symbols.levels(
+            burst.chips,
+            &[],
+            &self.mapping,
+            burst.chip_rate,
+            burst.offset_hz,
+        );
         match self.message(burst) {
             Some(message) => out.events.push(DecoderEvent::of(&message)),
             None => self.rejected = self.rejected.saturating_add(1),
@@ -113,6 +122,7 @@ impl NativeChannel for WmbusChannel {
             decoder: Decoder {
                 keys: Keys::new(&params.keys),
                 rejected: 0,
+                mapping: Mapping::natural(2),
             },
         })
     }

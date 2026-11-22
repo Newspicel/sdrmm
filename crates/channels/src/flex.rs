@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::hamming_distance;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use sdrmm_decoder::{
@@ -179,6 +180,41 @@ pub struct FlexChannel {
     polarity: bool,
     rejected: u32,
     fragments: Reassembly,
+    scope: Scope,
+}
+
+/// The data symbols a block read, on the rail of the mode that sent them.
+struct Scope {
+    points: Vec<f32>,
+    mode: Mode,
+    rails: [Mapping; 2],
+}
+
+impl Scope {
+    fn new() -> Self {
+        Self {
+            points: Vec::new(),
+            mode: SYNC_CODES[0].1,
+            rails: [Mapping::natural(2), Mapping::natural(4)],
+        }
+    }
+
+    fn push(&mut self, powers: Powers, mode: Mode) {
+        self.mode = mode;
+        self.points.push(tones::level(powers, mode.levels));
+    }
+
+    fn show(&mut self, out: &mut ChannelOutputs, frequency_error_hz: f64) {
+        let rail = &self.rails[usize::from(self.mode.levels == 4)];
+        out.symbols.levels(
+            &self.points,
+            &[],
+            rail,
+            f64::from(self.mode.symbol_rate),
+            frequency_error_hz,
+        );
+        self.points.clear();
+    }
 }
 
 fn params(settings: &ChannelSettings) -> Result<FlexParams, ChannelError> {
@@ -326,6 +362,11 @@ impl FlexChannel {
         } else {
             (tone, self.history[LATE])
         };
+        if out.symbols.wanted()
+            && let State::Data { mode, .. } = &self.state
+        {
+            self.scope.push(powers, *mode);
+        }
         self.symbol(tone, powers, out);
     }
 
@@ -795,6 +836,7 @@ impl NativeChannel for FlexChannel {
             polarity: false,
             rejected: 0,
             fragments: Reassembly::new(FRAGMENT_WAIT),
+            scope: Scope::new(),
         })
     }
 }
@@ -819,6 +861,10 @@ impl Channel for FlexChannel {
         for &sample in iq {
             self.push_sample(sample, out);
             self.sample = self.sample.wrapping_add(1);
+        }
+        if out.symbols.wanted() {
+            let frequency_error_hz = self.afc.offset() * RATE / std::f64::consts::TAU;
+            self.scope.show(out, frequency_error_hz);
         }
         self.fragments.expire(self.sample, &mut out.events);
     }
@@ -1012,6 +1058,35 @@ mod tests {
             assert_eq!(messages[0].levels, levels);
             assert_eq!(messages[0].cycle, 7);
             assert_eq!(messages[0].frame, 83);
+        }
+    }
+
+    #[test]
+    fn the_scope_sees_each_mode_on_its_own_rail() {
+        for (mode, symbol_rate, levels) in [
+            (synth::flex::Mode::Flex1600_2, 1_600.0, 2),
+            (synth::flex::Mode::Flex1600_4, 1_600.0, 4),
+            (synth::flex::Mode::Flex3200_4, 3_200.0, 4),
+        ] {
+            let iq = synth::flex::transmission_mode(&page(), 7, 83, RATE, mode);
+            let mut channel = FlexChannel::new(
+                ChannelCtx { input_rate: RATE },
+                settings(
+                    ChannelParams::new("flex", &FlexParams::default()).expect("flex settings"),
+                ),
+            )
+            .unwrap();
+            let mut out = ChannelOutputs::default();
+            out.symbols.set_wanted(true);
+            for chunk in iq.chunks(997) {
+                channel.process(chunk, &mut out);
+            }
+            let tap = &out.symbols;
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+            assert_eq!(tap.reference.len(), levels, "{mode:?}");
+            assert!(tap.symbols.len() > 1_000, "{mode:?}: {}", tap.symbols.len());
+            assert_eq!(tap.symbol_rate, symbol_rate, "{mode:?}");
+            assert!(tap.evm < 0.2, "{mode:?}: EVM {}", tap.evm);
         }
     }
 

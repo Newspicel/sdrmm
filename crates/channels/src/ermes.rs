@@ -365,6 +365,8 @@ impl Channel for ErmesChannel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let mut soft = std::mem::take(&mut self.soft);
         self.demod.process(iq, &mut soft);
+        out.symbols
+            .cpm(&self.demod, &soft, &self.mapping, BAUD, RATE);
         for symbol in soft.drain(..) {
             let symbol = if self.invert { -symbol } else { symbol };
             let index = self.mapping.slice(symbol);
@@ -513,6 +515,26 @@ mod tests {
             .into_iter()
             .filter_map(|event| event.read::<ErmesMessage>())
             .collect()
+    }
+
+    #[test]
+    fn the_scope_sees_four_clean_levels_at_3125_baud() {
+        let mut channel = ErmesChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings")),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for chunk in synth::ermes::transmission(&page(), RATE).chunks(997) {
+            channel.process(chunk, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 4);
+        assert!(tap.symbols.len() > 150, "{} symbols", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, BAUD);
+        assert!(tap.evm < 0.15, "EVM {}", tap.evm);
     }
 
     #[test]

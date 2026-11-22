@@ -146,3 +146,37 @@ fn the_bandwidth_is_checked() {
     );
     assert!(built.is_err());
 }
+
+#[test]
+fn the_scope_sees_the_two_chip_phases() {
+    let mut burst = sdrmm_modem::synth::silence(RATE as usize / 2);
+    burst.extend(synth::sarsat::burst(
+        &synth::sarsat::epirb_location(fix()),
+        false,
+        RATE,
+    ));
+    sdrmm_modem::synth::shift(&mut burst, 2_000.0, RATE);
+    let iq = burst;
+    let mut chan = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut tap = sdrmm_decoder::SymbolTap::default();
+    for block in iq.as_chunks::<997>().0 {
+        out.reset();
+        chan.process(block, &mut out);
+        if out.symbols.plane.is_some() {
+            tap = std::mem::take(&mut out.symbols);
+            out.symbols.set_wanted(true);
+        }
+    }
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() >= 20, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, CHIP_RATE);
+    assert!(
+        (tap.freq_error_hz - 2_000.0).abs() < 20.0,
+        "{} Hz",
+        tap.freq_error_hz
+    );
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+}

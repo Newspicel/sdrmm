@@ -205,6 +205,23 @@ fn synthetic(mode: WmbusMode, format: WmbusFormat, payload: &[u8]) -> Vec<Comple
 }
 
 #[test]
+fn the_scope_reads_each_mode_as_two_tight_levels_at_its_chip_rate() {
+    for (mode, chip_rate) in [(WmbusMode::S, 32_768.0), (WmbusMode::T, 100_000.0)] {
+        let mut rx = receiver();
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        rx.process(&synthetic(mode, WmbusFormat::A, &WATER_METER), &mut out);
+        let tap = &out.symbols;
+        assert_eq!(out.events.len(), 1, "{mode:?}");
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() > 8 * WATER_METER.len(), "{mode:?}");
+        assert_eq!(tap.symbol_rate, chip_rate);
+        assert!(tap.evm < 0.15, "{mode:?}: EVM {}", tap.evm);
+    }
+}
+
+#[test]
 fn every_mode_and_format_reads_plain_records() {
     for (mode, format) in [
         (WmbusMode::S, WmbusFormat::A),

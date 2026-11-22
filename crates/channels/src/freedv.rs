@@ -8,7 +8,10 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::golay23_correct;
-use sdrmm_modem::multicarrier::fdmdv::{self, Demodulator, Frame};
+use sdrmm_modem::{
+    constellation::{Constellation, tables},
+    multicarrier::fdmdv::{self, Demodulator, Frame},
+};
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
     DvFrame, DvFrameKind, EventKind, Sideband,
@@ -27,6 +30,7 @@ const FILTER_TAPS: usize = 257;
 const MODEM_SCALE: f32 = 32_768.0 / 825.0;
 const MODEM_BITS: usize = fdmdv::BITS;
 const CODEC_BITS: usize = 52;
+const TAP_POINTS: usize = 1024;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "freedv".to_owned(),
@@ -51,6 +55,8 @@ pub struct FreeDvChannel {
     synced: bool,
     vocoder: Codec2Decoder,
     rejected: u32,
+    dqpsk: Constellation,
+    points: Vec<Complex<f32>>,
 }
 
 fn dv_frame(kind: DvFrameKind) -> DvFrame {
@@ -91,6 +97,9 @@ impl NativeChannel for FreeDvChannel {
             synced: false,
             vocoder: Codec2Decoder::new(),
             rejected: 0,
+            dqpsk: tables::psk(4)
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
+            points: Vec::with_capacity(TAP_POINTS),
         })
     }
 }
@@ -112,15 +121,18 @@ impl Channel for FreeDvChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
+        self.points.clear();
         for &sample in iq {
             let sample = match self.sideband {
                 Sideband::Usb => sample,
                 Sideband::Lsb => sample.conj(),
             } * MODEM_SCALE;
             if let Some(frame) = self.modem.push(sample) {
+                self.keep_points(&frame, out);
                 self.demod_frame(&frame, out);
             }
         }
+        self.tap_symbols(out);
     }
 
     fn rejected(&self) -> u32 {
@@ -133,6 +145,31 @@ impl FreeDvChannel {
         self.even_frame = false;
         self.synced = false;
         self.vocoder.reset();
+    }
+
+    fn keep_points(&mut self, frame: &Frame, out: &ChannelOutputs) {
+        if out.symbols.wanted()
+            && frame.sync
+            && self.points.len() + frame.points.len() <= self.points.capacity()
+        {
+            self.points.extend_from_slice(&frame.points);
+        }
+    }
+
+    fn tap_symbols(&self, out: &mut ChannelOutputs) {
+        if self.points.is_empty() {
+            return;
+        }
+        let offset = f64::from(self.modem.frequency_offset_hz());
+        out.symbols.linear(
+            &self.points,
+            &self.dqpsk,
+            fdmdv::DATA_CARRIERS as f64 * fdmdv::SYMBOL_RATE_HZ,
+            match self.sideband {
+                Sideband::Usb => offset,
+                Sideband::Lsb => -offset,
+            },
+        );
     }
 
     fn demod_frame(&mut self, frame: &Frame, out: &mut ChannelOutputs) {
@@ -329,6 +366,38 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn the_scope_sees_four_dqpsk_clusters_in_the_recording() {
+        let params = FreeDvParams::default();
+        let mut channel = FreeDvChannel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE_HZ,
+            },
+            settings(ChannelParams::of(&params).expect("freedv settings")),
+        )
+        .expect("freedv channel");
+        let mut filter =
+            sdrmm_decoder_test_support::built_filter(channel_filter(params), INPUT_RATE_HZ);
+        let mut filtered = Vec::new();
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in recording().chunks(8_000) {
+            filter.process(block, &mut filtered);
+            out.reset();
+            channel.process(&filtered, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 8);
+        assert!(
+            tap.symbols.len() >= 2 * 16 * 40,
+            "{} values",
+            tap.symbols.len()
+        );
+        assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+        assert_eq!(tap.symbol_rate, 800.0);
     }
 
     #[test]

@@ -43,6 +43,8 @@ const RESCUE_CARRIER: [f32; 9] = [
 
 pub struct Burst {
     pub bps: u32,
+    pub bits_per_symbol: u32,
+    pub points: Vec<Complex<f32>>,
     pub payload: Vec<u8>,
     pub fec_corrected: u32,
     pub freq_skew_hz: f32,
@@ -85,6 +87,7 @@ struct Walk {
 
 struct Equalized {
     soft: Vec<f32>,
+    points: Vec<Complex<f32>>,
     loop_freq: f32,
     signal_power: f64,
     error_power: f64,
@@ -353,6 +356,7 @@ impl HfdlDemod {
         }
         let levels = 1u32 << setting.bits_per_symbol;
         let mut soft = Vec::with_capacity(setting.chips());
+        let mut points = Vec::with_capacity(setting.data_segments() * SEGMENT_SYMBOLS);
         let mut data_index = 0usize;
         for _ in 0..setting.data_segments() {
             let before = walk.segment_error;
@@ -365,6 +369,7 @@ impl HfdlDemod {
                     y
                 };
                 data_index += 1;
+                points.push(point);
                 for bit in 0..setting.bits_per_symbol {
                     soft.push(gray_llr(point, levels, bit));
                 }
@@ -377,6 +382,7 @@ impl HfdlDemod {
         }
         Some(Equalized {
             soft,
+            points,
             loop_freq: walk.loop_freq,
             signal_power: walk.signal_power,
             error_power: walk.error_power,
@@ -423,6 +429,8 @@ impl HfdlDemod {
             .then(|| 10.0 * (equalized.signal_power / equalized.error_power).log10() as f32);
         Some(Burst {
             bps: setting.bps,
+            bits_per_symbol: setting.bits_per_symbol,
+            points: equalized.points,
             payload,
             fec_corrected,
             freq_skew_hz,

@@ -11,7 +11,8 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, FmDemod, RealDecimator};
 #[cfg(any(test, feature = "synth"))]
-use sdrmm_modem::cpm::{CpmParams, Mapping};
+use sdrmm_modem::cpm::CpmParams;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ita2::{self, ShiftDecoder};
 use sdrmm_modem::pulse::{self, Norm};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
@@ -117,6 +118,8 @@ pub struct NavtexChannel {
     decoder: Decoder,
     demod_buf: Vec<f32>,
     filtered: Vec<f32>,
+    soft: Vec<f32>,
+    rail: Mapping,
 }
 
 fn params(settings: &ChannelSettings) -> Result<NavtexParams, ChannelError> {
@@ -168,6 +171,8 @@ impl NativeChannel for NavtexChannel {
             decoder: Decoder::new(),
             demod_buf: Vec::new(),
             filtered: Vec::new(),
+            soft: Vec::new(),
+            rail: Mapping::natural(2),
         })
     }
 }
@@ -200,10 +205,16 @@ impl Channel for NavtexChannel {
             };
         }
         self.post.process(&self.demod_buf, &mut self.filtered);
-        for &level in &self.filtered {
-            if let Some(soft) = self.sync.push_soft(level) {
-                self.decoder.feed(soft, out);
-            }
+        self.soft.clear();
+        let sync = &mut self.sync;
+        self.soft.extend(
+            self.filtered
+                .iter()
+                .filter_map(|&level| sync.push_soft(level)),
+        );
+        out.symbols.levels(&self.soft, &[], &self.rail, BAUD, 0.0);
+        for &soft in &self.soft {
+            self.decoder.feed(soft, out);
         }
     }
 }
@@ -599,6 +610,22 @@ mod tests {
         assert_eq!(m.text, "GALE WARNING\nGERMAN BIGHT");
         assert_eq!(m.errors_corrected, 0);
         assert!(m.complete);
+    }
+
+    #[test]
+    fn the_scope_sees_two_clean_levels_at_100_baud() {
+        let mut chan = channel(NavtexParams::default());
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in transmission(BROADCAST, RATE).chunks(997) {
+            chan.process(block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() > 300, "{} symbols", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, BAUD);
+        assert!(tap.evm < 0.2, "EVM {}", tap.evm);
     }
 
     #[test]

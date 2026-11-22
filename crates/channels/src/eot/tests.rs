@@ -58,6 +58,26 @@ fn run(iq: &[Complex<f32>]) -> (Vec<EotMessage>, u32) {
     (eot(out), channel.rejected())
 }
 
+#[test]
+fn the_scope_reads_a_rear_report_as_two_tight_levels() {
+    let iq = synth::eot::rear_transmission(&rear(), RATE);
+    let mut channel = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut cleanest = f32::INFINITY;
+    for chunk in iq.chunks(4_800) {
+        out.reset();
+        channel.process(chunk, &mut out);
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(!tap.symbols.is_empty());
+        assert_eq!(tap.symbol_rate, TONES.baud);
+        cleanest = cleanest.min(tap.evm);
+    }
+    assert!(cleanest < 0.15, "EVM {cleanest}");
+}
+
 fn messages(iq: &[Complex<f32>]) -> Vec<EotMessage> {
     run(iq).0
 }

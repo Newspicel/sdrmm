@@ -254,6 +254,14 @@ impl RateDemods {
         }
         &self.bits
     }
+
+    fn raw(&self, coherent: bool) -> &[f32] {
+        if coherent {
+            self.coherent.raw()
+        } else {
+            self.incoherent.raw()
+        }
+    }
 }
 
 pub(super) struct BurstEvent {
@@ -268,6 +276,8 @@ pub(super) struct AeroBurstDecoder {
     gate: BurstGate,
     packetizers: [BurstPacketizer; 2],
     demods: [RateDemods; 2],
+    shown: Vec<f32>,
+    shown_rate: u32,
 }
 
 impl AeroBurstDecoder {
@@ -276,24 +286,61 @@ impl AeroBurstDecoder {
             gate: BurstGate::new(MAX_BURST_SECONDS * CHANNEL_RATE as usize),
             packetizers: [BurstPacketizer::new(), BurstPacketizer::new()],
             demods: [RateDemods::new(600), RateDemods::new(1200)],
+            shown: Vec::new(),
+            shown_rate: 0,
         }
+    }
+
+    /// The bit decisions of this block's last decoded burst over their mean level, and its rate.
+    pub(super) fn shown(&self) -> (&[f32], u32) {
+        (&self.shown, self.shown_rate)
+    }
+
+    /// Keeps the unique word and first coded section: bits the burst surely carries, without the
+    /// unmodulated preamble or the silence the gate kept around it.
+    fn show(&mut self, raw_from: usize, coherent: bool) {
+        let demods = &self.demods[raw_from];
+        let start = find_uw(&demods.bits).map_or(0, |end| end.saturating_sub(32));
+        let raw = demods.raw(coherent);
+        let raw = &raw[start.min(raw.len())..(start + 32 + SECTION1_CODED).min(raw.len())];
+        let level = raw.iter().map(|v| v.abs()).sum::<f32>() / raw.len().max(1) as f32;
+        let scale = 1.0 / level.max(f32::MIN_POSITIVE);
+        self.shown.clear();
+        self.shown.extend(raw.iter().map(|v| v * scale));
+        self.shown_rate = demods.bit_rate;
     }
 
     pub(super) fn process(&mut self, input: &[Complex<f32>]) -> Vec<BurstEvent> {
         let mut out = Vec::new();
+        self.shown.clear();
         for burst in self.gate.process(input) {
-            for (packetizer, demods) in self.packetizers.iter_mut().zip(&mut self.demods) {
-                let rate = demods.bit_rate;
-                let result = packetizer
-                    .process(demods.demod(&burst, false))
-                    .or_else(|| packetizer.process(demods.demod(&burst, true)));
-                if let Some(result) = result {
-                    out.extend(events(result, rate));
-                    break;
-                }
+            if let Some((index, coherent)) = self.decode(&burst, &mut out) {
+                self.show(index, coherent);
             }
         }
         out
+    }
+
+    fn decode(
+        &mut self,
+        burst: &[Complex<f32>],
+        out: &mut Vec<BurstEvent>,
+    ) -> Option<(usize, bool)> {
+        for (index, (packetizer, demods)) in self
+            .packetizers
+            .iter_mut()
+            .zip(&mut self.demods)
+            .enumerate()
+        {
+            let rate = demods.bit_rate;
+            for coherent in [false, true] {
+                if let Some(result) = packetizer.process(demods.demod(burst, coherent)) {
+                    out.extend(events(result, rate));
+                    return Some((index, coherent));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -443,6 +490,29 @@ mod tests {
             ),
         )
         .expect("aero channel")
+    }
+
+    #[test]
+    fn the_scope_sees_two_tight_msk_levels_from_a_t_burst() {
+        let iq = burst_iq(&burst_bits(&t_burst_bytes()), 1200.0, 180.0, 2000, 126.0);
+        let mut padded = sdrmm_modem::synth::resample(
+            &iq,
+            CHANNEL_RATE,
+            crate::inmarsat_aero::decoder::INPUT_RATE,
+        );
+        padded.extend(std::iter::repeat_n(Complex::new(0.0, 0.0), 48_000));
+        let mut channel = channel(crate::inmarsat_aero::AeroChannel::Burst);
+        let mut out = sdrmm_decoder::ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in padded.chunks(4_096) {
+            sdrmm_decoder::Channel::process(&mut channel, block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() >= 300, "{} values", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, 1_200.0);
+        assert!(tap.evm < 0.3, "EVM {}", tap.evm);
     }
 
     #[test]

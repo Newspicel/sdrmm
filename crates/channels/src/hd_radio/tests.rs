@@ -99,6 +99,36 @@ fn play(params: HdRadioParams, frames: u32) -> (BroadcastStatus, Vec<f32>) {
 }
 
 #[test]
+fn the_scope_sees_four_qpsk_clusters_off_air() {
+    let params = ChannelParams::new("hd_radio", &HdRadioParams::default()).expect("settings");
+    let settings = sdrmm_decoder_test_support::settings(params);
+    let rate = input_rate(&settings.params);
+    let mut front = ChannelFront::new(&settings.params, rate, 0.0).expect("front");
+    let mut channel = create(ChannelCtx { input_rate: rate }, &settings).expect("builds");
+    let mut filtered = Vec::new();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in kut().chunks(4_096) {
+        front.process(block, &mut filtered);
+        channel.process(&filtered, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 8);
+    assert!(
+        tap.symbols.len() >= 2 * 4 * 360,
+        "{} values",
+        tap.symbols.len()
+    );
+    assert!(tap.evm < 0.3, "EVM {}", tap.evm);
+    assert!(
+        (tap.symbol_rate - 360.0 * rate / 1620.0).abs() < 1.0,
+        "{}",
+        tap.symbol_rate
+    );
+}
+
+#[test]
 fn hd1_plays_as_aac_through_fdk() {
     let (status, pcm) = play(HdRadioParams::default(), 32);
     assert_eq!(status.audio_error, None);

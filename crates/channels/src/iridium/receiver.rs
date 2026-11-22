@@ -11,6 +11,7 @@ const MF_TAPS: usize = 51;
 const MF_ALPHA: f64 = 0.4;
 const QUIET_GUARD: usize = 300;
 const QUIET_TAIL: usize = 1_000;
+const SHOWN_MAX: usize = 4_096;
 
 pub fn matched_filter(x: &[Complex<f32>], taps: &[f32]) -> Vec<Complex<f32>> {
     let half = taps.len() / 2;
@@ -65,6 +66,22 @@ impl WindowDemod {
     }
 }
 
+/// The symbols of the bursts one block decoded into frames, for the scope.
+#[derive(Default)]
+pub struct Shown {
+    pub points: Vec<Complex<f32>>,
+    pub offset_hz: f64,
+}
+
+impl Shown {
+    pub fn keep(&mut self, burst: &DemodBurst, heard: &Heard) {
+        let room = SHOWN_MAX.saturating_sub(self.points.len());
+        self.points
+            .extend_from_slice(&burst.points[..burst.points.len().min(room)]);
+        self.offset_hz = heard.center_hz + burst.cfo_hz;
+    }
+}
+
 pub struct Heard {
     pub time: f64,
     pub freq: f64,
@@ -95,6 +112,7 @@ pub struct ChannelDecoder {
     reassembly: Reassembly,
     bursts: Vec<DemodBurst>,
     rejected: u32,
+    pub shown: Shown,
 }
 
 impl ChannelDecoder {
@@ -108,6 +126,7 @@ impl ChannelDecoder {
             reassembly: Reassembly::new(),
             bursts: Vec::new(),
             rejected: 0,
+            shown: Shown::default(),
         }
     }
 
@@ -118,6 +137,7 @@ impl ChannelDecoder {
     pub fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<IridiumFrame>) {
         let time =
             (self.start_abs + self.buf.len() as u64 + input.len() as u64) as f64 / CHANNEL_RATE;
+        self.shown.points.clear();
         let mut bursts = std::mem::take(&mut self.bursts);
         bursts.clear();
         self.demodulate(input, &mut bursts);
@@ -127,7 +147,9 @@ impl ChannelDecoder {
             center_hz: 0.0,
         };
         for burst in &bursts {
-            if !reassemble(&mut self.reassembly, burst, &heard, out) {
+            if reassemble(&mut self.reassembly, burst, &heard, out) {
+                self.shown.keep(burst, &heard);
+            } else {
                 self.rejected = self.rejected.saturating_add(1);
             }
         }

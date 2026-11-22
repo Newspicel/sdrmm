@@ -11,6 +11,7 @@ use super::{
 use sdrmm_modem::dvb::PACKET;
 
 const TIME_CAPACITY: usize = 1 << 19;
+const TAP_CELLS: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Report {
@@ -40,6 +41,9 @@ pub struct Scheduler {
     active: bool,
     report: Report,
     generation: u64,
+    tap: Vec<Complex<f32>>,
+    tapping: bool,
+    tapped: Option<Constellation>,
 }
 
 impl Scheduler {
@@ -89,6 +93,9 @@ impl Scheduler {
             active: false,
             report: Report::default(),
             generation: 0,
+            tap: Vec::with_capacity(TAP_CELLS),
+            tapping: false,
+            tapped: None,
         })
     }
 
@@ -100,6 +107,24 @@ impl Scheduler {
         self.buffered_gains.clear();
         self.transport.reset();
         self.active = false;
+    }
+
+    /// Asks the next FEC block to keep its first cells for the scope.
+    pub fn request_tap(&mut self) {
+        self.tapping = true;
+        self.tapped = None;
+        self.tap.clear();
+    }
+
+    /// The kept cells and the constellation they were sent in.
+    pub fn tapped(&self) -> Option<(&[Complex<f32>], Constellation)> {
+        self.tapped
+            .map(|constellation| (self.tap.as_slice(), constellation))
+    }
+
+    pub fn release_tap(&mut self) {
+        self.tapped = None;
+        self.tap.clear();
     }
 
     pub(super) const fn generation(&self) -> u64 {
@@ -291,14 +316,16 @@ impl Scheduler {
         }
         for index in 0..blocks {
             let first = index * plp.coding.cells();
+            let block = if plp.time_length == 0 {
+                self.time_block
+            } else {
+                index
+            };
+            self.keep_tap(plp, first, block);
             let result = self.decoders[self.decoder].2.decode_weighted(
                 &self.deinterleaved[first..first + plp.coding.cells()],
                 &self.deinterleaved_gains[first..first + plp.coding.cells()],
-                if plp.time_length == 0 {
-                    self.time_block
-                } else {
-                    index
-                },
+                block,
                 noise.max(0.0001),
                 &mut self.word,
             );
@@ -336,6 +363,22 @@ impl Scheduler {
             }
         }
         Ok(())
+    }
+
+    /// A block the decoder rejects keeps no tap; its error surfaces from the decode after.
+    fn keep_tap(&mut self, plp: Plp, first: usize, block: usize) {
+        if !self.tapping {
+            return;
+        }
+        let cells = &self.deinterleaved[first..first + plp.coding.cells()];
+        if self.decoders[self.decoder]
+            .2
+            .derotated_into(cells, block, &mut self.tap)
+            .is_ok()
+        {
+            self.tapping = false;
+            self.tapped = Some(plp.coding.constellation);
+        }
     }
 
     pub fn end(&mut self) -> Result<(), DecodeError> {

@@ -175,6 +175,18 @@ impl Multiplex {
         self.data.selected()
     }
 
+    pub fn request_tap(&mut self) {
+        self.data.request_tap();
+    }
+
+    pub fn tapped(&self) -> Option<(&[Complex<f32>], super::Constellation)> {
+        self.data.tapped()
+    }
+
+    pub fn release_tap(&mut self) {
+        self.data.release_tap();
+    }
+
     pub fn report(&self) -> Report {
         let mut report = self.data.report();
         let common = self.common.report();

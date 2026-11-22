@@ -12,7 +12,7 @@ use sdrmm_modem::{
         ASM, ASM_BYTES, CADU_BITS, CADU_BYTES, Depacketizer, INTERLEAVE, MAX_PACKET, MpduLayout,
         PacketHeader, VCDU_BYTES, randomize, sequence_gap,
     },
-    constellation::tables,
+    constellation::{Constellation, tables},
     framesync::{FixedFramer, Framed},
     linear::{CarrierLoop, LinearDemod, LinearParams, LinearTiming, PhaseDetector},
     pulse::{self, Norm},
@@ -195,6 +195,22 @@ impl Link {
     #[must_use]
     pub fn line(&self) -> &[u8] {
         self.line.as_slice()
+    }
+
+    /// The decision points of the last [`Self::feed`], after timing and carrier recovery.
+    #[must_use]
+    pub fn symbols(&self) -> &[Complex<f32>] {
+        &self.symbols
+    }
+
+    #[must_use]
+    pub fn constellation(&self) -> &Constellation {
+        self.demod.params().constellation()
+    }
+
+    #[must_use]
+    pub fn frequency_offset_hz(&self) -> f64 {
+        self.demod.carrier_freq_cycles_per_symbol() * SYMBOL_RATE
     }
 
     /// Demodulates and decodes `iq`; [`Self::next`] then hands out what it completed.

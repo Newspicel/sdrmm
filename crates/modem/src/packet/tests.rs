@@ -27,6 +27,28 @@ fn afsk_frames_come_back_with_their_fcs() {
 }
 
 #[test]
+fn a_watched_receiver_hears_the_same_frames_and_shows_every_bit() {
+    for mode in [PacketMode::Afsk1200, PacketMode::G3ruh9600] {
+        let iq = match mode {
+            PacketMode::Afsk1200 => afsk(b"\x01\x07\x20N0CALL\x06\x24hello"),
+            PacketMode::G3ruh9600 => crate::synth::silence(9_600),
+        };
+        let mut plain = PacketReceiver::new(mode, RATE, &BYTES);
+        let mut watched = PacketReceiver::new(mode, RATE, &BYTES);
+        let (mut heard, mut seen, mut levels) = (Vec::new(), Vec::new(), Vec::new());
+        plain.process(&iq, |frame| heard.push(frame.to_vec()));
+        watched.process_watched(&iq, &mut levels, |frame| seen.push(frame.to_vec()));
+        assert_eq!(heard, seen, "{mode:?}");
+        let bits = iq.len() as f64 * mode.baud() / RATE;
+        assert!(
+            (levels.len() as f64 - bits).abs() < 0.02 * bits,
+            "{mode:?}: {} levels for {bits} bits",
+            levels.len()
+        );
+    }
+}
+
+#[test]
 fn a_repeat_inside_the_window_is_dropped_and_after_it_passes() {
     let mut recent = RecentFrames::new(100);
     assert!(recent.first(b"abc"));

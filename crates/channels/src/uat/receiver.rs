@@ -53,6 +53,9 @@ pub(crate) struct Receiver {
     raw: [u8; UPLINK_BYTES],
     blocks: [u8; UPLINK_BYTES],
     uplinks: [[u8; UPLINK_DATA]; SAMPLES_PER_BIT],
+    tapping: bool,
+    soft: Vec<f32>,
+    centre: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -92,7 +95,26 @@ impl Receiver {
             raw: [0; UPLINK_BYTES],
             blocks: [0; UPLINK_BYTES],
             uplinks: [[0; UPLINK_DATA]; SAMPLES_PER_BIT],
+            tapping: false,
+            soft: Vec::with_capacity(UPLINK_BITS),
+            centre: 0.0,
         }
+    }
+
+    /// Keeps each heard frame's phase steps for [`Self::soft`].
+    pub(crate) fn set_tapping(&mut self, tapping: bool) {
+        self.tapping = tapping;
+    }
+
+    /// The phase step of every bit heard in the last [`Self::process`], the slicer's
+    /// threshold taken off so the sign is the bit.
+    pub(crate) fn soft(&self) -> &[f32] {
+        &self.soft
+    }
+
+    /// The last heard frame's slicing threshold: the carrier's phase step per sample.
+    pub(crate) fn centre(&self) -> f32 {
+        self.centre
     }
 
     /// Sync words found whose frame the code could not repair.
@@ -109,6 +131,7 @@ impl Receiver {
     }
 
     pub(crate) fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
+        self.soft.clear();
         phase_diff_into(iq, &mut self.previous, 1.0, &mut self.fresh);
         self.steps.extend_from_slice(&self.fresh);
         self.power.extend(iq.iter().map(Complex::norm_sqr));
@@ -166,6 +189,7 @@ impl Receiver {
         match link {
             Link::Adsb => {
                 let (frame, offset) = self.best_downlink(start)?;
+                self.tap(start + offset, ADSB_SYNC, link);
                 sink.heard(Heard::Downlink {
                     frame,
                     level,
@@ -174,6 +198,7 @@ impl Receiver {
             }
             Link::Uplink => {
                 let (corrected, offset) = self.best_uplink(start)?;
+                self.tap(start + offset, UPLINK_SYNC, link);
                 sink.heard(Heard::Uplink {
                     data: &self.uplinks[offset],
                     corrected,
@@ -222,6 +247,23 @@ impl Receiver {
             }
         }
         best
+    }
+
+    fn tap(&mut self, start: usize, word: u64, link: Link) {
+        if !self.tapping {
+            return;
+        }
+        let Some(centre) = centre(&self.steps[start..], word) else {
+            return;
+        };
+        let bits = &self.steps[start + SYNC_SPAN..];
+        self.soft.extend(
+            bits.iter()
+                .step_by(SAMPLES_PER_BIT)
+                .take(link.bits())
+                .map(|step| step - centre),
+        );
+        self.centre = centre;
     }
 
     fn trim(&mut self) {

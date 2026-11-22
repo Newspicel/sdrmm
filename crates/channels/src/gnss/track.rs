@@ -19,6 +19,7 @@ const WINDOW_MS: u32 = 200;
 const LOCKED: f64 = 0.25;
 const LOST_WINDOWS: u8 = 3;
 const DAMPING: f64 = std::f64::consts::FRAC_1_SQRT_2;
+const AMPLITUDE_ALPHA: f32 = 0.01;
 
 /// Noise bandwidths in hertz for pull-in and for steady tracking.
 #[derive(Clone, Copy)]
@@ -73,6 +74,8 @@ pub(super) struct Tracker {
     carrier_hz: f64,
     carrier_phase: f64,
     previous_prompt: Option<Complex<f32>>,
+    amplitude: f32,
+    prompt: Complex<f32>,
     ms: u64,
     pub cn0_db_hz: f32,
     moments: Moments,
@@ -94,6 +97,8 @@ impl Tracker {
             carrier_hz: found.doppler_hz,
             carrier_phase: 0.0,
             previous_prompt: None,
+            amplitude: 0.0,
+            prompt: Complex::default(),
             ms: 0,
             cn0_db_hz: found.cn0_db_hz,
             moments: Moments::default(),
@@ -152,6 +157,7 @@ impl Tracker {
         };
         let lead = TAU * self.carrier_hz * (first - self.period_start) / RATE;
         let [early, prompt, late] = self.correlate(samples, phase, self.carrier_phase + lead);
+        self.hold_prompt(prompt);
         let period = self.period_samples();
         let loops = if self.ms < PULL_IN_MS {
             PULL_IN
@@ -166,6 +172,21 @@ impl Tracker {
             return Step::Lost;
         }
         self.demodulate(prompt)
+    }
+
+    /// The last prompt over its running amplitude: the BPSK nav bits once the PLL holds.
+    pub fn prompt(&self) -> Complex<f32> {
+        self.prompt
+    }
+
+    fn hold_prompt(&mut self, prompt: Complex<f32>) {
+        let size = prompt.norm();
+        self.amplitude = if self.amplitude > 0.0 {
+            self.amplitude + AMPLITUDE_ALPHA * (size - self.amplitude)
+        } else {
+            size
+        };
+        self.prompt = prompt / self.amplitude.max(f32::MIN_POSITIVE);
     }
 
     fn correlate(&self, samples: &[Complex<f32>], phase: f64, carrier: f64) -> [Complex<f32>; 3] {

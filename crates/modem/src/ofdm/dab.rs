@@ -333,6 +333,15 @@ impl SymbolDemod {
         true
     }
 
+    /// The last symbol's differentials over each carrier's tracked level: DQPSK points on the
+    /// unit circle at the odd multiples of 45 degrees.
+    pub fn points(&self) -> impl Iterator<Item = Complex<f32>> + '_ {
+        self.differentials
+            .iter()
+            .zip(&self.levels)
+            .map(|(&differential, &level)| differential / level.max(1e-20))
+    }
+
     /// Gathers each carrier's differential `current * conj(previous)` in interleaved order and
     /// returns the power of both symbols over the data carriers.
     fn differentiate(&mut self) -> f32 {

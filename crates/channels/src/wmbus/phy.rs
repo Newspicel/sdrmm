@@ -42,6 +42,10 @@ pub(super) struct Burst<'a> {
     pub(super) raw: &'a [u8],
     pub(super) repaired: u32,
     pub(super) snr_db: f32,
+    /// Every chip of the frame as sliced, the threshold taken off and the swing scaled to one.
+    pub(super) chips: &'a [f32],
+    pub(super) chip_rate: f64,
+    pub(super) offset_hz: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -378,6 +382,12 @@ impl Lane {
             raw: &self.bytes[..total],
             repaired: self.repaired,
             snr_db,
+            chips: &self.chips[..needed],
+            chip_rate: f64::from(match self.family {
+                Family::Fast => FAST_CHIPS_PER_S,
+                Family::Slow => SLOW_CHIPS_PER_S,
+            }),
+            offset_hz: f64::from(self.tones.lag.arg() * RATE / std::f32::consts::TAU),
         });
     }
 }

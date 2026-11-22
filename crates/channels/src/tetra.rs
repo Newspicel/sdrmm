@@ -172,6 +172,9 @@ impl Channel for TetraChannel {
 
 impl TetraChannel {
     fn tap(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
         let Some(table) = &self.constellation else {
             return;
         };

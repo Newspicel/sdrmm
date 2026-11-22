@@ -73,6 +73,19 @@ impl MskDetector {
     }
 
     pub fn process(&mut self, samples: &[f32], bits: &mut Vec<bool>) {
+        self.run(samples, |bit, _| bits.push(bit));
+    }
+
+    /// Like [`Self::process`], with each bit's soft value: the matched filter's decision axis,
+    /// near ±1 on a clean signal and positive for a set bit.
+    pub fn process_soft(&mut self, samples: &[f32], bits: &mut Vec<bool>, soft: &mut Vec<f32>) {
+        self.run(samples, |bit, level| {
+            bits.push(bit);
+            soft.push(level);
+        });
+    }
+
+    fn run(&mut self, samples: &[f32], mut decided: impl FnMut(bool, f32)) {
         let mut phasors = self.phasors;
         let mut clock = self.clock;
         let mut oldest = self.oldest;
@@ -89,8 +102,8 @@ impl MskDetector {
             if clock >= self.bit_advance - self.step / 2.0 {
                 clock -= self.bit_advance;
                 self.oldest = oldest;
-                let bit = self.decide(self.matched());
-                bits.push(bit);
+                let (bit, level) = self.decide(self.matched());
+                decided(bit, level);
                 let oscillator = oscillator / oscillator.norm();
                 phasors = [oscillator * self.rotation, oscillator * self.advance];
             }
@@ -119,18 +132,18 @@ impl MskDetector {
         v / (v.norm_sqr().sqrt() + MATCHED_FLOOR)
     }
 
-    fn decide(&mut self, v: Complex<f32>) -> bool {
+    fn decide(&mut self, v: Complex<f32>) -> (bool, f32) {
         let (axis, error) = if self.quarter & 1 == 1 {
             (v.im, if v.im >= 0.0 { -v.re } else { v.re })
         } else {
             (v.re, if v.re >= 0.0 { v.im } else { -v.im })
         };
-        let bit = if self.quarter & 2 == 2 { -axis } else { axis } > 0.0;
+        let level = if self.quarter & 2 == 2 { -axis } else { axis };
         self.quarter = self.quarter.wrapping_add(1);
         self.retune(
             TRACK_POLE * self.offset_hz + (1.0 - TRACK_POLE) * TRACK_RANGE_HZ * f64::from(error),
         );
-        bit
+        (level > 0.0, level)
     }
 
     #[must_use]
@@ -209,6 +222,24 @@ mod tests {
             })
             .min()
             .unwrap_or(data.len())
+    }
+
+    #[test]
+    fn soft_values_sit_near_one_and_agree_with_the_bits() {
+        let bits = random_bits(6, 400);
+        let mut det = MskDetector::new(RATE, CENTRE_HZ, BAUD);
+        let (mut got, mut soft) = (Vec::new(), Vec::new());
+        det.process_soft(&audio(&bits, 0.0, 1.0), &mut got, &mut soft);
+        assert_eq!(got.len(), soft.len());
+        assert!(
+            got.iter()
+                .zip(&soft)
+                .all(|(&bit, &level)| bit == (level > 0.0))
+        );
+        let quality =
+            crate::quality::measure_levels(&soft[PREKEY_BITS..], &crate::cpm::Mapping::natural(2))
+                .expect("measurable");
+        assert!(quality.evm < 0.15, "clean EVM {}", quality.evm);
     }
 
     #[test]

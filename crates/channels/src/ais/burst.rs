@@ -26,6 +26,8 @@ const TRACE_STRIDE: usize = 8;
 const LOOKAHEAD_BITS: usize = 16;
 const FIT_BITS: usize = 180;
 const FIT_BLOCK_BITS: usize = 12;
+/// How much of the carrier phase the scope's reference keeps from one bit to the next.
+const TAP_MEMORY: f32 = 0.8;
 
 type Branches = [[Complex<f32>; SPS]; 8];
 
@@ -242,6 +244,9 @@ pub(super) struct BurstReceiver {
     back: Vec<[u8; STATES]>,
     levels: Vec<bool>,
     deframer: HdlcDeframer,
+    tapping: bool,
+    soft: Vec<f32>,
+    step: Complex<f32>,
 }
 
 impl BurstReceiver {
@@ -258,10 +263,29 @@ impl BurstReceiver {
             back: Vec::with_capacity(MAX_BITS + 1),
             levels: Vec::with_capacity(MAX_BITS + 1),
             deframer: HdlcDeframer::new(MIN_FRAME_BYTES, MAX_FRAME_BYTES),
+            tapping: false,
+            soft: Vec::with_capacity(MAX_BITS),
+            step: Complex::new(1.0, 0.0),
         }
     }
 
+    /// Keeps each decoded burst's soft bit levels for [`Self::soft`].
+    pub(super) fn set_tapping(&mut self, tapping: bool) {
+        self.tapping = tapping;
+    }
+
+    /// The soft levels of the bursts the last [`Self::process`] decoded, near ±1 when clean.
+    pub(super) fn soft(&self) -> &[f32] {
+        &self.soft
+    }
+
+    /// The carrier rotation per sample of the last decoded burst.
+    pub(super) fn step(&self) -> Complex<f32> {
+        self.step
+    }
+
     pub(super) fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<Decoded>) {
+        self.soft.clear();
         for chunk in iq.chunks(HISTORY) {
             self.extend(chunk);
             self.scan(out);
@@ -580,16 +604,59 @@ impl BurstReceiver {
                 return Outcome::Corrupt(k + 1);
             }
             let end = anchor.at + (TEMPLATE_BITS + k + 1) * SPS;
-            return Outcome::Frame(
-                Decoded {
-                    frame: frame.to_vec(),
-                    end: self.base + end as u64,
-                },
-                k + 1,
-            );
+            let decoded = Decoded {
+                frame: frame.to_vec(),
+                end: self.base + end as u64,
+            };
+            if self.tapping {
+                self.tap(anchor, k + 1);
+            }
+            return Outcome::Frame(decoded, k + 1);
         }
         Outcome::Open
     }
+}
+
+impl BurstReceiver {
+    /// Each bit's branch metric difference against a carrier reference the decided bits
+    /// steer, scaled by the difference a clean bit of the same neighbours would give.
+    fn tap(&mut self, anchor: &Anchor, bits: usize) {
+        let branches = &self.shape.branches[anchor.phase];
+        let first = TEMPLATE_BITS - 1;
+        let mut rot = anchor.carrier * rotation_after(anchor.step, first * SPS);
+        let start = self.shape.polarities[anchor.polarity].start;
+        let mut quadrant = start.quadrant;
+        let mut prev = start.prev;
+        let mut reference = Complex::new(0.0, 0.0);
+        for k in 0..bits.min(self.levels.len().saturating_sub(1)) {
+            let (cur, next) = (self.levels[k], self.levels[k + 1]);
+            let Some(samples) = self.samples.get(anchor.at + (first + k) * SPS..) else {
+                break;
+            };
+            let rx = derotate(samples, &mut rot, anchor.step);
+            let one = &branches[branch_index(prev, true, next)];
+            let zero = &branches[branch_index(prev, false, next)];
+            let turn = QUADRANTS[quadrant];
+            let (c1, c0) = (correlate(&rx, one) * turn, correlate(&rx, zero) * turn);
+            reference = reference * TAP_MEMORY + if cur { c1 } else { c0 };
+            let clean = one
+                .iter()
+                .zip(zero)
+                .map(|(a, b)| (a * (a - b).conj()).re)
+                .sum::<f32>();
+            let scale = reference.norm() * clean;
+            if scale > f32::MIN_POSITIVE {
+                self.soft.push(((c1 - c0) * reference.conj()).re / scale);
+            }
+            quadrant = quadrant_step(quadrant, prev);
+            prev = cur;
+        }
+        self.step = anchor.step;
+    }
+}
+
+fn correlate(rx: &[Complex<f32>; SPS], wave: &[Complex<f32>; SPS]) -> Complex<f32> {
+    rx.iter().zip(wave).map(|(r, w)| r * w.conj()).sum()
 }
 
 enum Progress {

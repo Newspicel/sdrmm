@@ -415,6 +415,72 @@ fn decodes_acars_at_10500_bps() {
     assert!(event.acars.as_ref().is_some_and(|block| block.crc_ok));
 }
 
+fn scope_of(channel: super::AeroChannel, iq: &[Complex<f32>]) -> sdrmm_decoder::SymbolTap {
+    let mut channel = InmarsatAeroChannel::new(
+        ChannelCtx {
+            input_rate: INPUT_RATE,
+        },
+        settings(
+            ChannelParams::new("inmarsat_aero", &InmarsatAeroParams { channel })
+                .expect("inmarsat_aero settings"),
+        ),
+    )
+    .expect("channel");
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for chunk in iq.chunks(4_096) {
+        out.symbols.clear();
+        channel.process(chunk, &mut out);
+    }
+    out.symbols
+}
+
+#[test]
+fn the_scope_sees_four_tight_qpsk_clusters_at_10500_bps() {
+    let iq = modulate_oqpsk(&high_rate_bits(), oqpsk::CHANNEL_RATE_HR, 120.0, 0.5);
+    let tap = scope_of(super::AeroChannel::P, &iq);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 8);
+    assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, 5_250.0);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz - 120.0).abs() < 10.0,
+        "{}",
+        tap.freq_error_hz
+    );
+}
+
+#[test]
+fn the_scope_sees_two_tight_msk_levels_at_1200_bps() {
+    let iq = modulate(&continuous_bits(1200, 4), 1_200.0, INPUT_RATE, -45.0, 0.5);
+    let tap = scope_of(super::AeroChannel::P, &iq);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(!tap.symbols.is_empty());
+    assert_eq!(tap.symbol_rate, 1_200.0);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz + 45.0).abs() < 10.0,
+        "{}",
+        tap.freq_error_hz
+    );
+}
+
+#[test]
+fn the_scope_sees_four_tight_qpsk_clusters_on_the_c_channel() {
+    let bits: Vec<u8> = (0..30_000u32)
+        .map(|index| u8::from(index.wrapping_mul(2_654_435_761).rotate_left(7) & 4 != 0))
+        .collect();
+    let iq = oqpsk::modulate_oqpsk_rate(&bits, 8_400.0, 0.6, oqpsk::CHANNEL_RATE_HR, 60.0, 0.5);
+    let tap = scope_of(super::AeroChannel::C, &iq);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 8);
+    assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, 4_200.0);
+    assert!(tap.evm < 0.6, "EVM {}", tap.evm);
+}
+
 #[test]
 fn matches_xng_on_low_rate_acars() {
     for (rate, cfo) in [(600u32, 30.0), (1200, -45.0)] {

@@ -3,7 +3,10 @@ use std::f64::consts::TAU;
 use num_complex::Complex;
 
 use super::{
-    burst::{FRAME_SAMPLES, HYPERFRAME, INPUT_RATE_HZ, SLOT_SAMPLES, SPS, Training, sync_data},
+    burst::{
+        BURST_SYMBOLS, FRAME_SAMPLES, HYPERFRAME, INPUT_RATE_HZ, SLOT_SAMPLES, SPS, Training,
+        sync_data,
+    },
     coding::Decoder,
     equalizer::{Demodulated, Equalizer},
     fcch::{Tone, ToneSearch, tone_offset},
@@ -53,6 +56,9 @@ pub(crate) struct Receiver {
     state: State,
     equalizer: Equalizer,
     decoder: Decoder,
+    tapping: bool,
+    points: Vec<Complex<f32>>,
+    offset_hz: f64,
 }
 
 impl Receiver {
@@ -64,6 +70,30 @@ impl Receiver {
             state: State::Hunting,
             equalizer: Equalizer::new(),
             decoder: Decoder::new(),
+            tapping: false,
+            points: Vec::with_capacity(BURST_SYMBOLS),
+            offset_hz: 0.0,
+        }
+    }
+
+    /// Keeps the first burst of each [`Self::process`] equalised, for [`Self::points`].
+    pub(crate) fn set_tapping(&mut self, tapping: bool) {
+        self.tapping = tapping;
+    }
+
+    pub(crate) fn points(&self) -> &[Complex<f32>] {
+        &self.points
+    }
+
+    /// The carrier offset the shown burst was demodulated at.
+    pub(crate) fn offset_hz(&self) -> f64 {
+        self.offset_hz
+    }
+
+    fn tap(&mut self, burst: &Demodulated, offset_hz: f64) {
+        if self.tapping && self.points.is_empty() {
+            self.equalizer.equalised(&burst.soft, &mut self.points);
+            self.offset_hz = offset_hz;
         }
     }
 
@@ -75,6 +105,7 @@ impl Receiver {
     }
 
     pub(crate) fn process(&mut self, iq: &[Complex<f32>], sink: &mut impl Sink) {
+        self.points.clear();
         self.samples.extend_from_slice(iq);
         while self.advance(sink) {}
         self.compact();
@@ -206,6 +237,7 @@ impl Receiver {
         ) else {
             return;
         };
+        self.tap(&burst, lock.offset_hz);
         if timeslot == 0 {
             nudge(lock, start, &burst, BURST_TIMING_GAIN);
         }

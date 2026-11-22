@@ -88,6 +88,21 @@ fn reads_a_handheld_frame_off_the_air_once() {
 }
 
 #[test]
+fn the_scope_sees_the_two_afsk_levels_of_a_burst() {
+    let mut rx = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    rx.process(&afsk_burst(&hex_bytes(HANDHELD), RATE), &mut out);
+    assert_eq!(packets(&out.events).len(), 1);
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(!tap.symbols.is_empty());
+    assert_eq!(tap.symbol_rate, 1_200.0);
+    assert!(tap.evm < 0.25, "measured {} EVM", tap.evm);
+}
+
+#[test]
 fn reads_a_message_with_a_bare_fix() {
     let packet = parse(&hex_bytes(
         "01 07204E3043414C4C 0121 062468656C6C6F 0725180858062250",

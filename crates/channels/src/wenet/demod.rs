@@ -44,6 +44,11 @@ impl FrontEnd {
         }
         &self.audio
     }
+
+    /// The carrier's offset from the middle of the two tones.
+    pub(crate) fn offset_hz(&self) -> f64 {
+        f64::from(self.dc) * NOMINAL_DEVIATION_HZ
+    }
 }
 
 /// The symbol clock for one framing.

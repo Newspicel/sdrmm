@@ -256,6 +256,45 @@ fn decodes_a_remodulated_off_air_ring_alert() {
 }
 
 #[test]
+fn the_scope_sees_four_tight_qpsk_clusters() {
+    let iq = place(
+        &[modulate(
+            &canonical(OFF_AIR_RA),
+            64,
+            CHANNEL_RATE,
+            900.0,
+            0.5,
+        )],
+        4_000,
+    );
+    let mut channel = IridiumChannel::new(
+        ChannelCtx {
+            input_rate: CHANNEL_RATE,
+        },
+        settings(
+            ChannelParams::new("iridium", &IridiumParams::default()).expect("iridium settings"),
+        ),
+    )
+    .expect("channel");
+    let mut out = sdrmm_decoder::ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(16_384) {
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 8);
+    assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, super::demod::SYMBOL_RATE);
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz - 900.0).abs() < 50.0,
+        "{}",
+        tap.freq_error_hz
+    );
+}
+
+#[test]
 fn a_failed_data_crc_is_reported() {
     let frame = IridiumFrame::new(
         "ida",

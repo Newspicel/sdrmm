@@ -114,6 +114,7 @@ pub(super) struct OqpskDemod {
     mse: f32,
     quad: Complex<f32>,
     acquisition: CoarseAcquisition,
+    points: Vec<Complex<f32>>,
 }
 
 impl OqpskDemod {
@@ -157,7 +158,21 @@ impl OqpskDemod {
                 ACQ_RANGE_HZ,
                 Some(ACQ_MIN_SHIFT_HZ),
             ),
+            points: Vec::new(),
         }
+    }
+
+    /// The last block's symbol pairs after the carrier loop: QPSK at odd multiples of 45 degrees.
+    pub(super) fn points(&self) -> &[Complex<f32>] {
+        &self.points
+    }
+
+    pub(super) fn symbol_rate(&self) -> f64 {
+        self.timing.bit_rate / 2.0
+    }
+
+    pub(super) fn frequency_error_hz(&self) -> f64 {
+        self.nco_freq_hz
     }
 
     pub(super) fn locked(&self) -> bool {
@@ -165,6 +180,7 @@ impl OqpskDemod {
     }
 
     pub(super) fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<(f32, u8)>) {
+        self.points.clear();
         for &raw in input {
             self.step(raw, out);
         }
@@ -219,6 +235,7 @@ impl OqpskDemod {
             FRAC_1_SQRT_2.copysign(pair.re),
             FRAC_1_SQRT_2.copysign(pair.im),
         );
+        self.points.push(pair);
         self.mse += 0.0025 * ((pair - ideal).norm_sqr() - self.mse);
         let unit = pair / pair.norm().max(1e-9);
         self.quad += 0.0025 * ((unit * unit) * (unit * unit) - self.quad);

@@ -86,6 +86,34 @@ fn decodes_a_ground_station_squitter() {
 }
 
 #[test]
+fn the_scope_sees_eight_tight_8psk_clusters() {
+    let mut iq = gap();
+    iq.extend(burst_iq(&acars_mpdu(), 3, 25.0));
+    iq.extend(gap());
+    let mut channel = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(8_192) {
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 16);
+    assert!(
+        tap.symbols.len() >= 2 * 1_000,
+        "{} values",
+        tap.symbols.len()
+    );
+    assert_eq!(tap.symbol_rate, demod::SYMBOL_RATE);
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz - 25.0).abs() < 5.0,
+        "{}",
+        tap.freq_error_hz
+    );
+}
+
+#[test]
 fn decodes_spdu_at_300bps() {
     let events = single(&spdu(7, 1234, 52), 0, 20.0, 0.01);
     let squitter = events

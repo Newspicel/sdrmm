@@ -1,7 +1,9 @@
 use num_complex::Complex;
+use sdrmm_decoder::SymbolTap;
 use serde_json::{Value, json};
 
 use super::{
+    Scope,
     burst::{AeroBurstDecoder, BurstChannel, BurstEvent},
     cchannel::{CChannelDeframer, CChannelEvent, su_type_name},
     decoder::{INPUT_RATE, front_filter},
@@ -30,6 +32,13 @@ impl BurstReceiver {
         self.channel.clear();
         self.front.process(input, &mut self.channel);
         self.decoder.process(&self.channel)
+    }
+
+    pub(super) fn tap(&self, tap: &mut SymbolTap, scope: &Scope) {
+        let (levels, rate) = self.decoder.shown();
+        if !levels.is_empty() {
+            tap.levels(levels, &[], &scope.binary, f64::from(rate), 0.0);
+        }
     }
 }
 
@@ -76,6 +85,15 @@ impl CircuitReceiver {
                 }
             }
         }
+    }
+
+    pub(super) fn tap(&self, tap: &mut SymbolTap, scope: &Scope) {
+        tap.linear(
+            self.demod.points(),
+            &scope.qpsk,
+            self.demod.symbol_rate(),
+            self.demod.frequency_error_hz(),
+        );
     }
 
     fn translate(&mut self, event: &CChannelEvent) -> Option<CircuitEvent> {

@@ -78,6 +78,15 @@ impl Receiver {
         self.sync.psmi
     }
 
+    /// The last block's first `symbols` symbols of equalised QPSK data subcarriers.
+    pub fn points(&self, symbols: usize) -> impl Iterator<Item = Complex<f32>> + '_ {
+        self.sync.points(symbols)
+    }
+
+    pub fn data_carriers(&self) -> usize {
+        self.sync.data_carriers()
+    }
+
     /// Takes samples up to the end of the next block; returns how many it took and, when a
     /// block was complete, what it brought.
     pub fn push(&mut self, iq: &[Complex<f32>]) -> (usize, Option<Block>) {

@@ -5,7 +5,7 @@ use crate::radiosonde::SondeType;
 use sdrmm_dsp::{ReedSolomon, crc16_msb};
 
 use super::{
-    demod::{Polarity, SymbolClock, SyncMatcher},
+    demod::{Polarity, Recorder, SymbolClock, SyncMatcher},
     fields::{
         GPS_UTC_LEAP_SECONDS, Motion, ecef_to_geodetic, ecef_velocity_to_enu, empty_frame,
         finite_f32, gps_time, plausible, set_motion, set_position,
@@ -316,6 +316,7 @@ enum Receive {
 }
 
 pub(crate) struct Rs41 {
+    pub(super) recorder: Recorder,
     clock: SymbolClock,
     sync: SyncMatcher,
     receive: Receive,
@@ -326,6 +327,7 @@ pub(crate) struct Rs41 {
 impl Rs41 {
     pub(crate) fn new() -> Self {
         Self {
+            recorder: Recorder::new(),
             clock: SymbolClock::new(BAUD, SMOOTHING),
             sync: SyncMatcher::from_bytes_lsb_first(&HEADER, SYNC_TOLERANCE),
             receive: Receive::Hunt,
@@ -341,6 +343,7 @@ impl Rs41 {
     pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
+                self.recorder.push(symbol);
                 self.bit(symbol > 0.0, out);
             }
         }

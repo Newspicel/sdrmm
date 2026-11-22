@@ -11,7 +11,8 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{FmDemod, RealDecimator};
 #[cfg(any(test, feature = "synth"))]
-use sdrmm_modem::cpm::{CpmParams, Mapping};
+use sdrmm_modem::cpm::CpmParams;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ita2::{self, ShiftDecoder};
 use sdrmm_modem::pulse::{self, Norm};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily};
@@ -50,6 +51,8 @@ pub struct RttyChannel {
     demod: FmDemod,
     post: RealDecimator,
     polarity: f32,
+    baud: f64,
+    rail: Mapping,
     decoder: Decoder,
     demod_buf: Vec<f32>,
     filtered: Vec<f32>,
@@ -119,6 +122,8 @@ impl NativeChannel for RttyChannel {
             demod: FmDemod::new(ctx.input_rate, p.shift_hz / 2.0),
             post: post_filter(p),
             polarity: polarity(p),
+            baud: p.baud,
+            rail: Mapping::natural(2),
             decoder: Decoder::new(ctx.input_rate, p),
             demod_buf: Vec::new(),
             filtered: Vec::new(),
@@ -134,6 +139,7 @@ impl Channel for RttyChannel {
         self.demod = FmDemod::new(rate, p.shift_hz / 2.0);
         self.post = post_filter(p);
         self.polarity = polarity(p);
+        self.baud = p.baud;
         self.decoder.configure(rate, p);
         Ok(())
     }
@@ -148,9 +154,12 @@ impl Channel for RttyChannel {
             };
         }
         self.post.process(&self.demod_buf, &mut self.filtered);
+        self.decoder.sampled.clear();
         for &level in &self.filtered {
             self.decoder.feed(level, out);
         }
+        out.symbols
+            .levels(&self.decoder.sampled, &[], &self.rail, self.baud, 0.0);
     }
 }
 
@@ -167,6 +176,8 @@ struct Frame {
 
 struct Decoder {
     slice_at: [usize; FRAME_BITS],
+    /// The level at each bit centre this block read, for the scope.
+    sampled: Vec<f32>,
     idle_flush: usize,
     unshift_on_space: bool,
     positive: bool,
@@ -181,6 +192,7 @@ impl Decoder {
     fn new(rate: f64, p: &RttyParams) -> Self {
         let mut decoder = Self {
             slice_at: [0; FRAME_BITS],
+            sampled: Vec::new(),
             idle_flush: 0,
             unshift_on_space: true,
             positive: true,
@@ -223,6 +235,9 @@ impl Decoder {
     }
 
     fn slice(&mut self, mut frame: Frame, level: f32, out: &mut ChannelOutputs) -> Option<Frame> {
+        if out.symbols.wanted() {
+            self.sampled.push(level);
+        }
         match frame.next {
             0 => {
                 if level > -MIN_LEVEL {
@@ -403,6 +418,23 @@ mod tests {
         assert_eq!(p.stop_bits, RttyStopBits::OneAndHalf);
         let texts = decode_blocks(&mut channel(&p), &burst("CQ CQ DE DL1ABC K", &p), &BLOCKS);
         assert_eq!(texts, vec!["CQ CQ DE DL1ABC K".to_owned()]);
+    }
+
+    #[test]
+    fn the_scope_sees_two_clean_levels_at_the_keying_rate() {
+        let p = RttyParams::default();
+        let mut chan = channel(&p);
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in burst("CQ CQ DE DL1ABC K", &p).chunks(997) {
+            chan.process(block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() > 100, "{} symbols", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, p.baud);
+        assert!(tap.evm < 0.2, "EVM {}", tap.evm);
     }
 
     #[test]

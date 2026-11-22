@@ -57,7 +57,7 @@ fn every_constellation_and_rate_delivers_transport_packets() {
             ..synth::dvbt::defaults()
         };
         let iq = synth::dvbt::waveform(params, 160);
-        let mut decoder = receiver::Receiver::new(false);
+        let mut decoder = receiver::Receiver::new(false).expect("a DVB-T receiver");
         let mut packets = Vec::new();
         for block in iq.chunks(1009) {
             decoder.push(block, &mut packets);
@@ -100,7 +100,7 @@ fn eight_kilocarriers_and_all_guards_survive_carrier_offset_and_echoes() {
         }
         sdrmm_modem::synth::shift(&mut iq, 1234.0, 64_000_000.0 / 7.0);
         sdrmm_modem::synth::add_noise(&mut iq, 0x92a1, 0.03);
-        let mut decoder = receiver::Receiver::new(false);
+        let mut decoder = receiver::Receiver::new(false).expect("a DVB-T receiver");
         let mut packets = Vec::new();
         for block in iq.chunks(8191) {
             decoder.push(block, &mut packets);
@@ -128,7 +128,7 @@ fn hierarchical_streams_select_high_and_low_priority() {
         };
         let iq = synth::dvbt::waveform(params, 150);
         for low in [false, true] {
-            let mut decoder = receiver::Receiver::new(low);
+            let mut decoder = receiver::Receiver::new(low).expect("a DVB-T receiver");
             let mut packets = Vec::new();
             decoder.push(&iq, &mut packets);
             assert!(decoder.locked(), "alpha {alpha} low {low}");
@@ -151,7 +151,7 @@ fn independent_recorded_iq_recovers_exact_transport_payloads() {
             )
         })
         .collect();
-    let mut receiver = receiver::Receiver::new(false);
+    let mut receiver = receiver::Receiver::new(false).expect("a DVB-T receiver");
     let mut packets = Vec::new();
     for block in iq.chunks(997) {
         receiver.push(block, &mut packets);
@@ -190,7 +190,7 @@ fn highest_order_terrestrial_demodulation_has_bounded_cost() {
         ..synth::dvbt::defaults()
     };
     let iq = synth::dvbt::waveform(params, 340);
-    let mut receiver = receiver::Receiver::new(false);
+    let mut receiver = receiver::Receiver::new(false).expect("a DVB-T receiver");
     let mut packets = Vec::new();
     let start = std::time::Instant::now();
     for block in iq.chunks(8192) {
@@ -235,7 +235,7 @@ fn decoded_share(paths: &[(usize, f32, f32, f32)], snr_db: f32) -> f32 {
         0x5a5a,
         (power / 10f32.powf(snr_db / 10.0) * 1.5).sqrt(),
     );
-    let mut decoder = receiver::Receiver::new(false);
+    let mut decoder = receiver::Receiver::new(false).expect("a DVB-T receiver");
     let mut packets = Vec::new();
     for block in iq.chunks(8191) {
         decoder.push(block, &mut packets);

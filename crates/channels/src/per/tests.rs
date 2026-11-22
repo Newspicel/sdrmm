@@ -60,6 +60,37 @@ fn a_clean_stream_has_no_errors_at_every_rate() {
 }
 
 #[test]
+fn the_scope_sees_two_tight_fsk_levels_at_every_rate() {
+    for baud in PerBaud::ALL {
+        let params = PerParams {
+            baud,
+            payload_bytes: 16,
+        };
+        let mut channel = channel(params);
+        let mut filter = sdrmm_decoder_test_support::built_filter(
+            channel_filter(params),
+            super::DESCRIPTOR.input_rate_hz,
+        );
+        let mut filtered = Vec::new();
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        let iq = frames(&params, 0..40, RATE);
+        let blocks: Vec<_> = iq.chunks(4_801).collect();
+        for block in &blocks[..blocks.len() / 2] {
+            filter.process(block, &mut filtered);
+            out.reset();
+            channel.process(&filtered, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level), "{baud:?}");
+        assert_eq!(tap.reference.len(), 2, "{baud:?}");
+        assert!(!tap.symbols.is_empty(), "{baud:?}");
+        assert_eq!(tap.symbol_rate, baud.rate());
+        assert!(tap.evm < 0.15, "{baud:?} measured {} EVM", tap.evm);
+    }
+}
+
+#[test]
 fn skipped_frames_are_missed_packets() {
     let params = PerParams::default();
     let mut channel = channel(params);

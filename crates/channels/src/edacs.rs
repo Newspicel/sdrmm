@@ -107,10 +107,14 @@ fn channel_filter(baud: EdacsBaud) -> FilterSpec {
     FilterSpec::lowpass(CHANNEL_TAPS, air(baud).half_width_hz)
 }
 
+fn data_mapping() -> Mapping {
+    Mapping::new(vec![1.0, -1.0])
+}
+
 fn data_demod(baud: EdacsBaud) -> CpmDemod {
     let sps = INPUT_RATE_HZ / baud.hz();
     let params = CpmParams::from_deviation(
-        Mapping::new(vec![1.0, -1.0]),
+        data_mapping(),
         air(baud).data_deviation_hz,
         baud.hz(),
         pulse::rect(sps, Norm::Area),
@@ -125,11 +129,13 @@ pub struct EdacsChannel {
     receivers: Vec<Receiver>,
     locked: Option<usize>,
     symbols: Vec<f32>,
+    mapping: Mapping,
     working: WorkingChannel,
 }
 
 /// Listens at one rate.
 struct Receiver {
+    baud: f64,
     demod: CpmDemod,
     framer: Framer,
     /// Samples since this rate last read a frame.
@@ -139,6 +145,7 @@ struct Receiver {
 impl Receiver {
     fn new(baud: EdacsBaud) -> Self {
         Self {
+            baud: baud.hz(),
             demod: data_demod(baud),
             framer: Framer::new(),
             since_frame: 0,
@@ -172,6 +179,7 @@ impl NativeChannel for EdacsChannel {
             receivers: receivers(params.baud),
             locked: None,
             symbols: Vec::new(),
+            mapping: data_mapping(),
             working: WorkingChannel::new(params.baud),
         })
     }
@@ -207,6 +215,15 @@ impl Channel for EdacsChannel {
             let receiver = &mut self.receivers[index];
             self.symbols.clear();
             receiver.demod.process(iq, &mut self.symbols);
+            if index == self.locked.unwrap_or(0) {
+                out.symbols.cpm(
+                    &receiver.demod,
+                    &self.symbols,
+                    &self.mapping,
+                    receiver.baud,
+                    INPUT_RATE_HZ,
+                );
+            }
             let before = out.events.len();
             for &symbol in &self.symbols {
                 data |= receiver.framer.push(symbol > 0.0, self.addressing, out);

@@ -498,3 +498,45 @@ fn a_recorded_metop_pass_draws_its_avhrr_lines() {
 /// 09:21:01.302 UTC, the one whole line of the recording.
 const METOP_RECORDED_LINE_MS: u32 = 33_661_302;
 const METOP_RECORDED_LINE_CRC32: u32 = 0xEB67_5E20;
+
+fn scope_of(satellite: HrptSatellite) -> sdrmm_decoder::SymbolTap {
+    let iq = transmission(satellite, 4, input_rate(satellite), 3_000.0);
+    let mut chan = channel(satellite, HrptPicture::Auto);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut tap = sdrmm_decoder::SymbolTap::default();
+    for block in iq.as_chunks::<CHUNK>().0 {
+        out.reset();
+        chan.process(block, &mut out);
+        if out.symbols.plane.is_some() {
+            tap = std::mem::take(&mut out.symbols);
+            out.symbols.set_wanted(true);
+        }
+    }
+    tap
+}
+
+#[test]
+fn the_scope_sees_the_two_split_phase_levels() {
+    let tap = scope_of(HrptSatellite::Meteor);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() >= 50, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, BIT_RATE);
+    assert!(
+        (tap.freq_error_hz - 3_000.0).abs() < 50.0,
+        "{} Hz",
+        tap.freq_error_hz
+    );
+    assert!(tap.evm < 0.05, "EVM {}", tap.evm);
+}
+
+#[test]
+fn the_scope_sees_four_tight_metop_qpsk_clusters() {
+    let tap = scope_of(HrptSatellite::Metop);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 8);
+    assert!(tap.symbols.len() >= 2 * 50, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, metop::SYMBOL_RATE);
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+}

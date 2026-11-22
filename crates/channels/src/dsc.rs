@@ -7,6 +7,7 @@ pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 use serde::Serialize;
 
@@ -89,7 +90,7 @@ mod modulate;
 #[cfg(test)]
 mod sensitivity;
 
-use demod::{FskDemod, RATE, find_phasing};
+use demod::{BAUD, FskDemod, RATE, find_phasing};
 use frame::{Received, decode_at, frame_bits};
 use message::{DscMessage, Format};
 use symbol::{LEADING_DX_PHASING, RX_DELAY, SYMBOL_BITS};
@@ -151,7 +152,14 @@ impl DscDecoder {
         }
     }
 
+    #[cfg(test)]
     pub fn process(&mut self, iq: &[Complex<f32>], out: &mut Vec<DscMessage>) {
+        self.demodulate(iq);
+        self.scan(out);
+    }
+
+    /// Demodulates `iq` onto the bit buffers and returns where its soft bits start.
+    fn demodulate(&mut self, iq: &[Complex<f32>]) -> usize {
         let before = self.soft.len();
         self.demod.process(iq, &mut self.soft);
         self.hard.extend(
@@ -159,6 +167,10 @@ impl DscDecoder {
                 .iter()
                 .map(|&soft| u8::from(soft >= 0.0)),
         );
+        before
+    }
+
+    fn scan(&mut self, out: &mut Vec<DscMessage>) {
         loop {
             let Some(offset) = self.hard.get(self.scanned..).and_then(find_phasing) else {
                 self.scanned = self.scanned.max(self.phasing_search_end());
@@ -274,6 +286,7 @@ pub fn to_datalink(message: &DscMessage) -> DataLinkMessage {
 
 pub struct DscChannel {
     decoder: DscDecoder,
+    rail: Mapping,
     messages: Vec<DscMessage>,
 }
 
@@ -298,6 +311,7 @@ impl NativeChannel for DscChannel {
         params(&settings)?;
         Ok(Self {
             decoder: DscDecoder::new(),
+            rail: Mapping::natural(2),
             messages: Vec::new(),
         })
     }
@@ -309,7 +323,15 @@ impl Channel for DscChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        self.decoder.process(iq, &mut self.messages);
+        let fresh = self.decoder.demodulate(iq);
+        out.symbols.levels(
+            &self.decoder.soft[fresh..],
+            &[],
+            &self.rail,
+            BAUD,
+            self.decoder.demod.frequency_error_hz(),
+        );
+        self.decoder.scan(&mut self.messages);
         out.events.extend(
             self.messages.drain(..).map(|message| {
                 DecoderEvent::tagged(EventKind::named("dsc"), &to_datalink(&message))
@@ -369,6 +391,36 @@ mod tests {
         assert!(message.crc_ok);
         assert_eq!(message.message_type, "distress_alert");
         assert_eq!(message.station.as_deref(), Some("123456789"));
+    }
+
+    fn scope_after(iq: &[Complex<f32>]) -> sdrmm_decoder::SymbolTap {
+        let mut channel = DscChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::new("dsc", &DscParams::default()).expect("dsc settings")),
+        )
+        .expect("channel");
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for chunk in iq.chunks(512) {
+            channel.process(chunk, &mut out);
+        }
+        out.symbols
+    }
+
+    #[test]
+    fn the_scope_sees_two_clean_levels_at_100_baud() {
+        let tap = scope_after(&modulate::call_iq(DISTRESS, RATE, 0.0, 0.6));
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() > 300, "{} symbols", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, 100.0);
+        assert!(tap.evm < 0.2, "EVM {}", tap.evm);
+        let detuned = scope_after(&modulate::call_iq(DISTRESS, RATE, 10.0, 0.6));
+        let moved = detuned.freq_error_hz - tap.freq_error_hz;
+        assert!(
+            (moved - 10.0).abs() < 2.0,
+            "a 10 Hz detune read as {moved} Hz"
+        );
     }
 
     #[test]

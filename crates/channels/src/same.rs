@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, FmDemod, RealDecimator, ToneCorrelator, design_lowpass};
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use burst::{Bursts, Framer};
@@ -75,7 +76,8 @@ impl Demod {
         self.sync.reset();
     }
 
-    fn bits(&mut self, iq: &[Complex<f32>], out: &mut Vec<bool>) {
+    /// One soft decision per bit, the tones' contrast: positive for mark, within ±1.
+    fn symbols(&mut self, iq: &[Complex<f32>], out: &mut Vec<f32>) {
         self.fm.process(iq, &mut self.discriminated);
         self.discriminated
             .iter_mut()
@@ -83,9 +85,9 @@ impl Demod {
         self.audio.process(&self.discriminated, &mut self.decimated);
         out.clear();
         for &sample in &self.decimated {
-            let soft = self.mark.push(sample) - self.space.push(sample);
-            if let Some(symbol) = self.sync.push_soft(soft) {
-                out.push(symbol >= 0.0);
+            let (mark, space) = (self.mark.push(sample), self.space.push(sample));
+            if self.sync.push_soft(mark - space).is_some() {
+                out.push((mark - space) / (mark + space).max(f32::MIN_POSITIVE));
             }
         }
     }
@@ -95,7 +97,8 @@ pub struct SameChannel {
     demod: Demod,
     framer: Framer,
     bursts: Bursts,
-    bits: Vec<bool>,
+    symbols: Vec<f32>,
+    rail: Mapping,
     clock: u64,
 }
 
@@ -137,7 +140,8 @@ impl NativeChannel for SameChannel {
             demod: Demod::new(),
             framer: Framer::default(),
             bursts: Bursts::default(),
-            bits: Vec::new(),
+            symbols: Vec::new(),
+            rail: Mapping::natural(2),
             clock: 0,
         })
     }
@@ -155,11 +159,12 @@ impl Channel for SameChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        let mut bits = std::mem::take(&mut self.bits);
-        self.demod.bits(iq, &mut bits);
+        self.demod.symbols(iq, &mut self.symbols);
+        out.symbols
+            .levels(&self.symbols, &[], &self.rail, SAME_BAUD, 0.0);
         self.clock += iq.len() as u64;
-        for &bit in &bits {
-            if let Some(text) = self.framer.push(bit) {
+        for &symbol in &self.symbols {
+            if let Some(text) = self.framer.push(symbol >= 0.0) {
                 self.bursts.received(self.clock, text);
             }
         }
@@ -167,7 +172,6 @@ impl Channel for SameChannel {
         for message in self.bursts.take() {
             out.events.push(DecoderEvent::of(&message));
         }
-        self.bits = bits;
     }
 
     fn rejected(&self) -> u32 {

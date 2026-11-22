@@ -23,6 +23,7 @@ use burst::INPUT_RATE_HZ;
 use monitor::Monitor;
 use num_complex::Complex;
 use receiver::Receiver;
+use sdrmm_modem::constellation::{Constellation, tables};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use sdrmm_decoder::{
@@ -64,6 +65,7 @@ pub struct GsmChannel {
     receiver: Receiver,
     monitor: Monitor,
     frequency_hz: f64,
+    bpsk: Constellation,
 }
 
 impl NativeChannel for GsmChannel {
@@ -76,6 +78,7 @@ impl NativeChannel for GsmChannel {
             receiver: Receiver::new(),
             monitor: Monitor::new(params(&settings)?, settings.frequency_hz),
             frequency_hz: settings.frequency_hz,
+            bpsk: tables::bpsk(),
         })
     }
 }
@@ -96,7 +99,16 @@ impl Channel for GsmChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
+        self.receiver.set_tapping(out.symbols.wanted());
         self.receiver.process(iq, &mut self.monitor);
+        if !self.receiver.points().is_empty() {
+            out.symbols.linear(
+                self.receiver.points(),
+                &self.bpsk,
+                GSM_SYMBOL_RATE_HZ,
+                self.receiver.offset_hz(),
+            );
+        }
         out.events
             .extend(self.monitor.drain().map(|frame| DecoderEvent::of(&frame)));
     }

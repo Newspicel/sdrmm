@@ -385,6 +385,31 @@ impl Sync {
     }
 }
 
+impl Sync {
+    /// The first `symbols` symbols of the block's equalised data subcarriers, every partition
+    /// in use, scaled from the ±1 ± j grid onto the unit circle.
+    pub fn points(&self, symbols: usize) -> impl Iterator<Item = Complex<f32>> + '_ {
+        let count = partitions(self.psmi);
+        (0..symbols.min(BLOCK)).flat_map(move |symbol| {
+            [LOWER_EDGE, UPPER_EDGE - count * PARTITION]
+                .into_iter()
+                .flat_map(move |start| {
+                    (0..count * PARTITION)
+                        .filter(|offset| offset % PARTITION != 0)
+                        .map(move |offset| {
+                            self.bins[Self::at(start + offset, symbol)]
+                                * std::f32::consts::FRAC_1_SQRT_2
+                        })
+                })
+        })
+    }
+
+    /// Data subcarriers each symbol carries in the partitions now in use.
+    pub fn data_carriers(&self) -> usize {
+        2 * partitions(self.psmi) * DATA_CARRIERS
+    }
+}
+
 fn soft(value: f32, gain: f32) -> Soft {
     (value.clamp(-1.0, 1.0) * gain).round() as Soft
 }

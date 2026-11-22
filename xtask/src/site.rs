@@ -1,11 +1,6 @@
 use std::path::{Path, PathBuf};
 
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("the xtask crate sits in the workspace root")
-        .to_path_buf()
-}
+use super::root;
 
 fn astro_files(dir: &Path, found: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).unwrap_or_else(|_| panic!("read {}", dir.display())) {

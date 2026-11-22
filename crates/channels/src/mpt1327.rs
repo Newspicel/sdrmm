@@ -18,6 +18,7 @@ use sdrmm_decoder::registry::Native;
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ffsk::{FfskDemod, FfskTones};
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, DvFrame, EventKind,
@@ -49,6 +50,7 @@ pub struct Mpt1327Channel {
     ffsk: FfskDemod,
     framer: Framer,
     bits: Vec<f32>,
+    rail: Mapping,
     frames: Vec<DvFrame>,
 }
 
@@ -92,6 +94,7 @@ impl NativeChannel for Mpt1327Channel {
             ffsk: FfskDemod::new(RATE, DEVIATION_HZ, FfskTones::CCIR_1200),
             framer: Framer::new(),
             bits: Vec::new(),
+            rail: Mapping::natural(2),
             frames: Vec::new(),
         })
     }
@@ -110,6 +113,8 @@ impl Channel for Mpt1327Channel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let mut bits = std::mem::take(&mut self.bits);
         self.ffsk.symbols(iq, &mut bits);
+        out.symbols
+            .levels(&bits, &[], &self.rail, FfskTones::CCIR_1200.baud, 0.0);
         for &bit in &bits {
             self.framer.push(bit > 0.0, &mut self.frames);
         }

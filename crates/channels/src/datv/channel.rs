@@ -15,7 +15,7 @@ use sdrmm_decoder::broadcast::{
 };
 use sdrmm_dsp::{FracResampler, flat_bandwidth_hz};
 use sdrmm_modem::{
-    constellation::tables,
+    constellation::{Constellation, tables},
     linear::{CarrierLoop, LinearDemod, LinearParams, LinearTiming, PhaseDetector},
     pulse::{self, Norm},
 };
@@ -27,6 +27,7 @@ use sdrmm_wire::{
 use super::{
     acquire::{Acquired, Acquisition},
     dvbs2::{
+        frame::Constellation as FrameConstellation,
         gse::protocol_name,
         receiver::{Dvbs2Decoder, Dvbs2Output},
         superframe::Settings as SuperframeSettings,
@@ -43,6 +44,36 @@ const MIN_INPUT_RATE_HZ: f64 = 2_000_000.0;
 const SPS: usize = 4;
 const PULSE_SPAN: usize = 8;
 const MAX_PROTOCOLS: usize = 8;
+/// About this many symbols a second reach the scope, whatever the symbol rate.
+const TAP_POINTS_PER_S: f64 = 16_000.0;
+
+/// A DVB-S2 frame constellation as the scope's table, with the scale that brings the frame's
+/// symbols to the table's unit power.
+struct SecondTable {
+    source: Box<FrameConstellation>,
+    table: Constellation,
+    scale: f32,
+}
+
+impl SecondTable {
+    fn of(source: Box<FrameConstellation>) -> Option<Self> {
+        let count = source.count();
+        let points: Vec<Complex<f32>> = (0..count).map(|label| source.point(label)).collect();
+        let power = points.iter().map(Complex::norm_sqr).sum::<f32>() / count as f32;
+        let labels = (0..count as u32).collect();
+        let table = Constellation::from_points(points, labels).ok()?;
+        Some(Self {
+            source,
+            table,
+            scale: power.sqrt().recip(),
+        })
+    }
+
+    fn matches(&self, other: &FrameConstellation) -> bool {
+        self.source.count() == other.count()
+            && (0..other.count()).all(|label| self.source.point(label) == other.point(label))
+    }
+}
 
 const fn superframe_settings(params: &DatvParams) -> SuperframeSettings {
     SuperframeSettings {
@@ -165,9 +196,60 @@ pub struct DatvChannel {
     audio_units: u64,
     media: Media,
     media_selection: Option<MediaSelection>,
+    points: Vec<Complex<f32>>,
+    second_table: Option<SecondTable>,
 }
 
 impl DatvChannel {
+    fn tap_every(&self) -> usize {
+        (self.params.symbol_rate / TAP_POINTS_PER_S).ceil().max(1.0) as usize
+    }
+
+    fn tap_symbols(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        let rate = self.params.symbol_rate;
+        let offset = f64::from(self.frequency_error_hz(self.last));
+        if self.params.standard == DatvStandard::DvbS2 {
+            self.tap_second(rate, offset, out);
+            return;
+        }
+        self.points.clear();
+        self.points
+            .extend(self.symbols.iter().step_by(self.tap_every()).copied());
+        out.symbols.linear(
+            &self.points,
+            self.demod.params().constellation(),
+            rate,
+            offset,
+        );
+    }
+
+    /// The payload of the frames read, on the active MODCOD's constellation.
+    fn tap_second(&mut self, rate: f64, offset: f64, out: &mut ChannelOutputs) {
+        let Some(source) = self.second.constellation() else {
+            return;
+        };
+        if self.second.points().is_empty() {
+            return;
+        }
+        if !self
+            .second_table
+            .as_ref()
+            .is_some_and(|table| table.matches(source))
+        {
+            self.second_table = SecondTable::of(Box::new(*source));
+        }
+        let Some(table) = &self.second_table else {
+            return;
+        };
+        self.points.clear();
+        self.points
+            .extend(self.second.points().iter().map(|point| point * table.scale));
+        out.symbols.linear(&self.points, &table.table, rate, offset);
+    }
+
     fn rebuild(&mut self) -> Result<(), ChannelError> {
         let rate = input_rate_hz(&self.params);
         self.acquisition = Acquisition::new(self.params.symbol_rate, rate);
@@ -474,6 +556,8 @@ impl NativeChannel for DatvChannel {
             audio_units: 0,
             media: Media::new()?,
             media_selection: None,
+            points: Vec::new(),
+            second_table: None,
         };
         channel.media.enable_clock();
         channel.demux.select(params.program);
@@ -531,6 +615,12 @@ impl Channel for DatvChannel {
         self.demod.process(&resampled, &mut self.symbols);
         self.resampled = resampled;
         self.packets.clear();
+        let tap_every = if out.symbols.wanted() {
+            self.tap_every()
+        } else {
+            0
+        };
+        self.second.tap(tap_every);
         let symbols = std::mem::take(&mut self.symbols);
         match self.params.standard {
             DatvStandard::DvbS => self.decoder.push(&symbols, &mut self.packets),
@@ -560,6 +650,7 @@ impl Channel for DatvChannel {
             }
         }
         self.symbols = symbols;
+        self.tap_symbols(out);
         self.units.clear();
         let mut units = std::mem::take(&mut self.units);
         for packet in &self.packets {
@@ -1086,5 +1177,46 @@ mod tests {
             );
             assert!(status.data_error.is_none(), "format {format}: {status:?}");
         }
+    }
+
+    fn scope(channel: &mut DatvChannel, iq: &[Complex<f32>]) -> sdrmm_decoder::SymbolTap {
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        let mut tap = sdrmm_decoder::SymbolTap::default();
+        for block in iq.as_chunks::<16_384>().0 {
+            out.reset();
+            channel.process(block, &mut out);
+            if out.symbols.plane.is_some() {
+                tap = std::mem::take(&mut out.symbols);
+                out.symbols.set_wanted(true);
+            }
+        }
+        tap
+    }
+
+    #[test]
+    fn the_scope_sees_four_tight_dvbs_qpsk_clusters() {
+        let iq = synth::datv::dvbs(1);
+        let tap = scope(&mut channel(None), &iq);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 8);
+        assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, synth::datv::params().symbol_rate);
+        assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+    }
+
+    #[test]
+    fn the_scope_draws_the_active_modcod_constellation() {
+        use crate::datv::dvbs2::frame::Modulation;
+        use sdrmm_modem::dvb::ldpc::Rate;
+
+        let iq = synth::datv::dvbs2_mode(1, Modulation::Apsk16, Rate::R3_4, false, true)
+            .expect("a synthetic signal");
+        let tap = scope(&mut second_generation(), &iq);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 2 * 16);
+        assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, synth::datv::SYMBOL_RATE);
+        assert!(tap.evm < 0.1, "EVM {}", tap.evm);
     }
 }

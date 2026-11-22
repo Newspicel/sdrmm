@@ -15,6 +15,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::hdlc_repair;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::packet::{
     PacketMode, PacketReceiver, RecentFrames,
     ax25::{ADDRESS_LEN, CONTROL_PF, CONTROL_UI, PID_NO_LAYER3, carries_pid, decode_address},
@@ -50,6 +51,8 @@ const DEDUP_SAMPLES: u64 = 48_000;
 pub struct AprsChannel {
     receiver: PacketReceiver,
     recent: RecentFrames,
+    levels: Vec<f32>,
+    mapping: Mapping,
 }
 
 const fn packet_mode(mode: AprsMode) -> PacketMode {
@@ -105,6 +108,8 @@ impl NativeChannel for AprsChannel {
         Ok(Self {
             receiver: receiver(p.mode),
             recent: RecentFrames::new(DEDUP_SAMPLES),
+            levels: Vec::new(),
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -122,15 +127,29 @@ impl Channel for AprsChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        let Self { receiver, recent } = self;
+        let Self {
+            receiver,
+            recent,
+            levels,
+            mapping,
+        } = self;
         recent.advance(iq.len());
-        receiver.process(iq, |frame| {
+        let events = &mut out.events;
+        let heard = |frame: &[u8]| {
             if let Some((packet, repaired)) = checked_packet(frame)
                 && recent.first(&repaired)
             {
-                out.events.push(DecoderEvent::of(&packet));
+                events.push(DecoderEvent::of(&packet));
             }
-        });
+        };
+        if !out.symbols.wanted() {
+            receiver.process(iq, heard);
+            return;
+        }
+        levels.clear();
+        receiver.process_watched(iq, levels, heard);
+        let baud = receiver.mode().baud();
+        out.symbols.levels(levels, &[], mapping, baud, 0.0);
     }
 }
 
@@ -1037,6 +1056,26 @@ mod tests {
         assert_eq!(packet.speed_kt, Some(36.0));
         assert_eq!(packet.altitude_ft, Some(432));
         assert_eq!(packet.comment.as_deref(), Some("/A=000432 Testing"));
+    }
+
+    #[test]
+    fn the_scope_reads_both_modes_as_two_levels_at_their_baud() {
+        for (mode, baud) in [
+            (AprsMode::Afsk1200, 1_200.0),
+            (AprsMode::G3ruh9600, 9_600.0),
+        ] {
+            let mut chan = channel(mode);
+            let mut out = ChannelOutputs::default();
+            out.symbols.set_wanted(true);
+            chan.process(&keyed(mode, &position_frame()), &mut out);
+            let tap = &out.symbols;
+            assert_eq!(packets(&out).len(), 1, "{mode:?}");
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+            assert_eq!(tap.reference.len(), 2);
+            assert!(tap.symbols.len() > 200, "{mode:?}: {}", tap.symbols.len());
+            assert_eq!(tap.symbol_rate, baud);
+            assert!(tap.evm < 0.2, "{mode:?}: EVM {}", tap.evm);
+        }
     }
 
     #[test]

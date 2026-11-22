@@ -159,7 +159,13 @@ impl TrackingMfsk {
     }
 
     /// Takes `iq` and hands each decided symbol to `emit`, in order.
-    pub fn push(&mut self, mut iq: &[Complex<f32>], mut emit: impl FnMut(u8)) {
+    pub fn push(&mut self, iq: &[Complex<f32>], mut emit: impl FnMut(u8)) {
+        self.push_levels(iq, |symbol, _| emit(symbol));
+    }
+
+    /// Like [`Self::push`], with each symbol's level: the tone its energies centre on, on the
+    /// odd-integer rail of [`crate::cpm::Mapping::natural`], so a clean tone lands on its level.
+    pub fn push_levels(&mut self, mut iq: &[Complex<f32>], mut emit: impl FnMut(u8, f32)) {
         while !iq.is_empty() {
             let take = (self.nin - self.staged.len()).min(iq.len());
             self.staged.extend_from_slice(&iq[..take]);
@@ -173,7 +179,7 @@ impl TrackingMfsk {
         }
     }
 
-    fn demodulate(&mut self, input: &[Complex<f32>], emit: &mut impl FnMut(u8)) {
+    fn demodulate(&mut self, input: &[Complex<f32>], emit: &mut impl FnMut(u8, f32)) {
         self.search.estimate(input, self.rate, &mut self.tones_hz);
         self.mix(input);
         self.integrate();
@@ -230,7 +236,7 @@ impl TrackingMfsk {
         timing.is_finite().then_some(timing)
     }
 
-    fn decide(&mut self, at: f32, emit: &mut impl FnMut(u8)) {
+    fn decide(&mut self, at: f32, emit: &mut impl FnMut(u8, f32)) {
         let phases = self.phases();
         let low = at.floor();
         let fraction = at - low;
@@ -250,9 +256,24 @@ impl TrackingMfsk {
             let peak = self.energies[usize::from(decided)];
             amplitude_sum += peak.sqrt();
             power_sum += peak;
-            emit(decided);
+            emit(decided, self.level());
         }
         self.track_snr(amplitude_sum, power_sum);
+    }
+
+    fn level(&self) -> f32 {
+        let total: f32 = self.energies.iter().sum();
+        if total <= TINY {
+            return 0.0;
+        }
+        let top = (self.m - 1) as f32;
+        let weighted: f32 = self
+            .energies
+            .iter()
+            .enumerate()
+            .map(|(tone, &energy)| (2.0 * tone as f32 - top) * energy)
+            .sum();
+        weighted / total
     }
 
     fn track_snr(&mut self, amplitude_sum: f32, power_sum: f32) {
@@ -409,6 +430,23 @@ mod tests {
 
     fn config(search_hz: (f32, f32)) -> TrackingMfskConfig {
         TrackingMfskConfig::new(RATE, BAUD, 4, search_hz)
+    }
+
+    #[test]
+    fn a_clean_tone_lands_on_its_own_level() {
+        let symbols: Vec<u8> = draws(1_000, 4, 7);
+        let iq = wave(&symbols, -700.0, 37, RATE as f32);
+        let mut demod = TrackingMfsk::new(config((-3_000.0, 3_000.0))).expect("valid config");
+        let mut worst = 0.0f32;
+        let mut seen = 0;
+        demod.push_levels(&iq, |symbol, level| {
+            seen += 1;
+            if seen > 100 {
+                worst = worst.max((level - (2.0 * f32::from(symbol) - 3.0)).abs());
+            }
+        });
+        assert!(seen > 900, "only {seen} symbols");
+        assert!(worst < 0.2, "a level strayed {worst} from its tone");
     }
 
     #[test]

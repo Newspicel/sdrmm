@@ -21,6 +21,7 @@ pub(super) struct Scratch {
     pilots: Vec<Complex<f32>>,
     data: Vec<Complex<f32>>,
     soft: Vec<f32>,
+    pub(super) levels: Vec<f32>,
     bits: Vec<bool>,
     viterbi: Viterbi,
 }
@@ -33,6 +34,7 @@ impl Scratch {
             pilots: Vec::with_capacity(coded),
             data: Vec::with_capacity(coded),
             soft: Vec::with_capacity(coded),
+            levels: Vec::with_capacity((MAX_PDU_BYTES + CRC_BYTES) * 8),
             bits: Vec::with_capacity(coded),
             viterbi: Viterbi::new(),
         }
@@ -67,8 +69,9 @@ impl Decoder<'_> {
             return Attempt::Wait(needed);
         }
         let mut whitener = Whitener::new(self.channel_index);
+        self.scratch.levels.clear();
         for slot in 0..HEADER_BYTES {
-            let Some(byte) = read_byte(&mut detector) else {
+            let Some(byte) = read_byte(&mut detector, &mut self.scratch.levels) else {
                 return Attempt::Wait(self.more());
             };
             self.scratch.pdu[slot] = whitener.byte(byte);
@@ -78,7 +81,7 @@ impl Decoder<'_> {
             return Attempt::Wait(needed);
         }
         for slot in HEADER_BYTES..total {
-            let Some(byte) = read_byte(&mut detector) else {
+            let Some(byte) = read_byte(&mut detector, &mut self.scratch.levels) else {
                 return Attempt::Wait(self.more());
             };
             self.scratch.pdu[slot] = whitener.byte(byte);
@@ -267,9 +270,11 @@ fn read_blocks(blocks: &mut Blocks<'_>, count: usize, scratch: &mut Scratch) -> 
     true
 }
 
-fn read_byte(detector: &mut Coherent<'_>) -> Option<u8> {
+fn read_byte(detector: &mut Coherent<'_>, levels: &mut Vec<f32>) -> Option<u8> {
     (0..8).try_fold(0u8, |acc, bit| {
-        Some(acc | u8::from(detector.symbol()? > 0.0) << bit)
+        let soft = detector.symbol()?;
+        levels.push(soft);
+        Some(acc | u8::from(soft > 0.0) << bit)
     })
 }
 

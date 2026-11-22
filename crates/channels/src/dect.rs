@@ -17,8 +17,10 @@ pub(crate) mod wideband;
 
 use std::sync::LazyLock;
 
-use burst::{Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
+use burst::{BIT_RATE_HZ, Burst, Detector, INPUT_RATE_HZ, OCCUPIED_BANDWIDTH_HZ};
+use mac::a_field_crc_ok;
 use num_complex::Complex;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind,
 };
@@ -84,6 +86,31 @@ pub struct DectChannel {
     bursts: Vec<Burst>,
     params: DectParams,
     frequency_hz: f64,
+    mapping: Mapping,
+}
+
+impl DectChannel {
+    /// Shows the A field of the first burst whose checksum holds, enough to read the GFSK
+    /// without a point for every one of a busy carrier's bursts.
+    fn tap(&self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        let Some(burst) = self
+            .bursts
+            .iter()
+            .find(|burst| a_field_crc_ok(burst.a_field))
+        else {
+            return;
+        };
+        out.symbols.levels(
+            &burst.levels,
+            &[],
+            &self.mapping,
+            BIT_RATE_HZ,
+            f64::from(burst.offset_hz),
+        );
+    }
 }
 
 fn params(settings: &ChannelSettings) -> Result<DectParams, ChannelError> {
@@ -130,6 +157,7 @@ impl NativeChannel for DectChannel {
             bursts: Vec::new(),
             params,
             frequency_hz: settings.frequency_hz,
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -168,6 +196,7 @@ impl Channel for DectChannel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.bursts.clear();
         self.front.process(iq, &mut self.bursts);
+        self.tap(out);
         for burst in &self.bursts {
             if let Some(frame) = self.tracker.apply(burst, &mut self.playout) {
                 out.events.push(DecoderEvent::of(&frame));

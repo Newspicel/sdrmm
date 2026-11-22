@@ -1,11 +1,13 @@
 use crate::remote_id::RemoteIdFrame;
 use crate::remote_id::RemoteIdPhy;
 use crate::remote_id::RemoteIdTransport;
+use sdrmm_decoder::SymbolTap;
 use sdrmm_modem::ble::{
-    BlePhy, Packet, Sink,
+    BlePhy, Packet, SYMBOL_RATE_HZ, Sink,
     ad::{SERVICE_DATA_16, structures},
     channel_index, pdu,
 };
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::DecoderEvent;
 
 use super::{
@@ -57,6 +59,8 @@ pub(crate) fn frame(packet: &Packet<'_>, tracker: &mut Tracker) -> Option<Remote
 pub(crate) struct Events<'a> {
     pub tracker: &'a mut Tracker,
     pub out: &'a mut Vec<DecoderEvent>,
+    pub tap: &'a mut SymbolTap,
+    pub mapping: &'a Mapping,
 }
 
 impl Sink for Events<'_> {
@@ -64,6 +68,11 @@ impl Sink for Events<'_> {
         if let Some(frame) = frame(&packet, self.tracker) {
             self.out.push(DecoderEvent::of(&frame));
         }
+    }
+
+    fn symbols(&mut self, soft: &[f32], offset_hz: f64) {
+        self.tap
+            .levels(soft, &[], self.mapping, SYMBOL_RATE_HZ, offset_hz);
     }
 }
 

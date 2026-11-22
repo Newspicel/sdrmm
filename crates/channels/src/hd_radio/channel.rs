@@ -9,13 +9,14 @@ use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 use sdrmm_media::Media;
+use sdrmm_modem::constellation::{Constellation, tables};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract};
 use serde_json::{Map, Value};
 
 use super::{
     HdRadioParams, OCCUPIED_HZ,
     frame::PROGRAMS,
-    layout::{BLOCK, BLOCKS, INPUT_RATE_HZ, SYMBOL},
+    layout::{BLOCK, BLOCKS, DATA_CARRIERS, INPUT_RATE_HZ, MAX_PARTITIONS, SYMBOL},
     model::program_label,
     playout::{PACKET_FRAMES, Playout},
     receiver::{Block, Receiver},
@@ -27,6 +28,8 @@ const SYSTEM: &str = "hd_radio";
 const SYSTEM_LABEL: &str = "HD Radio";
 const CODE_RATE: &str = "2/5";
 const P1_SECONDS: f64 = (SYMBOL * BLOCK * BLOCKS) as f64 / INPUT_RATE_HZ;
+/// Symbols of each block the scope sees, a few thousand points a second.
+const TAP_SYMBOLS: usize = 4;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "hd_radio".to_owned(),
@@ -51,6 +54,8 @@ pub struct HdRadioChannel {
     media: Media,
     pacer: Pacer,
     bitrate_kbps: [Option<u32>; PROGRAMS],
+    qpsk: Constellation,
+    points: Vec<Complex<f32>>,
 }
 
 impl HdRadioChannel {
@@ -78,6 +83,20 @@ impl HdRadioChannel {
             self.was_locked = locked;
             self.report(out);
         }
+    }
+
+    fn tap_block(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        self.points.clear();
+        self.points.extend(self.receiver.points(TAP_SYMBOLS));
+        out.symbols.linear(
+            &self.points,
+            &self.qpsk,
+            self.receiver.data_carriers() as f64 * INPUT_RATE_HZ / SYMBOL as f64,
+            self.receiver.offset_hz(),
+        );
     }
 
     fn take_frame(&mut self) {
@@ -214,6 +233,9 @@ impl NativeChannel for HdRadioChannel {
             media: Media::new()?,
             pacer: Pacer::new(INPUT_RATE_HZ),
             bitrate_kbps: [None; PROGRAMS],
+            qpsk: tables::psk_rotated(4, std::f64::consts::FRAC_PI_4)
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
+            points: Vec::with_capacity(TAP_SYMBOLS * 2 * MAX_PARTITIONS * DATA_CARRIERS),
         })
     }
 }
@@ -243,6 +265,9 @@ impl Channel for HdRadioChannel {
             let (taken, block) = self.receiver.push(rest);
             rest = &rest[taken..];
             if let Some(block) = block {
+                if block.pids.is_some() {
+                    self.tap_block(out);
+                }
                 self.take_block(block, out);
             }
         }

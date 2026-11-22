@@ -17,7 +17,10 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{hdlc_fcs_ok, hdlc_repair};
-use sdrmm_modem::packet::{PacketMode, PacketReceiver, RecentFrames};
+use sdrmm_modem::{
+    cpm::Mapping,
+    packet::{PacketMode, PacketReceiver, RecentFrames},
+};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use sdrmm_decoder::{
@@ -47,6 +50,8 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 pub struct BssChannel {
     receiver: PacketReceiver,
     listener: Listener,
+    levels: Vec<f32>,
+    binary: Mapping,
 }
 
 struct Listener {
@@ -129,6 +134,8 @@ impl NativeChannel for BssChannel {
                 scratch: Vec::with_capacity(MAX_FRAME_BYTES),
                 rejected: 0,
             },
+            levels: Vec::new(),
+            binary: Mapping::natural(2),
         })
     }
 }
@@ -139,9 +146,21 @@ impl Channel for BssChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
-        let Self { receiver, listener } = self;
+        let Self {
+            receiver,
+            listener,
+            levels,
+            binary,
+        } = self;
         listener.recent.advance(iq.len());
-        receiver.process(iq, |frame| listener.hear(frame, out));
+        if !out.symbols.wanted() {
+            receiver.process(iq, |frame| listener.hear(frame, out));
+            return;
+        }
+        levels.clear();
+        receiver.process_watched(iq, levels, |frame| listener.hear(frame, out));
+        out.symbols
+            .levels(levels, &[], binary, receiver.mode().baud(), 0.0);
     }
 
     fn rejected(&self) -> u32 {

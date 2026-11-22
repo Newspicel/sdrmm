@@ -9,6 +9,7 @@ use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
 use sdrmm_dsp::SyncDetector;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ffsk::{FfskDemod, FfskTones};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventContract, FilterSpec,
@@ -167,11 +168,19 @@ fn emit(out: &mut ChannelOutputs, packet: MdcPacket) {
 pub struct MdcChannel {
     demod: FfskDemod,
     symbols: Vec<f32>,
+    rail: Mapping,
     framer: Framer,
 }
 
 impl MdcChannel {
     fn slice(&mut self, out: &mut ChannelOutputs) {
+        out.symbols.levels(
+            &self.symbols,
+            &[],
+            &self.rail,
+            FfskTones::CCIR_1200.baud,
+            0.0,
+        );
         for &symbol in &self.symbols {
             self.framer.push(symbol > 0.0, out);
         }
@@ -195,6 +204,7 @@ impl NativeChannel for MdcChannel {
         Ok(Self {
             demod: FfskDemod::new(RATE, DEVIATION_HZ, FfskTones::CCIR_1200),
             symbols: Vec::new(),
+            rail: Mapping::natural(2),
             framer: Framer::new(),
         })
     }

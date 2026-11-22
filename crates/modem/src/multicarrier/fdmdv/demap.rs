@@ -7,21 +7,18 @@ const NORM_FLOOR: f64 = 1e-6;
 
 pub(super) struct Decision {
     pub(super) bits: [bool; BITS],
+    pub(super) points: [Sample; DATA_CARRIERS],
     pub(super) sync_bit: bool,
     pub(super) frequency_error: f32,
 }
 
 pub(super) fn decide(symbols: &[Sample; CARRIERS], previous: &[Sample; CARRIERS]) -> Decision {
     let mut bits = [false; BITS];
-    for ((pair, symbol), previous) in bits
-        .as_chunks_mut::<2>()
-        .0
-        .iter_mut()
-        .zip(&symbols[..DATA_CARRIERS])
-        .zip(&previous[..DATA_CARRIERS])
-    {
-        let difference = difference(*symbol, *previous) * EIGHTH_TURN;
-        *pair = [difference.im < 0.0, difference.re < 0.0];
+    let points: [Sample; DATA_CARRIERS] =
+        std::array::from_fn(|carrier| difference(symbols[carrier], previous[carrier]));
+    for (pair, point) in bits.as_chunks_mut::<2>().0.iter_mut().zip(&points) {
+        let turned = point * EIGHTH_TURN;
+        *pair = [turned.im < 0.0, turned.re < 0.0];
     }
     let norm = inverse_magnitude(previous[PILOT]);
     let pilot = difference(symbols[PILOT], previous[PILOT]);
@@ -29,9 +26,16 @@ pub(super) fn decide(symbols: &[Sample; CARRIERS], previous: &[Sample; CARRIERS]
     let frequency_error = if sync_bit { pilot.im } else { -pilot.im } * norm;
     Decision {
         bits,
+        points: unit_power(points),
         sync_bit,
         frequency_error,
     }
+}
+
+fn unit_power(points: [Sample; DATA_CARRIERS]) -> [Sample; DATA_CARRIERS] {
+    let power = points.iter().map(Sample::norm_sqr).sum::<f32>() / DATA_CARRIERS as f32;
+    let scale = (1.0 / (f64::from(power).sqrt() + NORM_FLOOR)) as f32;
+    points.map(|p| p.scale(scale))
 }
 
 fn difference(symbol: Sample, previous: Sample) -> Sample {

@@ -6,11 +6,10 @@ use num_complex::Complex;
 use sdrmm_dsp::crc16_msb;
 
 use super::{
-    demod::RATE,
+    demod::{RATE, Recorder},
     fields::{Geodetic, Motion, empty_frame, plausible, set_motion, set_position, today_at},
 };
 
-#[cfg(any(test, feature = "synth"))]
 pub(crate) const BAUD: f64 = 1_200.0;
 pub(crate) const MARK_HZ: f64 = 1_200.0;
 pub(crate) const SPACE_HZ: f64 = 2_200.0;
@@ -92,7 +91,8 @@ impl Afsk {
         }
     }
 
-    fn push(&mut self, x: f32) -> bool {
+    /// The mark tone's share of both tones' energy, from -1 (space) to 1 (mark).
+    fn push(&mut self, x: f32) -> f32 {
         let mark = self.mark[self.phase] * x;
         let space = self.space[self.phase] * x;
         self.sum_mark += widen(mark) - widen(self.history_mark[self.slot]);
@@ -101,7 +101,13 @@ impl Afsk {
         self.history_space[self.slot] = space;
         self.slot = (self.slot + 1) % BIT_SAMPLES;
         self.phase = (self.phase + 1) % TONE_TABLE;
-        self.sum_mark.norm_sqr() > self.sum_space.norm_sqr()
+        let (mark, space) = (self.sum_mark.norm_sqr(), self.sum_space.norm_sqr());
+        let total = mark + space;
+        if total > 0.0 {
+            ((mark - space) / total) as f32
+        } else {
+            0.0
+        }
     }
 }
 
@@ -111,6 +117,11 @@ enum Uart {
 }
 
 impl Uart {
+    /// Whether the next sample is one the UART reads a bit from.
+    fn samples_next(&self) -> bool {
+        matches!(self, Self::Byte { wait: 1, .. })
+    }
+
     fn push(&mut self, mark: bool) -> Option<u8> {
         match self {
             Self::Idle { previous } => {
@@ -258,6 +269,7 @@ impl ImetPackets {
 }
 
 pub(crate) struct Imet {
+    pub(super) recorder: Recorder,
     afsk: Afsk,
     uart: Uart,
     buffer: [u8; BUFFER],
@@ -268,6 +280,7 @@ pub(crate) struct Imet {
 impl Imet {
     pub(crate) fn new() -> Self {
         Self {
+            recorder: Recorder::new(),
             afsk: Afsk::new(),
             uart: Uart::Idle { previous: true },
             buffer: [0; BUFFER],
@@ -282,8 +295,11 @@ impl Imet {
 
     pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
-            let mark = self.afsk.push(sample);
-            if let Some(byte) = self.uart.push(mark) {
+            let soft = self.afsk.push(sample);
+            if self.uart.samples_next() {
+                self.recorder.push(soft);
+            }
+            if let Some(byte) = self.uart.push(soft > 0.0) {
                 self.byte(byte, out);
             }
         }

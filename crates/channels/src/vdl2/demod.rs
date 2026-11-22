@@ -117,6 +117,7 @@ struct Collecting {
     tracker: Tracker,
     bits: Vec<u8>,
     conf: Vec<f32>,
+    points: Vec<Complex<f32>>,
     scr: Prbs,
     length: Option<BurstLength>,
 }
@@ -148,6 +149,7 @@ pub struct Vdl2Demod {
     state: State,
     strategy: &'static Strategy,
     deframer: HdlcDeframer,
+    points: Vec<Complex<f32>>,
 }
 
 pub struct Burst {
@@ -182,7 +184,21 @@ impl Vdl2Demod {
             strategy: &RECOVERY,
             last_rs_fail: f64::NEG_INFINITY,
             deframer: avlc::deframer(),
+            points: Vec::new(),
         }
+    }
+
+    /// The symbol phase steps of the bursts this block decoded, over their mean amplitude:
+    /// D8PSK points on the unit circle at multiples of 45 degrees.
+    pub fn points(&self) -> &[Complex<f32>] {
+        &self.points
+    }
+
+    fn show(&mut self, c: &Collecting) {
+        let amplitude =
+            c.points.iter().map(|p| p.norm()).sum::<f32>() / c.points.len().max(1) as f32;
+        let scale = 1.0 / amplitude.max(f32::MIN_POSITIVE);
+        self.points.extend(c.points.iter().map(|&p| p * scale));
     }
 
     #[cfg(test)]
@@ -307,6 +323,10 @@ impl Vdl2Demod {
             c.next_pos += self.sps;
             let (idx, residual) = c.tracker.step(s);
             c.conf.push(residual.abs());
+            c.points.push(Complex::from_polar(
+                s.norm(),
+                idx as f32 * PI / 4.0 + residual,
+            ));
             let (x, y, z) = GRAY_INV[idx];
             for b in [x, y, z] {
                 c.bits.push(b ^ u8::from(c.scr.next_bit()));
@@ -345,6 +365,7 @@ impl Vdl2Demod {
             profile,
             bits: Vec::new(),
             conf: Vec::new(),
+            points: Vec::new(),
             scr: scrambler(),
             length: None,
         })
@@ -381,6 +402,7 @@ impl Vdl2Demod {
             self.cursor = c.uw_start + 1.0;
             return None;
         };
+        self.show(c);
         if decoded.soft_assisted {
             self.last_rs_fail = c.uw_start;
             self.cursor = c.uw_start + 1.0;
@@ -396,6 +418,7 @@ impl Vdl2Demod {
     }
 
     pub fn process(&mut self, input: &[Complex<f32>], rs: &ReedSolomon, out: &mut Vec<Burst>) {
+        self.points.clear();
         self.buf.extend_from_slice(input);
         loop {
             match std::mem::replace(&mut self.state, State::Hunt) {

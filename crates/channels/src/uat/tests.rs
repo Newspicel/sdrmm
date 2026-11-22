@@ -93,6 +93,22 @@ fn noisy_bursts_off_frequency_still_decode() {
 }
 
 #[test]
+fn the_scope_reads_a_downlink_as_two_tight_levels_at_the_bit_rate() {
+    let iq = transmission(&[Burst::Downlink(long_frame(&N70FC))], INPUT_RATE_HZ);
+    let mut chan = channel(&UatParams::default());
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    chan.process(&iq, &mut out);
+    let tap = &out.symbols;
+    assert_eq!(out.events.len(), 1);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert_eq!(tap.symbols.len(), fec::LONG_BYTES * 8);
+    assert_eq!(tap.symbol_rate, BIT_RATE_HZ);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+}
+
+#[test]
 fn noise_alone_produces_nothing() {
     let mut iq = vec![Complex::new(0.0, 0.0); 2_000_000];
     add_noise(&mut iq, 3, 0.5);

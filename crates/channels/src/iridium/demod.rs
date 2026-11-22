@@ -36,6 +36,7 @@ const FIRST_SPAN: f64 = 1_100.0;
 const FADE_RATIO: f32 = 64.0;
 const FADE_RUN: usize = 3;
 const BOXCAR: usize = 16;
+const TAIL_FRACTION: f32 = 0.25;
 
 type Sync = (&'static [u8; 28], &'static [u8; 24]);
 const SYNCS: [Sync; 2] = [(&SYNC_DL, ACCESS_DL), (&SYNC_UL, ACCESS_UL)];
@@ -44,11 +45,31 @@ pub struct DemodBurst {
     pub bits: Vec<u8>,
     pub reliability: Vec<f32>,
     pub cfo_hz: f64,
+    /// The derotated symbols over their mean amplitude: QPSK points at multiples of 90 degrees.
+    pub points: Vec<Complex<f32>>,
 }
 
 struct Symbols {
     decisions: Vec<u8>,
     confidence: Vec<f32>,
+    points: Vec<Complex<f32>>,
+}
+
+/// Drops the near-silent tail a burst's last symbols ring into, then scales to unit amplitude.
+fn unit_amplitude(mut points: Vec<Complex<f32>>) -> Vec<Complex<f32>> {
+    let peak = points.iter().map(|p| p.norm()).fold(0.0f32, f32::max);
+    while points
+        .last()
+        .is_some_and(|p| p.norm() < TAIL_FRACTION * peak)
+    {
+        points.pop();
+    }
+    let amplitude = points.iter().map(|p| p.norm()).sum::<f32>() / points.len().max(1) as f32;
+    let scale = 1.0 / amplitude.max(f32::MIN_POSITIVE);
+    for point in &mut points {
+        *point *= scale;
+    }
+    points
 }
 
 pub struct IridiumDemod {
@@ -228,6 +249,7 @@ impl IridiumDemod {
     fn frame_symbols(&self, uw_pos: f64, theta: f32, phase: f32) -> Symbols {
         let mut decisions = Vec::new();
         let mut confidence = Vec::new();
+        let mut points = Vec::new();
         let mut carrier = phase;
         let mut peak = 0.0f32;
         let mut weak_run = 0usize;
@@ -246,6 +268,7 @@ impl IridiumDemod {
                 if weak_run >= FADE_RUN {
                     decisions.truncate(decisions.len() + 1 - weak_run);
                     confidence.truncate(decisions.len());
+                    points.truncate(decisions.len());
                     break;
                 }
             }
@@ -256,10 +279,12 @@ impl IridiumDemod {
             }
             decisions.push(symbol);
             confidence.push(derotated.norm() * (2.0 * residual).cos().max(0.0));
+            points.push(derotated);
         }
         Symbols {
             decisions,
             confidence,
+            points,
         }
     }
 
@@ -287,10 +312,13 @@ impl IridiumDemod {
             count
         };
         let cfo_hz = f64::from(theta) * SYMBOL_RATE / std::f64::consts::TAU;
+        let mut points = symbols.points;
+        points.truncate(count);
         let burst = DemodBurst {
             bits,
             reliability,
             cfo_hz,
+            points: unit_amplitude(points),
         };
         (Some(burst), count)
     }

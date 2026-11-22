@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::{BitSync, FmDemod, RealDecimator, SyncDetector};
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use count::Count;
@@ -73,6 +74,7 @@ struct Demod {
     sync: BitSync,
     discriminated: Vec<f32>,
     smoothed: Vec<f32>,
+    soft: Vec<f32>,
 }
 
 impl Demod {
@@ -84,16 +86,22 @@ impl Demod {
             sync: BitSync::new(RATE, baud.rate()),
             discriminated: Vec::new(),
             smoothed: Vec::new(),
+            soft: Vec::new(),
         }
     }
 
-    fn bits(&mut self, iq: &[Complex<f32>], mut bit: impl FnMut(bool)) {
+    /// Hands each decided bit to `bit`, and keeps its soft level in `soft` when `watched`.
+    fn bits(&mut self, iq: &[Complex<f32>], watched: bool, mut bit: impl FnMut(bool)) {
         self.fm.process(iq, &mut self.discriminated);
         self.matched
             .process(&self.discriminated, &mut self.smoothed);
+        self.soft.clear();
         for &sample in &self.smoothed {
-            if let Some(symbol) = self.sync.push(sample) {
-                bit(symbol);
+            if let Some(level) = self.sync.push_soft(sample) {
+                if watched {
+                    self.soft.push(level);
+                }
+                bit(level >= 0.0);
             }
         }
     }
@@ -149,6 +157,7 @@ pub struct PerChannel {
     count: Count,
     samples: u64,
     reported: Option<u64>,
+    binary: Mapping,
 }
 
 impl PerChannel {
@@ -177,6 +186,7 @@ impl NativeChannel for PerChannel {
             count: Count::default(),
             samples: 0,
             reported: None,
+            binary: Mapping::natural(2),
         })
     }
 }
@@ -207,11 +217,18 @@ impl Channel for PerChannel {
             count,
             ..
         } = self;
-        demod.bits(iq, |bit| {
+        demod.bits(iq, out.symbols.wanted(), |bit| {
             if let Some(body) = deframer.push(bit) {
                 count.frame(frame::check(body, expected));
             }
         });
+        out.symbols.levels(
+            &self.demod.soft,
+            &[],
+            &self.binary,
+            self.params.baud.rate(),
+            0.0,
+        );
         let before = self.samples / REPORT_SAMPLES;
         self.samples += iq.len() as u64;
         let frames = self.count.frames();

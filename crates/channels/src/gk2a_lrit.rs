@@ -38,6 +38,8 @@ pub(crate) const INPUT_RATE_HZ: f64 = SPS as f64 * SYMBOL_RATE;
 pub(crate) const ROLL_OFF: f64 = 0.5;
 const FILTER_TAPS: usize = 63;
 const CHUNK: usize = 8_192;
+/// One decision point in this many reaches the scope, some sixteen thousand a second.
+const TAP_EVERY: usize = 8;
 const SESSIONS: usize = 8;
 const CANVASES: usize = 2;
 const MAX_SIDE: usize = 1_100;
@@ -363,7 +365,25 @@ pub struct Gk2aLritChannel {
     ciphers: Vec<(u16, Des)>,
     link: XritLink,
     files: Files,
+    points: Vec<Complex<f32>>,
     closing: bool,
+}
+
+impl Gk2aLritChannel {
+    fn tap_symbols(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        self.points.clear();
+        self.points
+            .extend(self.link.symbols().iter().step_by(TAP_EVERY).copied());
+        out.symbols.linear(
+            &self.points,
+            self.link.constellation(),
+            SYMBOL_RATE,
+            self.link.frequency_offset_cycles_per_sample() * INPUT_RATE_HZ,
+        );
+    }
 }
 
 impl NativeChannel for Gk2aLritChannel {
@@ -377,6 +397,7 @@ impl NativeChannel for Gk2aLritChannel {
             ciphers: ciphers(&params(&settings)?)?,
             link: link()?,
             files: Files::new(),
+            points: Vec::with_capacity(CHUNK),
             closing: false,
         })
     }
@@ -410,6 +431,7 @@ impl Channel for Gk2aLritChannel {
             let ciphers = &self.ciphers;
             self.link
                 .process(chunk, &mut |file| files.take(file, ciphers, out));
+            self.tap_symbols(out);
         }
     }
 }

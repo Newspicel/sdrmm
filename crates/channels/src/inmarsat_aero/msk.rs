@@ -34,6 +34,7 @@ pub(super) struct CoherentMsk {
     points: [Complex<f32>; 3],
     magnitude: f32,
     lock: f32,
+    levels: Vec<f32>,
 }
 
 impl CoherentMsk {
@@ -76,10 +77,25 @@ impl CoherentMsk {
             points: [Complex::new(0.0, 0.0); 3],
             magnitude: 1e-3,
             lock: 0.0,
+            levels: Vec::new(),
         }
     }
 
+    /// The last block's in-phase decision points over their running level, near plus or minus one.
+    pub(super) fn levels(&self) -> &[f32] {
+        &self.levels
+    }
+
+    pub(super) fn locked(&self) -> bool {
+        self.lock > LOCK_THRESHOLD
+    }
+
+    pub(super) fn frequency_error_hz(&self) -> f64 {
+        f64::from(self.nco_freq) * self.fs / f64::from(TAU)
+    }
+
     pub(super) fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<(f32, u8)>) {
+        self.levels.clear();
         for &sample in input {
             if let Some(bit) = self.step(sample) {
                 out.push(bit);
@@ -136,6 +152,7 @@ impl CoherentMsk {
         let late = (self.correlate(2 * self.early_late) * rotation).re;
         self.points = [self.points[1], self.points[2], point];
         self.magnitude += MAG_ALPHA * (point.re.abs() - self.magnitude);
+        self.levels.push(point.re / self.magnitude.max(1e-9));
         let timing_error = point.re.signum() * (late - early) / self.magnitude.max(1e-9);
         self.timing -= f64::from(TIMING_GAIN * timing_error);
         self.track_carrier();

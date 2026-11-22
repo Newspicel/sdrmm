@@ -60,6 +60,23 @@ fn idle_and_turn_off_words_mean_what_they_say() {
 }
 
 #[test]
+fn the_scope_sees_the_subaudible_data_as_two_levels() {
+    let iq = tx::transmission(tx::call(), 15, deviation(), INPUT_RATE_HZ);
+    let mut chan = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(4_800) {
+        chan.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() > 500, "{} symbols", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, BAUD);
+    assert!(tap.evm < 0.3, "EVM {}", tap.evm);
+}
+
+#[test]
 fn decodes_a_call_its_voice_and_its_end() {
     let mut iq = tx::transmission(tx::call(), 15, deviation(), INPUT_RATE_HZ);
     add_noise(&mut iq, 5, 0.2);

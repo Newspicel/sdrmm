@@ -95,6 +95,26 @@ fn decodes_the_reference_encoder_audio() {
 }
 
 #[test]
+fn the_scope_sees_two_clean_levels_at_1200_baud() {
+    let iq = transmission(&[frame::encode(0x01, 0x80, 0x1234)]);
+    let (warm_up, signal) = iq[4_800..iq.len() - 4_800].split_at(2_400);
+    let mut channel = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    channel.process(warm_up, &mut out);
+    out.reset();
+    for block in signal.chunks(1_021) {
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() > 150, "{} symbols", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, 1_200.0);
+    assert!(tap.evm < 0.2, "EVM {}", tap.evm);
+}
+
+#[test]
 fn a_double_packet_carries_its_second_block() {
     let iq = transmission(&[
         frame::encode(0x35, 0x89, 0x5678),

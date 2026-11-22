@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 
 use num_complex::Complex;
 use sdrmm_dsp::SyncDetector;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ffsk::{FfskDemod, FfskTones};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
@@ -116,6 +117,7 @@ pub struct EotChannel {
     history: [f32; HISTORY_BITS],
     repeats: [Option<(u64, f32)>; 2],
     last: Option<(u64, u32, EotReport)>,
+    mapping: Mapping,
 }
 
 fn params(settings: &ChannelSettings) -> Result<EotParams, ChannelError> {
@@ -280,6 +282,7 @@ impl NativeChannel for EotChannel {
             history: [0.0; HISTORY_BITS],
             repeats: [None; 2],
             last: None,
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -296,6 +299,8 @@ impl Channel for EotChannel {
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let mut symbols = std::mem::take(&mut self.symbols);
         self.demod.symbols(iq, &mut symbols);
+        out.symbols
+            .levels(&symbols, &[], &self.mapping, TONES.baud, 0.0);
         self.clock += iq.len() as u64;
         for &symbol in &symbols {
             self.symbol(symbol, out);

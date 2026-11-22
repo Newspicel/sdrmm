@@ -74,6 +74,7 @@ use rs41::Rs41;
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::cpm::Mapping;
 
 pub(crate) const INPUT_RATE_HZ: f64 = demod::RATE;
 const FILTER_TAPS: usize = 127;
@@ -126,6 +127,8 @@ pub struct RadiosondeChannel {
     imet: Imet,
     flights: Flights,
     frames: Vec<RadiosondeFrame>,
+    heard: Option<SondeType>,
+    binary: Mapping,
 }
 
 impl NativeChannel for RadiosondeChannel {
@@ -144,7 +147,44 @@ impl NativeChannel for RadiosondeChannel {
             imet: Imet::new(),
             flights: Flights::default(),
             frames: Vec::new(),
+            heard: None,
+            binary: Mapping::natural(2),
         })
+    }
+}
+
+impl RadiosondeChannel {
+    /// The sonde a scope shows: the one set, else the last one heard.
+    fn watched(&self) -> SondeType {
+        self.params.sonde.or(self.heard).unwrap_or(SondeType::Rs41)
+    }
+
+    fn record(&mut self, watched: Option<SondeType>) {
+        let on = |sondes: &[SondeType]| watched.is_some_and(|sonde| sondes.contains(&sonde));
+        self.rs41.recorder.start(on(&[SondeType::Rs41]));
+        self.dfm.recorder.start(on(&[SondeType::Dfm]));
+        self.meteomodem
+            .recorder
+            .start(on(&[SondeType::M10, SondeType::M20]));
+        self.imet.recorder.start(on(&[SondeType::Imet4]));
+    }
+
+    fn tap(&self, sonde: SondeType, out: &mut ChannelOutputs) {
+        let (symbols, baud) = match sonde {
+            SondeType::Rs41 => (self.rs41.recorder.symbols(), rs41::BAUD),
+            SondeType::Dfm => (self.dfm.recorder.symbols(), dfm::BAUD),
+            SondeType::M10 | SondeType::M20 => {
+                (self.meteomodem.recorder.symbols(), meteomodem::BAUD)
+            }
+            SondeType::Imet4 => (self.imet.recorder.symbols(), imet::BAUD),
+        };
+        out.symbols.levels(
+            symbols,
+            &[],
+            &self.binary,
+            baud,
+            self.front.frequency_error_hz(),
+        );
     }
 }
 
@@ -157,6 +197,8 @@ impl Channel for RadiosondeChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let meteomodem = runs(&self.params, SondeType::M10) || runs(&self.params, SondeType::M20);
+        let watched = out.symbols.wanted().then(|| self.watched());
+        self.record(watched);
         for chunk in iq.chunks(CHUNK) {
             let audio = self.front.demodulate(chunk);
             if runs(&self.params, SondeType::Rs41) {
@@ -173,8 +215,12 @@ impl Channel for RadiosondeChannel {
             }
         }
         for mut frame in self.frames.drain(..) {
+            self.heard = Some(frame.sonde);
             self.flights.observe(&mut frame, &self.params);
             out.events.push(DecoderEvent::of(&frame));
+        }
+        if let Some(sonde) = watched {
+            self.tap(sonde, out);
         }
     }
 

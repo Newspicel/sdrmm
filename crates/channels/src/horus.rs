@@ -11,7 +11,11 @@ pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_modem::orthogonal::{TrackingMfsk, TrackingMfskConfig};
+use sdrmm_decoder::SymbolTap;
+use sdrmm_modem::{
+    cpm::Mapping,
+    orthogonal::{TrackingMfsk, TrackingMfskConfig},
+};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use framer::Framer;
@@ -92,6 +96,9 @@ fn params(settings: &ChannelSettings) -> Result<HorusParams, ChannelError> {
 pub(crate) struct HorusReceiver {
     demod: TrackingMfsk,
     framer: Framer,
+    watched: bool,
+    levels: Vec<f32>,
+    mapping: Mapping,
 }
 
 impl HorusReceiver {
@@ -102,13 +109,25 @@ impl HorusReceiver {
         Ok(Self {
             demod,
             framer: Framer::new(),
+            watched: false,
+            levels: Vec::new(),
+            mapping: Mapping::natural(TONES),
         })
     }
 
     pub(crate) fn process(&mut self, iq: &[Complex<f32>], frames: &mut Vec<HorusFrame>) {
         let first = frames.len();
-        let framer = &mut self.framer;
-        self.demod.push(iq, |symbol| {
+        let Self {
+            framer,
+            levels,
+            watched,
+            ..
+        } = self;
+        levels.clear();
+        self.demod.push_levels(iq, |symbol, level| {
+            if *watched {
+                levels.push(level);
+            }
             framer.push(symbol >> 1, frames);
             framer.push(symbol, frames);
         });
@@ -120,6 +139,23 @@ impl HorusReceiver {
 
     pub(crate) fn rejected(&self) -> u32 {
         self.framer.rejected()
+    }
+
+    /// Keeps each symbol's tone level while a scope looks at them.
+    pub(crate) fn watch(&mut self, watched: bool) {
+        self.watched = watched;
+    }
+
+    pub(crate) fn tap(&self, symbols: &mut SymbolTap) {
+        let tones = self.demod.tones_hz();
+        let centre = tones.iter().sum::<f32>() / tones.len().max(1) as f32;
+        symbols.levels(
+            &self.levels,
+            &[],
+            &self.mapping,
+            f64::from(BAUD),
+            f64::from(centre),
+        );
     }
 }
 
@@ -150,7 +186,9 @@ impl Channel for HorusChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
+        self.receiver.watch(out.symbols.wanted());
         self.receiver.process(iq, &mut self.frames);
+        self.receiver.tap(&mut out.symbols);
         out.events
             .extend(self.frames.drain(..).map(|frame| DecoderEvent::of(&frame)));
     }

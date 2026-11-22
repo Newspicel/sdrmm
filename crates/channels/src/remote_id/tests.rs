@@ -165,6 +165,46 @@ fn try_channel(link: RemoteIdLink, frequency_hz: f64) -> Result<RemoteIdChannel,
 }
 
 #[test]
+fn the_scope_reads_a_bluetooth_pack_as_two_tight_levels() {
+    let rate = RemoteIdLink::Bluetooth.input_rate_hz();
+    let pdu = tx::legacy_pdu(ADDRESS, 0, &basic_id());
+    let iq = on_air(
+        sdrmm_modem::ble::transmit::rf_packet(&pdu, 0, BlePhy::Le1m, rate),
+        rate,
+        40e3,
+        0.01,
+    );
+    let params = RemoteIdParams {
+        link: RemoteIdLink::Bluetooth,
+    };
+    let channel_params = ChannelParams::new("remote_id", &params).expect("remote_id settings");
+    let tuned = ChannelSettings {
+        frequency_hz: CHANNEL_37_HZ,
+        ..settings(channel_params.clone())
+    };
+    let mut channel = RemoteIdChannel::new(ChannelCtx { input_rate: rate }, tuned).expect("builds");
+    let mut filtered = Vec::new();
+    channel_filter(&channel_params)
+        .expect("filter")
+        .process(&iq, &mut filtered);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    channel.process(&filtered, &mut out);
+    let tap = &out.symbols;
+    assert_eq!(out.events.len(), 1);
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert_eq!(tap.symbols.len(), (pdu.len() + 3) * 8);
+    assert_eq!(tap.symbol_rate, sdrmm_modem::ble::SYMBOL_RATE_HZ);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz - 40e3).abs() < 5e3,
+        "{} Hz",
+        tap.freq_error_hz
+    );
+}
+
+#[test]
 fn a_bluetooth_channel_off_the_grid_is_refused() {
     for hz in [145e6, 2_401e6, 2_482e6] {
         assert!(matches!(

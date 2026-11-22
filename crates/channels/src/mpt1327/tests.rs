@@ -39,6 +39,28 @@ fn a_control_channel_reads_back_every_slot() {
 }
 
 #[test]
+fn the_scope_sees_two_clean_levels_at_1200_baud() {
+    let bits = synth::control_bits(synth::SITE_SYSTEM, &synth::site_messages());
+    let audio = sdrmm_modem::ffsk::FfskTones::CCIR_1200.audio(&bits, 0.7, RATE);
+    let iq = sdrmm_modem::synth::fm_modulate(&audio, DEVIATION_HZ, RATE);
+    let (warm_up, signal) = iq.split_at(2_400);
+    let mut chan = channel();
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    chan.process(warm_up, &mut out);
+    out.reset();
+    for block in signal.chunks(1_021) {
+        chan.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() > 200, "{} symbols", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, 1_200.0);
+    assert!(tap.evm < 0.2, "EVM {}", tap.evm);
+}
+
+#[test]
 fn the_site_reads_through_noise() {
     let mut iq = synth::control_channel(synth::SITE_SYSTEM, &synth::site_messages(), RATE);
     let noise = complex_noise(7, 0.25, iq.len());

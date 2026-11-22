@@ -33,7 +33,6 @@ impl CoarseTune {
     }
 
     /// The offset now mixed out, in cycles a sample.
-    #[cfg(test)]
     #[must_use]
     pub fn turns(&self) -> f64 {
         self.turns

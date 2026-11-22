@@ -189,3 +189,25 @@ fn image_names_give_channel_and_segment() {
     );
     assert_eq!(image_name("ANT_LRIT_047_20190713.lrit").0, None);
 }
+
+#[test]
+fn the_scope_sees_two_tight_bpsk_clusters() {
+    let iq = synth::transmission();
+    let mut chan = channel(vec![test_key()]);
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    let mut tap = sdrmm_decoder::SymbolTap::default();
+    for block in iq.as_chunks::<CHUNK>().0 {
+        out.reset();
+        chan.process(block, &mut out);
+        if out.symbols.plane.is_some() {
+            tap = std::mem::take(&mut out.symbols);
+            out.symbols.set_wanted(true);
+        }
+    }
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 4);
+    assert!(tap.symbols.len() >= 2 * 400, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, SYMBOL_RATE);
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+}

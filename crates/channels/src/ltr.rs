@@ -9,6 +9,7 @@ use sdrmm_decoder::{
 use sdrmm_dsp::FmDemod;
 use sdrmm_modem::analog::subaudible::NrzReceiver;
 use sdrmm_modem::analog::voice::FmVoice;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, DvFrame,
     DvFrameKind, EventKind, FilterSpec, KindSpec, SettingField,
@@ -81,7 +82,8 @@ pub struct LtrChannel {
     discriminator: FmDemod,
     detected: Vec<f32>,
     data: NrzReceiver,
-    bits: Vec<bool>,
+    soft: Vec<f32>,
+    rail: Mapping,
     framer: Framer,
     voice: FmVoice,
     call: CallState,
@@ -99,7 +101,8 @@ impl NativeChannel for LtrChannel {
             discriminator: FmDemod::new(INPUT_RATE_HZ, deviation_hz(&params)),
             detected: Vec::new(),
             data: NrzReceiver::new(INPUT_RATE_HZ, BAUD),
-            bits: Vec::new(),
+            soft: Vec::new(),
+            rail: Mapping::natural(2),
             framer: Framer::default(),
             voice: FmVoice::new(INPUT_RATE_HZ),
             call: CallState::default(),
@@ -123,10 +126,11 @@ impl Channel for LtrChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.discriminator.process(iq, &mut self.detected);
-        self.bits.clear();
-        self.data.process(&self.detected, &mut self.bits);
-        for &bit in &self.bits {
-            if let Some(word) = self.framer.push(bit) {
+        self.soft.clear();
+        self.data.soft(&self.detected, &mut self.soft);
+        out.symbols.levels(&self.soft, &[], &self.rail, BAUD, 0.0);
+        for &level in &self.soft {
+            if let Some(word) = self.framer.push(level >= 0.0) {
                 self.call.heard(word, out);
             }
         }

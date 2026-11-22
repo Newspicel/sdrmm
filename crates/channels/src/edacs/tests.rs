@@ -139,6 +139,26 @@ fn decodes_a_4800_baud_control_channel() {
 }
 
 #[test]
+fn the_scope_sees_two_clean_levels_at_9600_baud() {
+    let iq = tx::control_channel(&[], EdacsBaud::B9600, INPUT_RATE_HZ);
+    let mut chan = channel(EdacsParams {
+        baud: EdacsBaud::B9600,
+        ..EdacsParams::default()
+    });
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(2_048) {
+        chan.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+    assert_eq!(tap.reference.len(), 2);
+    assert!(tap.symbols.len() > 5_000, "{} symbols", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, 9_600.0);
+    assert!(tap.evm < 0.15, "EVM {}", tap.evm);
+}
+
+#[test]
 fn decodes_inverted_polarity() {
     let iq: Vec<Complex<f32>> = tx::control_channel(
         &[tx::group_assignment(42, 7, 3)],

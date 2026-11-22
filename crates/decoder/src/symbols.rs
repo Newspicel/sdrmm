@@ -70,6 +70,7 @@ impl SymbolTap {
         if !self.wanted {
             return;
         }
+        self.reference.clear();
         for point in table.points() {
             self.reference.push(point.re);
             self.reference.push(point.im);
@@ -93,6 +94,7 @@ impl SymbolTap {
         if !self.wanted {
             return;
         }
+        self.reference.clear();
         self.reference.extend_from_slice(mapping.levels());
         if carrying.len() == symbols.len() {
             self.symbols.extend(

@@ -50,6 +50,7 @@ use sdrmm_decoder::{
     check_input_rate,
 };
 use sdrmm_modem::ccsds::{Deframer, Depacketizer, FrameOutcome};
+use sdrmm_modem::constellation::{Constellation, tables};
 
 pub(crate) const INPUT_RATE_HZ: f64 = 288_000.0;
 const FILTER_TAPS: usize = 127;
@@ -57,6 +58,8 @@ const CHUNK: usize = 4_096;
 const SIGNAL_LOSS_S: f64 = 2.0;
 const MIN_COMPLETE_LINES: u16 = 16;
 const SOURCE: &str = "lrpt";
+/// One decision point in this many reaches the scope, some fifteen thousand a second.
+const TAP_EVERY: usize = 5;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "lrpt".to_owned(),
@@ -190,6 +193,7 @@ impl Picture {
 pub struct LrptChannel {
     mode: LrptMode,
     demod: Demod,
+    qpsk: Constellation,
     deframer: Deframer,
     depacketizer: Depacketizer,
     picture: Picture,
@@ -223,6 +227,15 @@ impl LrptChannel {
         }
     }
 
+    fn tap_symbols(&self, out: &mut ChannelOutputs) {
+        out.symbols.linear(
+            self.demod.points(),
+            &self.qpsk,
+            self.mode.symbol_rate(),
+            self.demod.frequency_offset_cycles_per_sample() * INPUT_RATE_HZ,
+        );
+    }
+
     fn check_signal(&mut self, out: &mut ChannelOutputs) {
         let silent = self.samples.saturating_sub(self.picture.last_frame);
         if (silent as f64) < SIGNAL_LOSS_S * INPUT_RATE_HZ {
@@ -235,7 +248,12 @@ impl LrptChannel {
 
     fn run_chunk(&mut self, chunk: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.soft.clear();
+        let wanted = out.symbols.wanted();
+        self.demod.tap(if wanted { TAP_EVERY } else { 0 });
         self.demod.process(chunk, &mut self.soft);
+        if wanted {
+            self.tap_symbols(out);
+        }
         self.samples += chunk.len() as u64;
         self.deframer.push(&self.soft);
         while let Some(outcome) = self.deframer.next_frame() {
@@ -256,6 +274,8 @@ impl NativeChannel for LrptChannel {
         Ok(Self {
             mode,
             demod: Demod::new(mode, INPUT_RATE_HZ),
+            qpsk: tables::psk_rotated(4, std::f64::consts::FRAC_PI_4)
+                .map_err(|error| ChannelError::InvalidSettings(format!("LRPT QPSK: {error}")))?,
             deframer: link::deframer(),
             depacketizer: link::depacketizer(),
             picture: Picture::new(),

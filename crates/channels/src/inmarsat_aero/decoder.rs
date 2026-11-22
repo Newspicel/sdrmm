@@ -1,8 +1,10 @@
 use num_complex::Complex;
+use sdrmm_decoder::SymbolTap;
 use sdrmm_dsp::design_lowpass_blackman_harris;
 use serde_json::Value;
 
 use super::{
+    Scope,
     acars_block::AcarsBlock,
     demod::MskDemod,
     frame::{FRAME_BITS, FrameHeader},
@@ -189,6 +191,35 @@ impl AeroChannelDecoder {
                 sink: FrameSink::new(None),
             },
             bits: Vec::new(),
+        }
+    }
+
+    /// Shows the rate that holds a lock: a locked MSK chain first, since the 10.5 kbit/s QPSK
+    /// loop also settles on a narrow MSK carrier, else the QPSK.
+    pub(super) fn tap(&self, tap: &mut SymbolTap, scope: &Scope) {
+        let locked = self
+            .chains
+            .iter()
+            .filter_map(|chain| Some((chain.rate, &chain.coherent.as_ref()?.demod)))
+            .find(|(_, demod)| demod.locked());
+        if let Some((rate, demod)) = locked {
+            tap.levels(
+                demod.levels(),
+                &[],
+                &scope.binary,
+                f64::from(rate),
+                demod.frequency_error_hz(),
+            );
+            return;
+        }
+        let high = &self.high_rate.demod;
+        if high.locked() {
+            tap.linear(
+                high.points(),
+                &scope.qpsk,
+                high.symbol_rate(),
+                high.frequency_error_hz(),
+            );
         }
     }
 

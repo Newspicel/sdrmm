@@ -17,6 +17,7 @@ use sdrmm_modem::{
 };
 
 pub const INPUT_RATE: f64 = 64_000_000.0 / 7.0;
+const TAPS_PER_SECOND: f64 = 10.0;
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dvbt".to_owned(),
     name: "DVB-T/T2".to_owned(),
@@ -64,6 +65,7 @@ pub struct DvbtChannel {
     media: Media,
     selection: Option<Selection>,
     report_samples: usize,
+    tap_samples: usize,
     was_locked: bool,
 }
 
@@ -98,6 +100,23 @@ impl DvbtChannel {
             }
         }
         self.media.drain(out);
+    }
+
+    /// Shows one symbol's cells ten times a second, enough to read the QAM without flooding
+    /// the scope.
+    fn tap_symbols(&mut self, samples: usize, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        let rate = self.params.sample_rate_hz();
+        self.receiver.tap(&mut out.symbols, rate);
+        if self.tap_samples == 0 {
+            self.receiver.request_tap();
+        }
+        self.tap_samples += samples;
+        if self.tap_samples as f64 >= rate / TAPS_PER_SECOND {
+            self.tap_samples = 0;
+        }
     }
 
     fn report(&self, out: &mut ChannelOutputs) {
@@ -159,6 +178,7 @@ impl NativeChannel for DvbtChannel {
             media,
             selection: None,
             report_samples: 0,
+            tap_samples: 0,
             was_locked: false,
         })
     }
@@ -185,6 +205,7 @@ impl Channel for DvbtChannel {
         self.media.reset();
         self.selection = None;
         self.report_samples = 0;
+        self.tap_samples = 0;
         self.was_locked = false;
     }
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
@@ -192,6 +213,7 @@ impl Channel for DvbtChannel {
         self.media.advance(iq.len(), input_rate);
         self.packets.clear();
         self.receiver.push(iq, &mut self.packets);
+        self.tap_symbols(iq.len(), out);
         let locked = self.receiver.locked();
         if self.was_locked && !locked {
             self.demux.reset();
@@ -296,6 +318,81 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn the_scope_sees_one_symbol_of_tight_16_qam() {
+        let iq = crate::synth::dvbt::waveform(crate::synth::dvbt::defaults(), 180);
+        let mut channel = DvbtChannel::new(
+            ChannelCtx {
+                input_rate: INPUT_RATE,
+            },
+            settings(crate::dvbt::DvbtBandwidth::Mhz8),
+        )
+        .expect("a DVB-T channel");
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in iq.chunks(16_384) {
+            channel.process(block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 2 * 16);
+        assert_eq!(tap.symbols.len(), 2 * 1512);
+        assert!(tap.evm < 0.05, "EVM {}", tap.evm);
+        assert!((tap.symbol_rate - 1512.0 * INPUT_RATE / 2304.0).abs() < 1.0);
+    }
+
+    fn t2_scope(bytes: &[u8]) -> sdrmm_decoder::SymbolTap {
+        let params = DvbtParams {
+            standard: crate::dvbt::DvbtStandard::DvbT2,
+            bandwidth: crate::dvbt::DvbtBandwidth::Mhz1_7,
+            plp: None,
+            ..Default::default()
+        };
+        let mut config = settings(params.bandwidth);
+        config.params = ChannelParams::new("dvbt", &params).expect("dvbt settings");
+        let rate = sdrmm_decoder::input_rate(&config.params);
+        let iq: Vec<_> = bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|&[a, b, c, d, e, f, g, h]| {
+                Complex::new(
+                    f32::from_le_bytes([a, b, c, d]),
+                    f32::from_le_bytes([e, f, g, h]),
+                )
+            })
+            .collect();
+        let mut channel =
+            DvbtChannel::new(ChannelCtx { input_rate: rate }, config).expect("a T2 channel");
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in iq.chunks(1009) {
+            channel.process(block, &mut out);
+        }
+        out.symbols
+    }
+
+    #[test]
+    fn the_t2_scope_sees_the_plp_grid_with_rotation_undone() {
+        for (bytes, points) in [
+            (
+                include_bytes!("../../../../fixtures/dvbt2/rf_2k_qpsk.f32").as_slice(),
+                4,
+            ),
+            (
+                include_bytes!("../../../../fixtures/dvbt2/rf_2k_lite.f32").as_slice(),
+                16,
+            ),
+        ] {
+            let tap = t2_scope(bytes);
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+            assert_eq!(tap.reference.len(), 2 * points);
+            assert!(!tap.symbols.is_empty());
+            assert!(tap.evm < 0.05, "{points} points: EVM {}", tap.evm);
+            assert!(tap.symbol_rate > 1.0e6, "{}", tap.symbol_rate);
+        }
     }
 
     #[test]

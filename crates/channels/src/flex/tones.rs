@@ -8,6 +8,9 @@ const AFC_REFRESH: usize = 16;
 
 pub type Powers = [f32; TONES];
 
+/// Each tone's place on the four-level rail, lowest frequency first.
+const LEVELS: [f32; TONES] = [-3.0, -1.0, 1.0, 3.0];
+
 pub struct Afc {
     upper: f64,
     lower: f64,
@@ -88,6 +91,25 @@ impl Bank {
     }
 }
 
+/// Where a symbol sits on its rail: the outer tones' contrast for two levels, else the
+/// power-weighted mean of the four tones' levels.
+pub fn level(powers: Powers, levels: u8) -> f32 {
+    if levels == 2 {
+        let total = powers[0] + powers[TONES - 1];
+        return if total > 0.0 {
+            (powers[TONES - 1] - powers[0]) / total
+        } else {
+            0.0
+        };
+    }
+    let total: f32 = powers.iter().sum();
+    if total > 0.0 {
+        powers.iter().zip(LEVELS).map(|(p, l)| p * l).sum::<f32>() / total
+    } else {
+        0.0
+    }
+}
+
 pub fn decide(powers: Powers, levels: u8) -> usize {
     if levels == 2 {
         return if powers[0] > powers[TONES - 1] {
@@ -115,6 +137,18 @@ mod tests {
             let powers = iq.iter().map(|&s| bank.push(s)).last().unwrap();
             assert_eq!(decide(powers, 4), index);
         }
+    }
+
+    #[test]
+    fn a_lone_tone_sits_on_its_own_level() {
+        let mut powers = [0.0; TONES];
+        for (index, expected) in LEVELS.into_iter().enumerate() {
+            powers.fill(0.0);
+            powers[index] = 2.0;
+            assert_eq!(level(powers, 4), expected);
+        }
+        assert_eq!(level([1.0, 0.0, 0.0, 0.0], 2), -1.0);
+        assert_eq!(level([0.0, 0.0, 0.0, 0.0], 2), 0.0);
     }
 
     #[test]

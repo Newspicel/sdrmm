@@ -25,6 +25,7 @@ pub(super) struct CoherentMskDemod {
     timing: f64,
     magnitude: f32,
     have_previous: bool,
+    raw: Vec<f32>,
 }
 
 impl CoherentMskDemod {
@@ -45,7 +46,13 @@ impl CoherentMskDemod {
             timing: 0.0,
             magnitude: 1e-3,
             have_previous: false,
+            raw: Vec::new(),
         }
+    }
+
+    /// The last block's matched-filter margin per bit, before any level control.
+    pub(super) fn raw(&self) -> &[f32] {
+        &self.raw
     }
 
     fn decide_bit(&mut self) -> (f32, u8) {
@@ -70,6 +77,7 @@ impl CoherentMskDemod {
             self.theta += TAU;
         }
         let margin = plus.re - minus.re;
+        self.raw.push(margin);
         self.magnitude += MAG_ALPHA * (margin.abs() - self.magnitude);
         self.bit_samples.clear();
         ((margin / self.magnitude.max(1e-9)).clamp(-1.0, 1.0), bit)
@@ -108,6 +116,7 @@ impl CoherentMskDemod {
     }
 
     pub(super) fn process(&mut self, input: &[Complex<f32>], out: &mut Vec<(f32, u8)>) {
+        self.raw.clear();
         self.filtered.clear();
         self.lowpass.process(input, &mut self.filtered);
         for index in 0..self.filtered.len() {

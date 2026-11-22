@@ -2,6 +2,8 @@ mod decoder;
 mod patterns;
 mod refilter;
 
+use std::f64::consts::TAU;
+
 use num_complex::Complex;
 use sdrmm_dsp::{Decimator, fast_arg, math::complex::mean_power, power_db};
 
@@ -11,7 +13,7 @@ use self::{
     refilter::Refilter,
 };
 use super::{
-    BlePhy, CRC_BYTES, MAX_PDU_BYTES, Packet, SPS, Sink,
+    BlePhy, CRC_BYTES, MAX_PDU_BYTES, Packet, RATE_HZ, SPS, Sink,
     coded::{AA_BLOCKS, INDICATOR_BLOCKS, S8_SYMBOLS, TERM_BITS},
     gfsk,
     track::acquire,
@@ -58,6 +60,7 @@ pub struct Lane {
     rejected: u32,
     patterns: Patterns,
     scratch: Scratch,
+    omega: f32,
 }
 
 enum Attempt {
@@ -95,6 +98,7 @@ impl Lane {
             rejected: 0,
             patterns: Patterns::new(),
             scratch: Scratch::new(),
+            omega: 0.0,
         })
     }
 
@@ -198,6 +202,10 @@ impl Lane {
                         level_dbfs: power_db(mean_power(window), LEVEL_FLOOR_DB),
                         sample: self.consumed + start as u64,
                     });
+                    if phy == BlePhy::Le1m {
+                        let offset_hz = f64::from(self.omega) * RATE_HZ / TAU;
+                        sink.symbols(&self.scratch.levels, offset_hz);
+                    }
                     at = end.max(at + 1);
                 }
                 Attempt::Wait(needed) => {
@@ -235,6 +243,7 @@ impl Lane {
         let Some(coarse) = acquire(&self.y, anchor, known, segment) else {
             return Attempt::Miss;
         };
+        self.omega = coarse.omega;
         let base = anchor.saturating_sub(known.len() * SPS + REFILTER_PAD);
         let end = self.raw.len().min(self.y.len()).min(anchor + longest);
         let raw = &self.raw[base..end];

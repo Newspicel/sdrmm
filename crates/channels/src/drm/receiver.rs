@@ -323,23 +323,49 @@ impl Receiver {
         }
     }
 
+    /// The equalised MSC cells of frame `index` in the stored frame, in carrier order.
+    fn msc_cells(&self, index: usize) -> impl Iterator<Item = Cell> + '_ {
+        self.layout.iter().flat_map(move |layout| {
+            (0..self.mode.symbols()).flat_map(move |symbol| {
+                layout
+                    .symbol(index, symbol)
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, kind)| matches!(kind, Kind::Msc))
+                    .map(move |(offset, _)| {
+                        let at =
+                            symbol * self.width + (layout.low + offset as i32 - self.low) as usize;
+                        Cell {
+                            value: self.cells[at],
+                            weight: self.weights[at],
+                        }
+                    })
+            })
+        })
+    }
+
+    /// The MSC cells of the frame just stored and the QAM the FAC says they carry.
+    pub fn msc_points(&self) -> Option<(Qam, impl Iterator<Item = Complex<f32>> + '_)> {
+        let (fac, index) = (self.fac?, self.frame?);
+        self.layout.as_ref()?;
+        Some((fac.msc, self.msc_cells(index).map(|cell| cell.value)))
+    }
+
+    /// MSC cells a second.
+    #[must_use]
+    pub fn msc_rate(&self) -> f64 {
+        let cells = self.layout.as_ref().map_or(0, |layout| layout.msc_cells);
+        let samples = self.mode.frames() * self.mode.symbols() * self.mode.symbol();
+        cells as f64 * self.mode.rate_hz() / samples as f64
+    }
+
     fn collect_msc(&mut self, index: usize, media: &mut Media) {
-        let Some(layout) = self.layout.as_ref() else {
+        let Some(per) = self.layout.as_ref().map(Layout::multiplex_cells) else {
             return;
         };
-        for symbol in 0..self.mode.symbols() {
-            let row = layout.symbol(index, symbol);
-            for (offset, kind) in row.iter().enumerate() {
-                if matches!(kind, Kind::Msc) {
-                    let at = symbol * self.width + (layout.low + offset as i32 - self.low) as usize;
-                    self.msc.push(Cell {
-                        value: self.cells[at],
-                        weight: self.weights[at],
-                    });
-                }
-            }
-        }
-        let per = layout.multiplex_cells();
+        let mut msc = std::mem::take(&mut self.msc);
+        msc.extend(self.msc_cells(index));
+        self.msc = msc;
         while self.msc.len() >= (self.multiplex_index + 1) * per {
             let start = self.multiplex_index * per;
             let position = self.multiplex_index;

@@ -29,6 +29,7 @@ const NOISE: f32 = 0.25;
 const ACQUIRE_GAIN: f32 = 1.0;
 const VLSNR_CONFIDENCE: f32 = 0.5;
 const RESIDUAL_GAIN: f32 = 0.5;
+const TAP_CAPACITY: usize = 8_192;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Dvbs2Metrics {
@@ -223,6 +224,8 @@ pub struct Dvbs2Decoder {
     very_low: Option<VlSnrCodec>,
     xfec: Option<Xfec>,
     burst_mode: Option<(Modulation, Rate)>,
+    tap_every: usize,
+    points: Vec<Complex<f32>>,
     pub metrics: Dvbs2Metrics,
     pub signalling: Option<Signalling>,
     pub stream: Option<StreamKind>,
@@ -261,6 +264,8 @@ impl Dvbs2Decoder {
             very_low: None,
             xfec: None,
             burst_mode: None,
+            tap_every: 0,
+            points: Vec::with_capacity(TAP_CAPACITY),
             metrics: Dvbs2Metrics::default(),
             signalling: None,
             stream: None,
@@ -323,6 +328,24 @@ impl Dvbs2Decoder {
                 .as_ref()
                 .map(|codec| (codec.modcod.modulation, codec.modcod.rate))
         })
+    }
+
+    /// Keeps every `every`th payload symbol of each frame for the scope; zero keeps none.
+    pub fn tap(&mut self, every: usize) {
+        self.tap_every = every;
+        self.points.clear();
+    }
+
+    /// The payload symbols kept since the last [`Self::tap`], after carrier recovery.
+    #[must_use]
+    pub fn points(&self) -> &[Complex<f32>] {
+        &self.points
+    }
+
+    /// The constellation of the last frame read, the one [`Self::points`] sit on.
+    #[must_use]
+    pub fn constellation(&self) -> Option<&Constellation> {
+        self.codec.as_ref().map(|codec| &codec.constellation)
     }
 
     #[must_use]
@@ -765,6 +788,7 @@ impl Dvbs2Decoder {
             .is_none_or(|codec| codec.modcod != modcod || codec.short != signalling.short)
         {
             self.codec = Codec::new(modcod, signalling.short);
+            self.points.clear();
         }
         if self.codec.is_none() {
             self.fail();
@@ -805,6 +829,16 @@ impl Dvbs2Decoder {
             track_decisions(&mut self.payload, &codec.constellation);
             None
         };
+        if self.tap_every > 0 {
+            let room = self.points.capacity() - self.points.len();
+            self.points.extend(
+                self.payload
+                    .iter()
+                    .step_by(self.tap_every)
+                    .take(room)
+                    .copied(),
+            );
+        }
         self.llrs.clear();
         demodulate(&self.payload, &codec.constellation, NOISE, &mut self.llrs);
         match super::s2x::mode(modcod.index) {

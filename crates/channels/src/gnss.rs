@@ -21,6 +21,7 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::constellation::{Constellation, tables};
 
 use acquire::{Found, RATE, SAMPLES_PER_MS, Search};
 use code::CHIPS;
@@ -34,6 +35,7 @@ const FIX_EVERY_MS: u64 = 1_000;
 /// Weeks before the ten-bit broadcast week number's latest rollover, 7 April 2019.
 const WEEK_ROLLOVER: u16 = 2_048;
 const HEALTHY: u8 = 0;
+const PROMPTS_PER_S: f64 = 1_000.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "gnss".to_owned(),
@@ -55,6 +57,8 @@ pub struct GnssChannel {
     blocks: u64,
     search: Search,
     trackers: Vec<Tracker>,
+    prompts: Vec<Complex<f32>>,
+    bpsk: Constellation,
 }
 
 fn params(settings: &ChannelSettings) -> Result<GnssParams, ChannelError> {
@@ -97,6 +101,7 @@ impl Channel for GnssChannel {
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
+        self.prompts.clear();
         let mut rest = iq;
         while !rest.is_empty() {
             let take = (SAMPLES_PER_MS - self.pending.len()).min(rest.len());
@@ -107,6 +112,7 @@ impl Channel for GnssChannel {
                 self.pending.clear();
             }
         }
+        self.tap_prompts(out);
     }
 }
 
@@ -119,7 +125,26 @@ impl GnssChannel {
             blocks: 0,
             search: Search::new(params.doppler_hz, params.threshold),
             trackers: Vec::with_capacity(MAX_SATELLITES),
+            prompts: Vec::new(),
+            bpsk: tables::bpsk(),
         }
+    }
+
+    /// The satellite the scope shows: the strongest, so one clean cloud rather than a blur of
+    /// every tracked one.
+    fn strongest(&self) -> Option<&Tracker> {
+        self.trackers
+            .iter()
+            .max_by(|a, b| a.cn0_db_hz.total_cmp(&b.cn0_db_hz))
+    }
+
+    fn tap_prompts(&self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() || self.prompts.is_empty() {
+            return;
+        }
+        let doppler_hz = self.strongest().map_or(0.0, Tracker::doppler_hz);
+        out.symbols
+            .linear(&self.prompts, &self.bpsk, PROMPTS_PER_S, doppler_hz);
     }
 
     /// Absolute sample just past the newest one held.
@@ -149,11 +174,20 @@ impl GnssChannel {
 
     fn track(&mut self, out: &mut ChannelOutputs) {
         let (origin, end) = (self.origin(), self.end() as f64);
+        let shown = out
+            .symbols
+            .wanted()
+            .then(|| self.strongest().map(|tracker| tracker.prn))
+            .flatten();
         let mut index = 0;
         while index < self.trackers.len() {
             let mut lost = false;
             while !lost && self.trackers[index].needs_until() <= end {
-                match self.trackers[index].step(&self.history, origin) {
+                let step = self.trackers[index].step(&self.history, origin);
+                if shown == Some(self.trackers[index].prn) {
+                    self.prompts.push(self.trackers[index].prompt());
+                }
+                match step {
                     Step::Nothing => {}
                     Step::Subframe(subframe) => {
                         let frame = self.frame(&self.trackers[index], Some(&subframe));

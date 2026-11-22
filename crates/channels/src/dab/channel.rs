@@ -9,7 +9,10 @@ use sdrmm_decoder::broadcast::{
     BroadcastService, BroadcastServiceKind, BroadcastStatus, publish_status,
 };
 use sdrmm_dsp::{Nco, Soft};
-use sdrmm_modem::ofdm::dab::{FrameSync, Mode, SymbolDemod, TransmissionMode};
+use sdrmm_modem::{
+    constellation::{Constellation, tables},
+    ofdm::dab::{FrameSync, Mode, SymbolDemod, TransmissionMode},
+};
 use sdrmm_wire::{
     ChannelDescriptor, ChannelSettings, ClickProfile, DecoderFamily, EventContract, EventKind,
 };
@@ -134,6 +137,8 @@ pub struct DabChannel {
     samples_without_frame: usize,
     unlocked_frames: u32,
     rejected: u32,
+    dqpsk: Constellation,
+    points: Vec<Complex<f32>>,
 }
 
 /// The FDK config DAB+ audio in `format` decodes under, kept while the format holds.
@@ -592,6 +597,7 @@ impl DabChannel {
 
     fn decode_frame(&mut self, out: &mut ChannelOutputs) {
         self.samples_without_frame = 0;
+        self.tap_symbols(out);
         self.read_fic();
         self.choose();
         self.read_msc();
@@ -604,6 +610,24 @@ impl DabChannel {
                 self.forget_mode();
             }
         }
+    }
+
+    /// Shows the last symbol of each frame: every carrier of one symbol, a few thousand points
+    /// a second, enough to read the DQPSK without flooding the scope.
+    fn tap_symbols(&mut self, out: &mut ChannelOutputs) {
+        if !out.symbols.wanted() {
+            return;
+        }
+        self.points.clear();
+        self.points.extend(self.demod.points());
+        let carrier_symbols =
+            self.mode.carriers() as f64 * INPUT_RATE_HZ / self.mode.symbol() as f64;
+        out.symbols.linear(
+            &self.points,
+            &self.dqpsk,
+            carrier_symbols,
+            f64::from(self.frequency_error_hz),
+        );
     }
 
     fn lose_signal(&mut self, out: &mut ChannelOutputs) {
@@ -746,6 +770,9 @@ impl NativeChannel for DabChannel {
             samples_without_frame: 0,
             unlocked_frames: 0,
             rejected: 0,
+            dqpsk: tables::psk_rotated(4, std::f64::consts::FRAC_PI_4)
+                .map_err(|error| ChannelError::InvalidSettings(error.to_string()))?,
+            points: Vec::with_capacity(Mode::new(TransmissionMode::I).carriers()),
         })
     }
 }
@@ -900,6 +927,27 @@ mod tests {
         assert_eq!(status.services[0].label, "Rust FM");
         assert_eq!(status.services[1].label, "Rust Talk");
         assert!(status.frequency_error_hz.abs() < 5.0);
+    }
+
+    #[test]
+    fn the_scope_sees_four_tight_dqpsk_clusters() {
+        let iq = synth::dab::ensemble(12).expect("a synthetic signal");
+        let mut channel = channel(None);
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        for block in iq.chunks(16_384) {
+            channel.process(block, &mut out);
+        }
+        let tap = &out.symbols;
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 8);
+        assert!(
+            tap.symbols.len() >= 2 * 1536,
+            "{} values",
+            tap.symbols.len()
+        );
+        assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+        assert!((tap.symbol_rate - 1_536.0 * INPUT_RATE_HZ / 2_552.0).abs() < 1.0);
     }
 
     #[test]

@@ -11,6 +11,7 @@ use std::f64::consts::FRAC_1_SQRT_2;
 pub(crate) use block::encode_block;
 pub(crate) use block::{RdsOffset, check_block, correct_block};
 use num_complex::Complex;
+use sdrmm_decoder::SymbolTap;
 use sdrmm_dsp::{
     ComplexOnePole, Costas, Decimator, Nco, Pll, SymbolSync, design_cosine_biphase, design_lowpass,
 };
@@ -134,6 +135,8 @@ pub(crate) struct RdsDecoder {
     carrier_free: Vec<Complex<f32>>,
     shaped: Vec<Complex<f32>>,
     symbols: Vec<Complex<f32>>,
+    watched: bool,
+    points: Vec<Complex<f32>>,
 }
 
 impl RdsDecoder {
@@ -170,12 +173,15 @@ impl RdsDecoder {
             carrier_free: Vec::new(),
             shaped: Vec::new(),
             symbols: Vec::new(),
+            watched: false,
+            points: Vec::new(),
         }
     }
 
     /// Decodes a block of the composite. `keep_pilot` keeps the front end running for a pilot
     /// listener such as the stereo decoder even while the RDS band holds only noise.
     pub(crate) fn process(&mut self, mpx: &[f32], keep_pilot: bool, out: &mut Vec<DecoderEvent>) {
+        self.points.clear();
         let (listening, woke) = self.presence.listen(mpx.len(), keep_pilot);
         if !listening {
             self.pilot_nco.skip(mpx.len());
@@ -204,7 +210,11 @@ impl RdsDecoder {
         self.symbols.clear();
         self.timing.process(&self.shaped, &mut self.symbols);
         for &symbol in &self.symbols {
-            let level = self.alphabet.hard_slice(self.phase.process(symbol)) == 1;
+            let point = self.phase.process(symbol);
+            if self.watched {
+                self.points.push(point);
+            }
+            let level = self.alphabet.hard_slice(point) == 1;
             let bit = self.differential.decode(level);
             self.frames.push_bit(bit, out);
         }
@@ -230,6 +240,20 @@ impl RdsDecoder {
 
     pub(crate) fn reset(&mut self) {
         *self = Self::new(self.mpx_rate);
+    }
+
+    /// Keeps the phase-locked BPSK points of each block while a scope looks at them.
+    pub(crate) fn watch(&mut self, watched: bool) {
+        self.watched = watched;
+    }
+
+    pub(crate) fn tap(&self, symbols: &mut SymbolTap) {
+        symbols.linear(
+            &self.points,
+            &self.alphabet,
+            BIT_RATE,
+            self.phase.freq_norm() * BIT_RATE,
+        );
     }
 
     /// The pilot at baseband, decimated, from the last block.
@@ -1127,6 +1151,25 @@ mod tests {
             decoder.frames.groups
         );
         assert_eq!(decoder.frames.block_errors, 0);
+    }
+
+    #[test]
+    fn the_scope_sees_two_tight_bpsk_clusters() {
+        let mut decoder = RdsDecoder::new(RATE);
+        decoder.watch(true);
+        let mpx = composite(&station(), 1.0, Some(1_000.0), RATE);
+        let half = mpx.len() / 2;
+        let mut events = Vec::new();
+        decoder.process(&mpx[..half], false, &mut events);
+        decoder.process(&mpx[half..], false, &mut events);
+        let mut tap = SymbolTap::default();
+        tap.set_wanted(true);
+        decoder.tap(&mut tap);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+        assert_eq!(tap.reference.len(), 4);
+        assert!(!tap.symbols.is_empty());
+        assert_eq!(tap.symbol_rate, BIT_RATE);
+        assert!(tap.evm < 0.1, "measured {} EVM", tap.evm);
     }
 
     #[test]

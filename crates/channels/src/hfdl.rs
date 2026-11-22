@@ -75,6 +75,7 @@ use sdrmm_decoder::link::{self, DataLinkMessage, Fields, Quality};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
+use sdrmm_modem::constellation::{Constellation, tables};
 
 const RATE: f64 = 12_000.0;
 const HALF_BANDWIDTH: f64 = 3_000.0;
@@ -124,6 +125,7 @@ struct Receiver {
     demod: HfdlDemod,
     parser: PduParser,
     bursts: Vec<Burst>,
+    shown: Option<Burst>,
 }
 
 impl Receiver {
@@ -139,6 +141,7 @@ impl Receiver {
             demod: HfdlDemod::new(rate),
             parser: PduParser::new(),
             bursts: Vec::new(),
+            shown: None,
         }
     }
 
@@ -155,6 +158,7 @@ impl Receiver {
                 event.freq_skew_hz = Some(burst.freq_skew_hz);
                 event.snr_db = burst.snr_db;
             }
+            self.shown = Some(burst);
         }
     }
 }
@@ -194,6 +198,34 @@ fn message(event: &HfdlEvent) -> DataLinkMessage {
 pub struct HfdlChannel {
     receiver: Receiver,
     events: Vec<HfdlEvent>,
+    psk: [Constellation; 3],
+}
+
+fn psk_tables() -> Result<[Constellation; 3], ChannelError> {
+    let table =
+        |m| tables::psk(m).map_err(|error| ChannelError::InvalidSettings(error.to_string()));
+    Ok([table(2)?, table(4)?, table(8)?])
+}
+
+impl HfdlChannel {
+    /// Shows the last burst's equalised data symbols, one burst a block.
+    fn tap_symbols(&mut self, out: &mut ChannelOutputs) {
+        let Some(burst) = self.receiver.shown.take() else {
+            return;
+        };
+        let Some(table) = (burst.bits_per_symbol as usize)
+            .checked_sub(1)
+            .and_then(|index| self.psk.get(index))
+        else {
+            return;
+        };
+        out.symbols.linear(
+            &burst.points,
+            table,
+            demod::SYMBOL_RATE,
+            f64::from(burst.freq_skew_hz),
+        );
+    }
 }
 
 fn params(settings: &ChannelSettings) -> Result<HfdlParams, ChannelError> {
@@ -218,6 +250,7 @@ impl NativeChannel for HfdlChannel {
         Ok(Self {
             receiver: Receiver::new(ctx.input_rate),
             events: Vec::new(),
+            psk: psk_tables()?,
         })
     }
 }
@@ -229,6 +262,9 @@ impl Channel for HfdlChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.receiver.process(iq, &mut self.events);
+        if out.symbols.wanted() {
+            self.tap_symbols(out);
+        }
         out.events.extend(
             self.events
                 .drain(..)

@@ -64,6 +64,10 @@ pub struct Packet<'a> {
 
 pub trait Sink {
     fn packet(&mut self, packet: Packet<'_>);
+
+    /// The soft symbols an LE 1M packet was read from, sign the bit and near the carrier's
+    /// level when clean, with the carrier offset it was heard at.
+    fn symbols(&mut self, _soft: &[f32], _offset_hz: f64) {}
 }
 
 #[must_use]

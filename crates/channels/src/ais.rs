@@ -8,8 +8,11 @@ pub mod synth;
 pub use model::*;
 use std::sync::LazyLock;
 
+use std::f64::consts::TAU;
+
 use num_complex::Complex;
 use sdrmm_dsp::bits_be;
+use sdrmm_modem::cpm::Mapping;
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
 use sdrmm_decoder::{
@@ -23,6 +26,7 @@ use burst::{BurstReceiver, Decoded};
 const CHANNEL_TAPS: usize = 129;
 
 const BT: f64 = 0.4;
+const BAUD: f64 = 9_600.0;
 
 const MIN_FRAME_BYTES: usize = 13;
 const MAX_FRAME_BYTES: usize = 128;
@@ -52,6 +56,19 @@ pub struct AisChannelRx {
     seq: u8,
     burst: BurstReceiver,
     decoded: Vec<Decoded>,
+    mapping: Mapping,
+}
+
+impl AisChannelRx {
+    fn tap(&self, out: &mut ChannelOutputs) {
+        let soft = self.burst.soft();
+        if soft.is_empty() {
+            return;
+        }
+        let offset_hz = f64::from(self.burst.step().arg()) * DESCRIPTOR.input_rate_hz / TAU;
+        out.symbols
+            .levels(soft, &[], &self.mapping, BAUD, offset_hz);
+    }
 }
 
 fn params(settings: &ChannelSettings) -> Result<AisParams, ChannelError> {
@@ -80,6 +97,7 @@ impl NativeChannel for AisChannelRx {
             seq: 0,
             burst: BurstReceiver::new(),
             decoded: Vec::new(),
+            mapping: Mapping::natural(2),
         })
     }
 }
@@ -93,7 +111,9 @@ impl Channel for AisChannelRx {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.decoded.clear();
+        self.burst.set_tapping(out.symbols.wanted());
         self.burst.process(iq, &mut self.decoded);
+        self.tap(out);
         for decoded in &self.decoded {
             let Some((payload, _fcs)) = decoded.frame.split_last_chunk::<2>() else {
                 continue;
@@ -434,6 +454,30 @@ mod tests {
         add_noise(&mut iq, seed, noise);
         shift(&mut iq, offset_hz, RATE);
         select(&iq)
+    }
+
+    #[test]
+    fn the_scope_reads_a_clean_burst_as_two_tight_levels() {
+        let mut iq = silence(LEAD_IN);
+        iq.extend(burst(&position_payload(&report()), RATE));
+        iq.extend(silence(480));
+        shift(&mut iq, 300.0, RATE);
+        let mut chan = channel(AisChannel::A);
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        chan.process(&select(&iq), &mut out);
+        let tap = &out.symbols;
+        assert_eq!(out.events.len(), 1);
+        assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level));
+        assert_eq!(tap.reference.len(), 2);
+        assert!(tap.symbols.len() > 160, "{} levels", tap.symbols.len());
+        assert_eq!(tap.symbol_rate, BAUD);
+        assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+        assert!(
+            (tap.freq_error_hz - 300.0).abs() < 30.0,
+            "{} Hz",
+            tap.freq_error_hz
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::radiosonde::RadiosondeFrame;
 
 use super::{
-    demod::{SymbolClock, SyncMatcher},
+    demod::{Recorder, SymbolClock, SyncMatcher},
     m10, m20,
 };
 
@@ -86,6 +86,7 @@ enum Receive {
 }
 
 pub(crate) struct Meteomodem {
+    pub(super) recorder: Recorder,
     clock: SymbolClock,
     sync: SyncMatcher,
     receive: Receive,
@@ -97,6 +98,7 @@ pub(crate) struct Meteomodem {
 impl Meteomodem {
     pub(crate) fn new(accept: Accept) -> Self {
         Self {
+            recorder: Recorder::new(),
             clock: SymbolClock::new(BAUD, SMOOTHING),
             sync: SyncMatcher::from_bits(RAW_HEADER, SYNC_TOLERANCE),
             receive: Receive::Hunt,
@@ -117,6 +119,7 @@ impl Meteomodem {
     pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
+                self.recorder.push(symbol);
                 self.symbol(symbol, out);
             }
         }

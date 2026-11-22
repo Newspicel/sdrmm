@@ -193,6 +193,35 @@ fn evm_snr_drops_with_more_noise() {
 }
 
 #[test]
+fn the_scope_sees_eight_tight_d8psk_clusters() {
+    let iq = padded(
+        burst_iq_shaped(&[aoa_frame(), rr_frame()], RATE, 200.0, 0.5),
+        2_000,
+    );
+    let mut channel = Vdl2Channel::new(
+        ChannelCtx { input_rate: RATE },
+        settings(ChannelParams::new("vdl2", &Vdl2Params::default()).expect("vdl2 settings")),
+    )
+    .expect("channel");
+    let mut out = ChannelOutputs::default();
+    out.symbols.set_wanted(true);
+    for block in iq.chunks(8_192) {
+        channel.process(block, &mut out);
+    }
+    let tap = &out.symbols;
+    assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Complex));
+    assert_eq!(tap.reference.len(), 16);
+    assert!(tap.symbols.len() >= 2 * 100, "{} values", tap.symbols.len());
+    assert_eq!(tap.symbol_rate, demod::SYMBOL_RATE);
+    assert!(tap.evm < 0.1, "EVM {}", tap.evm);
+    assert!(
+        (tap.freq_error_hz - 200.0).abs() < 40.0,
+        "{}",
+        tap.freq_error_hz
+    );
+}
+
+#[test]
 fn decodes_pulse_shaped_burst() {
     for rate in [50_000.0, 100_000.0, 105_000.0] {
         let burst = burst_iq_shaped(&[aoa_frame(), rr_frame()], rate, 0.0, 0.5);
@@ -251,6 +280,7 @@ fn decode_channel(iq: &[Complex<f32>], decoder: Vdl2Decoder) -> Vec<DataLinkMess
     let mut channel = Vdl2Channel {
         decoder,
         frames: Vec::new(),
+        d8psk: sdrmm_modem::constellation::tables::psk(8).expect("8PSK table"),
     };
     let mut out = ChannelOutputs::default();
     let mut messages = Vec::new();

@@ -2,7 +2,7 @@ use crate::radiosonde::RadiosondeFrame;
 use crate::radiosonde::SondeType;
 
 use super::{
-    demod::{Polarity, SymbolClock, SyncMatcher},
+    demod::{Polarity, Recorder, SymbolClock, SyncMatcher},
     fields::{
         Geodetic, civil_time, empty_frame, finite_f32, plausible, set_position, steinhart_hart,
     },
@@ -363,6 +363,7 @@ enum Receive {
 }
 
 pub(crate) struct Dfm {
+    pub(super) recorder: Recorder,
     clock: SymbolClock,
     sync: SyncMatcher,
     receive: Receive,
@@ -374,6 +375,7 @@ pub(crate) struct Dfm {
 impl Dfm {
     pub(crate) fn new() -> Self {
         Self {
+            recorder: Recorder::new(),
             clock: SymbolClock::new(BAUD, SMOOTHING),
             sync: SyncMatcher::from_bits(RAW_HEADER, SYNC_TOLERANCE),
             receive: Receive::Hunt,
@@ -390,6 +392,7 @@ impl Dfm {
     pub(crate) fn push(&mut self, audio: &[f32], out: &mut Vec<RadiosondeFrame>) {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
+                self.recorder.push(symbol);
                 self.symbol(symbol, out);
             }
         }

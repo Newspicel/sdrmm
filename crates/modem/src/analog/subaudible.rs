@@ -64,14 +64,28 @@ impl NrzReceiver {
 
     /// Appends the bits `discriminator` completes, a rising frequency read as one.
     pub fn process(&mut self, discriminator: &[f32], bits: &mut Vec<bool>) {
-        self.stage1.process(discriminator, &mut self.stage1_out);
-        self.stage2.process(&self.stage1_out, &mut self.decimated);
-        self.dc.process(&mut self.decimated);
+        self.filter(discriminator);
         for &s in &self.decimated {
             if let Some(bit) = self.sync.push(s) {
                 bits.push(bit);
             }
         }
+    }
+
+    /// Appends one soft decision per bit `discriminator` completes, positive for a one.
+    pub fn soft(&mut self, discriminator: &[f32], soft: &mut Vec<f32>) {
+        self.filter(discriminator);
+        for &s in &self.decimated {
+            if let Some(level) = self.sync.push_soft(s) {
+                soft.push(level);
+            }
+        }
+    }
+
+    fn filter(&mut self, discriminator: &[f32]) {
+        self.stage1.process(discriminator, &mut self.stage1_out);
+        self.stage2.process(&self.stage1_out, &mut self.decimated);
+        self.dc.process(&mut self.decimated);
     }
 }
 
@@ -121,6 +135,18 @@ mod tests {
             receiver.process(block, &mut heard);
         }
         assert!(found(&heard, &sent[100..380]), "{heard:?}");
+    }
+
+    #[test]
+    fn soft_decisions_slice_to_the_same_bits() {
+        let audio = keyed(&pattern(400));
+        let mut hard = NrzReceiver::new(RATE, BAUD);
+        let mut soft = NrzReceiver::new(RATE, BAUD);
+        let (mut bits, mut levels) = (Vec::new(), Vec::new());
+        hard.process(&audio, &mut bits);
+        soft.soft(&audio, &mut levels);
+        let sliced: Vec<bool> = levels.iter().map(|&level| level >= 0.0).collect();
+        assert_eq!(sliced, bits);
     }
 
     #[test]

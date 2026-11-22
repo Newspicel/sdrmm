@@ -492,6 +492,36 @@ fn frequency_offset_and_noise_still_decode() {
 }
 
 #[test]
+fn the_scope_sees_two_tight_fsk_levels_from_the_sonde_it_heard() {
+    for (sonde, baud) in [
+        (SondeType::Rs41, rs41::BAUD),
+        (SondeType::Dfm, dfm::BAUD),
+        (SondeType::M10, crate::radiosonde::meteomodem::BAUD),
+        (SondeType::M20, crate::radiosonde::meteomodem::BAUD),
+        (SondeType::Imet4, imet::BAUD),
+    ] {
+        let iq = transmission(sonde, 4, RATE);
+        let mut chan = channel(None);
+        let mut out = ChannelOutputs::default();
+        out.symbols.set_wanted(true);
+        chan.process(&iq, &mut out);
+        let (mut seen, mut worst) = (0, 0.0f32);
+        for block in iq.chunks(9_600) {
+            out.reset();
+            chan.process(block, &mut out);
+            let tap = &out.symbols;
+            assert_eq!(tap.plane, Some(sdrmm_wire::SymbolPlane::Level), "{sonde:?}");
+            assert_eq!(tap.reference.len(), 2);
+            assert_eq!(tap.symbol_rate, baud, "{sonde:?}");
+            seen += tap.symbols.len();
+            worst = worst.max(tap.evm);
+        }
+        assert!(seen > 0, "{sonde:?}");
+        assert!(worst < 0.15, "{sonde:?} measured {worst} EVM");
+    }
+}
+
+#[test]
 fn ragged_block_splits_decode_identically() {
     let iq = mixed_signal();
     let whole = run(&mut channel(None), &iq, &[iq.len()]);

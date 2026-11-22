@@ -20,6 +20,7 @@ const TIMING_INTEGRAL: f32 = 0.000_08;
 const MAX_TRIM: f32 = 0.05;
 const DAMPING: f32 = std::f32::consts::FRAC_1_SQRT_2;
 const COSTAS_GAIN: f32 = std::f32::consts::SQRT_2;
+const TAP_CAPACITY: usize = 4_096;
 
 struct MatchedFilter {
     taps: Vec<f32>,
@@ -97,6 +98,9 @@ pub struct Demod {
     lock: f32,
     locked: bool,
     carrier: LoopGains,
+    tap_every: usize,
+    tap_count: usize,
+    points: Vec<Complex<f32>>,
 }
 
 impl Demod {
@@ -119,7 +123,27 @@ impl Demod {
             lock: 0.0,
             locked: false,
             carrier: LoopGains::second_order(CARRIER_BANDWIDTH, COSTAS_GAIN),
+            tap_every: 0,
+            tap_count: 0,
+            points: Vec::with_capacity(TAP_CAPACITY),
         }
+    }
+
+    /// Keeps every `every`th decision point for the scope; zero keeps none.
+    pub fn tap(&mut self, every: usize) {
+        self.tap_every = every;
+        self.points.clear();
+    }
+
+    /// The decision points kept since the last [`Self::tap`], at unit power.
+    #[must_use]
+    pub fn points(&self) -> &[Complex<f32>] {
+        &self.points
+    }
+
+    #[must_use]
+    pub fn frequency_offset_cycles_per_sample(&self) -> f64 {
+        f64::from(self.step / TAU)
     }
 
     pub fn reset(&mut self) {
@@ -208,10 +232,22 @@ impl Demod {
         self.symbol_power += (symbol.norm_sqr() - self.symbol_power) * POWER_SMOOTHING;
         let scale = self.symbol_power.max(1e-12).sqrt().recip();
         let normalised = symbol * scale;
+        self.keep_point(normalised);
         self.track_timing(timing_error * scale * scale);
         self.track_carrier(normalised);
         soft.push(to_soft(normalised.re));
         soft.push(to_soft(normalised.im));
+    }
+
+    fn keep_point(&mut self, point: Complex<f32>) {
+        if self.tap_every == 0 || self.points.len() == self.points.capacity() {
+            return;
+        }
+        self.tap_count += 1;
+        if self.tap_count >= self.tap_every {
+            self.tap_count = 0;
+            self.points.push(point);
+        }
     }
 
     fn track_timing(&mut self, error: f32) {
