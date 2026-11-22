@@ -15,14 +15,14 @@
   },
   {
     "bench": "afsk_filterbank_12k",
-    "msamples_per_s": 89.59221883308044,
-    "realtime_factor": 7466.018236090037,
+    "msamples_per_s": 89.51063925844183,
+    "realtime_factor": 7459.219938203485,
     "config": "AFSK 1200/2200 Hz tone filterbank, 12 kHz, 10 S/sym, half-symbol rx rect",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1105.1899055044164,
+    "msamples_per_s": 1104.3471895953496,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

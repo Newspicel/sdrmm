@@ -15,14 +15,14 @@
   },
   {
     "bench": "msk_demod",
-    "msamples_per_s": 73.66676351175056,
-    "realtime_factor": 1534.7242398281367,
+    "msamples_per_s": 74.13886977120002,
+    "realtime_factor": 1544.5597869000003,
     "config": "MSK (1REC h=0.5), 10 S/sym, integrate-and-dump rx, timing bw 0.015",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1093.9132339824007,
+    "msamples_per_s": 1105.5476334191735,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

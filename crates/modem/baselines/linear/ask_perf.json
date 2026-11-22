@@ -15,14 +15,14 @@
   },
   {
     "bench": "linear_ook_envelope",
-    "msamples_per_s": 73.74728262611069,
-    "realtime_factor": 1536.401721377306,
+    "msamples_per_s": 72.57128778723626,
+    "realtime_factor": 1511.9018289007554,
     "config": "OOK, 8 S/sym, RRC α=0.35 span 8, magnitude + DC removal + tracking timing",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1104.4041836874947,
+    "msamples_per_s": 1104.378012200465,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

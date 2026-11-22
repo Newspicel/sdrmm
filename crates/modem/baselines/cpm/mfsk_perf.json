@@ -15,14 +15,14 @@
   },
   {
     "bench": "cpm_demod_m4_48k",
-    "msamples_per_s": 50.59403227882925,
-    "realtime_factor": 1054.0423391422762,
+    "msamples_per_s": 50.24190461949786,
+    "realtime_factor": 1046.7063462395388,
     "config": "48 kHz, 4800 baud, ETSI 4-level ±1944 Hz (h=0.27), RRC α=0.2 span 8, timing bw 0.015",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1100.636664551624,
+    "msamples_per_s": 1091.1300728407907,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

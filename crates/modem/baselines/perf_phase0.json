@@ -22,14 +22,14 @@
   },
   {
     "bench": "symbol_sync_8sps",
-    "msamples_per_s": 238.67908953950598,
-    "realtime_factor": 6215.601290091302,
+    "msamples_per_s": 235.66737554491172,
+    "realtime_factor": 6137.171238148742,
     "config": "8 S/sym, loop_bw 0.01, RRC α=0.35 shaped BPSK",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1105.5190765973778,
+    "msamples_per_s": 1105.2516465580259,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

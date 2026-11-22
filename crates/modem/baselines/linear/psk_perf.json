@@ -36,35 +36,35 @@
   },
   {
     "bench": "linear_qpsk_burst",
-    "msamples_per_s": 14.552651852202798,
-    "realtime_factor": 303.1802469208916,
+    "msamples_per_s": 14.40770375286655,
+    "realtime_factor": 300.16049485138643,
     "config": "4-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.003), held power estimate",
     "host": "x86_64-linux"
   },
   {
     "bench": "linear_qam16_burst",
-    "msamples_per_s": 13.2575629316453,
-    "realtime_factor": 276.19922774261045,
+    "msamples_per_s": 13.145649473457949,
+    "realtime_factor": 273.8676973637073,
     "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.003), held power estimate",
     "host": "x86_64-linux"
   },
   {
     "bench": "linear_qam1024_burst",
-    "msamples_per_s": 1.0605068377515798,
-    "realtime_factor": 22.093892453157917,
+    "msamples_per_s": 1.0563130045201554,
+    "realtime_factor": 22.00652092750324,
     "config": "1024-QAM, 8 S/sym, RRC α=0.35 span 8, feedforward timing, decision-directed Costas (bw 0.0003), held power estimate",
     "host": "x86_64-linux"
   },
   {
     "bench": "linear_qam16_tracked",
-    "msamples_per_s": 52.48829582203909,
-    "realtime_factor": 1093.5061629591478,
+    "msamples_per_s": 52.448722980157214,
+    "realtime_factor": 1092.6817287532751,
     "config": "16-QAM, 8 S/sym, RRC α=0.35 span 8, SymbolSync (bw 0.015), decision-directed Costas",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1104.6834234170644,
+    "msamples_per_s": 1104.7398702643702,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"

@@ -22,21 +22,21 @@
   },
   {
     "bench": "gmsk_bt03_mlse",
-    "msamples_per_s": 27.00734851528787,
-    "realtime_factor": 562.6530940684972,
+    "msamples_per_s": 27.043273726425767,
+    "realtime_factor": 563.4015359672035,
     "config": "GMSK BT=0.3 h=0.5, 10 S/sym, pulse-matched rx, CpmDemod + MlseDetector (16 trellis states)",
     "host": "x86_64-linux"
   },
   {
     "bench": "gmsk_bt05_mlse",
-    "msamples_per_s": 46.28709591466394,
-    "realtime_factor": 964.3144982221653,
+    "msamples_per_s": 46.12569794630528,
+    "realtime_factor": 960.9520405480267,
     "config": "GMSK BT=0.5 h=0.5, 10 S/sym, pulse-matched rx, CpmDemod + MlseDetector (4 trellis states)",
     "host": "x86_64-linux"
   },
   {
     "bench": "__calibration",
-    "msamples_per_s": 1105.7137584688794,
+    "msamples_per_s": 1087.4659575747899,
     "realtime_factor": 0.0,
     "config": "fixed reference kernel, scales the gate to the host's current speed",
     "host": "x86_64-linux"
