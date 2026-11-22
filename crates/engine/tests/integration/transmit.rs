@@ -29,6 +29,10 @@ fn engine() -> Arc<Engine> {
 }
 
 fn radio(engine: &Engine, device: &str, center_hz: f64) -> u32 {
+    tuned(engine, device, center_hz, None)
+}
+
+fn tuned(engine: &Engine, device: &str, center_hz: f64, sample_rate: Option<f64>) -> u32 {
     let ds = engine.create_device_set(device).expect("radio");
     engine
         .patch_device(
@@ -36,6 +40,7 @@ fn radio(engine: &Engine, device: &str, center_hz: f64) -> u32 {
             DeviceSettings {
                 center_hz: Some(center_hz),
                 tuning: Some(Tuning::Manual),
+                sample_rate,
                 ..DeviceSettings::default()
             },
         )
@@ -125,10 +130,11 @@ fn heard_tone(audio: &mut tokio::sync::broadcast::Receiver<sdrmm_engine::PcmBloc
 #[tokio::test]
 async fn a_message_sent_from_a_half_duplex_radio_is_decoded_by_another() {
     const CENTER_HZ: f64 = 144_600_000.0;
-    const CHANNEL_HZ: f64 = CENTER_HZ + 270_000.0;
+    const CHANNEL_HZ: f64 = CENTER_HZ + 60_000.0;
+    const RATE: Option<f64> = Some(250_000.0);
     let engine = engine();
-    let talker = radio(&engine, "virtual:halfduplex", CENTER_HZ);
-    let listener = radio(&engine, "virtual:transceiver", CENTER_HZ);
+    let talker = tuned(&engine, "virtual:halfduplex", CENTER_HZ, RATE);
+    let listener = tuned(&engine, "virtual:transceiver", CENTER_HZ, RATE);
     let aprs = ChannelParams::new("aprs", &AprsParams::default()).expect("aprs settings");
     let mut decoded = engine.subscribe_decoded();
     let channel = engine

@@ -225,7 +225,7 @@ jobs:
           test -z "$(find -L result -path '*/SoapySDR/modules*' -print -quit)"
       - name: Linking
         run: |
-          ldd result/bin/.sdrmm-desktop-wrapped | tee ldd
+          ldd "$(readlink -f result)/bin/.sdrmm-desktop-wrapped" | tee ldd
           grep -q 'libcef.so => /nix/store' ldd
           ! grep -q 'libSoapySDR' ldd
       - name: Wrapper

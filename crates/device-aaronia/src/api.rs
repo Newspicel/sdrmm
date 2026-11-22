@@ -548,6 +548,10 @@ fn install_dirs() -> Vec<PathBuf> {
 }
 
 #[cfg(windows)]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the same signature as the platforms without a default install"
+)]
 fn default_install_dir() -> Option<PathBuf> {
     let program_files = std::env::var_os("ProgramFiles")
         .map_or_else(|| PathBuf::from("C:\\Program Files"), PathBuf::from);

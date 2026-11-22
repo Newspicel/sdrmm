@@ -278,6 +278,7 @@ mod tests {
     fn adsb() -> DecoderEvent {
         DecoderEvent::of(&AdsbMessage {
             raw: "8D40621D58C382D690C8AC2863A7".to_owned(),
+            df: Some(17),
             timestamp_12mhz: Some(0x0102_0304_0506),
             signal_level: Some(128),
             ..AdsbMessage::default()

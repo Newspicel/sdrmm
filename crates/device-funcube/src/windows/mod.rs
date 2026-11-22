@@ -93,7 +93,7 @@ fn until_nul(text: &[u16]) -> &[u16] {
 
 fn service(instance: &[u16]) -> Result<String> {
     let mut node = 0;
-    if unsafe { CM_Locate_DevNodeW(&mut node, instance.as_ptr(), CM_LOCATE_DEVNODE_NORMAL) }
+    if unsafe { CM_Locate_DevNodeW(&raw mut node, instance.as_ptr(), CM_LOCATE_DEVNODE_NORMAL) }
         != CR_SUCCESS
     {
         return Err(Error::DeviceNotFound);
@@ -105,9 +105,9 @@ fn service(instance: &[u16]) -> Result<String> {
         CM_Get_DevNode_Registry_PropertyW(
             node,
             CM_DRP_SERVICE,
-            &mut kind,
+            &raw mut kind,
             buffer.as_mut_ptr().cast(),
-            &mut length,
+            &raw mut length,
             0,
         )
     };
@@ -121,7 +121,7 @@ fn device_path(instance: &[u16]) -> Result<Vec<u16>> {
     let mut size = 0;
     let sized = unsafe {
         CM_Get_Device_Interface_List_SizeW(
-            &mut size,
+            &raw mut size,
             &GUID_DEVINTERFACE_USB_DEVICE,
             instance.as_ptr(),
             CM_GET_DEVICE_INTERFACE_LIST_PRESENT,
@@ -174,11 +174,11 @@ impl Drop for Handles {
 fn associated(first: WINUSB_INTERFACE_HANDLE, interface: u8) -> Result<WINUSB_INTERFACE_HANDLE> {
     let mut handle = std::ptr::null_mut();
     check(
-        unsafe { WinUsb_GetAssociatedInterface(first, interface - 1, &mut handle) },
+        unsafe { WinUsb_GetAssociatedInterface(first, interface - 1, &raw mut handle) },
         "open associated interface",
     )?;
     let mut descriptor: USB_INTERFACE_DESCRIPTOR = unsafe { std::mem::zeroed() };
-    let queried = unsafe { WinUsb_QueryInterfaceSettings(handle, 0, &mut descriptor) };
+    let queried = unsafe { WinUsb_QueryInterfaceSettings(handle, 0, &raw mut descriptor) };
     if queried == 0 || descriptor.bInterfaceNumber != interface {
         unsafe { WinUsb_Free(handle) };
         return Err(Error::NeedsWinUsb);
@@ -212,7 +212,7 @@ fn open_handles(instance: &[u16]) -> Result<Handles> {
         hid: std::ptr::null_mut(),
     };
     check(
-        unsafe { WinUsb_Initialize(file, &mut handles.first) },
+        unsafe { WinUsb_Initialize(file, &raw mut handles.first) },
         "start WinUSB",
     )?;
     handles.stream = associated(handles.first, STREAM_INTERFACE)?;
@@ -260,7 +260,7 @@ impl Link for Control {
                     HID_OUT,
                     request.as_ptr(),
                     REPORT_LEN as u32,
-                    &mut written,
+                    &raw mut written,
                     std::ptr::null(),
                 )
             },
@@ -276,7 +276,7 @@ impl Link for Control {
                     HID_IN,
                     reply.as_mut_ptr(),
                     REPORT_LEN as u32,
-                    &mut read,
+                    &raw mut read,
                     std::ptr::null(),
                 )
             };
@@ -312,7 +312,7 @@ impl Port {
         self.request_rate();
         let mut pipe: WINUSB_PIPE_INFORMATION_EX = unsafe { std::mem::zeroed() };
         check(
-            unsafe { WinUsb_QueryPipeEx(stream, STREAM_ALT, 0, &mut pipe) },
+            unsafe { WinUsb_QueryPipeEx(stream, STREAM_ALT, 0, &raw mut pipe) },
             "query sample pipe",
         )?;
         if pipe.PipeId != SAMPLES_IN || pipe.MaximumBytesPerInterval == 0 {
@@ -344,7 +344,7 @@ impl Port {
                 setup,
                 rate.as_mut_ptr(),
                 3,
-                &mut moved,
+                &raw mut moved,
                 std::ptr::null(),
             )
         };
@@ -403,7 +403,7 @@ impl IsoPump {
                     SAMPLES_IN,
                     pump.buffer.as_mut_ptr(),
                     u32::try_from(pump.buffer.len()).unwrap_or(u32::MAX),
-                    &mut pump.registered,
+                    &raw mut pump.registered,
                 )
             },
             "register sample buffer",
@@ -427,7 +427,7 @@ impl IsoPump {
                 i32::from(continuing),
                 PACKETS as u32,
                 self.descriptors[index].as_mut_ptr(),
-                &self.overlapped[index],
+                &raw const self.overlapped[index],
             )
         };
         if ok == 0 && last_error() != ERROR_IO_PENDING {
@@ -442,8 +442,8 @@ impl IsoPump {
         let ok = unsafe {
             WinUsb_GetOverlappedResult(
                 self.handles.stream,
-                &self.overlapped[index],
-                &mut moved,
+                &raw const self.overlapped[index],
+                &raw mut moved,
                 i32::from(wait),
             )
         };

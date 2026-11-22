@@ -91,7 +91,11 @@ function Presets({
 }) {
   const active = activePreset(groups, choice)?.id;
   return (
-    <div className="flex flex-wrap gap-1 border-b border-line p-2">
+    <div
+      role="group"
+      aria-label="Presets"
+      className="flex flex-wrap gap-1 border-b border-line p-2"
+    >
       {protocolPresets(groups).map((preset) => (
         <Button
           key={preset.id}

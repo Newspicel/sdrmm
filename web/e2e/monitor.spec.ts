@@ -90,7 +90,9 @@ test("monitors IQ through one node and exports transmission audio", async ({ pag
     await page.reload();
     await activate(monitor);
     await expect(confidence).toHaveValue("80");
-    const all = inspector.getByRole("button", { name: "All", exact: true });
+    const all = inspector
+      .getByRole("group", { name: "Presets" })
+      .getByRole("button", { name: "All", exact: true });
     await expect(all).toHaveAttribute("aria-pressed", "true");
     const analog = inspector.getByRole("button", { name: "Analog voice", exact: true });
     await analog.click();

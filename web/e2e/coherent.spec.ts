@@ -259,7 +259,7 @@ test("a spatial spectrum added by hand streams its surface", async ({ page }) =>
   const frames = textFrames(page);
   await stage(page, "Hand spatial spectrum", finding());
   await addNode(page, "Spatial spectrum");
-  const spatial = nodeOf(page, "spatial_spectrum");
+  const spatial = nodeOf(page, "processor");
   await expect(spatial).toHaveCount(1);
   const id = await idOf(spatial);
   await fitPatch(page);

@@ -141,7 +141,7 @@ final class SensorHubTests: XCTestCase {
         XCTAssertTrue(core.locations.isEmpty)
         feeds.location.send(.fix(fix()))
         feeds.location.send(.stationary)
-        try await Task.sleep(for: .milliseconds(200))
+        await eventually { core.locations.count >= 4 }
         let repeated = core.locations.dropFirst()
         XCTAssertGreaterThanOrEqual(repeated.count, 3)
         XCTAssertEqual(fixes, 1)

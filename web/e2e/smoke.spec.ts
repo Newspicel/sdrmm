@@ -500,8 +500,10 @@ test.describe("the workspace", () => {
     const map = page.locator('.react-flow__node[data-id^="map:"]');
     await fitPatch(page);
     await activate(map);
-    await map.getByRole("button", { name: "Map settings" }).click();
-    await page.getByRole("button", { name: "fiord", exact: true }).click();
+    await page
+      .getByRole("complementary", { name: "Inspector" })
+      .getByRole("button", { name: "fiord", exact: true })
+      .click();
     await expect.poll(() => styles.at(-1)).toBe("https://tiles.openfreemap.org/styles/fiord");
 
     await page.reload();

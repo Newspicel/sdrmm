@@ -39,6 +39,11 @@ impl<'de> Deserialize<'de> for WorkspaceState {
             arrays: Vec<WorkspaceArray>,
         }
         let mut document = Value::deserialize(deserializer)?;
+        if !written_as_objects(&document) {
+            return Err(serde::de::Error::custom(
+                "workspace state and its devices and channels must be objects",
+            ));
+        }
         lift_channels_to_the_top(&mut document);
         drop_retired_channels(&mut document);
         let stated = Stated::deserialize(document).map_err(serde::de::Error::custom)?;
@@ -200,6 +205,18 @@ impl WorkspaceState {
             }
         }
     }
+}
+
+/// The upgrades below read entries by key, so a state written as a sequence would skip them on
+/// import and take them on the next load, changing what a saved workspace holds.
+fn written_as_objects(document: &Value) -> bool {
+    document.is_object()
+        && ["devices", "channels"].into_iter().all(|list| {
+            document
+                .get(list)
+                .and_then(Value::as_array)
+                .is_none_or(|entries| entries.iter().all(Value::is_object))
+        })
 }
 
 fn drop_retired_channels(document: &mut Value) {
@@ -474,6 +491,13 @@ mod tests {
         state.version = WORKSPACE_STATE_VERSION + 1;
 
         assert!(state.current().devices.is_empty());
+    }
+
+    #[test]
+    fn a_state_written_as_a_sequence_is_refused() {
+        assert!(serde_json::from_str::<WorkspaceState>("[1, [], []]").is_err());
+        let sequenced_device = r#"{"version": 1, "devices": [["radio", {}]]}"#;
+        assert!(serde_json::from_str::<WorkspaceState>(sequenced_device).is_err());
     }
 
     #[test]

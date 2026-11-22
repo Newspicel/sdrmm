@@ -18,7 +18,11 @@ use sdrmm_wire::{TransmitPhase, TransmitSettings, TransmitStatus};
 type Sample = Complex<f32>;
 
 const TICK: Duration = Duration::from_millis(5);
+/// How far live audio runs ahead of the air: its latency, so kept short.
 const LEAD_S: f64 = 0.06;
+/// A message is known whole up front, so it runs further ahead and rides out a scheduler stall
+/// this long without a hole in the burst.
+const MESSAGE_LEAD_S: f64 = 0.2;
 const BLOCK_S: f64 = 0.02;
 const PREFILL_S: f64 = 0.06;
 const TAIL_S: f64 = 0.005;
@@ -416,7 +420,8 @@ impl Worker {
         let block = ((BLOCK_S * rate) as usize).max(1);
         let want = match &self.burst {
             Some(burst) if self.source.paced() => {
-                let due = ((burst.started.elapsed().as_secs_f64() + LEAD_S) * rate) as u64;
+                let lead_s = if self.flowing { LEAD_S } else { MESSAGE_LEAD_S };
+                let due = ((burst.started.elapsed().as_secs_f64() + lead_s) * rate) as u64;
                 (due.saturating_sub(burst.produced) as usize).min(4 * block)
             }
             Some(_) => 4 * block,

@@ -176,13 +176,17 @@ fn a_frame_goes_out_as_one_burst_at_the_set_level_and_ends_it() {
 }
 
 #[test]
-fn a_modulator_is_paced_to_real_time_with_a_short_lead() {
+fn a_message_is_paced_to_real_time_a_stall_ahead() {
     let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
     rig.commands.send(frame(48_000)).expect("queued");
     rig.until("keyed", |status| status.phase == TransmitPhase::OnAir);
     std::thread::sleep(Duration::from_millis(200));
     let sent = rig.status().samples as f64 / RADIO.sample_rate;
-    assert!((0.15..0.45).contains(&sent), "{sent} s sent after 0.2 s");
+    let ahead = sent - 0.2;
+    assert!(
+        (MESSAGE_LEAD_S - 0.05..MESSAGE_LEAD_S + 0.25).contains(&ahead),
+        "{sent} s sent after 0.2 s"
+    );
 }
 
 #[test]

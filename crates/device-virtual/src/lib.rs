@@ -711,7 +711,8 @@ impl SdrDevice for MarkerGen {
                 for (_, sink) in &mut lanes {
                     sink.dropped(skipped);
                 }
-                let quiet = air::ns_at(clock.due()) < quiet_until.load(Ordering::Acquire);
+                let due_ns = air::ns_at(clock.due());
+                let quiet = due_ns < quiet_until.load(Ordering::Acquire);
                 block.resize(n, Complex::new(0.0, 0.0));
                 for (stream, (generator, sink)) in lanes.iter_mut().enumerate() {
                     let offset = params
@@ -728,7 +729,7 @@ impl SdrDevice for MarkerGen {
                     if let (Some(antenna), Some(center)) =
                         (antennas.get(stream), params.lane_centers.get(stream))
                     {
-                        antenna.add_to(&mut block, *center, params.sample_rate);
+                        antenna.add_to(&mut block, *center, params.sample_rate, due_ns);
                     }
                     sink.push(&block);
                 }
