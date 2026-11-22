@@ -22195,6 +22195,7 @@
           },
           {
             "type": "object",
+            "description": "A yes-or-no state, shown with the driver's own words. `warn_when` names the state that\nlights the readout as a warning; none means neither does.",
             "required": [
               "on",
               "kind"
@@ -22206,8 +22207,20 @@
                   "flag"
                 ]
               },
+              "off_text": {
+                "type": "string"
+              },
               "on": {
                 "type": "boolean"
+              },
+              "on_text": {
+                "type": "string"
+              },
+              "warn_when": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               }
             }
           }

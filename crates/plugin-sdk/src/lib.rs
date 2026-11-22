@@ -1,4 +1,4 @@
-//! Write an sdr-- decoder, encoder or array processor, or any mix of them, as a WASM plugin.
+//! Write an SDRmm decoder, encoder or array processor, or any mix of them, as a WASM plugin.
 //!
 //! A plugin's decoder and encoder are written exactly like built-in ones, against
 //! [`sdrmm_decoder`]: a [`Channel`] opened through [`NativeChannel`] and declared with the

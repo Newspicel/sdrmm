@@ -1,6 +1,6 @@
 [package]
 name = "sdrmm-plugin"
-description = "Write sdr-- decoders as WASM plugins"
+description = "Write SDRmm decoders as WASM plugins"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

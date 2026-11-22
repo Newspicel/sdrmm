@@ -1,6 +1,6 @@
 [package]
 name = "sdrmm-crypto"
-description = "Ciphers, hashes and key text formats for sdr-- decoders"
+description = "Ciphers, hashes and key text formats for SDRmm decoders"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

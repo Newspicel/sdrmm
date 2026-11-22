@@ -6119,7 +6119,10 @@ export interface components {
         } | {
             /** @enum {string} */
             kind: "flag";
+            off_text?: string;
             on: boolean;
+            on_text?: string;
+            warn_when?: boolean | null;
         };
         RecorderNode: {
             /**

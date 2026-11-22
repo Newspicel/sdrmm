@@ -4,7 +4,7 @@ ignore = ["c"]
 
 [placeholders.sdrmm_tag]
 type = "string"
-prompt = "sdr-- release to build against, as on GitHub"
+prompt = "SDRmm release to build against, as on GitHub"
 regex = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 
 [hooks]

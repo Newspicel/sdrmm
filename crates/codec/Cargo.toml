@@ -1,6 +1,6 @@
 [package]
 name = "sdrmm-codec"
-description = "Audio codecs and vocoders for sdr-- decoders"
+description = "Audio codecs and vocoders for SDRmm decoders"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

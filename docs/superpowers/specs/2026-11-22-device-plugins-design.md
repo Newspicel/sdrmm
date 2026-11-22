@@ -30,7 +30,7 @@ Anyone can add a radio driver without it living in this repo. A driver is a nati
 ## Approaches
 1. **Native library behind a stable C table (picked).** A versioned `#[repr(C)]` function table wraps the traits. Runs at full speed, works with release builds, and survives Rust toolchain bumps.
 2. Separate process with shared memory for samples. It isolates crashes, but brings cross-platform shared memory and process lifecycle. More moving parts than the use needs.
-3. Rust-ABI dylib passing `dyn DeviceDriver`. The cheapest, but host and plugin must use the same compiler and the same sdr-- version, or it crashes.
+3. Rust-ABI dylib passing `dyn DeviceDriver`. The cheapest, but host and plugin must use the same compiler and the same SDRmm version, or it crashes.
 
 WASM was ruled out on rate.
 
@@ -49,7 +49,7 @@ WASM was ruled out on rate.
 - An id stored in a patch whose driver isn't loaded stays valid and shows as a missing radio, the way an unplugged one does.
 
 ### Plugin crate `sdrmm-device-plugin`
-- Guest side: `export_driver!(MyDriver)` turns a `DeviceDriver` into the C table, behind one exported symbol `sdrmm_device_plugin_v1`. The table carries its ABI version, its size and the sdr-- version it was built against.
+- Guest side: `export_driver!(MyDriver)` turns a `DeviceDriver` into the C table, behind one exported symbol `sdrmm_device_plugin_v1`. The table carries its ABI version, its size and the SDRmm version it was built against.
 - Host side: a loader that opens a library with `libloading`, checks the version and wraps the table back into `Box<dyn DeviceDriver>`. The registry can't tell it apart from a built-in.
 - Control plane over the boundary: wire types as JSON (`DeviceInfo`, `Capabilities`, `DeviceSettings`, `Readout`, `AgcGain`, `DoctorCheck`, `SweepPlan`, `BackendSpec`). Errors are a `#[repr(C)]` kind code plus a message. Strings and buffers the guest returns are freed by a guest function.
 - Data plane: `RxSink` crosses as a host handle plus `#[repr(C)]` callbacks for push, dropped, deaf, dropped_estimate, realigned, mark, stamp_hardware, fail and room. The guest calls them from its own threads. Push takes `*const Complex<f32>` and a length; nothing allocates.
@@ -64,7 +64,7 @@ WASM was ruled out on rate.
 - Plugins register at `PLUGIN_PRIORITY`, above `NATIVE_PRIORITY`. A driver the operator installed wins a serial that a built-in also sees. *(Builder call.)*
 - One shared loader function builds the registry for `apps/sdrmm`, `apps/desktop` and `--doctor`.
 - A plugin whose backend id matches a built-in, or another plugin, is refused and reported.
-- The doctor lists each device plugin: file, backend, ABI version, the sdr-- git rev it was built from, loaded or why not.
+- The doctor lists each device plugin: file, backend, ABI version, the SDRmm git rev it was built from, loaded or why not.
 
 ### Versions *(builder call)*
 - Only the C table's integer ABI version is strict. A mismatch refuses the load.

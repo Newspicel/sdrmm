@@ -45,7 +45,7 @@ A plugin implements the same `DeviceDriver`, `SdrDevice` and `TxStream` traits a
 
 ## ABI
 
-The device plugin ABI is versioned on its own. A plugin only needs a rebuild when the version moves; other sdr-- releases load it as is. `sdrmm --doctor` lists every plugin with its backend, ABI and the sdr-- revision it was built from, or why it did not load.
+The device plugin ABI is versioned on its own. A plugin only needs a rebuild when the version moves; other SDRmm releases load it as is. `sdrmm --doctor` lists every plugin with its backend, ABI and the SDRmm revision it was built from, or why it did not load.
 
 ## Check the rate
 

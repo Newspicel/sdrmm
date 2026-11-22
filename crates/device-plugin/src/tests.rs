@@ -165,8 +165,14 @@ impl TxStream for FakeTx {
 }
 
 fn table() -> &'static PluginV1 {
-    let table =
-        unsafe { guest::entry(host::host_table(), "fake 1.0", || Box::new(FakeDriver), false) };
+    let table = unsafe {
+        guest::entry(
+            host::host_table(),
+            "fake 1.0",
+            || Box::new(FakeDriver),
+            false,
+        )
+    };
     unsafe { table.as_ref() }.expect("the fake plugin starts")
 }
 
@@ -473,8 +479,8 @@ fn device_abi_types_are_pinned() {
     assert_eq!(
         (crate::abi::DEVICE_ABI_VERSION, hex.as_str()),
         (
-            1,
-            "5f9ba9b02dcdc3a9dc216eefd85a3c9122954f6c367fb18e89f1304eb3cae42f"
+            2,
+            "25571f55867ff61d550fd5a925fb0bb216257f9778695609b045926166c43994"
         ),
         "a wire type crossing the device plugin boundary changed: bump DEVICE_ABI_VERSION, then this pin"
     );
@@ -584,8 +590,14 @@ impl DeviceDriver for DropWatch {
 
 #[test]
 fn dropping_a_driver_releases_the_plugin_side() {
-    let table =
-        unsafe { guest::entry(host::host_table(), "dropwatch", || Box::new(DropWatch), false) };
+    let table = unsafe {
+        guest::entry(
+            host::host_table(),
+            "dropwatch",
+            || Box::new(DropWatch),
+            false,
+        )
+    };
     let loaded = host::from_table(unsafe { table.as_ref() }.expect("starts")).expect("loads");
     drop(loaded);
     assert!(DROPPED.load(std::sync::atomic::Ordering::SeqCst));

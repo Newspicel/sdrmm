@@ -23,7 +23,7 @@ pub enum LoadError {
     Symbol,
     #[error("the plugin refused to start; its log says why")]
     Refused,
-    #[error("built for device plugin ABI {found}, this sdr-- speaks {DEVICE_ABI_VERSION}")]
+    #[error("built for device plugin ABI {found}, this SDRmm speaks {DEVICE_ABI_VERSION}")]
     Abi { found: u32 },
     #[error("the plugin's spec is unreadable: {0}")]
     Spec(String),
@@ -37,7 +37,7 @@ pub struct Loaded {
     pub spec: BackendSpec,
     /// The plugin's crate name and version.
     pub plugin: String,
-    /// The sdr-- revision it was built against, or empty.
+    /// The SDRmm revision it was built against, or empty.
     pub sdk_build: String,
 }
 

@@ -713,8 +713,29 @@ pub struct Readout {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReadoutValue {
-    Number { value: f64, unit: String },
-    Flag { on: bool },
+    Number {
+        value: f64,
+        unit: String,
+    },
+    /// A yes-or-no state, shown with the driver's own words. `warn_when` names the state that
+    /// lights the readout as a warning; none means neither does.
+    Flag {
+        on: bool,
+        #[serde(default = "on_text")]
+        on_text: String,
+        #[serde(default = "off_text")]
+        off_text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        warn_when: Option<bool>,
+    },
+}
+
+fn on_text() -> String {
+    "on".to_owned()
+}
+
+fn off_text() -> String {
+    "off".to_owned()
 }
 
 impl Readout {
@@ -736,14 +757,43 @@ impl Readout {
         }
     }
 
+    /// A flag shown as "on" or "off" that never warns. [`Readout::words`] and
+    /// [`Readout::warn_when`] say more.
     #[must_use]
     pub fn flag(name: impl Into<String>, label: impl Into<String>, on: bool) -> Self {
         Self {
             name: name.into(),
             label: label.into(),
             stream: None,
-            value: ReadoutValue::Flag { on },
+            value: ReadoutValue::Flag {
+                on,
+                on_text: on_text(),
+                off_text: off_text(),
+                warn_when: None,
+            },
         }
+    }
+
+    /// The words a flag shows for each state, such as "locked" and "unlocked".
+    #[must_use]
+    pub fn words(mut self, on: &str, off: &str) -> Self {
+        if let ReadoutValue::Flag {
+            on_text, off_text, ..
+        } = &mut self.value
+        {
+            on.clone_into(on_text);
+            off.clone_into(off_text);
+        }
+        self
+    }
+
+    /// Lights a flag as a warning while it is in `state`.
+    #[must_use]
+    pub fn warn_when(mut self, state: bool) -> Self {
+        if let ReadoutValue::Flag { warn_when, .. } = &mut self.value {
+            *warn_when = Some(state);
+        }
+        self
     }
 
     #[must_use]
@@ -2524,5 +2574,38 @@ mod tests {
         assert_eq!(lane.center_hz, None, "this radio's lanes share one tuning");
         assert_eq!(lane.antenna, None);
         assert_eq!(lane.gains.len(), 1);
+    }
+
+    #[test]
+    fn a_flag_says_its_own_words_and_warns_only_when_asked() {
+        let lock = Readout::flag("ref", "Ref", false)
+            .words("locked", "unlocked")
+            .warn_when(false);
+        assert_eq!(
+            serde_json::to_value(&lock).expect("serializes")["value"],
+            serde_json::json!({
+                "kind": "flag", "on": false, "on_text": "locked", "off_text": "unlocked",
+                "warn_when": false,
+            })
+        );
+        let plain = serde_json::to_value(Readout::flag("fix", "Fix", true)).expect("serializes");
+        assert_eq!(plain["value"]["on_text"], "on");
+        assert!(plain["value"].get("warn_when").is_none());
+    }
+
+    #[test]
+    fn a_flag_from_an_older_driver_reads_as_on_or_off() {
+        let old: ReadoutValue =
+            serde_json::from_value(serde_json::json!({ "kind": "flag", "on": true }))
+                .expect("reads");
+        assert_eq!(
+            old,
+            ReadoutValue::Flag {
+                on: true,
+                on_text: "on".to_owned(),
+                off_text: "off".to_owned(),
+                warn_when: None,
+            }
+        );
     }
 }

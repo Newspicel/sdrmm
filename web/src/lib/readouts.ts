@@ -34,12 +34,13 @@ export function readoutStats(readouts: readonly Readout[]): ReadoutStat[] {
   for (const readout of readouts) {
     const held = stats.find((stat) => stat.name === readout.name);
     if (readout.value.kind === "flag") {
+      const flag = readout.value;
       stats.push({
         name: readout.name,
         label: readout.label,
-        text: readout.value.on ? "locked" : "unlocked",
+        text: (flag.on ? flag.on_text : flag.off_text) ?? (flag.on ? "on" : "off"),
         unit: "",
-        warn: !readout.value.on,
+        warn: flag.warn_when === flag.on,
       });
       continue;
     }

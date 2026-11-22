@@ -1,6 +1,6 @@
 /*
  * Burst: logs each block whose power rises above -20 dBFS.
- * The sdr-- plugin ABI in plain C, no libc. Build:
+ * The SDRmm plugin ABI in plain C, no libc. Build:
  *   zig cc -target wasm32-freestanding -O2 -nostdlib -Wl,--no-entry -Wl,--export-dynamic \
  *     -o burst.wasm burst.c
  */

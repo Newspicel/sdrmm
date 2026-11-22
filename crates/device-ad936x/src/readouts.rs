@@ -104,7 +104,11 @@ impl Probes {
                 == DAC_DISCIPLINED
         {
             let locked = client.read_channel_attr(DAC, Direction::In, DAC_CHANNEL, DAC_LOCKED)?;
-            readouts.push(Readout::flag(REFERENCE, "Ref", locked.trim() == "1"));
+            readouts.push(
+                Readout::flag(REFERENCE, "Ref", locked.trim() == "1")
+                    .words("locked", "unlocked")
+                    .warn_when(false),
+            );
         }
         Ok(readouts)
     }

@@ -5,7 +5,7 @@ use sdrmm_wire::Direction;
 
 /// The version of [`PluginV1`] and of every wire type that crosses it as JSON. A host refuses
 /// a plugin built for another.
-pub const DEVICE_ABI_VERSION: u32 = 1;
+pub const DEVICE_ABI_VERSION: u32 = 2;
 
 /// The one symbol a device plugin exports, as `extern "C" fn(*const HostV1) -> *const PluginV1`.
 pub const ENTRY_SYMBOL: &str = "sdrmm_device_plugin_v1";
@@ -338,7 +338,7 @@ pub struct PluginV1 {
     pub size: u32,
     /// The plugin's crate name and version.
     pub plugin: Str,
-    /// The sdr-- revision the plugin was built against, or empty.
+    /// The SDRmm revision the plugin was built against, or empty.
     pub sdk_build: Str,
     /// Whether the plugin unwinds panics. One built with `panic = "abort"` would take the host
     /// down with it, so the host refuses it.

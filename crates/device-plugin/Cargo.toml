@@ -1,6 +1,6 @@
 [package]
 name = "sdrmm-device-plugin"
-description = "Write sdr-- radio drivers as native plugins, and load them"
+description = "Write SDRmm radio drivers as native plugins, and load them"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

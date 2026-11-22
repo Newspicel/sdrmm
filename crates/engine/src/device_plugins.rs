@@ -90,7 +90,7 @@ impl DevicePlugins {
     }
 }
 
-const REBUILD: &str = "rebuild the plugin against this sdr-- version, or remove the file";
+const REBUILD: &str = "rebuild the plugin against this SDRmm version, or remove the file";
 
 fn libraries(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -120,7 +120,7 @@ fn load_one(path: &Path) -> Found {
             let build = if loaded.sdk_build.is_empty() {
                 String::new()
             } else {
-                format!(" · built on sdr-- {}", loaded.sdk_build)
+                format!(" · built on SDRmm {}", loaded.sdk_build)
             };
             tracing::info!(%file, backend = %loaded.spec.backend, "device plugin loaded");
             Found::Loaded {

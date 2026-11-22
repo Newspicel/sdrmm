@@ -1,6 +1,6 @@
 use std::process::Command;
 
-/// Stamps the sdr-- revision this crate was built from, shown beside a plugin in the doctor. A
+/// Stamps the SDRmm revision this crate was built from, shown beside a plugin in the doctor. A
 /// git dependency is checked out per revision, so a plugin's stamp names exactly what it used.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
