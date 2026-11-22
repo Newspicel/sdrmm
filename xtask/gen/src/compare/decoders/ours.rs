@@ -1,7 +1,7 @@
 use std::{thread, time::Duration};
 
 use anyhow::{Context, Result, anyhow, bail};
-use sdrmm_decoder::{Channel, ChannelCtx, ChannelFilter, ChannelOutputs};
+use sdrmm_decoder::{Channel, ChannelCtx, ChannelFilter, ChannelFront, ChannelOutputs};
 use sdrmm_dsp::{Ddc, Decimator, design_lowpass};
 use sdrmm_wire::{ChannelParams, ChannelSettings, Squelch};
 
@@ -23,9 +23,12 @@ pub struct FrontEnd {
 
 impl FrontEnd {
     pub fn new(signal: &Signal) -> Result<Self> {
-        let params: ChannelParams =
-            serde_json::from_value(serde_json::json!({ "type": signal.channel, "settings": {} }))
-                .with_context(|| format!("default settings for {}", signal.channel))?;
+        let settings: serde_json::Value = serde_json::from_str(signal.settings)
+            .with_context(|| format!("settings for {}", signal.id))?;
+        let params: ChannelParams = serde_json::from_value(
+            serde_json::json!({ "type": signal.channel, "settings": settings }),
+        )
+        .with_context(|| format!("settings for {}", signal.channel))?;
         let input_rate = sdrmm_decoder::descriptors()
             .into_iter()
             .find(|d| d.type_id == signal.channel)
@@ -48,10 +51,6 @@ impl FrontEnd {
             .map_err(|e| anyhow!("{e}"))
     }
 
-    pub fn filter(&self) -> Result<ChannelFilter> {
-        Ok(sdrmm_decoder::channel_filter(&self.settings.params)?)
-    }
-
     /// What a reference hears: the signal's occupied band, not our decoder's own filter, which
     /// may leave room for its AFC.
     pub fn reference_filter(&self) -> ChannelFilter {
@@ -67,32 +66,39 @@ impl FrontEnd {
 
 pub fn decode(fixture: &Fixture, signal: &Signal, loops: usize) -> Result<Decoded> {
     let front = FrontEnd::new(signal)?;
-    let mut ddc = front.ddc(fixture.rate)?;
-    let mut filter = front.filter()?;
+    let mut channel_front = ChannelFront::new(
+        &front.settings.params,
+        fixture.rate,
+        front.settings.frequency_hz,
+    )?;
     let mut channel = sdrmm_decoder::create(
         ChannelCtx {
             input_rate: front.input_rate,
         },
         &front.settings,
     )?;
-    let mut tuned = Vec::new();
     let mut filtered = Vec::new();
     let mut out = ChannelOutputs::default();
     let mut keys = Vec::new();
     let start = usage::own()?;
     fixture.feed(loops, signal.tail_seconds, |block| {
-        ddc.process(block, &mut tuned);
-        filter.process(&tuned, &mut filtered);
+        channel_front.process(block, &mut filtered);
         out.reset();
         channel.process(&filtered, &mut out);
-        keys.extend(out.events.iter().filter_map(signal.key));
+        read(signal, &out, &mut keys);
         Ok(())
     })?;
     settle(channel.as_mut(), &mut out, &mut keys, signal)?;
     Ok(Decoded {
-        keys,
+        keys: signal.key.finish(keys),
         cpu_seconds: usage::own()? - start,
     })
+}
+
+fn read(signal: &Signal, out: &ChannelOutputs, keys: &mut Vec<String>) {
+    for event in &out.events {
+        signal.key.read(event, keys);
+    }
 }
 
 fn settle(
@@ -106,7 +112,7 @@ fn settle(
         thread::sleep(SETTLE_POLL);
         out.reset();
         channel.process(&[], out);
-        keys.extend(out.events.iter().filter_map(signal.key));
+        read(signal, out, keys);
         if usage::own()? - before < IDLE_CPU_SECONDS {
             return Ok(());
         }

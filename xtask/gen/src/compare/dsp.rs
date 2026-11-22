@@ -25,6 +25,12 @@ pub const KERNELS: &[Kernel] = &[
         note: None,
     },
     Kernel {
+        id: "fir-long",
+        title: "FIR, 1,023 taps",
+        ratio: None,
+        note: Some("Each library's fastest long filter."),
+    },
+    Kernel {
         id: "decimate",
         title: "FIR, 127 taps, decimate by 4",
         ratio: None,
@@ -49,8 +55,26 @@ pub const KERNELS: &[Kernel] = &[
         note: Some("Each library's own chain, same passband."),
     },
     Kernel {
+        id: "channelize",
+        title: "Channelizer, 16 channels",
+        ratio: None,
+        note: Some("Polyphase bank, 256 taps, all channels out."),
+    },
+    Kernel {
         id: "fft",
         title: "FFT, 4,096 points",
+        ratio: None,
+        note: None,
+    },
+    Kernel {
+        id: "fft-64k",
+        title: "FFT, 65,536 points",
+        ratio: None,
+        note: None,
+    },
+    Kernel {
+        id: "fft-1m",
+        title: "FFT, 1,048,576 points",
         ratio: None,
         note: None,
     },

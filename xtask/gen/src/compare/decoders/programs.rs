@@ -36,6 +36,7 @@ pub struct Source {
 pub enum Build {
     Cmake(&'static [&'static str]),
     Make(&'static [&'static str]),
+    Meson,
 }
 
 pub const DUMP1090: Program = Program {
@@ -57,6 +58,28 @@ pub const READSB: Program = Program {
         probe_binary: "readsb",
         probe: &["--version"],
         marker: "version:",
+    }),
+};
+
+pub const MINIMODEM: Program = Program {
+    name: "minimodem",
+    origin: Origin::Installed(Installed {
+        binary: "minimodem",
+        formula: "minimodem",
+        probe_binary: "minimodem",
+        probe: &["--version"],
+        marker: "minimodem ",
+    }),
+};
+
+pub const RTL_433: Program = Program {
+    name: "rtl_433",
+    origin: Origin::Installed(Installed {
+        binary: "rtl_433",
+        formula: "rtl_433",
+        probe_binary: "rtl_433",
+        probe: &["-V"],
+        marker: "rtl_433 version ",
     }),
 };
 
@@ -105,6 +128,32 @@ pub const ACARSDEC: Program = Program {
             "-DCMAKE_PREFIX_PATH={brew}",
             "-DCMAKE_C_FLAGS=-DHOST_NAME_MAX=255 -I{brew}/include",
         ]),
+    }),
+};
+
+pub const DUMP978: Program = Program {
+    name: "dump978-fa",
+    origin: Origin::Source(Source {
+        url: "https://github.com/flightaware/dump978.git",
+        commit: "f40aa9a0d2d0a0067c0c628b44ba316f7049b8ce",
+        version: "11.1",
+        binary: "dump978-fa",
+        build: Build::Make(&[
+            "CPPFLAGS=-I{brew}/include",
+            "LDFLAGS=-L{brew}/lib",
+            "dump978-fa",
+        ]),
+    }),
+};
+
+pub const REDSEA: Program = Program {
+    name: "redsea",
+    origin: Origin::Source(Source {
+        url: "https://github.com/windytan/redsea.git",
+        commit: "4cc27df9939798e800c4ff7cb484be6d9bf68b4d",
+        version: "1.3.1",
+        binary: "build/redsea",
+        build: Build::Meson,
     }),
 };
 
@@ -265,6 +314,15 @@ fn build(dir: &Path, build: &Build) -> Result<()> {
             )
         }
         Build::Make(args) => step(dir, "make", &expand(args)),
+        Build::Meson => {
+            let setup = ["setup", "build", "--buildtype=release", "--reconfigure"];
+            step(dir, "meson", &setup.map(String::from))?;
+            step(
+                dir,
+                "meson",
+                &["compile".into(), "-C".into(), "build".into()],
+            )
+        }
     }
 }
 

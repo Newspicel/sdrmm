@@ -9,6 +9,7 @@
 #define DDC_OUTPUT_RATE 48e3
 #define DDC_OFFSET 187500.0
 #define STOPBAND_DB 60.0f
+#define CHANNEL_STOPBAND_DB 70.0f
 
 typedef struct {
     unsigned n;
@@ -26,8 +27,18 @@ typedef struct {
     float complex *fft_in;
     float complex *fft_out;
     freqdem fm;
+    fftfilt_crcf long_fir;
+    firpfbch_crcf channelizer;
     unsigned long produced;
 } liquid_ctx;
+
+typedef struct {
+    unsigned n;
+    float complex *input;
+    float complex *work;
+    float complex *output;
+    fftplan plan;
+} big_fft;
 
 static void fir_step(void *raw) {
     liquid_ctx *c = raw;
@@ -65,6 +76,42 @@ static void fft_step(void *raw) {
     fft_execute(c->fft);
 }
 
+static void long_fir_step(void *raw) {
+    liquid_ctx *c = raw;
+    for (unsigned i = 0; i + BENCH_LONG_TAPS + 1 <= c->n; i += BENCH_LONG_TAPS + 1)
+        fftfilt_crcf_execute(c->long_fir, c->x + i, c->y + i);
+}
+
+static void channelize_step(void *raw) {
+    liquid_ctx *c = raw;
+    for (unsigned i = 0; i + BENCH_CHANNELS <= c->n; i += BENCH_CHANNELS)
+        firpfbch_crcf_analyzer_execute(c->channelizer, c->x + i, c->y + i);
+}
+
+static void big_fft_step(void *raw) {
+    big_fft *f = raw;
+    memcpy(f->work, f->input, sizeof(float complex) * f->n);
+    fft_execute(f->plan);
+}
+
+static int measure_fft(const char *id, unsigned n, const bench_timing *timing) {
+    big_fft f;
+    f.n = n;
+    f.input = malloc(sizeof(float complex) * n);
+    f.work = malloc(sizeof(float complex) * n);
+    f.output = malloc(sizeof(float complex) * n);
+    if (!f.input || !f.work || !f.output) return 1;
+    bench_signal((float *)f.input, n, 0xFF7);
+    f.plan = fft_create_plan(n, f.work, f.output, LIQUID_FFT_FORWARD, 0);
+    if (!f.plan) return 1;
+    bench_run(id, big_fft_step, &f, n, timing);
+    fft_destroy_plan(f.plan);
+    free(f.input);
+    free(f.work);
+    free(f.output);
+    return 0;
+}
+
 static void fm_step(void *raw) {
     liquid_ctx *c = raw;
     freqdem_demodulate_block(c->fm, c->x, c->n, c->real);
@@ -94,7 +141,12 @@ static int setup(liquid_ctx *c, unsigned n) {
     c->ddc_resamp = msresamp_crcf_create((float)(DDC_OUTPUT_RATE / DDC_INPUT_RATE), STOPBAND_DB);
     c->fft = fft_create_plan(BENCH_FFT, c->fft_in, c->fft_out, LIQUID_FFT_FORWARD, 0);
     c->fm = freqdem_create(0.5f);
-    return !c->fir || !c->decim || !c->resamp || !c->nco || !c->ddc_nco || !c->ddc_resamp ||
+    float long_taps[BENCH_LONG_TAPS];
+    bench_taps(long_taps, BENCH_LONG_TAPS, BENCH_CUTOFF);
+    c->long_fir = fftfilt_crcf_create(long_taps, BENCH_LONG_TAPS, BENCH_LONG_TAPS + 1);
+    c->channelizer = firpfbch_crcf_create_kaiser(LIQUID_ANALYZER, BENCH_CHANNELS,
+                                                 BENCH_CHANNEL_TAPS / 2, CHANNEL_STOPBAND_DB);
+    return !c->long_fir || !c->channelizer || !c->fir || !c->decim || !c->resamp || !c->nco || !c->ddc_nco || !c->ddc_resamp ||
            !c->fft || !c->fm;
 }
 
@@ -108,13 +160,17 @@ int main(int argc, char **argv) {
     }
     printf("version\t%s\n", liquid_libversion());
     bench_run("fir", fir_step, &c, c.n, &timing);
+    bench_run("fir-long", long_fir_step, &c, c.n - c.n % (BENCH_LONG_TAPS + 1), &timing);
     bench_run("decimate", decimate_step, &c, c.n, &timing);
     bench_run("resample", resample_step, &c, c.n, &timing);
     bench_ratio("resample", resample_step, &c, c.n, &c.produced);
     bench_run("nco", nco_step, &c, c.n, &timing);
     bench_run("ddc", ddc_step, &c, c.n, &timing);
     bench_ratio("ddc", ddc_step, &c, c.n, &c.produced);
+    bench_run("channelize", channelize_step, &c, c.n - c.n % BENCH_CHANNELS, &timing);
     bench_run("fft", fft_step, &c, BENCH_FFT, &timing);
+    if (measure_fft("fft-64k", BENCH_BIG_FFT, &timing)) return 1;
+    if (measure_fft("fft-1m", BENCH_HUGE_FFT, &timing)) return 1;
     bench_run("fm", fm_step, &c, c.n, &timing);
     return 0;
 }

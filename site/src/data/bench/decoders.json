@@ -1,8 +1,8 @@
 {
   "machine": {
     "cpu": "Apple M4 Max",
-    "os": "macOS 27.0.1",
-    "date": "2026-11-15"
+    "os": "macOS 27.2.1",
+    "date": "2026-11-22"
   },
   "groups": [
     {
@@ -14,18 +14,18 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 70.84912678451238
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 81.05369807497466
         },
         {
           "tool": "dump1090-fa",
           "version": "11.1",
-          "value": 74.47874190509177
+          "value": 79.61403117685461
         },
         {
           "tool": "readsb",
           "version": "3.16.21",
-          "value": 76.26659751828493
+          "value": 79.8830512130241
         }
       ]
     },
@@ -39,7 +39,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 67.7579365079365
         },
         {
@@ -63,13 +63,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 197.53106227154507
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 215.2064150555527
         },
         {
           "tool": "AIS-catcher",
           "version": "0.70",
-          "value": 154.1493521058271
+          "value": 158.31286949212748
         }
       ]
     },
@@ -83,7 +83,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 54.166666666666664
         },
         {
@@ -102,18 +102,18 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 945.133442762476
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 1010.362496904586
         },
         {
           "tool": "Dire Wolf",
           "version": "1.8.1",
-          "value": 34.17143635868085
+          "value": 33.93441517376571
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 6988.599020337818
+          "value": 7262.320696514959
         }
       ]
     },
@@ -127,7 +127,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 81.25
         },
         {
@@ -151,13 +151,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 1028.8604519057237
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 1061.2842451016118
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 18313.954671221527
+          "value": 18184.099953540263
         }
       ]
     },
@@ -171,7 +171,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 72.91666666666667
         },
         {
@@ -190,13 +190,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 778.6861665632773
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 824.8160214817242
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 4769.584307116579
+          "value": 4794.816572902104
         }
       ]
     },
@@ -210,7 +210,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 89.58333333333333
         },
         {
@@ -229,13 +229,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 469.46005833823637
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 488.52774023351554
         },
         {
           "tool": "multimon-ng",
           "version": "1.6.2",
-          "value": 3535.9011833480995
+          "value": 3589.2036753444827
         }
       ]
     },
@@ -249,7 +249,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 70.83333333333333
         },
         {
@@ -268,7 +268,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 2.0
         },
         {
@@ -287,13 +287,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 2603.810792343846
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 2715.8567059693823
         },
         {
           "tool": "acarsdec",
           "version": "3.7",
-          "value": 4312.913670095679
+          "value": 4239.364623378779
         }
       ]
     },
@@ -307,13 +307,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 51.041666666666664
         },
         {
           "tool": "acarsdec",
           "version": "3.7",
-          "value": 28.125
+          "value": 56.25
         }
       ]
     },
@@ -327,7 +327,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 21.0
         },
         {
@@ -347,13 +347,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 48.54604592455947
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 50.50658100750524
         },
         {
           "tool": "ft8_lib",
           "version": "9fec6ca",
-          "value": 1153.6686663583753
+          "value": 1161.0805789924902
         }
       ]
     },
@@ -367,7 +367,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 55.8531746031746
         },
         {
@@ -387,7 +387,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 6.0
         },
         {
@@ -406,13 +406,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 426.0592305871547
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 465.31431525805573
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 32.83896031422396
+          "value": 33.47386522502987
         }
       ]
     },
@@ -426,7 +426,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 90.97222222222223
         },
         {
@@ -445,13 +445,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 508.4493041749725
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 596.3991769547232
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 40.11093216228748
+          "value": 41.251789180338385
         }
       ]
     },
@@ -465,7 +465,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 66.66666666666667
         },
         {
@@ -484,13 +484,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 455.34117664588615
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 528.1775046670773
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 49.801526506051204
+          "value": 51.85569695869182
         }
       ]
     },
@@ -504,7 +504,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 83.33333333333333
         },
         {
@@ -523,13 +523,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 514.2788628194227
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 611.2569138729102
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 52.92965991401479
+          "value": 53.87910663239966
         }
       ]
     },
@@ -543,7 +543,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 84.89583333333333
         },
         {
@@ -562,13 +562,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 487.13054543352945
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 532.8478908559779
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 61.95749074904438
+          "value": 62.57226995190961
         }
       ]
     },
@@ -582,7 +582,7 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 98.69791666666667
         },
         {
@@ -601,13 +601,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 181.7528872617246
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 191.30673303360788
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 57.57671399957711
+          "value": 58.180227471565765
         }
       ]
     },
@@ -621,8 +621,8 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 93.22916666666667
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 95.57291666666667
         },
         {
           "tool": "dsd-fme",
@@ -640,13 +640,13 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
-          "value": 557.7143618514302
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 622.0021546805781
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
-          "value": 50.77979449265307
+          "value": 51.34506889847299
         }
       ]
     },
@@ -660,13 +660,267 @@
       "results": [
         {
           "tool": "SDRmm",
-          "version": "2.4.4-9-g798253a1-dirty",
+          "version": "2.4.4-51-gde5f4012-dirty",
           "value": 91.66666666666667
         },
         {
           "tool": "dsd-fme",
           "version": "4fe32db",
           "value": 86.80555555555556
+        }
+      ]
+    },
+    {
+      "id": "zvei-speed",
+      "subject": "ZVEI",
+      "title": "ZVEI speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 365.43027193707326
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 3520.8873151910166
+        }
+      ]
+    },
+    {
+      "id": "zvei-noise",
+      "subject": "ZVEI",
+      "title": "ZVEI in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 5 to -10 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 66.66666666666667
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 33.333333333333336
+        }
+      ]
+    },
+    {
+      "id": "uat-speed",
+      "subject": "UAT",
+      "title": "UAT speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 135.02879013871637
+        },
+        {
+          "tool": "dump978-fa",
+          "version": "11.1",
+          "value": 85.27737908465956
+        }
+      ]
+    },
+    {
+      "id": "uat-noise",
+      "subject": "UAT",
+      "title": "UAT in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 12 to 2 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 58.75
+        },
+        {
+          "tool": "dump978-fa",
+          "version": "11.1",
+          "value": 58.75
+        }
+      ]
+    },
+    {
+      "id": "rtty-speed",
+      "subject": "RTTY",
+      "title": "RTTY speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 4174.008059516626
+        },
+        {
+          "tool": "minimodem",
+          "version": "0.24",
+          "value": 2070.2333852651404
+        }
+      ]
+    },
+    {
+      "id": "rtty-noise",
+      "subject": "RTTY",
+      "title": "RTTY in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR -10 to -30 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 30.833333333333332
+        },
+        {
+          "tool": "minimodem",
+          "version": "0.24",
+          "value": 52.916666666666664
+        }
+      ]
+    },
+    {
+      "id": "morse-speed",
+      "subject": "Morse",
+      "title": "Morse speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 4318.71357467992
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 7657.841140529191
+        }
+      ]
+    },
+    {
+      "id": "morse-noise",
+      "subject": "Morse",
+      "title": "Morse in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR -6 to -21 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 36.458333333333336
+        },
+        {
+          "tool": "multimon-ng",
+          "version": "1.6.2",
+          "value": 58.854166666666664
+        }
+      ]
+    },
+    {
+      "id": "rds-speed",
+      "subject": "RDS",
+      "title": "RDS speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "note": "SDRmm also demodulates the FM and stereo audio.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 213.55115551195385
+        },
+        {
+          "tool": "redsea",
+          "version": "1.3.1",
+          "value": 337.6542525970605
+        }
+      ]
+    },
+    {
+      "id": "rds-noise",
+      "subject": "RDS",
+      "title": "RDS in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 12 to 2 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 69.44444444444444
+        },
+        {
+          "tool": "redsea",
+          "version": "1.3.1",
+          "value": 69.44444444444444
+        }
+      ]
+    },
+    {
+      "id": "ism-decodes",
+      "subject": "ISM sensors",
+      "title": "ISM sensors decodes",
+      "unit": "msgs",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 20.0
+        },
+        {
+          "tool": "rtl_433",
+          "version": "25.12",
+          "value": 20.0
+        }
+      ]
+    },
+    {
+      "id": "ism-speed",
+      "subject": "ISM sensors",
+      "title": "ISM sensors speed",
+      "unit": "× realtime",
+      "better": "higher",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 356.3465631792157
+        },
+        {
+          "tool": "rtl_433",
+          "version": "25.12",
+          "value": 337.29188373130046
+        }
+      ]
+    },
+    {
+      "id": "ism-noise",
+      "subject": "ISM sensors",
+      "title": "ISM sensors in noise",
+      "unit": "% decoded",
+      "better": "higher",
+      "note": "48 runs, SNR 12 to -3 dB.",
+      "results": [
+        {
+          "tool": "SDRmm",
+          "version": "2.4.4-51-gde5f4012-dirty",
+          "value": 62.291666666666664
+        },
+        {
+          "tool": "rtl_433",
+          "version": "25.12",
+          "value": 70.83333333333333
         }
       ]
     }

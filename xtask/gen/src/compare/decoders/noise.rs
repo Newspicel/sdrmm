@@ -51,17 +51,27 @@ impl Ladder {
 }
 
 pub fn active_power(iq: &[Complex<f32>], rate: f64) -> f64 {
-    let block = ((rate / BLOCKS_PER_SECOND).round() as usize).max(1);
-    let powers: Vec<f64> = iq
-        .chunks(block)
-        .map(|chunk| {
-            chunk.iter().map(|s| f64::from(s.norm_sqr())).sum::<f64>() / chunk.len() as f64
-        })
-        .collect();
+    let powers = block_powers(iq, rate);
     let top = powers.iter().copied().fold(0.0, f64::max);
     let floor = top / 10f64.powf(ACTIVE_RANGE_DB / 10.0);
     let active: Vec<f64> = powers.into_iter().filter(|&p| p >= floor).collect();
     active.iter().sum::<f64>() / active.len().max(1) as f64
+}
+
+/// The power of a capture's quiet stretches: its tenth-percentile block.
+pub fn floor_power(iq: &[Complex<f32>], rate: f64) -> f64 {
+    let mut powers = block_powers(iq, rate);
+    powers.sort_by(f64::total_cmp);
+    powers.get(powers.len() / 10).copied().unwrap_or(0.0)
+}
+
+fn block_powers(iq: &[Complex<f32>], rate: f64) -> Vec<f64> {
+    let block = ((rate / BLOCKS_PER_SECOND).round() as usize).max(1);
+    iq.chunks(block)
+        .map(|chunk| {
+            chunk.iter().map(|s| f64::from(s.norm_sqr())).sum::<f64>() / chunk.len() as f64
+        })
+        .collect()
 }
 
 pub fn add(iq: &[Complex<f32>], power: f64, run: Run) -> Vec<Complex<f32>> {
@@ -188,6 +198,14 @@ mod tests {
         let noisy = add(&vec![Complex::default(); 200_000], power, run);
         let measured = noisy.iter().map(|s| f64::from(s.norm_sqr())).sum::<f64>() / 200_000.0;
         assert!((10.0 * (power / measured).log10() - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn the_floor_is_the_quiet_part() {
+        let mut iq = vec![Complex::new(0.01f32, 0.0); 9_000];
+        iq.extend(vec![Complex::new(1.0f32, 0.0); 1_000]);
+        let floor = floor_power(&iq, 10_000.0);
+        assert!((floor - 1e-4).abs() < 1e-9, "{floor}");
     }
 
     #[test]

@@ -1,10 +1,12 @@
 mod kernel;
 mod planes;
+mod spectral;
 
 use num_complex::Complex;
 
 use kernel::{fir_any, fir_fixed, rotate, rotate_fixed};
 use planes::{LANE_GROUP, Planes, twiddle_table};
+use spectral::Spectral;
 
 use crate::filter::fir::design_lowpass_kaiser;
 
@@ -22,11 +24,31 @@ pub enum ChannelizerError {
 }
 
 #[derive(Clone, Debug)]
+enum Rotation {
+    Table(Vec<Planes>),
+    Spectral(Spectral),
+}
+
+impl Rotation {
+    /// The table stays ahead where it has an unrolled kernel or only a few bins are wanted; the
+    /// FFT wins everywhere else, by about 2x on a full 64 bin bank.
+    fn for_shape(bins: usize, wanted: &[i32]) -> Self {
+        let padded = wanted.len().next_multiple_of(LANE_GROUP);
+        let unrolled = matches!((bins, padded), (12 | 10, 12) | (8, 8));
+        if unrolled || wanted.len() * 4 < bins {
+            Self::Table(twiddle_table(bins, wanted))
+        } else {
+            Self::Spectral(Spectral::new(bins, wanted))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Channelizer {
     bins: usize,
     decimation: usize,
     reversed: Vec<f32>,
-    twiddles: Vec<Planes>,
+    rotation: Rotation,
     outputs: usize,
     padded: usize,
     history: Planes,
@@ -61,7 +83,7 @@ impl Channelizer {
             bins,
             decimation,
             reversed,
-            twiddles: twiddle_table(bins, wanted),
+            rotation: Rotation::for_shape(bins, wanted),
             outputs: wanted.len(),
             padded: wanted.len().next_multiple_of(LANE_GROUP),
             history: Planes::zeroed(span - 1),
@@ -111,6 +133,7 @@ impl Channelizer {
         let window_im = &self.history.im[oldest..oldest + self.span];
         match self.bins {
             8 => fir_fixed::<8>(&self.reversed, window_re, window_im, &mut self.partial),
+            16 => fir_fixed::<16>(&self.reversed, window_re, window_im, &mut self.partial),
             10 => fir_fixed::<10>(&self.reversed, window_re, window_im, &mut self.partial),
             12 => fir_fixed::<12>(&self.reversed, window_re, window_im, &mut self.partial),
             bins => fir_any(
@@ -121,12 +144,18 @@ impl Channelizer {
                 &mut self.partial,
             ),
         }
-        let table = &self.twiddles[(absolute % self.bins as u64) as usize];
-        match (self.bins, self.padded) {
-            (12, 12) => rotate_fixed::<12, 12>(&self.partial, table, &mut self.sums),
-            (8, 8) => rotate_fixed::<8, 8>(&self.partial, table, &mut self.sums),
-            (10, 12) => rotate_fixed::<10, 12>(&self.partial, table, &mut self.sums),
-            (_, padded) => rotate(&self.partial, table, padded, &mut self.sums),
+        let phase = (absolute % self.bins as u64) as usize;
+        match &mut self.rotation {
+            Rotation::Spectral(spectral) => spectral.rotate(&self.partial, phase, &mut self.sums),
+            Rotation::Table(tables) => {
+                let table = &tables[phase];
+                match (self.bins, self.padded) {
+                    (12, 12) => rotate_fixed::<12, 12>(&self.partial, table, &mut self.sums),
+                    (8, 8) => rotate_fixed::<8, 8>(&self.partial, table, &mut self.sums),
+                    (10, 12) => rotate_fixed::<10, 12>(&self.partial, table, &mut self.sums),
+                    (_, padded) => rotate(&self.partial, table, padded, &mut self.sums),
+                }
+            }
         }
         for ((sink, &re), &im) in out
             .iter_mut()

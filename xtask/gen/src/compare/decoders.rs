@@ -103,7 +103,7 @@ fn measure(
     signal: &Signal,
     ours: bool,
 ) -> Result<Vec<Group>> {
-    let clean = Fixture::load(root, signal.fixture)?;
+    let clean = Fixture::load(root, signal.fixtures)?;
     let fixture = prepared(&clean, signal)?;
     let front = FrontEnd::new(signal)?;
     let loops = signal.loops(fixture.seconds());

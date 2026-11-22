@@ -297,6 +297,8 @@ struct PhaseChips {
 }
 
 impl PhaseChips {
+    /// On aarch64 all four gaps are checked 16 positions at a time: testing two gaps first and
+    /// branching on them cost ADS-B a quarter of its speed on Apple silicon.
     fn mark(&self, streams: &[Stream], phase: usize, hits: &mut [Phases]) -> bool {
         let len = hits.len();
         let (Some(p), Some(g)) = (
@@ -316,55 +318,47 @@ impl PhaseChips {
                 vaddq_f32, vandq_u32, vcgtq_f32, vcltq_f32, vdupq_n_f32, vld1q_f32, vmaxq_f32,
                 vmaxvq_u32, vminq_f32, vmulq_f32, vorrq_u32, vst1q_u32,
             };
-            let n8 = len & !7;
+            let n16 = len & !15;
             let mut i = 0;
             unsafe {
                 let scale = vdupq_n_f32(0.125);
                 let (p0, p1, p2, p3) = (p[0].as_ptr(), p[1].as_ptr(), p[2].as_ptr(), p[3].as_ptr());
                 let (g0, g1, g2, g3) = (g[0].as_ptr(), g[1].as_ptr(), g[2].as_ptr(), g[3].as_ptr());
-                while i < n8 {
-                    let vp0a = vld1q_f32(p0.add(i));
-                    let vp1a = vld1q_f32(p1.add(i));
-                    let vp2a = vld1q_f32(p2.add(i));
-                    let vp3a = vld1q_f32(p3.add(i));
-                    let weak_a = vminq_f32(vminq_f32(vp0a, vp1a), vminq_f32(vp2a, vp3a));
-                    let thresh_a = vmulq_f32(
-                        vaddq_f32(vaddq_f32(vp0a, vp1a), vaddq_f32(vp2a, vp3a)),
-                        scale,
-                    );
-                    let ga = vmaxq_f32(vld1q_f32(g0.add(i)), vld1q_f32(g1.add(i)));
-                    let ma = vandq_u32(vcgtq_f32(weak_a, thresh_a), vcltq_f32(ga, thresh_a));
-
-                    let vp0b = vld1q_f32(p0.add(i + 4));
-                    let vp1b = vld1q_f32(p1.add(i + 4));
-                    let vp2b = vld1q_f32(p2.add(i + 4));
-                    let vp3b = vld1q_f32(p3.add(i + 4));
-                    let weak_b = vminq_f32(vminq_f32(vp0b, vp1b), vminq_f32(vp2b, vp3b));
-                    let thresh_b = vmulq_f32(
-                        vaddq_f32(vaddq_f32(vp0b, vp1b), vaddq_f32(vp2b, vp3b)),
-                        scale,
-                    );
-                    let gb = vmaxq_f32(vld1q_f32(g0.add(i + 4)), vld1q_f32(g1.add(i + 4)));
-                    let mb = vandq_u32(vcgtq_f32(weak_b, thresh_b), vcltq_f32(gb, thresh_b));
-
-                    if vmaxvq_u32(vorrq_u32(ma, mb)) != 0 {
-                        let ga2 = vmaxq_f32(vld1q_f32(g2.add(i)), vld1q_f32(g3.add(i)));
-                        let gb2 = vmaxq_f32(vld1q_f32(g2.add(i + 4)), vld1q_f32(g3.add(i + 4)));
-                        let fa = vandq_u32(ma, vcltq_f32(ga2, thresh_a));
-                        let fb = vandq_u32(mb, vcltq_f32(gb2, thresh_b));
-                        if vmaxvq_u32(vorrq_u32(fa, fb)) != 0 {
-                            any_hit = true;
-                            let mut lanes = [0u32; 8];
-                            vst1q_u32(lanes.as_mut_ptr(), fa);
-                            vst1q_u32(lanes.as_mut_ptr().add(4), fb);
-                            for (k, &lane) in lanes.iter().enumerate() {
-                                if lane != 0 {
-                                    hits[i + k] |= bit;
-                                }
+                let check = |at: usize| {
+                    let vp0 = vld1q_f32(p0.add(at));
+                    let vp1 = vld1q_f32(p1.add(at));
+                    let vp2 = vld1q_f32(p2.add(at));
+                    let vp3 = vld1q_f32(p3.add(at));
+                    let weakest = vminq_f32(vminq_f32(vp0, vp1), vminq_f32(vp2, vp3));
+                    let threshold =
+                        vmulq_f32(vaddq_f32(vaddq_f32(vp0, vp1), vaddq_f32(vp2, vp3)), scale);
+                    let vg0 = vld1q_f32(g0.add(at));
+                    let vg1 = vld1q_f32(g1.add(at));
+                    let vg2 = vld1q_f32(g2.add(at));
+                    let vg3 = vld1q_f32(g3.add(at));
+                    let loudest = vmaxq_f32(vmaxq_f32(vg0, vg1), vmaxq_f32(vg2, vg3));
+                    vandq_u32(vcgtq_f32(weakest, threshold), vcltq_f32(loudest, threshold))
+                };
+                while i < n16 {
+                    let m0 = check(i);
+                    let m1 = check(i + 4);
+                    let m2 = check(i + 8);
+                    let m3 = check(i + 12);
+                    let any = vorrq_u32(vorrq_u32(m0, m1), vorrq_u32(m2, m3));
+                    if vmaxvq_u32(any) != 0 {
+                        any_hit = true;
+                        let mut lanes = [0u32; 16];
+                        vst1q_u32(lanes.as_mut_ptr(), m0);
+                        vst1q_u32(lanes.as_mut_ptr().add(4), m1);
+                        vst1q_u32(lanes.as_mut_ptr().add(8), m2);
+                        vst1q_u32(lanes.as_mut_ptr().add(12), m3);
+                        for (k, &lane) in lanes.iter().enumerate() {
+                            if lane != 0 {
+                                hits[i + k] |= bit;
                             }
                         }
                     }
-                    i += 8;
+                    i += 16;
                 }
             }
             i

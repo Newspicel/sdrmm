@@ -5,15 +5,19 @@ use super::{
     noise::Ladder,
     parse,
     programs::{
-        ACARSDEC, AIS_CATCHER, DIREWOLF, DSD_FME, DUMP1090, FT8_LIB, MULTIMON, Program, READSB,
+        ACARSDEC, AIS_CATCHER, DIREWOLF, DSD_FME, DUMP978, DUMP1090, FT8_LIB, MINIMODEM, MULTIMON,
+        Program, READSB, REDSEA, RTL_433,
     },
 };
 
 pub struct Signal {
     pub id: &'static str,
     pub name: &'static str,
-    pub fixture: &'static str,
+    /// Captures played one after another, a short gap apart.
+    pub fixtures: &'static [&'static str],
     pub channel: &'static str,
+    /// The channel's settings as JSON; fields left out keep their defaults.
+    pub settings: &'static str,
     pub offset_hz: f64,
     pub speed_seconds: f64,
     pub tail_seconds: f64,
@@ -22,8 +26,33 @@ pub struct Signal {
     pub decodes: Show,
     pub speed: Show,
     pub noise: Ladder,
-    pub key: fn(&DecoderEvent) -> Option<String>,
+    pub key: Key,
     pub references: &'static [Reference],
+}
+
+pub enum Key {
+    /// One key from an event, or none.
+    One(fn(&DecoderEvent) -> Option<String>),
+    /// Several keys from one event.
+    Many(fn(&DecoderEvent) -> Vec<String>),
+    /// Text spread over events, one key per word.
+    Words(fn(&DecoderEvent) -> Option<String>),
+}
+
+impl Key {
+    pub fn read(&self, event: &DecoderEvent, keys: &mut Vec<String>) {
+        match self {
+            Self::One(key) | Self::Words(key) => keys.extend(key(event)),
+            Self::Many(key) => keys.extend(key(event)),
+        }
+    }
+
+    pub fn finish(&self, keys: Vec<String>) -> Vec<String> {
+        match self {
+            Self::Words(_) => parse::words(&keys.concat()),
+            Self::One(_) | Self::Many(_) => keys,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +79,39 @@ impl Signal {
 
 pub const INPUT: &str = "{input}";
 
+const DEFAULTS: &str = "{}";
+
+/// The RTTY pair heard as audio: mark 1585 Hz, space 1415 Hz.
+const RTTY_CENTRE_HZ: f64 = 1_500.0;
+
 const MODE_S: Format = Format::Cu8 { rate: 2_400_000.0 };
+
+const UAT_RATE: f64 = 2_083_334.0;
+
+const ISM_RATE: f64 = 250_000.0;
+
+/// The test captures of `rtl_433`, all those at 250 kHz.
+const ISM_CAPTURES: &[&str] = &[
+    "ism/acurite_5n1_433m92_250k",
+    "ism/acurite_609txc_433m92_250k",
+    "ism/acurite_tower_433m92_250k",
+    "ism/ambient_f007th_433m92_250k",
+    "ism/ambient_wh31e_915m_250k",
+    "ism/bresser_5in1_868m3_250k",
+    "ism/ev1527_remote_433m92_250k",
+    "ism/fineoffset_wh1080_433m92_250k",
+    "ism/fineoffset_wh2_433m92_250k",
+    "ism/generic_remote_433m92_250k",
+    "ism/honeywell_345m_250k",
+    "ism/lacrosse_tx141_433m92_250k",
+    "ism/lacrosse_tx29_tx35_868m2_250k",
+    "ism/nexus_th_433m92_250k",
+    "ism/oregon_thgr122n_433m92_250k",
+    "ism/oregon_thn132n_433m92_250k",
+    "ism/oregon_wgr800_433m92_250k",
+    "ism/schrader_tpms_315m_250k",
+    "ism/thermopro_tp12_433m92_250k",
+];
 
 const fn fm(deviation_hz: f64, rate: u32, container: Container) -> Format {
     Format::Audio(Audio {
@@ -60,12 +121,21 @@ const fn fm(deviation_hz: f64, rate: u32, container: Container) -> Format {
     })
 }
 
+const fn usb(tone_hz: f64, rate: u32, container: Container) -> Format {
+    Format::Audio(Audio {
+        demod: Demod::Usb { tone_hz },
+        rate,
+        container,
+    })
+}
+
 pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "adsb",
         name: "ADS-B",
-        fixture: "adsb_offair_2m",
+        fixtures: &["adsb_offair_2m"],
         channel: "adsb",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 20.0,
         tail_seconds: 0.01,
@@ -77,7 +147,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: -5.0,
         },
-        key: adsb,
+        key: Key::One(adsb),
         references: &[
             Reference {
                 program: &DUMP1090,
@@ -116,8 +186,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "ais",
         name: "AIS",
-        fixture: "ais_position_240k",
+        fixtures: &["ais_position_240k"],
         channel: "ais",
+        settings: DEFAULTS,
         offset_hz: 25_000.0,
         speed_seconds: 30.0,
         tail_seconds: 0.1,
@@ -129,7 +200,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: -2.0,
             low_db: -12.0,
         },
-        key: ais,
+        key: Key::One(ais),
         references: &[Reference {
             program: &AIS_CATCHER,
             format: Format::Cf32,
@@ -142,8 +213,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "aprs",
         name: "APRS",
-        fixture: "aprs_afsk1200_240k",
+        fixtures: &["aprs_afsk1200_240k"],
         channel: "aprs",
+        settings: DEFAULTS,
         offset_hz: -40_000.0,
         speed_seconds: 300.0,
         tail_seconds: 0.2,
@@ -155,7 +227,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 5.0,
             low_db: -10.0,
         },
-        key: aprs,
+        key: Key::One(aprs),
         references: &[
             Reference {
                 program: &DIREWOLF,
@@ -178,8 +250,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "pocsag",
         name: "POCSAG",
-        fixture: "pocsag_1200_240k",
+        fixtures: &["pocsag_1200_240k"],
         channel: "pocsag",
+        settings: DEFAULTS,
         offset_hz: 50_000.0,
         speed_seconds: 300.0,
         tail_seconds: 0.5,
@@ -191,7 +264,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 5.0,
             low_db: -20.0,
         },
-        key: pocsag,
+        key: Key::One(pocsag),
         references: &[Reference {
             program: &MULTIMON,
             format: fm(4_500.0, 22_050, Container::Raw),
@@ -204,8 +277,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "flex",
         name: "FLEX",
-        fixture: "flex_p2000_offair_48k",
+        fixtures: &["flex_p2000_offair_48k"],
         channel: "flex",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 300.0,
         tail_seconds: 0.5,
@@ -217,7 +291,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 45.0,
             low_db: 20.0,
         },
-        key: flex,
+        key: Key::One(flex),
         references: &[Reference {
             program: &MULTIMON,
             format: fm(4_800.0, 22_050, Container::Raw),
@@ -230,8 +304,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "selcall",
         name: "Selcall",
-        fixture: "selcall_ccir1_48k",
+        fixtures: &["selcall_ccir1_48k"],
         channel: "selcall",
+        settings: DEFAULTS,
         offset_hz: 5_000.0,
         speed_seconds: 300.0,
         tail_seconds: 0.5,
@@ -243,7 +318,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 5.0,
             low_db: -10.0,
         },
-        key: selcall,
+        key: Key::One(selcall),
         references: &[Reference {
             program: &MULTIMON,
             format: fm(2_500.0, 22_050, Container::Raw),
@@ -256,11 +331,12 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "acars",
         name: "ACARS",
-        fixture: "acars_offair_48k",
+        fixtures: &["acars_offair_48k"],
         channel: "acars",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 300.0,
-        tail_seconds: 0.5,
+        tail_seconds: 3.0,
         cu8_rate: None,
         unique: true,
         decodes: Show::Plain,
@@ -269,7 +345,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 30.0,
             low_db: 5.0,
         },
-        key: acars,
+        key: Key::One(acars),
         references: &[Reference {
             program: &ACARSDEC,
             format: Format::Audio(Audio {
@@ -286,8 +362,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "ft8",
         name: "FT8",
-        fixture: "ft8_20m_busy_12k",
+        fixtures: &["ft8_20m_busy_12k"],
         channel: "ft8",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 0.0,
         tail_seconds: 4.0,
@@ -299,7 +376,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: -5.0,
         },
-        key: ft8,
+        key: Key::One(ft8),
         references: &[Reference {
             program: &FT8_LIB,
             format: Format::Audio(Audio {
@@ -316,8 +393,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "dmr",
         name: "DMR",
-        fixture: "dmr_call_48k",
+        fixtures: &["dmr_call_48k"],
         channel: "dmr",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -329,7 +407,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: 0.0,
         },
-        key: addresses,
+        key: Key::One(addresses),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(2_400.0, 48_000, Container::Wav),
@@ -342,8 +420,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "nxdn",
         name: "NXDN",
-        fixture: "nxdn_addressed_48k",
+        fixtures: &["nxdn_addressed_48k"],
         channel: "nxdn",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -355,7 +434,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 15.0,
             low_db: -10.0,
         },
-        key: addresses,
+        key: Key::One(addresses),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(2_400.0, 48_000, Container::Wav),
@@ -368,8 +447,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "ysf",
         name: "YSF",
-        fixture: "ysf_callsigns_48k",
+        fixtures: &["ysf_callsigns_48k"],
         channel: "ysf",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -381,7 +461,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 25.0,
             low_db: 0.0,
         },
-        key: callsign,
+        key: Key::One(callsign),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(2_400.0, 48_000, Container::Wav),
@@ -394,8 +474,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "p25",
         name: "P25",
-        fixture: "p25_calls_48k",
+        fixtures: &["p25_calls_48k"],
         channel: "p25",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -407,7 +488,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: 0.0,
         },
-        key: addresses,
+        key: Key::One(addresses),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(1_944.0, 48_000, Container::Wav),
@@ -420,8 +501,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "m17",
         name: "M17",
-        fixture: "m17_calls_48k",
+        fixtures: &["m17_calls_48k"],
         channel: "m17",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -433,7 +515,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: 0.0,
         },
-        key: callsign,
+        key: Key::One(callsign),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(2_400.0, 48_000, Container::Wav),
@@ -446,8 +528,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "dstar",
         name: "D-STAR",
-        fixture: "dstar_calls_48k",
+        fixtures: &["dstar_calls_48k"],
         channel: "dstar",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -459,7 +542,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: 0.0,
         },
-        key: header_callsign,
+        key: Key::One(header_callsign),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(1_200.0, 48_000, Container::Wav),
@@ -472,8 +555,9 @@ pub const SIGNALS: &[Signal] = &[
     Signal {
         id: "dpmr",
         name: "dPMR",
-        fixture: "dpmr_calls_48k",
+        fixtures: &["dpmr_calls_48k"],
         channel: "dpmr",
+        settings: DEFAULTS,
         offset_hz: 0.0,
         speed_seconds: 30.0,
         tail_seconds: 0.5,
@@ -485,7 +569,7 @@ pub const SIGNALS: &[Signal] = &[
             high_db: 20.0,
             low_db: 0.0,
         },
-        key: addresses,
+        key: Key::One(addresses),
         references: &[Reference {
             program: &DSD_FME,
             format: fm(1_050.0, 48_000, Container::Wav),
@@ -493,6 +577,170 @@ pub const SIGNALS: &[Signal] = &[
             exit_codes: &[0],
             tail: true,
             keys: parse::dsd_fme_dpmr,
+        }],
+    },
+    Signal {
+        id: "zvei",
+        name: "ZVEI",
+        fixtures: &["selcall_zvei1_48k"],
+        channel: "selcall",
+        settings: r#"{"system":"zvei1"}"#,
+        offset_hz: -5_000.0,
+        speed_seconds: 300.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: true,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 5.0,
+            low_db: -10.0,
+        },
+        key: Key::One(selcall),
+        references: &[Reference {
+            program: &MULTIMON,
+            format: fm(2_500.0, 22_050, Container::Raw),
+            args: &["-q", "-a", "ZVEI1", "-t", "raw", INPUT],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::multimon_zvei,
+        }],
+    },
+    Signal {
+        id: "uat",
+        name: "UAT",
+        fixtures: &["uat_reference_2m083"],
+        channel: "uat",
+        settings: DEFAULTS,
+        offset_hz: 0.0,
+        speed_seconds: 20.0,
+        tail_seconds: 0.01,
+        cu8_rate: Some(UAT_RATE),
+        unique: true,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 12.0,
+            low_db: 2.0,
+        },
+        key: Key::One(adsb),
+        references: &[Reference {
+            program: &DUMP978,
+            format: Format::Cu8 { rate: UAT_RATE },
+            args: &["--file", INPUT, "--format", "CU8", "--raw-stdout"],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::dump978,
+        }],
+    },
+    Signal {
+        id: "rtty",
+        name: "RTTY",
+        fixtures: &["rtty_45_170_48k"],
+        channel: "rtty",
+        settings: DEFAULTS,
+        offset_hz: 5_000.0,
+        speed_seconds: 300.0,
+        tail_seconds: 1.0,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: -10.0,
+            low_db: -30.0,
+        },
+        key: Key::Words(rtty),
+        references: &[Reference {
+            program: &MINIMODEM,
+            format: usb(RTTY_CENTRE_HZ, 48_000, Container::Wav),
+            args: &[
+                "--rx", "-q", "-M", "1585", "-S", "1415", "-f", INPUT, "rtty",
+            ],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::words,
+        }],
+    },
+    Signal {
+        id: "morse",
+        name: "Morse",
+        fixtures: &["morse_20wpm_48k"],
+        channel: "morse",
+        settings: DEFAULTS,
+        offset_hz: -5_000.0,
+        speed_seconds: 300.0,
+        tail_seconds: 4.0,
+        cu8_rate: None,
+        unique: false,
+        decodes: Show::Hidden,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: -6.0,
+            low_db: -21.0,
+        },
+        key: Key::Words(morse),
+        references: &[Reference {
+            program: &MULTIMON,
+            format: usb(800.0, 22_050, Container::Raw),
+            args: &["-q", "-a", "MORSE_CW", "-t", "raw", INPUT],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::words,
+        }],
+    },
+    Signal {
+        id: "rds",
+        name: "RDS",
+        fixtures: &["rds_station_960k"],
+        channel: "wfm",
+        settings: DEFAULTS,
+        offset_hz: 200_000.0,
+        speed_seconds: 60.0,
+        tail_seconds: 0.5,
+        cu8_rate: None,
+        unique: true,
+        decodes: Show::Hidden,
+        speed: Show::Noted("SDRmm also demodulates the FM and stereo audio."),
+        noise: Ladder {
+            high_db: 12.0,
+            low_db: 2.0,
+        },
+        key: Key::Many(rds),
+        references: &[Reference {
+            program: &REDSEA,
+            format: fm(75_000.0, 171_000, Container::Wav),
+            args: &["-f", INPUT],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::redsea,
+        }],
+    },
+    Signal {
+        id: "ism",
+        name: "ISM sensors",
+        fixtures: ISM_CAPTURES,
+        channel: "ism",
+        settings: r#"{"unknown":false}"#,
+        offset_hz: 0.0,
+        speed_seconds: 60.0,
+        tail_seconds: 0.1,
+        cu8_rate: Some(ISM_RATE),
+        unique: true,
+        decodes: Show::Plain,
+        speed: Show::Plain,
+        noise: Ladder {
+            high_db: 12.0,
+            low_db: -3.0,
+        },
+        key: Key::One(ism),
+        references: &[Reference {
+            program: &RTL_433,
+            format: Format::Cu8 { rate: ISM_RATE },
+            args: &["-s", "250k", "-F", "json", "-r", INPUT],
+            exit_codes: &[0],
+            tail: true,
+            keys: parse::rtl_433,
         }],
     },
 ];
@@ -540,6 +788,33 @@ fn ft8(event: &DecoderEvent) -> Option<String> {
     Some(event.payload::<sdrmm_channels::WsjtMessage>()?.text)
 }
 
+fn rtty(event: &DecoderEvent) -> Option<String> {
+    Some(event.read::<sdrmm_channels::RttyText>()?.text)
+}
+
+fn morse(event: &DecoderEvent) -> Option<String> {
+    Some(event.read::<sdrmm_channels::MorseText>()?.text)
+}
+
+fn ism(event: &DecoderEvent) -> Option<String> {
+    let message = event.read::<sdrmm_channels::IsmMessage>()?;
+    Some(format!("{} {}", message.model, message.id))
+}
+
+fn rds(event: &DecoderEvent) -> Vec<String> {
+    let Some(update) = event.read::<sdrmm_channels::RdsUpdate>() else {
+        return Vec::new();
+    };
+    [
+        update.pi.map(|pi| format!("PI {pi}")),
+        update.ps.map(|ps| format!("PS {}", ps.trim())),
+        update.radiotext.map(|text| format!("RT {}", text.trim())),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
 fn addresses(event: &DecoderEvent) -> Option<String> {
     let frame = event.read::<sdrmm_wire::DvFrame>()?;
     let (source, destination) = (frame.source?, frame.destination?);
@@ -557,6 +832,7 @@ fn callsign(event: &DecoderEvent) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ours::FrontEnd;
     use super::*;
 
     #[test]
@@ -565,6 +841,44 @@ mod tests {
         assert_eq!(SIGNALS[0].loops(30.0), 1);
         let ft8 = SIGNALS.iter().find(|s| s.id == "ft8").expect("ft8");
         assert_eq!(ft8.loops(15.0), 1);
+    }
+
+    #[test]
+    fn words_are_read_across_events() {
+        let events = [
+            DecoderEvent::of(&sdrmm_channels::MorseText {
+                text: "CQ D".to_owned(),
+                wpm: 20.0,
+            }),
+            DecoderEvent::of(&sdrmm_channels::MorseText {
+                text: "E DL1ABC".to_owned(),
+                wpm: 20.0,
+            }),
+        ];
+        let key = Key::Words(morse);
+        let mut keys = Vec::new();
+        for event in &events {
+            key.read(event, &mut keys);
+        }
+        assert_eq!(key.finish(keys), ["CQ", "DE", "DL1ABC"]);
+    }
+
+    #[test]
+    fn an_rds_update_gives_each_field_it_has() {
+        let update = sdrmm_channels::RdsUpdate {
+            pi: Some("D3C2".to_owned()),
+            ps: Some("SDR-M4  ".to_owned()),
+            ..Default::default()
+        };
+        assert_eq!(rds(&DecoderEvent::of(&update)), ["PI D3C2", "PS SDR-M4"]);
+    }
+
+    #[test]
+    fn every_signal_has_a_front_end() {
+        sdrmm_channels::builtin::install();
+        for signal in SIGNALS {
+            assert!(FrontEnd::new(signal).is_ok(), "{}", signal.id);
+        }
     }
 
     #[test]

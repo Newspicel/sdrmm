@@ -4,11 +4,11 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use num_complex::Complex;
 use rustfft::FftPlanner;
 use sdrmm_decoder::ChannelFilter;
-use sdrmm_dsp::{Ddc, FmDemod, FracResampler};
+use sdrmm_dsp::{Ddc, FmDemod, FracResampler, Nco};
 
 use super::{
     noise::{self, Run},
@@ -17,6 +17,8 @@ use super::{
 
 const BLOCK: usize = 65_536;
 const AUDIO_GAIN: f32 = 0.5;
+/// Between joined captures: the next one's own noise floor, so no decoder sees a level step.
+const JOIN_GAP_S: f64 = 0.25;
 
 #[derive(Clone)]
 pub struct Fixture {
@@ -41,7 +43,13 @@ pub struct Audio {
 
 #[derive(Clone, Copy)]
 pub enum Demod {
-    Fm { deviation_hz: f64 },
+    Fm {
+        deviation_hz: f64,
+    },
+    /// Upper sideband: the channel centre is heard as a tone at `tone_hz`.
+    Usb {
+        tone_hz: f64,
+    },
     Am,
     Real,
 }
@@ -53,38 +61,24 @@ pub enum Container {
 }
 
 impl Fixture {
-    pub fn load(root: &Path, stem: &str) -> Result<Self> {
-        let base = root.join("fixtures").join(stem);
-        let meta_path = base.with_extension("sigmf-meta");
-        let meta: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&meta_path).with_context(|| {
-                format!("read {}; run `cargo xtask fixtures`", meta_path.display())
-            })?)?;
-        let global = &meta["global"];
-        ensure!(
-            global["core:datatype"] == "cf32_le",
-            "{stem} is not cf32_le"
-        );
-        let rate = global["core:sample_rate"]
-            .as_f64()
-            .with_context(|| format!("{stem} has no sample rate"))?;
-        let data_path = base.with_extension("sigmf-data");
-        let bytes =
-            std::fs::read(&data_path).with_context(|| format!("read {}", data_path.display()))?;
-        let iq = bytes
-            .as_chunks::<8>()
-            .0
-            .iter()
-            .map(|s| {
-                Complex::new(
-                    f32::from_le_bytes([s[0], s[1], s[2], s[3]]),
-                    f32::from_le_bytes([s[4], s[5], s[6], s[7]]),
-                )
-            })
-            .collect();
+    pub fn load(root: &Path, stems: &[&str]) -> Result<Self> {
+        let mut iq = Vec::new();
+        let mut rate = None;
+        for (index, stem) in stems.iter().enumerate() {
+            let (samples, stem_rate) = capture(root, stem)?;
+            let rate = *rate.get_or_insert(stem_rate);
+            ensure!(
+                stem_rate == rate,
+                "{stem} is at {stem_rate} Hz, not {rate} Hz"
+            );
+            if index > 0 {
+                iq.extend(gap(&samples, rate, index));
+            }
+            iq.extend(samples);
+        }
         Ok(Self {
             iq,
-            rate,
+            rate: rate.context("a fixture without captures")?,
             zeros: vec![Complex::default(); BLOCK],
         })
     }
@@ -150,6 +144,52 @@ impl Fixture {
     fn mean_magnitude(&self) -> f32 {
         self.iq.iter().map(|s| s.norm()).sum::<f32>() / self.iq.len().max(1) as f32
     }
+}
+
+fn gap(next: &[Complex<f32>], rate: f64, index: usize) -> Vec<Complex<f32>> {
+    let silence = vec![Complex::default(); (JOIN_GAP_S * rate) as usize];
+    let run = Run {
+        snr_db: 0.0,
+        seed: u64::MAX - index as u64,
+    };
+    noise::add(&silence, noise::floor_power(next, rate), run)
+}
+
+fn capture(root: &Path, stem: &str) -> Result<(Vec<Complex<f32>>, f64)> {
+    let base = root.join("fixtures").join(stem);
+    let meta_path = base.with_extension("sigmf-meta");
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).with_context(|| {
+            format!("read {}; run `cargo xtask fixtures`", meta_path.display())
+        })?)?;
+    let global = &meta["global"];
+    let rate = global["core:sample_rate"]
+        .as_f64()
+        .with_context(|| format!("{stem} has no sample rate"))?;
+    let data_path = base.with_extension("sigmf-data");
+    let bytes =
+        std::fs::read(&data_path).with_context(|| format!("read {}", data_path.display()))?;
+    let iq = match global["core:datatype"].as_str() {
+        Some("cf32_le") => bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|s| {
+                Complex::new(
+                    f32::from_le_bytes([s[0], s[1], s[2], s[3]]),
+                    f32::from_le_bytes([s[4], s[5], s[6], s[7]]),
+                )
+            })
+            .collect(),
+        Some("cu8") => bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&[re, im]| Complex::new(dequantised(re), dequantised(im)))
+            .collect(),
+        other => bail!("{stem} holds {other:?}, not cf32_le or cu8"),
+    };
+    Ok((iq, rate))
 }
 
 impl Format {
@@ -251,6 +291,7 @@ struct AudioChain {
     filter: Option<ChannelFilter>,
     demod: Demod,
     fm: Option<FmDemod>,
+    bfo: Option<Nco>,
     carrier: f32,
     resampler: Option<FracResampler>,
     tuned: Vec<Complex<f32>>,
@@ -270,7 +311,11 @@ impl AudioChain {
         };
         let fm = match demod {
             Demod::Fm { deviation_hz } => Some(FmDemod::new(front.input_rate, deviation_hz)),
-            Demod::Am | Demod::Real => None,
+            Demod::Usb { .. } | Demod::Am | Demod::Real => None,
+        };
+        let bfo = match demod {
+            Demod::Usb { tone_hz } => Some(Nco::new(tone_hz as f32, front.input_rate as f32)),
+            Demod::Fm { .. } | Demod::Am | Demod::Real => None,
         };
         let ratio = f64::from(rate) / source_rate;
         Ok(Self {
@@ -278,6 +323,7 @@ impl AudioChain {
             filter: tuned.then(|| front.reference_filter()),
             demod,
             fm,
+            bfo,
             carrier: fixture.mean_magnitude().max(f32::MIN_POSITIVE),
             resampler: ((ratio - 1.0).abs() > 1e-9).then(|| FracResampler::new(ratio)),
             tuned: Vec::new(),
@@ -298,12 +344,17 @@ impl AudioChain {
             _ => block,
         };
         self.audio.clear();
-        match (self.demod, &mut self.fm) {
-            (Demod::Fm { .. }, Some(fm)) => {
+        match (self.demod, &mut self.fm, &mut self.bfo) {
+            (Demod::Fm { .. }, Some(fm), _) => {
                 fm.process(tuned, &mut self.audio);
                 self.audio.iter_mut().for_each(|a| *a *= AUDIO_GAIN);
             }
-            (Demod::Am, _) => self.audio.extend(
+            (Demod::Usb { .. }, _, Some(bfo)) => self.audio.extend(
+                tuned
+                    .iter()
+                    .map(|&s| (s * bfo.next_sample()).re * AUDIO_GAIN),
+            ),
+            (Demod::Am, _, _) => self.audio.extend(
                 tuned
                     .iter()
                     .map(|s| (s.norm() - self.carrier) / self.carrier * AUDIO_GAIN),
@@ -431,6 +482,47 @@ mod tests {
         assert!((up.rate - 2_400_000.0).abs() < 1e-9);
         let expected = Complex::from_polar(0.5, std::f32::consts::TAU * 50.0 * 600.0 / 1_200.0);
         assert!((up.iq[600] - expected).norm() < 0.02, "{}", up.iq[600]);
+    }
+
+    #[test]
+    fn upper_sideband_hears_the_channel_centre_as_a_tone() {
+        sdrmm_channels::builtin::install();
+        let dir = std::env::temp_dir().join(format!("sdrmm-usb-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let path = dir.join("usb.s16");
+        let morse = super::super::signals::SIGNALS
+            .iter()
+            .find(|s| s.id == "morse")
+            .expect("morse");
+        let front = FrontEnd::new(morse).expect("front end");
+        let rate = 48_000.0;
+        let carrier: Vec<_> = (0..48_000)
+            .map(|k| {
+                let turns = morse.offset_hz * f64::from(k) / rate;
+                Complex::from_polar(0.5, (std::f64::consts::TAU * turns) as f32)
+            })
+            .collect();
+        let format = Format::Audio(Audio {
+            demod: Demod::Usb { tone_hz: 800.0 },
+            rate: 8_000,
+            container: Container::Raw,
+        });
+        write(&fixture(carrier, rate), &front, format, 1, 0.0, &path).expect("write");
+        let bytes = std::fs::read(&path).expect("read");
+        let audio: Vec<i16> = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b))
+            .skip(2_000)
+            .collect();
+        let crossings = audio
+            .windows(2)
+            .filter(|w| (w[0] < 0) != (w[1] < 0))
+            .count();
+        let hz = crossings as f64 / 2.0 / (audio.len() as f64 / 8_000.0);
+        assert!((hz - 800.0).abs() < 5.0, "{hz} Hz");
+        std::fs::remove_dir_all(&dir).expect("clean");
     }
 
     #[test]

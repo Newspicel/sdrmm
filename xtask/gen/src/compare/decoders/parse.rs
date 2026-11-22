@@ -108,9 +108,77 @@ pub fn multimon_flex(text: &str) -> Vec<String> {
 }
 
 pub fn multimon_ccir(text: &str) -> Vec<String> {
+    multimon_selcall(text, "CCIR: ")
+}
+
+pub fn multimon_zvei(text: &str) -> Vec<String> {
+    multimon_selcall(text, "ZVEI1: ")
+}
+
+/// Selcall codes with multimon-ng's repeat tone, printed as `E`, read as the digit it repeats.
+fn multimon_selcall(text: &str, prefix: &str) -> Vec<String> {
     text.lines()
-        .filter_map(|line| line.strip_prefix("CCIR: "))
-        .map(|code| code.trim().to_owned())
+        .filter_map(|line| line.strip_prefix(prefix))
+        .map(|code| {
+            let mut previous = None;
+            code.trim()
+                .chars()
+                .map(|symbol| {
+                    let digit = match (symbol, previous) {
+                        ('E', Some(repeated)) => repeated,
+                        _ => symbol,
+                    };
+                    previous = Some(digit);
+                    digit
+                })
+                .collect()
+        })
+        .collect()
+}
+
+pub fn dump978(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix('-')?.split(';').next())
+        .filter(|hex| !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit()))
+        .map(str::to_ascii_uppercase)
+        .collect()
+}
+
+pub fn words(text: &str) -> Vec<String> {
+    text.lines()
+        .filter(|line| !line.starts_with("###"))
+        .flat_map(str::split_whitespace)
+        .map(str::to_owned)
+        .collect()
+}
+
+pub fn rtl_433(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|event| {
+            let model = event["model"].as_str()?;
+            let id = match &event["id"] {
+                serde_json::Value::String(id) => id.clone(),
+                serde_json::Value::Number(id) => id.to_string(),
+                _ => return None,
+            };
+            Some(format!("{model} {id}"))
+        })
+        .collect()
+}
+
+pub fn redsea(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .flat_map(|group| {
+            let field = |name: &str| group[name].as_str().map(str::trim).map(str::to_owned);
+            [
+                field("pi").map(|pi| format!("PI {}", pi.trim_start_matches("0x"))),
+                field("ps").map(|ps| format!("PS {ps}")),
+                field("radiotext").map(|text| format!("RT {text}")),
+            ]
+        })
+        .flatten()
         .collect()
 }
 
@@ -226,8 +294,49 @@ mod tests {
     }
 
     #[test]
-    fn multimon_ccir_keeps_the_code() {
-        assert_eq!(multimon_ccir("CCIR: 12E34\nZVEI1: A1ED0\n"), ["12E34"]);
+    fn multimon_selcall_reads_the_repeat_tone_as_its_digit() {
+        let out = "CCIR: 12E34\nZVEI1: A1ED0\nZVEI1: E1\n";
+        assert_eq!(multimon_ccir(out), ["12234"]);
+        assert_eq!(multimon_zvei(out), ["A11D0", "E1"]);
+    }
+
+    #[test]
+    fn dump978_keeps_downlink_frames() {
+        let out = "-00a66ef135445d52;rssi=0.1;t=0.002;\n+3514c952;rssi=0.1;t=0.009;\n\
+                   -0aaba4be38e5;rs=2;rssi=0.0;t=0.022;\nMessage source reports EOF\n";
+        assert_eq!(dump978(out), ["00A66EF135445D52", "0AABA4BE38E5"]);
+    }
+
+    #[test]
+    fn words_skip_status_lines() {
+        let out = "### CARRIER 45.45 @ 1590.0 Hz ###\nCQ CQ DE DL1ABC K\r\n\n\
+                   ### NOCARRIER ndata=21 ###\n";
+        assert_eq!(words(out), ["CQ", "CQ", "DE", "DL1ABC", "K"]);
+    }
+
+    #[test]
+    fn rtl_433_keys_model_and_id() {
+        let out = "{\"time\" : \"@0.01s\", \"model\" : \"Acurite-609TXC\", \"id\" : 162}\n\
+                   {\"model\" : \"Schrader\", \"type\" : \"TPMS\", \"id\" : \"03A38B2\"}\n\
+                   {\"model\" : \"FS20\", \"housecode\" : 286331153}\nbanner\n";
+        assert_eq!(rtl_433(out), ["Acurite-609TXC 162", "Schrader 03A38B2"]);
+    }
+
+    #[test]
+    fn redsea_groups_give_pi_ps_and_radiotext() {
+        let out = "{\"pi\":\"0xD3C2\",\"group\":\"0A\",\"ps\":\"SDR-M4  \"}\n\
+                   {\"pi\":\"0xD3C2\",\"group\":\"2A\",\"radiotext\":\"SDRmm reference fixture\"}\n\
+                   {\"pi\":\"0xD3C2\",\"group\":\"0A\",\"partial_ps\":\"SDR\"}\n";
+        assert_eq!(
+            redsea(out),
+            [
+                "PI D3C2",
+                "PS SDR-M4",
+                "PI D3C2",
+                "RT SDRmm reference fixture",
+                "PI D3C2"
+            ]
+        );
     }
 
     #[test]

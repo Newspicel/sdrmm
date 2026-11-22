@@ -1,9 +1,11 @@
 use num_complex::Complex32;
 use sdrmm_compare_dsp::{
-    CUTOFF, DDC_INPUT_RATE, DDC_OFFSET, DDC_OUTPUT_RATE, DECIMATION, FFT, RESAMPLE_RATIO, TAPS,
-    Timing, keep, ratio, run, signal, taps,
+    BIG_FFT, CHANNELS, CUTOFF, DDC_INPUT_RATE, DDC_OFFSET, DDC_OUTPUT_RATE, DECIMATION, FFT,
+    HUGE_FFT, LONG_TAPS, RESAMPLE_RATIO, TAPS, Timing, keep, ratio, run, signal, taps,
 };
-use sdrmm_dsp::{Ddc, Decimator, FmDemod, FracResampler, Nco, math::fft::FftPair};
+use sdrmm_dsp::{
+    Channelizer, Ddc, Decimator, FastFir, FmDemod, FracResampler, Nco, math::fft::FftPair,
+};
 
 fn filters(timing: &Timing, input: &[Complex32]) {
     let taps = taps(TAPS, CUTOFF);
@@ -11,6 +13,11 @@ fn filters(timing: &Timing, input: &[Complex32]) {
     let mut fir = Decimator::new(&taps, 1);
     run("fir", timing.block, timing, || {
         fir.process(input, &mut out);
+        keep(&out);
+    });
+    let mut long = FastFir::real(&sdrmm_compare_dsp::taps(LONG_TAPS, CUTOFF));
+    run("fir-long", timing.block, timing, || {
+        long.process(input, &mut out);
         keep(&out);
     });
     let mut decimator = Decimator::new(&taps, DECIMATION);
@@ -47,17 +54,39 @@ fn tuning(timing: &Timing, input: &[Complex32]) -> Result<(), String> {
         ddc.process(input, &mut out);
         out.len()
     });
+    channelize(timing, input)
+}
+
+fn channelize(timing: &Timing, input: &[Complex32]) -> Result<(), String> {
+    let half = CHANNELS as i32 / 2;
+    let bins: Vec<i32> = (-half..half).collect();
+    let cutoff = 0.5 / CHANNELS as f64;
+    let mut bank =
+        Channelizer::new(CHANNELS, CHANNELS, cutoff, &bins).map_err(|err| err.to_string())?;
+    let mut lanes = vec![Vec::new(); CHANNELS];
+    let usable = &input[..input.len() - input.len() % CHANNELS];
+    run("channelize", usable.len(), timing, || {
+        bank.process(usable, &mut lanes);
+        keep(&lanes);
+    });
     Ok(())
 }
 
-fn spectra(timing: &Timing, input: &[Complex32]) {
-    let mut fft = FftPair::new(FFT);
-    let mut work = vec![Complex32::default(); FFT];
-    run("fft", FFT, timing, || {
-        work.copy_from_slice(&input[..FFT]);
+fn transform(id: &str, size: usize, timing: &Timing) {
+    let input = signal(size, 0xFF7);
+    let mut fft = FftPair::new(size);
+    let mut work = vec![Complex32::default(); size];
+    run(id, size, timing, || {
+        work.copy_from_slice(&input);
         fft.forward(&mut work);
         keep(&work);
     });
+}
+
+fn spectra(timing: &Timing, input: &[Complex32]) {
+    transform("fft", FFT, timing);
+    transform("fft-64k", BIG_FFT, timing);
+    transform("fft-1m", HUGE_FFT, timing);
     let mut fm = FmDemod::new(240e3, 75e3);
     let mut audio = Vec::new();
     run("fm", timing.block, timing, || {

@@ -5,8 +5,8 @@ use futuredsp::{
 };
 use num_complex::Complex32;
 use sdrmm_compare_dsp::{
-    CUTOFF, DDC_INPUT_RATE, DDC_OFFSET, DDC_OUTPUT_RATE, DECIMATION, TAPS, Timing, keep, ratio,
-    run, signal, taps,
+    CUTOFF, DDC_INPUT_RATE, DDC_OFFSET, DDC_OUTPUT_RATE, DECIMATION, LONG_TAPS, TAPS, Timing, keep,
+    ratio, run, signal, taps,
 };
 
 const RESAMPLE_INTERP: usize = 160;
@@ -42,19 +42,25 @@ impl<F: Filter<Complex32, Complex32, f32>> Carry<F> {
     }
 }
 
-fn padded(input: &[Complex32]) -> Vec<Complex32> {
-    let mut padded = vec![Complex32::default(); TAPS - 1];
+fn padded(input: &[Complex32], taps: usize) -> Vec<Complex32> {
+    let mut padded = vec![Complex32::default(); taps - 1];
     padded.extend_from_slice(input);
     padded
 }
 
 fn filters(timing: &Timing, input: &[Complex32]) {
     let taps = taps(TAPS, CUTOFF);
-    let padded = padded(input);
+    let padded = padded(input, TAPS);
     let mut out = vec![Complex32::default(); input.len()];
     let fir = FirFilter::<Complex32, Complex32, _>::new(taps.clone());
     run("fir", timing.block, timing, || {
         fir.filter(&padded, &mut out);
+        keep(&out);
+    });
+    let long_padded = self::padded(input, LONG_TAPS);
+    let long = FirFilter::<Complex32, Complex32, _>::new(self::taps(LONG_TAPS, CUTOFF));
+    run("fir-long", timing.block, timing, || {
+        long.filter(&long_padded, &mut out);
         keep(&out);
     });
     let decimator = DecimatingFirFilter::<Complex32, Complex32, _>::new(DECIMATION, taps);
