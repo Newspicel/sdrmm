@@ -13,6 +13,7 @@ import {
   secretSet,
   serviceOptions,
   withField,
+  withoutHidden,
 } from "../lib/accounts";
 import {
   ACCOUNTS_KEY,
@@ -207,6 +208,27 @@ function SignIn({ id }: { id: string }) {
   );
 }
 
+function webAddress(uri: string): boolean {
+  return URL.canParse(uri) && ["http:", "https:"].includes(new URL(uri).protocol);
+}
+
+function VerificationLink({ uri }: { uri: string }) {
+  if (!webAddress(uri)) {
+    return <span>{uri}</span>;
+  }
+  return (
+    <a
+      href={uri}
+      target="_blank"
+      rel="noreferrer"
+      className="text-accent underline"
+      title="Open, then enter the code"
+    >
+      {uri}
+    </a>
+  );
+}
+
 export function SignInView({
   state,
   busy,
@@ -219,15 +241,7 @@ export function SignInView({
   if (state.state === "pending") {
     return (
       <span className="flex flex-wrap items-center gap-2 text-xs text-ink">
-        <a
-          href={state.verification_uri}
-          target="_blank"
-          rel="noreferrer"
-          className="text-accent underline"
-          title="Open, then enter the code"
-        >
-          {state.verification_uri}
-        </a>
+        <VerificationLink uri={state.verification_uri} />
         <code className="font-mono" title="Code to enter">
           {state.user_code}
         </code>
@@ -279,7 +293,7 @@ function AccountForm({ draft, busy, on }: { draft: Account; busy: boolean; on: A
           type="button"
           className={BTN_PRIMARY}
           disabled={busy || draft.name.trim() === ""}
-          onClick={() => on.save(draft)}
+          onClick={() => on.save(withoutHidden(draft))}
         >
           Save
         </Button>

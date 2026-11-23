@@ -13,6 +13,7 @@ import {
   secretSet,
   serviceOptions,
   withField,
+  withoutHidden,
 } from "./accounts";
 import type { Account } from "./types";
 
@@ -128,6 +129,19 @@ describe("accounts", () => {
       "recovery_key",
     ]);
     expect(shown("oauth")).toEqual(["homeserver_url", "login", "user", "nickname", "recovery_key"]);
+  });
+
+  it("shows the token field of a matrix account without a stored login", () => {
+    const token = ACCOUNT_SPECS.matrix.fields.find((field) => field.key === "access_token");
+    expect(token && fieldShown(MATRIX, token)).toBe(true);
+  });
+
+  it("drops the values of hidden fields", () => {
+    const switched = { ...MATRIX, login: "oauth", password: "p" } as Account;
+    const saved = withoutHidden(switched) as Record<string, unknown>;
+    expect("access_token" in saved).toBe(false);
+    expect("password" in saved).toBe(false);
+    expect(saved.homeserver_url).toBe("https://matrix.example");
   });
 
   it("lists the sign in of a device login", () => {

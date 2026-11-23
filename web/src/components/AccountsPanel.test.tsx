@@ -65,6 +65,23 @@ describe("SignInView", () => {
     expect(html).not.toContain("Sign in<");
   });
 
+  it("links only http and https addresses", () => {
+    const html = renderToStaticMarkup(
+      <SignInView
+        state={{
+          state: "pending",
+          verification_uri: "javascript:alert(1)",
+          user_code: "X",
+          expires_in_s: 1,
+        }}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+    expect(html).not.toContain("href");
+    expect(html).toContain("javascript:alert(1)");
+  });
+
   it("offers Sign in while idle and shows a failure", () => {
     const idle = renderToStaticMarkup(
       <SignInView state={{ state: "idle" }} busy={false} onStart={vi.fn()} />,

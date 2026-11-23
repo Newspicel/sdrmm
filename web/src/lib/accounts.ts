@@ -239,11 +239,31 @@ export function newAccount(service: AccountKind): Account {
   return fields as Account;
 }
 
+function controlValue(account: Account, key: string): unknown {
+  const value = fieldOf(account, key);
+  if (value !== undefined) {
+    return value;
+  }
+  return ACCOUNT_SPECS[account.service].fields.find((field) => field.key === key)?.initial;
+}
+
+/** The account with every field its form hides left out, so a switched login keeps no stale secret. */
+export function withoutHidden(account: Account): Account {
+  const hidden = ACCOUNT_SPECS[account.service].fields.filter(
+    (field) => !fieldShown(account, field),
+  );
+  const kept = { ...account } as Record<string, unknown>;
+  for (const field of hidden) {
+    delete kept[field.key];
+  }
+  return kept as Account;
+}
+
 export function fieldShown(account: Account, field: AccountField): boolean {
   if (field.when === undefined) {
     return true;
   }
-  const value = fieldOf(account, field.when.key);
+  const value = controlValue(account, field.when.key);
   const wanted = field.when.is;
   return (
     typeof value === "string" &&
@@ -253,7 +273,7 @@ export function fieldShown(account: Account, field: AccountField): boolean {
 
 /** True for a Matrix account that signs in through the homeserver's OAuth page. */
 export function needsOAuth(account: Account): boolean {
-  return account.service === "matrix" && account.login === "oauth";
+  return account.service === "matrix" && (account.login ?? "token") === "oauth";
 }
 
 function signInText(account: Account): string[] {
