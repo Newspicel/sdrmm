@@ -123,7 +123,7 @@ async fn joins_a_call_and_plays_a_tone() {
     let seconds = std::env::var("SDRMM_MATRIX_SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(10);
+        .unwrap_or(20);
     let session = Session::open(Service::Matrix(account(&store)));
     keep_saved(session.saved().unwrap(), store.join("session.json"));
     let mut link = session.join(&env("SDRMM_MATRIX_ROOM")).unwrap();

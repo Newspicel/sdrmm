@@ -20,7 +20,7 @@ use crate::matrix::e2ee::keys::{EncryptionKeys, Outgoing as Key};
 use crate::matrix::livekit::peer::OpusOut;
 use crate::matrix::membership::{Focus, Member, StateEntry, active_focus, identities};
 use crate::opus::Framer;
-use crate::{FRAME, Heard, RATE_HZ};
+use crate::{FRAME, Heard, LinkState, RATE_HZ};
 
 /// How often the delayed leave restarts, as js-sdk `MembershipManager` does.
 const RESTART_EVERY: Duration = Duration::from_secs(5);
@@ -197,6 +197,8 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
                 }
             }
             (_, Ok(WireEvent::Left(identity))) => call.media.forget(&identity),
+            (None, Ok(WireEvent::Up)) => inbox.set(LinkState::Joined),
+            (Some(_), Ok(WireEvent::Up)) => {}
         }
         None
     }

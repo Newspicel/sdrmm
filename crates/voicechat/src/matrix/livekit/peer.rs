@@ -13,6 +13,7 @@ use str0m::net::{Protocol, Receive, TcpType};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcError};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, error::TrySendError};
+use tokio::sync::watch;
 use tokio::time::sleep_until;
 
 use super::signal::MIC_CID;
@@ -66,6 +67,8 @@ pub(crate) struct Peer {
     dropped: u64,
     /// Since when ICE has not been connected; None while it is.
     down_since: Option<Instant>,
+    /// True once ICE and DTLS are through and media can flow.
+    up: watch::Sender<bool>,
 }
 
 enum Turn {
@@ -216,6 +219,7 @@ impl Peer {
             buf: vec![0; DATAGRAM],
             dropped: 0,
             down_since: Some(Instant::now()),
+            up: watch::Sender::new(false),
         })
     }
 
@@ -301,6 +305,11 @@ impl Peer {
         self.local.clone()
     }
 
+    /// Turns true once media can flow.
+    pub(crate) fn up(&self) -> watch::Receiver<bool> {
+        self.up.subscribe()
+    }
+
     /// Heard frames thrown away because the reader fell behind.
     pub(crate) fn dropped(&self) -> u64 {
         self.dropped
@@ -379,6 +388,9 @@ impl Peer {
                 None
             }
             other => {
+                if matches!(other, Event::Connected) {
+                    self.up.send_replace(true);
+                }
                 report(&other);
                 None
             }

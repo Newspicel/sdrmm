@@ -240,7 +240,15 @@ impl Far {
     }
 }
 
+/// A wire whose mic peer is already up.
 fn wire() -> (FakeWire, Far) {
+    let (fake, far) = wire_down();
+    far.hear.send(WireEvent::Up).unwrap();
+    (fake, far)
+}
+
+/// A wire whose mic peer never comes up.
+fn wire_down() -> (FakeWire, Far) {
     let (hear, heard) = mpsc::unbounded_channel();
     let (said_tx, said) = mpsc::unbounded_channel();
     let left = Arc::new(AtomicBool::new(false));
@@ -646,6 +654,15 @@ async fn the_delayed_leave_restarts_every_five_seconds() {
     .await;
     assert!(begun.elapsed() >= Duration::from_secs(10));
     assert_eq!((call.server.delays(), call.server.joins()), (1, 1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_wire_that_never_comes_up_stays_connecting() {
+    let (fake, _far) = wire_down();
+    let (link, server, _sync, _task) = start_with(Server::default(), Ok(fake));
+    wait_until(|| server.joins() == 1).await;
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert_eq!(*link.state.borrow(), LinkState::Connecting);
 }
 
 #[tokio::test(start_paused = true)]

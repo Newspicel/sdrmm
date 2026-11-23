@@ -13,7 +13,7 @@ use livekit_protocol::{
 use str0m::Candidate;
 use str0m::change::{SdpAnswer, SdpOffer};
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use url::Url;
 
@@ -117,6 +117,8 @@ struct Connection {
     heard_tx: mpsc::Sender<OpusIn>,
     dropped: Arc<AtomicU64>,
     lost_here: u64,
+    /// Our mic peer's state until it is up, then None.
+    mic_up: Option<watch::Receiver<bool>>,
 }
 
 /// The call's handle on a running connection.
@@ -165,6 +167,16 @@ impl Wire for LiveKitWire {
     }
 }
 
+/// Resolves once the watched peer is up; pends without one.
+async fn went_up(up: Option<&mut watch::Receiver<bool>>) {
+    let Some(up) = up else {
+        return std::future::pending().await;
+    };
+    if up.wait_for(|up| *up).await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
 async fn drive(
     peer: Option<&mut Peer>,
     out: &mut mpsc::Receiver<OpusOut>,
@@ -210,6 +222,7 @@ impl Connection {
             heard_tx,
             dropped: Arc::new(AtomicU64::new(0)),
             lost_here: 0,
+            mic_up: None,
         };
         if let Role::Talk { encrypted } = role {
             connection.publish_mic(encrypted).await?;
@@ -227,6 +240,7 @@ impl Connection {
             .send(signal_request::Message::Offer(offer))
             .await?;
         self.trickle(&peer, SignalTarget::Publisher).await?;
+        self.mic_up = Some(peer.up());
         self.publisher = Some(peer);
         Ok(())
     }
@@ -295,6 +309,12 @@ impl Connection {
                 }
                 ran = drive(self.publisher.as_mut(), &mut self.mic, &self.heard_tx) => ran?,
                 ran = drive(self.subscriber.as_mut(), &mut self.quiet, &self.heard_tx) => ran?,
+                () = went_up(self.mic_up.as_mut()) => {
+                    self.mic_up = None;
+                    if events.try_send(Ok(WireEvent::Up)).is_err() {
+                        tracing::warn!("LiveKit up notice dropped");
+                    }
+                }
                 _ = &mut *left => return Ok(()),
             }
             self.count_drops();

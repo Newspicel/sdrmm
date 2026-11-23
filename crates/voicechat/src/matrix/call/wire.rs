@@ -13,6 +13,8 @@ pub(crate) enum WireEvent {
     Heard { identity: String, payload: Vec<u8> },
     /// A `LiveKit` identity left the room.
     Left(String),
+    /// Our mic's peer connection is up: ICE and DTLS done, so media flows.
+    Up,
 }
 
 /// Whether a connection publishes our mic or only listens.

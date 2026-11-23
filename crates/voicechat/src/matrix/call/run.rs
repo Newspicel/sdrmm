@@ -166,7 +166,7 @@ async fn attempt<H: Homeserver, D: Dial>(
     let stop = match opened {
         Ok((mut live, call)) => {
             ends.outbox.clear();
-            ends.inbox.set(LinkState::Joined);
+            ends.inbox.set(LinkState::Connecting);
             backoff.reset();
             let stop = live.run(call, &mut presence, events, ends).await;
             live.leave().await;
