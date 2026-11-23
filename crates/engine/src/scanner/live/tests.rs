@@ -158,3 +158,30 @@ fn a_plan_fits_only_with_every_band_inside_the_window() {
     assert!(!fits(&[99.6e6, 100.49e6], &snap, 25_000.0));
     assert!(!fits(&[], &snap, 25_000.0));
 }
+
+#[test]
+fn a_jump_holds_through_other_calls_and_priority_until_it_lingers_out() {
+    let mut b = board(Pick::Listed, &[118.3e6]);
+    let t = Instant::now();
+    assert_eq!(b.nearest(118.09e6), 1);
+    b.pin(1);
+    assert_eq!(
+        b.frame(&[LOUD, QUIET, QUIET, LOUD], &OPEN, t),
+        Move::Stay,
+        "neither a call nor a priority channel takes a jump"
+    );
+    assert_eq!(b.parked(), 1);
+    assert_eq!(
+        b.frame(&[LOUD, QUIET, QUIET, LOUD], &OPEN, at(t, 9_900)),
+        Move::Stay
+    );
+    assert_eq!(
+        b.frame(&[LOUD, QUIET, QUIET, LOUD], &OPEN, at(t, 10_000)),
+        Move::Release
+    );
+    assert_eq!(
+        b.frame(&[LOUD, QUIET, QUIET, LOUD], &OPEN, at(t, 10_100)),
+        Move::Hold(3),
+        "once let go, the scan picks again"
+    );
+}

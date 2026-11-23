@@ -1157,6 +1157,10 @@ mod contract_tests {
             serde_json::to_value(scan::ScanAction::Skip).unwrap(),
             "skip"
         );
+        assert_eq!(
+            serde_json::to_value(scan::ScanAction::Jump { hz: 118.1e6 }).unwrap(),
+            serde_json::json!({"jump": {"hz": 118.1e6}})
+        );
     }
 
     #[test]

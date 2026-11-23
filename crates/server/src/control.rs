@@ -319,7 +319,7 @@ pub(crate) const fn runs(job: &SweepJob) -> Option<bool> {
             ..
         } => Some(false),
         SweepJob::Scan {
-            action: ScanAction::Skip,
+            action: ScanAction::Skip | ScanAction::Jump { .. },
             ..
         }
         | SweepJob::Hunt {
@@ -463,6 +463,7 @@ fn scan(
         ScanAction::Start => engine.start_scan(at.device_set, settings),
         ScanAction::Stop => engine.stop_scan(at.device_set, at.channel),
         ScanAction::Skip => engine.skip_scan(at.device_set, at.channel),
+        ScanAction::Jump { hz } => engine.jump_scan(at.device_set, at.channel, hz),
     }
 }
 

@@ -7,8 +7,8 @@ use sdrmm_wire::{HeardSignal, ScanMode, ScanState};
 use tokio::sync::broadcast::{Receiver, error::TryRecvError};
 
 use super::{
-    Call, Halt, POLL, RETUNE_SETTLE, SPECTRUM_TIMEOUT, Scan, drain, local_peaks, lock_status,
-    measure_mean,
+    Call, Halt, JUMP_LINGER, POLL, RETUNE_SETTLE, SPECTRUM_TIMEOUT, Scan, drain, local_peaks,
+    lock_status, measure_mean,
 };
 use crate::{ChannelInfo, DeviceSetState, Engine, hunt::unix_ms, runtime::SpectrumSnapshot};
 
@@ -41,6 +41,8 @@ pub(super) struct Board {
     was_busy: Vec<bool>,
     fresh: Vec<usize>,
     held: Option<usize>,
+    /// The hold is the operator's jump, not a call.
+    pinned: bool,
     parked: usize,
     quiet_since: Option<Instant>,
 }
@@ -67,6 +69,7 @@ impl Board {
             was_busy: vec![false; n],
             fresh: Vec::new(),
             held: None,
+            pinned: false,
             quiet_since: None,
         }
     }
@@ -82,7 +85,25 @@ impl Board {
 
     pub(super) fn drop_hold(&mut self) {
         self.held = None;
+        self.pinned = false;
         self.quiet_since = None;
+    }
+
+    /// The target nearest `hz`.
+    pub(super) fn nearest(&self, hz: f64) -> usize {
+        (0..self.targets.len())
+            .min_by(|&a, &b| {
+                (self.targets[a] - hz)
+                    .abs()
+                    .total_cmp(&(self.targets[b] - hz).abs())
+            })
+            .unwrap_or(0)
+    }
+
+    /// Holds target `i` for the operator until it has been quiet for the jump linger.
+    pub(super) fn pin(&mut self, i: usize) {
+        self.take(i);
+        self.pinned = true;
     }
 
     pub(super) fn frame(&mut self, snrs: &[f32], locked: &[bool], now: Instant) -> Move {
@@ -101,6 +122,9 @@ impl Board {
         let held_on = self
             .held
             .is_some_and(|i| snrs[i] >= self.margin_db && !locked[i]);
+        if self.pinned {
+            return self.linger(held_on, now);
+        }
         if let Some(p) = self.busy_priority()
             && self.held != Some(p)
             && self.held.is_none_or(|h| !held_on || !self.priority[h])
@@ -126,8 +150,22 @@ impl Board {
         Move::Stay
     }
 
+    fn linger(&mut self, held_on: bool, now: Instant) -> Move {
+        if held_on {
+            self.quiet_since = None;
+            return Move::Stay;
+        }
+        let quiet = now.duration_since(*self.quiet_since.get_or_insert(now));
+        if quiet >= self.resume.max(JUMP_LINGER) {
+            self.drop_hold();
+            return Move::Release;
+        }
+        Move::Stay
+    }
+
     fn take(&mut self, i: usize) -> Move {
         self.held = Some(i);
+        self.pinned = false;
         self.parked = i;
         self.quiet_since = None;
         Move::Hold(i)
@@ -300,6 +338,11 @@ impl Scan {
                 board.drop_hold();
                 lock_status(&self.status).state = ScanState::Scanning;
             }
+            if let Some(hz) = self.take_jump() {
+                let i = board.nearest(hz);
+                board.pin(i);
+                self.hold_live(engine, rx, self.plan.targets[i])?;
+            }
             let step = board.frame(&snrs, &locked, Instant::now());
             self.note_fresh(board.fresh(), &snrs);
             self.live_step(engine, rx, step, &snrs)?;
@@ -348,12 +391,25 @@ impl Scan {
                     hz,
                     snr_db: snrs[i],
                 });
-                lock_status(&self.status).state = ScanState::Holding;
-                self.steer(engine, rx, hz)?;
-                self.push_update(engine, true);
-                Ok(())
+                self.hold_live(engine, rx, hz)
             }
         }
+    }
+
+    fn hold_live(
+        &mut self,
+        engine: &Arc<Engine>,
+        rx: &mut Receiver<SpectrumSnapshot>,
+        hz: f64,
+    ) -> Result<(), Halt> {
+        {
+            let mut status = lock_status(&self.status);
+            status.state = ScanState::Holding;
+            status.current_hz = hz;
+        }
+        self.steer(engine, rx, hz)?;
+        self.push_update(engine, true);
+        Ok(())
     }
 
     fn next_frame(&self, rx: &mut Receiver<SpectrumSnapshot>) -> Result<SpectrumSnapshot, Halt> {

@@ -23,7 +23,7 @@ NFM --events--> Decoder log
 
 - **Find:** **Listed** (stop on first busy frequency until 1.5 s quiet), **Strongest**, or **All** (visit every busy frequency once for **Hold**, useful with DAB + Decoder log grouped by Frequency).
 - **Busy:** ≥ **Over noise** (default 12 dB) over channel bandwidth. **Band** uses channelized regional rasters (DAB, PMR446, etc.).
-- **Live:** when every target fits the radio's window, the scan stops stepping. It reads all of them on every frame, moves only the decoder, and jumps straight to a busy channel once the held one goes quiet (Sweep reads "none, all in view"). On Auto the radio frames the whole plan. **Heard** lists the last busy frequencies.
+- **Live:** when every target fits the radio's window, the scan stops stepping. It reads all of them on every frame, moves only the decoder, and jumps straight to a busy channel once the held one goes quiet (Sweep reads "none, all in view"). On Auto the radio frames the whole plan. **Heard** lists the last busy frequencies; click one to hold it until it has been quiet 10 s.
 - **Skip** adds to **Lockouts**; **Priority** polls every 2 s. Radios supporting **Firmware sweep** pause other channels while sweeping (refused during IQ record/pre-roll/export).
 
 ## Identify a signal

@@ -386,6 +386,76 @@ async fn a_plan_inside_the_window_is_watched_live_without_moving_the_radio() {
 }
 
 #[tokio::test]
+async fn a_jump_moves_the_decoder_off_a_live_call_and_holds_there() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
+    let quiet = SIGNAL_HZ + 50_000.0;
+    engine
+        .start_scan(
+            ds,
+            sdrmm_wire::ScanSettings {
+                frequencies: vec![SIGNAL_HZ - 50_000.0, SIGNAL_HZ, quiet],
+                ..sdrmm_wire::ScanSettings::for_channel(ch)
+            },
+        )
+        .unwrap();
+    scanner_once(&engine, |s| s.state == ScanState::Holding && s.live).await;
+
+    assert!(engine.jump_scan(ds, ch, SIGNAL_HZ + 10_000_000.0).is_err());
+    engine.jump_scan(ds, ch, quiet).unwrap();
+    let jumped = scanner_once(&engine, |s| s.current_hz == quiet).await;
+    let frames = jumped.sweeps;
+    let later = scanner_once(&engine, |s| s.sweeps >= frames + 5).await;
+    assert_eq!(
+        later.current_hz, quiet,
+        "the jump outlasts the resume delay"
+    );
+    assert_eq!(later.state, ScanState::Holding);
+    assert_eq!(later.hits, 1, "a jump is not a call");
+    engine.stop_scan(ds, ch).unwrap();
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
+async fn a_jump_while_stepping_parks_the_decoder_where_asked() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
+    let quiet = SIGNAL_HZ - 50_000.0;
+    engine
+        .start_scan(
+            ds,
+            sdrmm_wire::ScanSettings {
+                frequencies: vec![quiet, SIGNAL_HZ, SIGNAL_HZ + BEYOND_ONE_WINDOW_HZ],
+                resume_ms: 200,
+                ..sdrmm_wire::ScanSettings::for_channel(ch)
+            },
+        )
+        .unwrap();
+    scanner_once(&engine, |s| s.state == ScanState::Holding).await;
+
+    engine.jump_scan(ds, ch, quiet).unwrap();
+    let jumped = scanner_once(&engine, |s| {
+        s.current_hz == quiet && s.state == ScanState::Holding
+    })
+    .await;
+    assert!(!jumped.live);
+    let frames = jumped.sweeps;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let later = engine.snapshot().device_sets[0].scanners.clone();
+    let later = later.first().unwrap();
+    assert_eq!(later.current_hz, quiet, "held past the resume delay");
+    assert_eq!(later.sweeps, frames);
+    engine.stop_scan(ds, ch).unwrap();
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn an_all_scan_visits_each_busy_frequency_once_and_finishes() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));

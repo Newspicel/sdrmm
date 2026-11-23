@@ -4,7 +4,7 @@ use sdrmm_wire::{
     ChannelSettings, ScanSettings, ScannerStatus, ServerEvent, StateScope, WatchedLane,
 };
 
-use super::{ScanPlan, spawn};
+use super::{ScanPlan, ScannerState, spawn};
 use crate::{DeviceSetState, DeviceSetStatus, Engine, EngineError};
 
 fn admits_a_scan(state: &DeviceSetState, ds: u32, channel: u32) -> Result<(), EngineError> {
@@ -119,6 +119,24 @@ pub(crate) fn stop(engine: &Engine, ds: u32, channel: u32) -> Result<ScannerStat
 }
 
 pub(crate) fn skip(engine: &Engine, ds: u32, channel: u32) -> Result<ScannerStatus, EngineError> {
+    with_worker(engine, ds, channel, ScannerState::skip)
+}
+
+pub(crate) fn jump(
+    engine: &Engine,
+    ds: u32,
+    channel: u32,
+    hz: f64,
+) -> Result<ScannerStatus, EngineError> {
+    with_worker(engine, ds, channel, |worker| worker.jump(hz))
+}
+
+fn with_worker(
+    engine: &Engine,
+    ds: u32,
+    channel: u32,
+    act: impl FnOnce(&ScannerState) -> Result<ScannerStatus, EngineError>,
+) -> Result<ScannerStatus, EngineError> {
     let inner = engine.lock();
     let state = inner
         .device_sets
@@ -128,5 +146,5 @@ pub(crate) fn skip(engine: &Engine, ds: u32, channel: u32) -> Result<ScannerStat
         .scanners
         .get(&channel)
         .ok_or_else(|| EngineError::Scan(format!("decoder {channel} is not scanning")))?;
-    worker.skip()
+    act(worker)
 }

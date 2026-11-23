@@ -222,13 +222,17 @@ impl ScannerStatus {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScanAction {
     Start,
     Stop,
     /// Leaves the frequency the scan is holding on and locks it out.
     Skip,
+    /// Holds `hz`, a frequency inside the scan, until it has been quiet a while.
+    Jump {
+        hz: f64,
+    },
 }
 
 #[cfg(test)]

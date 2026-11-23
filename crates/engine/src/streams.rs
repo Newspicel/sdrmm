@@ -362,6 +362,10 @@ impl Engine {
         scanner::session::skip(self, ds, channel)
     }
 
+    pub fn jump_scan(&self, ds: u32, channel: u32, hz: f64) -> Result<ScannerStatus, EngineError> {
+        scanner::session::jump(self, ds, channel, hz)
+    }
+
     pub fn start_hunt(
         self: &Arc<Self>,
         ds: u32,

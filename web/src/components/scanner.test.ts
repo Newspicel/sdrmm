@@ -15,11 +15,11 @@ import {
   channelName,
   formatDb,
   formatMhz,
-  heardList,
   liveStatus,
   presetIn,
   rangeNeed,
   rangeProblem,
+  recentHeard,
   scanPresets,
   stateLabel,
   sweepKind,
@@ -324,12 +324,12 @@ function heardAt(hz: number[]): ScannerStatus {
   return { heard: hz.map((at, i) => ({ hz: at, snr_db: 20, at_ms: i })) } as never;
 }
 
-describe("heardList", () => {
-  it("shows the newest few and a dash before anything is heard", () => {
-    expect(heardList(heardAt([]))).toBe("-");
-    expect(heardList(heardAt([118_100_000, 118_700_000, 119_450_000, 121_500_000]))).toBe(
-      [118_100_000, 118_700_000, 119_450_000].map(formatMhz).join(" "),
-    );
+describe("recentHeard", () => {
+  it("keeps the newest few", () => {
+    expect(recentHeard(heardAt([]))).toEqual([]);
+    expect(recentHeard(heardAt([118_100_000, 118_700_000, 119_450_000, 121_500_000]))).toEqual([
+      118_100_000, 118_700_000, 119_450_000,
+    ]);
   });
 });
 

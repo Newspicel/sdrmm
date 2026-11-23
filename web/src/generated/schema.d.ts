@@ -6559,8 +6559,13 @@ export interface components {
             device_id: string;
             label: string;
         };
-        /** @enum {string} */
-        ScanAction: "start" | "stop" | "skip";
+        ScanAction: "start" | "stop" | "skip" | {
+            /** @description Holds `hz`, a frequency inside the scan, until it has been quiet a while. */
+            jump: {
+                /** Format: double */
+                hz: number;
+            };
+        };
         ScanList: {
             channels?: string[];
             /** Format: int32 */

@@ -173,9 +173,8 @@ export function formatMhz(hz: number | null | undefined): string {
   return hz == null || !Number.isFinite(hz) ? "-" : fixedWidthMhz(hz);
 }
 
-export function heardList(status: ScannerStatus, count = 3): string {
-  const heard = (status.heard ?? []).slice(0, count);
-  return heard.length === 0 ? "-" : heard.map((signal) => formatMhz(signal.hz)).join(" ");
+export function recentHeard(status: ScannerStatus, count = 3): number[] {
+  return (status.heard ?? []).slice(0, count).map((signal) => signal.hz);
 }
 
 export function formatDb(db: number | null | undefined): string {
