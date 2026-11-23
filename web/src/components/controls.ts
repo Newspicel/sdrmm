@@ -20,6 +20,11 @@ export const FACE_BTN_DANGER =
   `${INTERACTIVE} h-6 border border-line ${RAISED} px-2 text-xs font-medium ` +
   "hover:border-danger hover:bg-danger/10 hover:text-danger";
 
+/** A face's footer button that starts or resumes: the same at rest, green on hover. */
+export const FACE_BTN_GO =
+  `${INTERACTIVE} h-6 border border-line ${RAISED} px-2 text-xs font-medium ` +
+  "hover:border-ok hover:bg-ok/10 hover:text-ok";
+
 /** A face's footer danger button armed to confirm: red until clicked again or left. */
 export const FACE_BTN_DANGER_ARMED =
   `${INTERACTIVE} h-6 border border-danger bg-danger/10 px-2 text-xs font-medium text-danger ` +

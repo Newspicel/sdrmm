@@ -589,6 +589,18 @@ describe("stopping a radio", () => {
     expect(html).toContain("virtual · band");
     expect(html).not.toContain("Open radio");
   });
+
+  it("keeps Start where Stop was and Forget radio last", () => {
+    const running = renderFace(DeviceFace, node, { graph, devices: new Map([["dev", open]]) });
+    const stopped = { ...node, data: { ...node.data, stopped: true } };
+    const closed = renderFace(DeviceFace, stopped, {
+      graph: { nodes: [stopped], edges: [] },
+      devices: new Map(),
+    });
+    expect(running.indexOf(">Stop<")).toBeLessThan(running.indexOf(">Forget radio<"));
+    expect(closed.indexOf(">Start<")).toBeLessThan(closed.indexOf(">Forget radio<"));
+    expect(closed.indexOf(">Start<")).toBeGreaterThan(-1);
+  });
 });
 
 describe("capturesOn", () => {
