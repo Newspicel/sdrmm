@@ -15,6 +15,7 @@ use prost::Message as _;
 use serde::Deserialize;
 use serde_json::json;
 use str0m::Candidate;
+use str0m::media::Mid;
 use tokio::net::TcpStream;
 use tokio::time::{Instant, sleep_until, timeout};
 use tokio_tungstenite::tungstenite::{self, Message as Frame};
@@ -31,7 +32,6 @@ const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(15);
 /// Our mic track id, both in `AddTrackRequest.cid` and the publisher's msid.
 pub(crate) const MIC_CID: &str = "mic";
 const MIC_NAME: &str = "microphone";
-const MEDIA_SECTION: &str = "0";
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -265,11 +265,12 @@ pub(crate) fn leave() -> LeaveRequest {
     }
 }
 
-/// Wraps a local ICE candidate for the server.
-pub(crate) fn trickle_for(candidate: &Candidate, target: SignalTarget) -> TrickleRequest {
+/// Wraps a local ICE candidate for the server. `mid` is the first media section of our
+/// description, the one index 0 names and every bundled section shares.
+pub(crate) fn trickle_for(candidate: &Candidate, mid: Mid, target: SignalTarget) -> TrickleRequest {
     let init = json!({
         "candidate": candidate.to_sdp_string(),
-        "sdpMid": MEDIA_SECTION,
+        "sdpMid": mid.to_string(),
         "sdpMLineIndex": 0,
     });
     TrickleRequest {

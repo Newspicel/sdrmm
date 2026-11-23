@@ -41,6 +41,7 @@ pub(crate) struct Peer {
     local: Vec<Candidate>,
     mic: Option<Mid>,
     pending: Option<SdpPendingOffer>,
+    bundle: Option<Mid>,
     buf: Vec<u8>,
     dropped: u64,
 }
@@ -93,6 +94,13 @@ fn route_to(sfu: SocketAddr) -> Result<IpAddr, String> {
     Ok(local)
 }
 
+/// The first `a=mid` of a description: the bundle tag.
+fn first_mid(sdp: &str) -> Option<Mid> {
+    sdp.lines()
+        .find_map(|line| line.strip_prefix("a=mid:"))
+        .map(|mid| Mid::from(mid.trim()))
+}
+
 /// `LiveKit` packs `participant|track` into the msid stream id; Firefox keeps the track sid
 /// there, other offers carry it as the msid track id. Matches `extractTrackSid` in client-sdk-js.
 fn track_sid<'a>(stream_id: &'a str, track_id: &'a str) -> Option<&'a str> {
@@ -121,6 +129,7 @@ impl Peer {
             local: vec![local],
             mic: None,
             pending: None,
+            bundle: None,
             buf: vec![0; DATAGRAM],
             dropped: 0,
         })
@@ -151,6 +160,7 @@ impl Peer {
         let (offer, pending) = api.apply().ok_or_else(|| "Call failed".to_owned())?;
         peer.mic = Some(mic);
         peer.pending = Some(pending);
+        peer.bundle = first_mid(&offer.to_sdp_string());
         Ok((peer, offer))
     }
 
@@ -166,10 +176,18 @@ impl Peer {
 
     /// Answers an offer, also each renegotiation as the SFU adds tracks.
     pub(crate) fn accept_offer(&mut self, offer: SdpOffer) -> Result<SdpAnswer, String> {
-        self.rtc
+        let answer = self
+            .rtc
             .sdp_api()
             .accept_offer(offer)
-            .map_err(|error| failed(&error))
+            .map_err(|error| failed(&error))?;
+        self.bundle = first_mid(&answer.to_sdp_string()).or(self.bundle);
+        Ok(answer)
+    }
+
+    /// The mid our trickled candidates name; `None` until the first offer or answer.
+    pub(crate) fn bundle(&self) -> Option<Mid> {
+        self.bundle
     }
 
     pub(crate) fn accept_answer(&mut self, answer: SdpAnswer) -> Result<(), String> {

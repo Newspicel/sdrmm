@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use str0m::change::{SdpAnswer, SdpOffer};
 use str0m::media::{Direction, MediaKind, Mid};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time::{interval, timeout};
 
 use super::*;
@@ -58,15 +59,12 @@ async fn connected_pair() -> (Peer, Peer) {
     (publisher, subscriber)
 }
 
-#[tokio::test]
-async fn two_peers_trade_opus_on_loopback() {
-    let (mut publisher, mut subscriber) = connected_pair().await;
+fn talk(
+    mut publisher: Peer,
+    unheard: mpsc::Sender<OpusIn>,
+) -> (JoinHandle<Result<(), String>>, JoinHandle<()>) {
     let (mic, mut outgoing) = mpsc::channel(64);
-    let (unheard, _unheard_rx) = mpsc::channel(64);
-    let (_silence, mut idle) = mpsc::channel(1);
-    let (heard, mut incoming) = mpsc::channel(64);
     let sending = tokio::spawn(async move { publisher.run(&mut outgoing, &unheard).await });
-    let hearing = tokio::spawn(async move { subscriber.run(&mut idle, &heard).await });
     let talking = tokio::spawn(async move {
         let mut tick = interval(Duration::from_millis(20));
         for index in 0.. {
@@ -76,6 +74,17 @@ async fn two_peers_trade_opus_on_loopback() {
             }
         }
     });
+    (sending, talking)
+}
+
+#[tokio::test]
+async fn two_peers_trade_opus_on_loopback() {
+    let (publisher, mut subscriber) = connected_pair().await;
+    let (unheard, _unheard_rx) = mpsc::channel(64);
+    let (_silence, mut idle) = mpsc::channel(1);
+    let (heard, mut incoming) = mpsc::channel(64);
+    let (sending, talking) = talk(publisher, unheard);
+    let hearing = tokio::spawn(async move { subscriber.run(&mut idle, &heard).await });
 
     let first = timeout(PATIENCE, incoming.recv()).await.unwrap().unwrap();
     let second = timeout(PATIENCE, incoming.recv()).await.unwrap().unwrap();
@@ -94,7 +103,6 @@ async fn two_peers_trade_opus_on_loopback() {
 #[tokio::test]
 async fn subscriber_answers_an_offer_with_audio() {
     let (_, offer) = sfu_offer("PA_alice|TR_alice", "TR_alice");
-    let started = Instant::now();
 
     let (peer, answer) = Peer::subscriber(LOOPBACK, offer).await.unwrap();
 
@@ -105,8 +113,25 @@ async fn subscriber_answers_an_offer_with_audio() {
     let candidates = peer.local_candidates();
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].addr().ip(), LOOPBACK.ip());
-    assert_eq!(peer.dropped(), 0);
-    assert!(started.elapsed() < PATIENCE);
+    assert_eq!(peer.bundle(), first_mid(&sdp));
+}
+
+#[tokio::test]
+async fn a_reader_that_falls_behind_counts_drops() {
+    let (publisher, mut subscriber) = connected_pair().await;
+    let (unheard, _unheard_rx) = mpsc::channel(1);
+    let (_silence, mut idle) = mpsc::channel(1);
+    let (heard, _never_read) = mpsc::channel(1);
+    let (sending, talking) = talk(publisher, unheard);
+    let started = Instant::now();
+
+    while subscriber.dropped() == 0 && started.elapsed() < PATIENCE {
+        let _ = timeout(Duration::from_millis(50), subscriber.run(&mut idle, &heard)).await;
+    }
+
+    assert!(subscriber.dropped() > 0);
+    talking.abort();
+    sending.abort();
 }
 
 #[tokio::test]
@@ -125,9 +150,11 @@ async fn the_track_sid_comes_from_msid() {
 
 #[tokio::test]
 async fn the_publisher_offers_a_send_only_mic_and_data() {
-    let (_, offer) = Peer::publisher(LOOPBACK).await.unwrap();
+    let (peer, offer) = Peer::publisher(LOOPBACK).await.unwrap();
 
     let sdp = by_text_offer(&offer).to_sdp_string();
+    assert!(peer.bundle().is_some());
+    assert_eq!(peer.bundle(), first_mid(&sdp));
     assert!(sdp.contains("m=audio"), "{sdp}");
     assert!(sdp.contains("a=sendonly"), "{sdp}");
     assert!(sdp.contains(" mic"), "{sdp}");

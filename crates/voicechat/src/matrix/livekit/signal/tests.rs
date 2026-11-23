@@ -3,6 +3,7 @@ use livekit_protocol::{
     JoinResponse, ParticipantInfo, ParticipantUpdate, SignalRequest, SignalResponse, TrackInfo,
     participant_info::State,
 };
+use str0m::media::Mid;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message as Frame;
@@ -270,10 +271,11 @@ fn leaving_is_client_initiated_without_reconnect() {
 #[test]
 fn trickle_carries_a_candidate_both_ways() {
     let candidate = Candidate::from_sdp_string(CHROME_CANDIDATE).expect("candidate");
-    let request = trickle_for(&candidate, SignalTarget::Publisher);
+    let request = trickle_for(&candidate, Mid::from("x7q"), SignalTarget::Publisher);
     assert_eq!(request.target, SignalTarget::Publisher as i32);
     assert!(!request.r#final);
     let json: serde_json::Value = serde_json::from_str(&request.candidate_init).expect("json");
+    assert_eq!(json["sdpMid"], "x7q");
     assert_eq!(json["sdpMLineIndex"], 0);
     assert!(
         json["candidate"]
