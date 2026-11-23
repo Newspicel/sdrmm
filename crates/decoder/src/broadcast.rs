@@ -114,6 +114,9 @@ pub const CODE_RATE_READOUT: &str = "code_rate";
 /// The readout counting frames that failed their check.
 pub const BAD_FRAMES_READOUT: &str = "bad_frames";
 
+/// The readout naming why no audio plays, shown while none has.
+pub const AUDIO_READOUT: &str = "audio";
+
 /// The readout naming the service played, which the service picker's `Auto` shows.
 pub const SERVICE_READOUT: &str = "service";
 
@@ -198,6 +201,7 @@ impl EventPayload for BroadcastStatus {
                     text(self.code_rate.as_deref()),
                 ),
                 ("now", "Now", text(self.dynamic_label.as_deref())),
+                (AUDIO_READOUT, "Audio", text(self.audio_error.as_deref())),
                 ("frames", "Frames", count(Some(f64::from(self.frames_ok)))),
                 (
                     BAD_FRAMES_READOUT,
@@ -223,14 +227,16 @@ pub fn broadcast_kind() -> KindSpec {
 
 /// A broadcast decoder's status as both its `broadcast` event and its node face: the readouts,
 /// and the services it found offered for the `service_key` setting. The face keeps how the
-/// stream decodes ([`FACE_FIELDS`], bad frames once there are any); what it decoded, such as
-/// the ensemble or the text now playing, travels on the event alone.
+/// stream decodes ([`FACE_FIELDS`], bad frames once there are any, why no audio plays while
+/// none has); what it decoded, such as the ensemble or the text now playing, travels on the
+/// event alone.
 pub fn publish_status(out: &mut ChannelOutputs, status: &BroadcastStatus, service_key: &str) {
     out.events.push(DecoderEvent::of(status));
     let mut readouts = status.present(&BroadcastStatus::KIND).fields;
     readouts.retain(|field| {
         FACE_FIELDS.contains(&field.key.as_str())
             || (field.key == BAD_FRAMES_READOUT && status.frames_bad > 0)
+            || (field.key == AUDIO_READOUT && status.audio_frames_ok == 0)
     });
     out.status = Some(ChannelStatus {
         health: health(status),

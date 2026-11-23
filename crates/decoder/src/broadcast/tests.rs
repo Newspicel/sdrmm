@@ -140,6 +140,39 @@ fn a_face_shows_how_the_stream_decodes_not_what_it_decoded() {
 }
 
 #[test]
+fn a_face_names_why_no_audio_plays() {
+    let silent = BroadcastStatus {
+        system: "dab_plus".to_owned(),
+        audio_error: Some("Decoder unavailable: FDK AAC".to_owned()),
+        ..BroadcastStatus::default()
+    };
+    let mut out = ChannelOutputs::default();
+
+    publish_status(&mut out, &silent, "service_id");
+    let face = out.status.take().expect("a channel status");
+    let audio = face
+        .readouts
+        .iter()
+        .find(|field| field.key == AUDIO_READOUT)
+        .expect("an audio readout");
+    assert_eq!(
+        audio.value,
+        FieldValue::Text("Decoder unavailable: FDK AAC".to_owned())
+    );
+
+    publish_status(
+        &mut out,
+        &BroadcastStatus {
+            audio_frames_ok: 1,
+            ..silent
+        },
+        "service_id",
+    );
+    let face = out.status.expect("a channel status");
+    assert!(!readout_keys(&face).contains(&AUDIO_READOUT));
+}
+
+#[test]
 fn no_services_found_offers_no_auto_either() {
     let mut out = ChannelOutputs::default();
     publish_status(&mut out, &BroadcastStatus::default(), "service_id");
