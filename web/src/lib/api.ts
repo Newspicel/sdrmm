@@ -48,6 +48,8 @@ import type {
   IonosondeReport,
   LicenseTextResponse,
   LogGroupKey,
+  MatrixSignInPrompt,
+  MatrixSignInState,
   Me,
   NanoVnaAntenna,
   NanoVnaAntennaRequest,
@@ -368,6 +370,26 @@ export async function updateAccount(account: Account): Promise<Account> {
 
 export async function deleteAccount(id: string): Promise<void> {
   unwrap(await client.DELETE("/api/accounts/{id}", { params: { path: { id } } }));
+}
+
+export const SIGN_IN_POLL_MS = 2_000;
+
+export function signInKey(id: string) {
+  return ["get", "/api/accounts/{id}/sign-in", id] as const;
+}
+
+export function signInQuery(id: string, enabled: boolean) {
+  return queryOptions({
+    queryKey: signInKey(id),
+    queryFn: async (): Promise<MatrixSignInState> =>
+      unwrap(await client.GET("/api/accounts/{id}/sign-in", { params: { path: { id } } })),
+    enabled,
+    refetchInterval: (query) => (query.state.data?.state === "pending" ? SIGN_IN_POLL_MS : false),
+  });
+}
+
+export async function startSignIn(id: string): Promise<MatrixSignInPrompt> {
+  return unwrap(await client.POST("/api/accounts/{id}/sign-in", { params: { path: { id } } }));
 }
 
 export function denoiseModelsQuery(enabled: boolean) {

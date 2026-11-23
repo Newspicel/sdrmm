@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Account } from "../lib/types";
-import { type AccountActions, AccountsView } from "./AccountsPanel";
+import { type AccountActions, AccountsView, SignInView } from "./AccountsPanel";
 
 const DISCORD: Account = {
   id: "a1",
@@ -45,6 +45,38 @@ function view(accounts: Account[] | undefined, draft: Account | null = null): st
     <AccountsView accounts={accounts} failed={false} draft={draft} busy={false} on={actions()} />,
   );
 }
+
+describe("SignInView", () => {
+  it("oauth sign in shows the code", () => {
+    const html = renderToStaticMarkup(
+      <SignInView
+        state={{
+          state: "pending",
+          verification_uri: "https://hs.example/device",
+          user_code: "ABCD-1234",
+          expires_in_s: 300,
+        }}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+    expect(html).toContain("ABCD-1234");
+    expect(html).toContain('href="https://hs.example/device"');
+    expect(html).not.toContain("Sign in<");
+  });
+
+  it("offers Sign in while idle and shows a failure", () => {
+    const idle = renderToStaticMarkup(
+      <SignInView state={{ state: "idle" }} busy={false} onStart={vi.fn()} />,
+    );
+    expect(idle).toContain("Sign in");
+    const failed = renderToStaticMarkup(
+      <SignInView state={{ state: "failed", error: "denied" }} busy={false} onStart={vi.fn()} />,
+    );
+    expect(failed).toContain("denied");
+    expect(failed).toContain("Sign in");
+  });
+});
 
 describe("AccountsView", () => {
   it("lists saved accounts of every service without their secrets", () => {

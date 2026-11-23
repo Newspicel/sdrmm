@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ACCOUNT_SPECS,
   type AccountField,
   type AccountKind,
   describeAccount,
   fieldOf,
+  fieldShown,
+  needsOAuth,
   newAccount,
   secretSet,
   serviceOptions,
@@ -17,15 +19,18 @@ import {
   accountsQuery,
   createAccount,
   deleteAccount,
+  signInKey,
+  signInQuery,
+  startSignIn,
   updateAccount,
 } from "../lib/api";
 import { ACCOUNT_LIMITS } from "../lib/limits";
 import { pushToast } from "../lib/toasts";
-import type { Account, Secret } from "../lib/types";
+import type { Account, MatrixSignInState, Secret } from "../lib/types";
 import { Button } from "./BaseControls";
 import { ConfirmButton } from "./ConfirmButton";
 import { BTN, BTN_PRIMARY, type Options } from "./controls";
-import { ChipRows, Chips } from "./face/Chips";
+import { ChipRows, Chips, ChoiceChip } from "./face/Chips";
 import { TextChip } from "./face/TextChip";
 import { List, ListRow, Panel, PanelHint, PanelToolbar, RowAction } from "./ListPanel";
 import { Select } from "./Select";
@@ -171,8 +176,81 @@ function AccountRow({
         </>
       }
     >
+      {needsOAuth(account) && account.id !== "" && <SignIn id={account.id} />}
       {draft !== null && <AccountForm draft={draft} busy={busy} on={on} />}
     </ListRow>
+  );
+}
+
+function SignIn({ id }: { id: string }) {
+  const queryClient = useQueryClient();
+  const state = useQuery(signInQuery(id, true));
+  const start = useMutation({
+    mutationFn: () => startSignIn(id),
+    onError: (error) => pushToast(error.message),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: signInKey(id) }),
+  });
+  const pending = state.data?.state === "pending";
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending) {
+      void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+    }
+    wasPending.current = pending;
+  }, [pending, queryClient]);
+  return (
+    <SignInView
+      state={state.data ?? { state: "idle" }}
+      busy={start.isPending}
+      onStart={() => start.mutate()}
+    />
+  );
+}
+
+export function SignInView({
+  state,
+  busy,
+  onStart,
+}: {
+  state: MatrixSignInState;
+  busy: boolean;
+  onStart: () => void;
+}) {
+  if (state.state === "pending") {
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-xs text-ink">
+        <a
+          href={state.verification_uri}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent underline"
+          title="Open, then enter the code"
+        >
+          {state.verification_uri}
+        </a>
+        <code className="font-mono" title="Code to enter">
+          {state.user_code}
+        </code>
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2">
+      <Button
+        type="button"
+        className={BTN}
+        disabled={busy}
+        title="Sign in through the homeserver's OAuth page"
+        onClick={onStart}
+      >
+        Sign in
+      </Button>
+      {state.state === "failed" && (
+        <span role="alert" className="text-xs text-danger">
+          {state.error}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -189,9 +267,11 @@ function AccountForm({ draft, busy, on }: { draft: Account; busy: boolean; on: A
             maxLength={ACCOUNT_LIMITS.name_len}
             onCommit={(name) => on.draft({ ...draft, name })}
           />
-          {ACCOUNT_SPECS[draft.service].fields.map((field) => (
-            <FieldChip key={field.key} draft={draft} field={field} onDraft={on.draft} />
-          ))}
+          {ACCOUNT_SPECS[draft.service].fields
+            .filter((field) => fieldShown(draft, field))
+            .map((field) => (
+              <FieldChip key={field.key} draft={draft} field={field} onDraft={on.draft} />
+            ))}
         </Chips>
       </ChipRows>
       <span className="flex gap-2">
@@ -222,6 +302,17 @@ function FieldChip({
 }) {
   const value = fieldOf(draft, field.key);
   const set = (next: unknown): void => onDraft(withField(draft, field.key, next));
+  if (field.choices !== undefined) {
+    return (
+      <ChoiceChip
+        label={field.label}
+        title={field.title}
+        value={typeof value === "string" ? value : (field.initial ?? "")}
+        options={field.choices}
+        onChange={set}
+      />
+    );
+  }
   if (field.secret === true) {
     return (
       <SecretField

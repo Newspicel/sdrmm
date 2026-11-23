@@ -7,6 +7,7 @@ import {
   accountsOf,
   CHAT_KINDS,
   describeAccount,
+  fieldShown,
   NO_ACCOUNT,
   newAccount,
   secretSet,
@@ -38,6 +39,12 @@ const MATRIX: Account = {
 };
 const ACCOUNTS: Account[] = [DISCORD, TEAMSPEAK, MATRIX];
 
+function shown = (login: string): string[] {
+  return   ACCOUNT_SPECS.matrix.fields
+    .filter((field) => fieldShown({ ...MATRIX, login } as Account, field))
+    .map((field) => field.key);
+}
+
 describe("accounts", () => {
   it("shows an id this server does not know as no account", () => {
     expect(accountOf(ACCOUNTS, "a2")?.name).toBe("Net");
@@ -58,8 +65,12 @@ describe("accounts", () => {
   });
 
   it("offers a voice chat only chat accounts", () => {
-    expect(accountsOf(ACCOUNTS, CHAT_KINDS).map((account) => account.id)).toEqual(["a1", "a2"]);
-    expect(accountsOf(ACCOUNTS, ["matrix"]).map((account) => account.id)).toEqual(["a3"]);
+    expect(accountsOf(ACCOUNTS, CHAT_KINDS).map((account) => account.id)).toEqual([
+      "a1",
+      "a2",
+      "a3",
+    ]);
+    expect(accountsOf(ACCOUNTS, ["webhook"])).toEqual([]);
   });
 
   it("starts each service with its plain settings empty and no credential", () => {
@@ -95,7 +106,36 @@ describe("accounts", () => {
 
   it("lists every service once, chats first", () => {
     expect(serviceOptions().map((option) => option.value)).toEqual(ACCOUNT_KINDS);
-    expect(ACCOUNT_KINDS.slice(0, 2)).toEqual(CHAT_KINDS);
+    expect(ACCOUNT_KINDS.slice(0, CHAT_KINDS.length)).toEqual(CHAT_KINDS);
+  });
+
+  it("chat kinds include matrix", () => {
+    expect(CHAT_KINDS).toContain("matrix");
+  });
+
+  it("new matrix account uses a token login", () => {
+    expect(newAccount("matrix")).toMatchObject({ service: "matrix", login: "token" });
+  });
+
+  it("matrix fields follow the login", () => {
+    expect(shown("token")).toEqual(["homeserver_url", "login", "access_token", "nickname"]);
+    expect(shown("password")).toEqual([
+      "homeserver_url",
+      "login",
+      "user",
+      "password",
+      "nickname",
+      "recovery_key",
+    ]);
+    expect(shown("oauth")).toEqual(["homeserver_url", "login", "user", "nickname", "recovery_key"]);
+  });
+
+  it("lists the sign in of a device login", () => {
+    const base = { ...MATRIX, login: "oauth" } as Account;
+    expect(describeAccount(base)).toBe("Matrix · https://matrix.example · not signed in");
+    expect(describeAccount({ ...base, session: { secret: "x" } } as Account)).toBe(
+      "Matrix · https://matrix.example · signed in",
+    );
   });
 
   it("counts a credential kept by id or typed in place as set", () => {

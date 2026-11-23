@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { PatchNode } from "../../lib/types";
+import type { Account, PatchNode } from "../../lib/types";
 import {
   allowedEntries,
   allowedOf,
+  channelTitle,
   KEYLESS_SEND_MODES,
   withGate,
   withVoiceChat,
@@ -22,6 +23,13 @@ const chat = {
     to_chat: { ...GATE, mode: "continuous" },
   },
 } as PatchNode;
+
+describe("channelTitle", () => {
+  it("channel title names rooms for matrix", () => {
+    const account = { id: "m", name: "M", service: "matrix", homeserver_url: "h" } as Account;
+    expect(channelTitle(account)).toBe("Room id or alias");
+  });
+});
 
 describe("withGate", () => {
   it("changes one field of one direction and keeps every other field", () => {

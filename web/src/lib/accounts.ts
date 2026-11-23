@@ -16,6 +16,12 @@ export interface AccountField {
   maxLength?: number;
   /** Shown beside the service in the account list. */
   listed?: boolean;
+  /** A closed set of values, picked from a dropdown. */
+  choices?: Options<string>;
+  /** The value a new account starts with. */
+  initial?: string;
+  /** Shown only while the field `key` holds one of these values. */
+  when?: { key: string; is: string | readonly string[] };
 }
 
 export interface AccountSpec {
@@ -88,7 +94,52 @@ export const ACCOUNT_SPECS: Readonly<Record<AccountKind, AccountSpec>> = {
         maxLength: URL_LEN,
         listed: true,
       },
-      { key: "access_token", label: "Token", title: "Matrix access token", secret: true },
+      {
+        key: "login",
+        label: "Login",
+        title: "A token only sends events. Voice needs a password or OAuth sign-in",
+        choices: [
+          { value: "token", label: "Token" },
+          { value: "password", label: "Password" },
+          { value: "oauth", label: "OAuth" },
+        ],
+        initial: "token",
+      },
+      {
+        key: "user",
+        label: "User",
+        title: "Matrix user id, e.g. @radio:example.org",
+        maxLength: ACCOUNT_LIMITS.name_len,
+        when: { key: "login", is: ["password", "oauth"] },
+      },
+      {
+        key: "access_token",
+        label: "Token",
+        title: "Matrix access token",
+        secret: true,
+        when: { key: "login", is: "token" },
+      },
+      {
+        key: "password",
+        label: "Password",
+        title: "Matrix account password",
+        secret: true,
+        when: { key: "login", is: "password" },
+      },
+      {
+        key: "nickname",
+        label: "Nickname",
+        title: "Name shown in the room. Empty keeps the account's name",
+        maxLength: ACCOUNT_LIMITS.name_len,
+      },
+      {
+        key: "recovery_key",
+        label: "Recovery key",
+        title: "Unlocks room keys saved on the homeserver, so earlier messages decrypt",
+        secret: true,
+        optional: true,
+        when: { key: "login", is: ["password", "oauth"] },
+      },
     ],
   },
   mqtt: {
@@ -147,15 +198,15 @@ export const ACCOUNT_SPECS: Readonly<Record<AccountKind, AccountSpec>> = {
 export const ACCOUNT_KINDS: readonly AccountKind[] = [
   "discord",
   "teamspeak",
-  "webhook",
   "matrix",
+  "webhook",
   "mqtt",
   "postgres",
   "influx",
 ];
 
 /** The services a voice chat joins through. */
-export const CHAT_KINDS: readonly AccountKind[] = ["discord", "teamspeak"];
+export const CHAT_KINDS: readonly AccountKind[] = ["discord", "teamspeak", "matrix"];
 
 export const NO_ACCOUNT = "";
 
@@ -182,10 +233,34 @@ export function newAccount(service: AccountKind): Account {
   const fields: Record<string, unknown> = { id: "", name: "", service };
   for (const field of ACCOUNT_SPECS[service].fields) {
     if (field.secret !== true) {
-      fields[field.key] = "";
+      fields[field.key] = field.initial ?? "";
     }
   }
   return fields as Account;
+}
+
+export function fieldShown(account: Account, field: AccountField): boolean {
+  if (field.when === undefined) {
+    return true;
+  }
+  const value = fieldOf(account, field.when.key);
+  const wanted = field.when.is;
+  return (
+    typeof value === "string" &&
+    (typeof wanted === "string" ? value === wanted : wanted.includes(value))
+  );
+}
+
+/** True for a Matrix account that signs in through the homeserver's OAuth page. */
+export function needsOAuth(account: Account): boolean {
+  return account.service === "matrix" && account.login === "oauth";
+}
+
+function signInText(account: Account): string[] {
+  if (account.service !== "matrix" || (account.login ?? "token") === "token") {
+    return [];
+  }
+  return [secretSet(account.session) ? "signed in" : "not signed in"];
 }
 
 /** The service, then the address the account reaches. */
@@ -195,7 +270,7 @@ export function describeAccount(account: Account): string {
     .filter((field) => field.listed === true)
     .map((field) => fieldOf(account, field.key))
     .filter((value): value is string => typeof value === "string" && value !== "");
-  return [spec.label, ...listed].join(" · ");
+  return [spec.label, ...listed, ...signInText(account)].join(" · ");
 }
 
 export function secretSet(secret: Secret | undefined): boolean {

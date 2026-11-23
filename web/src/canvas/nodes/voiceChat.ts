@@ -56,6 +56,9 @@ export function channelTitle(account: Account | undefined): string {
   if (account?.service === "teamspeak") {
     return "TeamSpeak channel name or path, empty for the default channel";
   }
+  if (account?.service === "matrix") {
+    return "Room id or alias";
+  }
   return account?.service === "discord" ? "Discord voice channel id" : "Voice channel";
 }
 
