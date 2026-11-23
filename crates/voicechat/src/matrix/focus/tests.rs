@@ -123,3 +123,14 @@ async fn an_unreachable_server_reads_short() {
     };
     assert_eq!(ask(&focus).await.unwrap_err(), "No call server");
 }
+
+#[test]
+fn debug_hides_the_token() {
+    let grant = LiveKitGrant {
+        url: "wss://sfu".to_owned(),
+        jwt: "secret-jwt".to_owned(),
+    };
+    let shown = format!("{grant:?}");
+    assert!(shown.contains("wss://sfu"));
+    assert!(!shown.contains("secret-jwt"));
+}

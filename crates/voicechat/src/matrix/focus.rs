@@ -10,10 +10,18 @@ use super::membership::Focus;
 const SLOT_ID: &str = "m.call#ROOM";
 
 /// Where to connect and the token to connect with.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub(crate) struct LiveKitGrant {
     pub url: String,
     pub jwt: String,
+}
+
+impl std::fmt::Debug for LiveKitGrant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiveKitGrant")
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
 }
 
 fn openid_json(openid: &OpenIdToken) -> Value {
