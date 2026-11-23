@@ -2,6 +2,7 @@
 
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::authentication::oauth::OAuthSession;
+use matrix_sdk::encryption::CrossSigningResetAuthType;
 use matrix_sdk::ruma::UserId;
 use matrix_sdk::ruma::api::client::uiaa;
 use matrix_sdk::ruma::api::error::ErrorKind;
@@ -277,7 +278,60 @@ pub(crate) async fn trust(
         return Ok(());
     }
     let key = account.recovery_key.as_deref().or(made.as_deref());
+    if key.is_none() && !secret_storage(client).await? {
+        reset(client, account, &user).await?;
+        *made = enable_recovery(client).await;
+        return Ok(());
+    }
     recover(client, key).await
+}
+
+/// True when the account keeps its cross-signing keys in secret storage on the homeserver.
+async fn secret_storage(client: &Client) -> Result<bool, Fault> {
+    client
+        .encryption()
+        .secret_storage()
+        .is_enabled()
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "Matrix secret storage not read");
+            Fault::passing(UNREACHABLE)
+        })
+}
+
+/// Replaces cross-signing that nothing can unlock: no recovery key is known and the account
+/// keeps no secret storage, so the old keys are gone for good.
+async fn reset(client: &Client, account: &MatrixAccount, user: &UserId) -> Result<(), Fault> {
+    tracing::warn!("Matrix cross-signing has no recovery: resetting it");
+    let refused = |error: &dyn std::fmt::Display| {
+        tracing::warn!(%error, "Matrix cross-signing not reset");
+        Fault::lasting("Cross-signing refused")
+    };
+    let Some(handle) = client
+        .encryption()
+        .recovery()
+        .reset_identity()
+        .await
+        .map_err(|error| refused(&error))?
+    else {
+        return Ok(());
+    };
+    let auth = match (handle.auth_type(), &account.login) {
+        (CrossSigningResetAuthType::Uiaa(prompt), MatrixLogin::Password(password)) => prompt
+            .as_password_auth_data(
+                uiaa::UserIdentifier::Matrix(uiaa::MatrixUserIdentifier::new(user.to_string())),
+                password.clone(),
+            ),
+        (CrossSigningResetAuthType::OAuth(prompt), _) => {
+            tracing::warn!(url = %prompt.approval_url, "approve the Matrix cross-signing reset");
+            prompt.as_auth_data()
+        }
+        (CrossSigningResetAuthType::Uiaa(_), MatrixLogin::OAuth) => {
+            handle.cancel().await;
+            return Err(refused(&"no password to answer the prompt"));
+        }
+    };
+    handle.reset(auth).await.map_err(|error| refused(&error))
 }
 
 /// Keeps cross-signing behind a new recovery key, so a later device can unlock it.

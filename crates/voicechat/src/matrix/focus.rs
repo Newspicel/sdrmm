@@ -60,9 +60,9 @@ async fn grant_of(response: Response) -> Result<LiveKitGrant, String> {
     }
 }
 
-/// Asks `lk-jwt-service` for a grant: `/get_token` first, then the older
-/// `/sfu/get` when the service has no such endpoint. `member_id` is the
-/// membership id we published.
+/// Asks `lk-jwt-service` for a grant: `/sfu/get` first, whose `user:device` identity is the
+/// one clients expect of a session membership like ours, then `/get_token` when the service
+/// has no such endpoint. `member_id` is the membership id we published.
 pub(crate) async fn livekit_token(
     http: &Client,
     focus: &Focus,
@@ -72,22 +72,22 @@ pub(crate) async fn livekit_token(
     member_id: &str,
     openid: &OpenIdToken,
 ) -> Result<LiveKitGrant, String> {
+    let legacy = json!({
+        "room": room,
+        "openid_token": openid_json(openid),
+        "device_id": device,
+    });
+    let response = post(http, &endpoint(focus, "sfu/get"), &legacy).await?;
+    if response.status() != StatusCode::NOT_FOUND {
+        return grant_of(response).await;
+    }
     let current = json!({
         "room_id": room,
         "slot_id": SLOT_ID,
         "openid_token": openid_json(openid),
         "member": {"id": member_id, "claimed_user_id": user, "claimed_device_id": device},
     });
-    let response = post(http, &endpoint(focus, "get_token"), &current).await?;
-    if response.status() != StatusCode::NOT_FOUND {
-        return grant_of(response).await;
-    }
-    let legacy = json!({
-        "room": room,
-        "openid_token": openid_json(openid),
-        "device_id": device,
-    });
-    grant_of(post(http, &endpoint(focus, "sfu/get"), &legacy).await?).await
+    grant_of(post(http, &endpoint(focus, "get_token"), &current).await?).await
 }
 
 #[cfg(test)]

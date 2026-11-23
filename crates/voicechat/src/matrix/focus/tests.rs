@@ -80,14 +80,26 @@ async fn ask(focus: &Focus) -> Result<LiveKitGrant, String> {
 }
 
 #[tokio::test]
-async fn new_endpoint_is_tried_first() {
+async fn old_endpoint_is_tried_first() {
     let (focus, seen) = serve(StatusCode::OK, StatusCode::OK).await;
     let grant = ask(&focus).await.unwrap();
     assert_eq!(grant.jwt, "tok");
-    assert_eq!(grant.url, "wss://sfu/get_token");
+    assert_eq!(grant.url, "wss://sfu/sfu/get");
     let seen = seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
-    let body = &seen[0].1;
+    assert_eq!(seen[0].1["room"], "!r:example.org");
+    assert_eq!(seen[0].1["device_id"], "DEV");
+    assert_eq!(seen[0].1["openid_token"]["access_token"], "abc");
+}
+
+#[tokio::test]
+async fn new_endpoint_answers_when_old_is_missing() {
+    let (focus, seen) = serve(StatusCode::OK, StatusCode::NOT_FOUND).await;
+    let grant = ask(&focus).await.unwrap();
+    assert_eq!(grant.url, "wss://sfu/get_token");
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    let body = &seen[1].1;
     assert_eq!(body["room_id"], "!r:example.org");
     assert_eq!(body["slot_id"], "m.call#ROOM");
     assert_eq!(body["member"]["id"], "@u:example.org:DEV");
@@ -100,19 +112,8 @@ async fn new_endpoint_is_tried_first() {
 }
 
 #[tokio::test]
-async fn old_endpoint_answers_when_new_is_missing() {
-    let (focus, seen) = serve(StatusCode::NOT_FOUND, StatusCode::OK).await;
-    let grant = ask(&focus).await.unwrap();
-    assert_eq!(grant.url, "wss://sfu/sfu/get");
-    let seen = seen.lock().unwrap();
-    assert_eq!(seen.len(), 2);
-    assert_eq!(seen[1].1["room"], "!r:example.org");
-    assert_eq!(seen[1].1["device_id"], "DEV");
-}
-
-#[tokio::test]
 async fn a_refusal_reads_short() {
-    let (focus, _) = serve(StatusCode::FORBIDDEN, StatusCode::OK).await;
+    let (focus, _) = serve(StatusCode::OK, StatusCode::FORBIDDEN).await;
     assert_eq!(ask(&focus).await.unwrap_err(), "Call server refused");
 }
 
