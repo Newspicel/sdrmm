@@ -192,17 +192,47 @@ pub struct ScannerStatus {
     /// it says so here rather than looking like a firmware sweep that is merely slow.
     #[serde(default)]
     pub hardware_sweep: bool,
+    /// Whether every target sits in the radio's window at once, so the scan watches them all on
+    /// every frame and moves only the decoder, never the radio.
+    #[serde(default)]
+    pub live: bool,
+    /// The frequencies that went busy most recently, newest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub heard: Vec<HeardSignal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub const MAX_HEARD: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct HeardSignal {
+    pub hz: f64,
+    pub snr_db: f32,
+    pub at_ms: u64,
+}
+
+impl ScannerStatus {
+    /// Puts `signal` first, dropping an older entry for the same frequency and the oldest past
+    /// [`MAX_HEARD`].
+    pub fn note_heard(&mut self, signal: HeardSignal) {
+        self.heard.retain(|old| old.hz != signal.hz);
+        self.heard.insert(0, signal);
+        self.heard.truncate(MAX_HEARD);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScanAction {
     Start,
     Stop,
     /// Leaves the frequency the scan is holding on and locks it out.
     Skip,
+    /// Holds `hz`, a frequency inside the scan, until it has been quiet a while.
+    Jump {
+        hz: f64,
+    },
 }
 
 #[cfg(test)]
@@ -219,6 +249,37 @@ mod tests {
     fn a_fresh_scan_is_savable() {
         assert_eq!(ScanSettings::default().problem(), None);
         assert_eq!(ScanSettings::for_channel(1).problem(), None);
+    }
+
+    #[test]
+    fn heard_keeps_the_newest_once_and_drops_the_oldest() {
+        let mut status = ScannerStatus {
+            state: ScanState::Scanning,
+            settings: ScanSettings::default(),
+            targets: 0,
+            first_hz: 0.0,
+            last_hz: 0.0,
+            current_hz: 0.0,
+            current_snr_db: None,
+            sweeps: 0,
+            hits: 0,
+            hardware_sweep: false,
+            live: false,
+            heard: Vec::new(),
+            error: None,
+        };
+        let at = |hz: f64, at_ms: u64| HeardSignal {
+            hz,
+            snr_db: 20.0,
+            at_ms,
+        };
+        for i in 0..=MAX_HEARD as u64 {
+            status.note_heard(at(i as f64, i));
+        }
+        status.note_heard(at(3.0, 99));
+        let order: Vec<f64> = status.heard.iter().map(|s| s.hz).collect();
+        assert_eq!(order, vec![3.0, 8.0, 7.0, 6.0, 5.0, 4.0, 2.0, 1.0]);
+        assert_eq!(status.heard[0].at_ms, 99);
     }
 
     #[test]

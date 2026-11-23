@@ -362,6 +362,10 @@ impl Engine {
         scanner::session::skip(self, ds, channel)
     }
 
+    pub fn jump_scan(&self, ds: u32, channel: u32, hz: f64) -> Result<ScannerStatus, EngineError> {
+        scanner::session::jump(self, ds, channel, hz)
+    }
+
     pub fn start_hunt(
         self: &Arc<Self>,
         ds: u32,
@@ -447,11 +451,12 @@ impl Engine {
         {
             return Ok(false);
         }
-        let channels: Vec<ChannelInfo> = state
+        let mut channels: Vec<ChannelInfo> = state
             .channels
             .iter()
             .map(|c| if c.id == ch { moved.clone() } else { c.clone() })
             .collect();
+        channels.extend(state.scan_edges());
         let mut settled = state.settings.clone();
         if let Some(delta) = plan_center(&state.capabilities, &settled, &channels) {
             settled.merge_from(&delta);

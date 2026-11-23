@@ -1,7 +1,7 @@
 use std::{
     sync::{
         Arc, Mutex, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -9,7 +9,8 @@ use std::{
 
 use sdrmm_device::SweepPlan;
 use sdrmm_wire::{
-    PRIORITY_INTERVAL_MS, ScanMode, ScanSettings, ScanState, ScannerStatus, ServerEvent, StateScope,
+    HeardSignal, PRIORITY_INTERVAL_MS, ScanMode, ScanSettings, ScanState, ScannerStatus,
+    ServerEvent, StateScope,
 };
 use tokio::sync::broadcast::error::TryRecvError;
 
@@ -18,6 +19,7 @@ use crate::{Engine, EngineError, runtime::SpectrumSnapshot};
 mod close_call;
 mod floor;
 mod hold;
+mod live;
 mod plan;
 pub(crate) mod session;
 pub(crate) mod sweep;
@@ -35,10 +37,16 @@ const HOLD_POLL: Duration = Duration::from_millis(120);
 const POLL: Duration = Duration::from_millis(4);
 const UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 const PRIORITY_INTERVAL: Duration = Duration::from_millis(PRIORITY_INTERVAL_MS as u64);
+/// How long a frequency the operator jumped to stays held while quiet, so a reply is not missed.
+const JUMP_LINGER: Duration = Duration::from_secs(10);
 
 pub(crate) struct ScannerState {
+    /// The plan's lowest and highest target.
+    edges: (f64, f64),
     stop: Arc<AtomicBool>,
     release: Arc<AtomicBool>,
+    /// The bits of the frequency to jump to, or zero for none.
+    jump: Arc<AtomicU64>,
     status: Arc<Mutex<ScannerStatus>>,
     thread: Option<JoinHandle<()>>,
 }
@@ -60,6 +68,19 @@ impl ScannerState {
             status.settings.lockouts.push(hz);
         }
         self.release.store(true, Ordering::Release);
+        Ok(status.clone())
+    }
+
+    pub(crate) fn jump(&self, hz: f64) -> Result<ScannerStatus, EngineError> {
+        let status = lock_status(&self.status);
+        if status.state == ScanState::Done {
+            return Err(EngineError::Scan("the scan is done".to_string()));
+        }
+        let (low, high) = self.edges;
+        if !(hz.is_finite() && hz > 0.0 && hz >= low - 1.0 && hz <= high + 1.0) {
+            return Err(EngineError::Scan(format!("{hz} Hz is outside the scan")));
+        }
+        self.jump.store(hz.to_bits(), Ordering::Release);
         Ok(status.clone())
     }
 
@@ -97,14 +118,21 @@ pub(crate) fn spawn(
     scan.stream = stream;
     scan.hardware = hardware;
     lock_status(&scan.status).hardware_sweep = hardware;
+    let edges = (
+        scan.plan.targets.first().copied().unwrap_or_default(),
+        scan.plan.targets.last().copied().unwrap_or_default(),
+    );
     let (stop, release, status) = (scan.stop.clone(), scan.release.clone(), scan.status.clone());
+    let jump = scan.jump.clone();
     let thread = std::thread::Builder::new()
         .name(format!("sdrmm-scan-{ds}"))
         .spawn(move || scan.run())
         .map_err(|e| EngineError::Scan(format!("spawn scanner thread: {e}")))?;
     Ok(ScannerState {
+        edges,
         stop,
         release,
+        jump,
         status,
         thread: Some(thread),
     })
@@ -122,6 +150,7 @@ struct Scan {
     bw_hz: f64,
     stop: Arc<AtomicBool>,
     release: Arc<AtomicBool>,
+    jump: Arc<AtomicU64>,
     status: Arc<Mutex<ScannerStatus>>,
     last_update: Option<Instant>,
     hardware: bool,
@@ -165,6 +194,8 @@ impl Scan {
             sweeps: 0,
             hits: 0,
             hardware_sweep: false,
+            live: false,
+            heard: Vec::new(),
             error: None,
         };
         Self {
@@ -179,6 +210,7 @@ impl Scan {
             bw_hz,
             stop: Arc::new(AtomicBool::new(false)),
             release: Arc::new(AtomicBool::new(false)),
+            jump: Arc::new(AtomicU64::new(0)),
             status: Arc::new(Mutex::new(status)),
             last_update: None,
             hardware: false,
@@ -234,6 +266,7 @@ impl Scan {
         loop {
             let engine = self.engine.upgrade().ok_or(Halt::Stopped)?;
             let rate = engine.scan_sample_rate(self.ds).ok_or(Halt::Stopped)?;
+            self.watch_live(&engine, rate)?;
             if self.hardware {
                 self.firmware_pass(&engine, rate)?;
             } else {
@@ -272,6 +305,9 @@ impl Scan {
         let mut from = 0;
         while from < self.plan.targets.len() {
             self.check_stop()?;
+            if let Some(hz) = self.take_jump() {
+                self.jump_to(engine, &mut rx, hz)?;
+            }
             if self.priority_due() {
                 self.check_priority(engine, &mut rx)?;
             }
@@ -330,26 +366,34 @@ impl Scan {
         rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
         hz: f64,
     ) -> Result<Option<SpectrumSnapshot>, Halt> {
-        let halt = |e: EngineError| match e {
-            EngineError::DeviceSetNotFound(_) => Halt::Stopped,
-            other => Halt::Failed(format!("the decoder could not follow the scan: {other}")),
-        };
         if !engine
             .scan_reaches(self.ds, self.decoder, hz)
-            .map_err(halt)?
+            .map_err(follow_failed)?
         {
             return Ok(None);
         }
         lock_status(&self.status).current_hz = hz;
+        self.steer(engine, rx, hz)?;
+        drain(rx);
+        self.window_over(rx, hz)
+    }
+
+    /// Moves the decoder to `hz`, letting the radio settle if it had to follow.
+    fn steer(
+        &mut self,
+        engine: &Engine,
+        rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
+        hz: f64,
+    ) -> Result<(), Halt> {
         let moved = engine
             .scan_tune_channel(self.ds, self.decoder, hz)
-            .map_err(halt)?;
+            .map_err(follow_failed)?;
         self.followed = Some(hz);
         if moved {
             std::thread::sleep(RETUNE_SETTLE);
+            drain(rx);
         }
-        drain(rx);
-        self.window_over(rx, hz)
+        Ok(())
     }
 
     fn window_over(
@@ -415,6 +459,10 @@ impl Scan {
                             }
                         }
                         Some(_) => {}
+                    }
+                    if let Some(hz) = self.take_jump() {
+                        let mut rx = self.leave_sweep(engine)?;
+                        return self.jump_to(engine, &mut rx, hz);
                     }
                     if let Some(call) = self.read_block(engine, &snapshot) {
                         return self.hit(engine, call);
@@ -527,14 +575,31 @@ impl Scan {
         status.current_hz = call.hz;
         status.current_snr_db = Some(call.snr_db);
         status.hits += 1;
+        status.note_heard(HeardSignal {
+            hz: call.hz,
+            snr_db: call.snr_db,
+            at_ms: crate::hunt::unix_ms(),
+        });
+    }
+
+    fn leave_sweep(
+        &mut self,
+        engine: &Arc<Engine>,
+    ) -> Result<tokio::sync::broadcast::Receiver<SpectrumSnapshot>, Halt> {
+        sweep::leave(engine, self.ds).map_err(|e| Halt::Failed(e.to_string()))?;
+        self.in_sweep = false;
+        engine
+            .subscribe_spectrum(self.ds, self.stream)
+            .map_err(|e| Halt::Failed(e.to_string()))
+    }
+
+    fn take_jump(&self) -> Option<f64> {
+        let bits = self.jump.swap(0, Ordering::AcqRel);
+        (bits != 0).then(|| f64::from_bits(bits))
     }
 
     fn hit(&mut self, engine: &Arc<Engine>, call: Call) -> Result<(), Halt> {
-        sweep::leave(engine, self.ds).map_err(|e| Halt::Failed(e.to_string()))?;
-        self.in_sweep = false;
-        let mut rx = engine
-            .subscribe_spectrum(self.ds, self.stream)
-            .map_err(|e| Halt::Failed(e.to_string()))?;
+        let mut rx = self.leave_sweep(engine)?;
         if self.park(engine, &mut rx, call.hz)?.is_none() {
             self.visited.push(call.hz);
             return Ok(());
@@ -633,10 +698,7 @@ impl Scan {
         self.last_follow = Some(now);
         engine
             .scan_tune_channel(self.ds, self.decoder, hz)
-            .map_err(|e| match e {
-                EngineError::DeviceSetNotFound(_) => Halt::Stopped,
-                other => Halt::Failed(format!("the decoder could not follow the scan: {other}")),
-            })?;
+            .map_err(follow_failed)?;
         self.followed = Some(hz);
         Ok(())
     }
@@ -651,6 +713,13 @@ impl Scan {
             device_set: self.ds,
             status: Box::new(lock_status(&self.status).clone()),
         });
+    }
+}
+
+fn follow_failed(e: EngineError) -> Halt {
+    match e {
+        EngineError::DeviceSetNotFound(_) => Halt::Stopped,
+        other => Halt::Failed(format!("the decoder could not follow the scan: {other}")),
     }
 }
 
@@ -823,8 +892,10 @@ mod tests {
     fn skipping_is_only_offered_while_holding() {
         let scan = listener();
         let state = ScannerState {
+            edges: (100_000_000.0, 100_000_000.0),
             stop: scan.stop.clone(),
             release: scan.release.clone(),
+            jump: scan.jump.clone(),
             status: scan.status.clone(),
             thread: None,
         };
@@ -837,6 +908,30 @@ mod tests {
         assert!(scan.release.load(Ordering::Acquire), "the hold is released");
         let again = state.skip().expect("skipping twice is harmless");
         assert_eq!(again.settings.lockouts.len(), 1, "no duplicate entries");
+    }
+
+    #[test]
+    fn a_jump_is_taken_only_inside_the_scan_and_only_once() {
+        let scan = listener();
+        let state = ScannerState {
+            edges: (100_000_000.0, 100_100_000.0),
+            stop: scan.stop.clone(),
+            release: scan.release.clone(),
+            jump: scan.jump.clone(),
+            status: scan.status.clone(),
+            thread: None,
+        };
+        assert!(state.jump(99_000_000.0).is_err(), "below the scan");
+        assert!(state.jump(f64::NAN).is_err());
+        assert_eq!(scan.take_jump(), None);
+        state.jump(100_050_000.0).expect("inside the scan");
+        assert_eq!(scan.take_jump(), Some(100_050_000.0));
+        assert_eq!(scan.take_jump(), None, "a jump is taken once");
+        lock_status(&scan.status).state = ScanState::Done;
+        assert!(
+            state.jump(100_050_000.0).is_err(),
+            "a finished scan does not move"
+        );
     }
 
     #[test]

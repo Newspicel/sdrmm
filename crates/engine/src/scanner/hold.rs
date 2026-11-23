@@ -7,8 +7,8 @@ use sdrmm_wire::{ScanMode, ScanState};
 use tokio::sync::broadcast::{Receiver, error::TryRecvError};
 
 use super::{
-    Call, HOLD_POLL, Halt, POLL, PRIORITY_INTERVAL, SPECTRUM_TIMEOUT, Scan, lock_status,
-    measure_mean,
+    Call, HOLD_POLL, Halt, JUMP_LINGER, POLL, PRIORITY_INTERVAL, SPECTRUM_TIMEOUT, Scan,
+    lock_status, measure_mean,
 };
 use crate::{Engine, runtime::SpectrumSnapshot};
 
@@ -16,6 +16,8 @@ use crate::{Engine, runtime::SpectrumSnapshot};
 pub(super) enum Stay {
     UntilQuiet,
     For(Duration),
+    /// Where the operator jumped: nothing else takes it, and it waits longer to go quiet.
+    Pinned,
 }
 
 impl Scan {
@@ -44,11 +46,34 @@ impl Scan {
         stay: Stay,
     ) -> Result<(), Halt> {
         let mut held = (call, stay);
-        while let Some(preempt) = self.hold_once(engine, rx, held.0, held.1)? {
-            self.note_hit(preempt);
-            held = (preempt, Stay::UntilQuiet);
+        while let Some(next) = self.hold_once(engine, rx, held.0, held.1)? {
+            if next.1 == Stay::Pinned {
+                if self.park(engine, rx, next.0.hz)?.is_none() {
+                    return Ok(());
+                }
+            } else {
+                self.note_hit(next.0);
+            }
+            held = next;
         }
         Ok(())
+    }
+
+    /// Holds `hz` for the operator, from wherever the scan was.
+    pub(super) fn jump_to(
+        &mut self,
+        engine: &Arc<Engine>,
+        rx: &mut Receiver<SpectrumSnapshot>,
+        hz: f64,
+    ) -> Result<(), Halt> {
+        if self.park(engine, rx, hz)?.is_none() {
+            return Ok(());
+        }
+        let call = Call {
+            hz,
+            snr_db: f32::NEG_INFINITY,
+        };
+        self.hold(engine, rx, call, Stay::Pinned)
     }
 
     fn hold_once(
@@ -57,7 +82,7 @@ impl Scan {
         rx: &mut Receiver<SpectrumSnapshot>,
         call: Call,
         stay: Stay,
-    ) -> Result<Option<Call>, Halt> {
+    ) -> Result<Option<(Call, Stay)>, Halt> {
         self.release.store(false, Ordering::Release);
         {
             let mut status = lock_status(&self.status);
@@ -71,6 +96,11 @@ impl Scan {
         let mut snrs = vec![f32::NEG_INFINITY; probes.len()];
         let started = Instant::now();
         let resume = Duration::from_millis(u64::from(self.settings.resume_ms));
+        let linger = if stay == Stay::Pinned {
+            resume.max(JUMP_LINGER)
+        } else {
+            resume
+        };
         let mut quiet_since: Option<Instant> = None;
         let mut preempt = None;
         loop {
@@ -78,21 +108,32 @@ impl Scan {
             if self.release.swap(false, Ordering::AcqRel) {
                 break;
             }
+            if let Some(hz) = self.take_jump() {
+                let call = Call {
+                    hz,
+                    snr_db: f32::NEG_INFINITY,
+                };
+                preempt = Some((call, Stay::Pinned));
+                break;
+            }
             self.listen(rx, &probes, &mut snrs, HOLD_POLL)?;
             lock_status(&self.status).current_snr_db = snrs[0].is_finite().then_some(snrs[0]);
             self.push_update(engine, false);
-            preempt = self.busy_calls(&probes[1..], &snrs[1..]).next();
+            preempt = self
+                .busy_calls(&probes[1..], &snrs[1..])
+                .next()
+                .map(|call| (call, Stay::UntilQuiet));
             if preempt.is_some() {
                 break;
             }
             let over = match stay {
                 Stay::For(visit) => started.elapsed() >= visit,
-                Stay::UntilQuiet if snrs[0] >= self.settings.margin_db => {
+                Stay::UntilQuiet | Stay::Pinned if snrs[0] >= self.settings.margin_db => {
                     quiet_since = None;
                     false
                 }
-                Stay::UntilQuiet => {
-                    quiet_since.get_or_insert_with(Instant::now).elapsed() >= resume
+                Stay::UntilQuiet | Stay::Pinned => {
+                    quiet_since.get_or_insert_with(Instant::now).elapsed() >= linger
                 }
             };
             if over {

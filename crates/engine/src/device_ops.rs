@@ -969,7 +969,9 @@ impl Engine {
         if !state.tunes_freely() {
             return None;
         }
-        plan_center(&state.capabilities, &state.settings, &state.channels)
+        let mut channels = state.channels.clone();
+        channels.extend(state.scan_edges());
+        plan_center(&state.capabilities, &state.settings, &channels)
     }
 
     pub(crate) fn patch_device_from(

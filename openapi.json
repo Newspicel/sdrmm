@@ -15409,6 +15409,29 @@
           }
         }
       },
+      "HeardSignal": {
+        "type": "object",
+        "required": [
+          "hz",
+          "snr_db",
+          "at_ms"
+        ],
+        "properties": {
+          "at_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "hz": {
+            "type": "number",
+            "format": "double"
+          },
+          "snr_db": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
       "Held": {
         "oneOf": [
           {
@@ -24098,11 +24121,48 @@
         }
       },
       "ScanAction": {
-        "type": "string",
-        "enum": [
-          "start",
-          "stop",
-          "skip"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "start"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "stop"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Leaves the frequency the scan is holding on and locks it out.",
+            "enum": [
+              "skip"
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Holds `hz`, a frequency inside the scan, until it has been quiet a while.",
+            "required": [
+              "jump"
+            ],
+            "properties": {
+              "jump": {
+                "type": "object",
+                "description": "Holds `hz`, a frequency inside the scan, until it has been quiet a while.",
+                "required": [
+                  "hz"
+                ],
+                "properties": {
+                  "hz": {
+                    "type": "number",
+                    "format": "double"
+                  }
+                }
+              }
+            }
+          }
         ]
       },
       "ScanList": {
@@ -24368,6 +24428,13 @@
             "type": "boolean",
             "description": "Whether the sweep in force is the radio's own. A scan that asked for one and did not get\nit says so here rather than looking like a firmware sweep that is merely slow."
           },
+          "heard": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeardSignal"
+            },
+            "description": "The frequencies that went busy most recently, newest first."
+          },
           "hits": {
             "type": "integer",
             "format": "int64",
@@ -24376,6 +24443,10 @@
           "last_hz": {
             "type": "number",
             "format": "double"
+          },
+          "live": {
+            "type": "boolean",
+            "description": "Whether every target sits in the radio's window at once, so the scan watches them all on\nevery frame and moves only the decoder, never the radio."
           },
           "settings": {
             "$ref": "#/components/schemas/ScanSettings"

@@ -269,8 +269,8 @@ pub use satellite::{
     Transmitter, TransmittersResponse,
 };
 pub use scan::{
-    MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode, ScanRange, ScanSettings,
-    ScanState, ScannerStatus, WatchedLane,
+    HeardSignal, MAX_HEARD, MAX_SCAN_TARGETS, PRIORITY_INTERVAL_MS, ScanAction, ScanMode,
+    ScanRange, ScanSettings, ScanState, ScannerStatus, WatchedLane,
 };
 pub use schedule::{
     MAX_SCHEDULE_WINDOWS, MAX_TIME_ZONE_LEN, MINUTES_PER_DAY, ScheduleNode, ScheduleStatus,
@@ -1109,6 +1109,8 @@ mod contract_tests {
             sweeps: 4,
             hits: 9,
             hardware_sweep: false,
+            live: false,
+            heard: Vec::new(),
             error: None,
         }];
         let mut json = serde_json::to_value(&set).unwrap();
@@ -1155,6 +1157,10 @@ mod contract_tests {
         assert_eq!(
             serde_json::to_value(scan::ScanAction::Skip).unwrap(),
             "skip"
+        );
+        assert_eq!(
+            serde_json::to_value(scan::ScanAction::Jump { hz: 118.1e6 }).unwrap(),
+            serde_json::json!({"jump": {"hz": 118.1e6}})
         );
     }
 
@@ -1243,6 +1249,8 @@ mod contract_tests {
                 sweeps: 0,
                 hits: 0,
                 hardware_sweep: false,
+                live: false,
+                heard: Vec::new(),
                 error: None,
             }),
         };

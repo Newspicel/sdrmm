@@ -3,16 +3,13 @@ use cef::*;
 use super::{Start, window};
 
 /// Chromium switches for the browser process. Audio starts without a click, as a desktop app's
-/// does; the one page needs no spare renderer kept warm, and Skia's older GPU backend holds some
-/// 450 MB less than Graphite for the same page at the same CPU; macOS never asks for Keychain
-/// access, since nothing here stores a password; and Linux picks Wayland or X11 by the session
-/// instead of always X11.
+/// does; the one page needs no spare renderer kept warm; macOS never asks for Keychain access,
+/// since nothing here stores a password; and Linux picks Wayland or X11 by the session instead
+/// of always X11. Skia Graphite stays on: on macOS it is Chromium's only GPU backend, and
+/// without it the GPU, WebGL2 and the waterfall are gone.
 const SWITCHES: &[(&str, &str)] = &[
     ("autoplay-policy", "no-user-gesture-required"),
-    (
-        "disable-features",
-        "SpareRendererForSitePerProcess,SkiaGraphite",
-    ),
+    ("disable-features", "SpareRendererForSitePerProcess"),
     #[cfg(target_os = "macos")]
     ("use-mock-keychain", ""),
     #[cfg(target_os = "linux")]
@@ -96,6 +93,15 @@ fn name_audio_outputs(start: &Start) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_gpu_backend_stays_on() {
+        let mut disabled = SWITCHES
+            .iter()
+            .filter(|(name, _)| *name == "disable-features")
+            .flat_map(|(_, features)| features.split(','));
+        assert!(disabled.all(|feature| feature != "SkiaGraphite"));
+    }
 
     #[test]
     fn a_feature_list_keeps_what_cef_put_there() {

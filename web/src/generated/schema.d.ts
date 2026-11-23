@@ -4382,6 +4382,14 @@ export interface components {
             text: string;
             warn?: boolean;
         };
+        HeardSignal: {
+            /** Format: int64 */
+            at_ms: number;
+            /** Format: double */
+            hz: number;
+            /** Format: float */
+            snr_db: number;
+        };
         Held: {
             /** @enum {string} */
             by: "hand";
@@ -6598,8 +6606,13 @@ export interface components {
             device_id: string;
             label: string;
         };
-        /** @enum {string} */
-        ScanAction: "start" | "stop" | "skip";
+        ScanAction: "start" | "stop" | "skip" | {
+            /** @description Holds `hz`, a frequency inside the scan, until it has been quiet a while. */
+            jump: {
+                /** Format: double */
+                hz: number;
+            };
+        };
         ScanList: {
             channels?: string[];
             /** Format: int32 */
@@ -6635,10 +6648,17 @@ export interface components {
              *     it says so here rather than looking like a firmware sweep that is merely slow.
              */
             hardware_sweep?: boolean;
+            /** @description The frequencies that went busy most recently, newest first. */
+            heard?: components["schemas"]["HeardSignal"][];
             /** Format: int64 */
             hits: number;
             /** Format: double */
             last_hz?: number;
+            /**
+             * @description Whether every target sits in the radio's window at once, so the scan watches them all on
+             *     every frame and moves only the decoder, never the radio.
+             */
+            live?: boolean;
             settings: components["schemas"]["ScanSettings"];
             state: components["schemas"]["ScanState"];
             /** Format: int64 */

@@ -36,6 +36,7 @@ import {
   presetIn,
   rangeNeed,
   rangeProblem,
+  recentHeard,
   scanPresets,
   stateLabel,
   sweepKind,
@@ -89,17 +90,27 @@ export function ScannerPanel({
     onError: (e) => pushToast(e.message),
     onSettled: invalidate,
   });
+  const jumpMut = useMutation({
+    mutationFn: (hz: number) => scan({ jump: { hz } })(),
+    onError: (e) => pushToast(e.message),
+    onSettled: invalidate,
+  });
 
   const need = unwired ? null : rangeNeed(settings);
   const problem = rangeProblem(settings);
-  const busy = startMut.isPending || stopMut.isPending || skipMut.isPending;
+  const busy = startMut.isPending || stopMut.isPending || skipMut.isPending || jumpMut.isPending;
   const decoder = active !== null && channel !== null;
   return (
     <>
       <FaceBody>
         {status !== null ? (
           <>
-            <ScanReadouts status={status} active={active} plan={plan} />
+            <ScanReadouts
+              status={status}
+              active={active}
+              plan={plan}
+              onJump={decoder && !busy && status.state !== "done" ? jumpMut.mutate : null}
+            />
             {need !== null ? (
               <FaceEmpty hint={need} />
             ) : (
@@ -192,10 +203,12 @@ function ScanReadouts({
   status,
   active,
   plan,
+  onJump,
 }: {
   status: ScannerStatus;
   active: DeviceSet | null;
   plan: BandPlan | null;
+  onJump: ((hz: number) => void) | null;
 }) {
   const name = channelName(plan, status.current_hz);
   const mode = SCAN_MODES.find((entry) => entry.value === (status.settings.mode ?? "targets"));
@@ -211,12 +224,44 @@ function ScanReadouts({
         {name !== null && ` ${name}`}
       </Readout>
       <Readout label="Over noise">{formatDb(status.current_snr_db)}</Readout>
+      <Readout label="Heard" title="Last busy frequencies, newest first. Click one to hold it.">
+        <HeardList status={status} onJump={onJump} />
+      </Readout>
       <Readout label="Find">{mode?.label ?? "-"}</Readout>
       <Readout label="Sweep">{sweepKind(active, status)}</Readout>
       <Readout label="Span">
         {formatMhz(status.first_hz)} to {formatMhz(status.last_hz)}
       </Readout>
     </Readouts>
+  );
+}
+
+function HeardList({
+  status,
+  onJump,
+}: {
+  status: ScannerStatus;
+  onJump: ((hz: number) => void) | null;
+}) {
+  const heard = recentHeard(status);
+  if (heard.length === 0) {
+    return "-";
+  }
+  return (
+    <span className="flex gap-1.5">
+      {heard.map((hz) => (
+        <Button
+          key={hz}
+          type="button"
+          className={`hover:text-accent hover:underline ${hz === status.current_hz ? "text-accent" : ""}`}
+          disabled={onJump === null}
+          aria-label={`Hold ${formatMhz(hz)}`}
+          onClick={() => onJump?.(hz)}
+        >
+          {formatMhz(hz)}
+        </Button>
+      ))}
+    </span>
   );
 }
 
