@@ -8,7 +8,6 @@ import {
   KEYLESS_SEND_MODES,
   NO_ACCOUNT,
   newChatAccount,
-  withChatService,
   withGate,
   withVoiceChat,
 } from "./voiceChat";
@@ -92,10 +91,7 @@ describe("accounts", () => {
     ]);
   });
 
-  it("moves an account to another service keeping its id and name", () => {
-    const moved = withChatService(ACCOUNTS[1] as ChatAccount, "discord");
-    expect(moved).toEqual({ id: "a2", name: "Net", service: "discord" });
-    expect(withChatService(ACCOUNTS[0] as ChatAccount, "discord")).toBe(ACCOUNTS[0]);
+  it("starts a new account empty for its service", () => {
     expect(newChatAccount("teamspeak")).toMatchObject({ service: "teamspeak", address: "" });
   });
 });

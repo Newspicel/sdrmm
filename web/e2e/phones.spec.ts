@@ -120,7 +120,8 @@ test("pairs a phone from the library", async ({ page, baseURL }) => {
   const saved = page.waitForResponse("**/api/phones/access");
   await portField.press("Enter");
   await saved;
-  await panel.getByRole("switch", { name: "Allow phones" }).click();
+  await panel.getByRole("combobox", { name: "Allow phones" }).click();
+  await page.getByRole("option", { name: "Yes", exact: true }).click();
   await expect(panel.getByText(`Ready on ${port}`)).toBeVisible();
 
   await panel.getByRole("button", { name: "Pair phone" }).click();

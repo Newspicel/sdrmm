@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button, Input } from "../components/BaseControls";
 import { BTN, BTN_DANGER_SM, BTN_PRIMARY, BTN_SM, FIELD, LABEL } from "../components/controls";
+import { YesNo } from "../components/face/Chips";
 import { List, ListRow, Panel, PanelHint } from "../components/ListPanel";
 import { NumberField } from "../components/NumberField";
 import { QrCode } from "../components/QrCode";
-import { Switch } from "../components/Switch";
 import {
   cancelPairingOffer,
   createPairingOffer,
@@ -252,33 +252,46 @@ export function AccessSettings({
   const { enabled, port } = data.access.access;
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <Switch
-          label="Allow phones"
-          checked={enabled}
-          onChange={(next) => onAccess({ enabled: next, port })}
-        />
-        <span className="text-xs text-ink" title="Listen for phones over HTTPS">
-          Allow phones
-        </span>
-        <span className={`${LABEL} ml-auto`} title="Phone port">
-          Port
-        </span>
-        <NumberField
-          label="Port"
-          value={port}
-          min={1}
-          max={MAX_PORT}
-          step={1}
-          disabled={busy}
-          className="w-20"
-          onCommit={(next) => onAccess({ enabled, port: next })}
-        />
+      <div className="flex items-end gap-3">
+        <Setting name="Allow phones" title="Listen for phones over HTTPS">
+          <span className="w-24">
+            <YesNo
+              label="Allow phones"
+              on={enabled}
+              disabled={busy}
+              onChange={(next) => onAccess({ enabled: next, port })}
+            />
+          </span>
+        </Setting>
+        <Setting name="Port" title="Phone port">
+          <NumberField
+            label="Port"
+            value={port}
+            min={1}
+            max={MAX_PORT}
+            step={1}
+            disabled={busy}
+            className="w-20"
+            onCommit={(next) => onAccess({ enabled, port: next })}
+          />
+        </Setting>
       </div>
       <div className="flex items-center justify-between gap-2 font-mono text-2xs">
         <Status line={listenerLine(data.access)} />
         <Status line={discoveryLine(data.access)} />
       </div>
+    </div>
+  );
+}
+
+/** A setting with its name small above it. */
+function Setting({ name, title, children }: { name: string; title: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-2xs text-ink-dim" title={title}>
+        {name}
+      </span>
+      {children}
     </div>
   );
 }

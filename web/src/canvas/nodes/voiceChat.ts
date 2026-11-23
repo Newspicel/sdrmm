@@ -105,11 +105,3 @@ export function newChatAccount(service: ChatServiceKind): ChatAccount {
   }
   return { id: "", name: "", service };
 }
-
-/** `account` moved to `service`, keeping its id and name and dropping the other's fields. */
-export function withChatService(account: ChatAccount, service: ChatServiceKind): ChatAccount {
-  if (account.service === service) {
-    return account;
-  }
-  return { ...newChatAccount(service), id: account.id, name: account.name };
-}

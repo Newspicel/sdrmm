@@ -19,7 +19,7 @@ Send `Authorization: Bearer $SDRMM_TOKEN` when a [token](configuration.md#token)
 | State & catalog | `/api/state`, `/api/devices`, `/api/saved-radios`, `/api/channeltypes`, `/api/patch/catalog`, `/api/clients` |
 | Nodes & wiring | `/api/workspaces/active/nodes/{node}` (`channel`, `device`, `actions`), `/api/devices/network`, `/api/devices/serial`, `/api/patch/wiring` |
 | Workspaces & setups | `/api/workspaces` (activate, apply, undo, redo, export, import, `resolved`), `/api/templates`, `/api/examples`, `/api/presets`, `/api/bookmarks` |
-| Data & arrays | `/api/decoderlog`, `/api/recordings`, `/api/audiorecordings`, `/api/calls`, `/api/images`, `/api/occupancy`, `/api/arrays`, `/api/processors`, `/api/fusion`, `/api/survey`, `/api/missions` |
+| Data & arrays | `/api/decoderlog`, `/api/recordings`, `/api/audiorecordings`, `/api/calls`, `/api/images`, `/api/arrays`, `/api/processors`, `/api/fusion`, `/api/survey`, `/api/missions` |
 | Tools, ref & server | `/api/tools`, `/api/nanovna`, `/api/cps`, `/api/bandplan`, `/api/satellites`, `/api/ionosonde`, `/api/secrets` (write-only), `/api/auth`, `/api/phones`, `/api/status`, `/api/doctor`, `/api/transport` |
 
 Errors return `{ error, detail?, code? }`. Workspace `PUT` merges older revisions, channel `PATCH` with `base` applies diffs, and `x-sdrmm-author` scopes undo/redo.

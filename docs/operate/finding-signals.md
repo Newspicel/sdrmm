@@ -1,9 +1,7 @@
 ---
 title: Finding signals
-description: Scanner, Signal identifier, Spectrum monitor, Signal hunt, Signal survey, and hourly occupancy.
+description: Scanner, Signal identifier, Spectrum monitor, Signal hunt, and Signal survey.
 ---
-
-Open **Library → Occupancy** for hourly channel activity on the selected Device.
 
 ## Scan
 

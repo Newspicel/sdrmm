@@ -50,7 +50,6 @@ pub mod iq;
 mod lanes;
 mod metrics;
 mod network_export;
-pub mod occupancy;
 mod placement;
 mod planning;
 mod position;
@@ -306,8 +305,6 @@ pub enum EngineError {
     Transmit(String),
     #[error("scan: {0}")]
     Scan(String),
-    #[error("occupancy: {0}")]
-    Occupancy(String),
     #[error("{0}")]
     Processor(String),
     #[error("{0}")]
@@ -1163,8 +1160,6 @@ pub struct Engine {
     trunk_dropped: Arc<AtomicU64>,
     trunk_nodes: Mutex<HashSet<String>>,
     trunk_status: Arc<Mutex<Vec<TrunkSystemStatus>>>,
-    occupancy: Mutex<occupancy::Occupancy>,
-    occupancy_sets: Mutex<HashSet<(u32, u32)>>,
     discovery: Mutex<discovery::Discovery>,
     recordings_dir: Option<PathBuf>,
     array_edits: Mutex<()>,
@@ -1207,8 +1202,6 @@ impl Engine {
             trunk_dropped: trunk_dropped.clone(),
             trunk_nodes: Mutex::new(HashSet::new()),
             trunk_status: trunk_status.clone(),
-            occupancy: Mutex::new(occupancy::Occupancy::new()),
-            occupancy_sets: Mutex::new(HashSet::new()),
             discovery: Mutex::new(discovery::Discovery::default()),
             recordings_dir,
             array_edits: Mutex::new(()),
@@ -1508,103 +1501,6 @@ impl Engine {
                 }
             })?;
         Ok(())
-    }
-
-    #[must_use]
-    pub fn occupancy(&self) -> &Mutex<occupancy::Occupancy> {
-        &self.occupancy
-    }
-
-    pub fn collect_occupancy_for(
-        self: &Arc<Self>,
-        ds: u32,
-        stream: u32,
-    ) -> Result<(), EngineError> {
-        {
-            let mut collecting = self
-                .occupancy_sets
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if !collecting.insert((ds, stream)) {
-                return Ok(());
-            }
-        }
-        let mut rx = match self.subscribe_spectrum_background(ds, stream) {
-            Ok(rx) => rx,
-            Err(error) => {
-                self.stop_collecting(ds, stream);
-                return Err(error);
-            }
-        };
-        let weak = Arc::downgrade(self);
-        std::thread::Builder::new()
-            .name(format!("sdrmm-occupancy-{ds}-{stream}"))
-            .spawn(move || {
-                loop {
-                    let snapshot = match rx.blocking_recv() {
-                        Ok(snapshot) => snapshot,
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => break,
-                    };
-                    let Some(engine) = weak.upgrade() else { return };
-                    let now_ms = jiff::Timestamp::now().as_millisecond();
-                    engine
-                        .occupancy
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .observe(
-                            &snapshot.db,
-                            snapshot.center_hz,
-                            snapshot.span_hz,
-                            snapshot.lo_guard().as_ref(),
-                            now_ms,
-                        );
-                }
-                if let Some(engine) = weak.upgrade() {
-                    engine.stop_collecting(ds, stream);
-                }
-            })
-            .map_err(|error| {
-                self.stop_collecting(ds, stream);
-                EngineError::Occupancy(error.to_string())
-            })?;
-        Ok(())
-    }
-
-    pub fn start_occupancy_collector(self: &Arc<Self>, interval: Duration) -> std::io::Result<()> {
-        let weak = Arc::downgrade(self);
-        std::thread::Builder::new()
-            .name("sdrmm-occupancy".to_string())
-            .spawn(move || {
-                loop {
-                    let Some(engine) = weak.upgrade() else { return };
-                    for (ds, streams) in engine.running_lanes() {
-                        for stream in 0..streams {
-                            let _ = engine.collect_occupancy_for(ds, stream);
-                        }
-                    }
-                    drop(engine);
-                    std::thread::sleep(interval);
-                }
-            })?;
-        Ok(())
-    }
-
-    fn running_lanes(&self) -> Vec<(u32, u32)> {
-        let inner = self.lock();
-        inner
-            .device_sets
-            .iter()
-            .filter(|(_, state)| state.status == DeviceSetStatus::Running)
-            .map(|(id, state)| (*id, state.physical_streams()))
-            .collect()
-    }
-
-    fn stop_collecting(&self, ds: u32, stream: u32) {
-        self.occupancy_sets
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&(ds, stream));
     }
 
     pub fn start_level_meter(self: &Arc<Self>, interval: Duration) -> std::io::Result<()> {

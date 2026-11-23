@@ -1308,19 +1308,3 @@ mod tests {
         }
     }
 }
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct OccupancyBucket {
-    pub freq_hz: u64,
-    pub duty: f32,
-    pub samples: u64,
-    pub by_hour: Vec<f32>,
-    pub last_seen: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct OccupancyReport {
-    pub bucket_hz: u64,
-    pub since: String,
-    pub buckets: Vec<OccupancyBucket>,
-}

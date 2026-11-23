@@ -3491,36 +3491,6 @@
         }
       }
     },
-    "/api/occupancy": {
-      "get": {
-        "operationId": "get_occupancy",
-        "parameters": [
-          {
-            "name": "min_samples",
-            "in": "query",
-            "description": "Drop buckets observed fewer times than this. A duty cycle from three sightings is not a measurement; the default keeps that out of the report",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "How much of the time each slice of spectrum has carried a signal, busiest first. Accumulated from the spectrum tap of every running receiver against absolute frequency, so a scan and a retune both add to the same picture",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OccupancyReport"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/patch/catalog": {
       "get": {
         "operationId": "get_patch_catalog",
@@ -19367,66 +19337,6 @@
               "string",
               "null"
             ]
-          }
-        }
-      },
-      "OccupancyBucket": {
-        "type": "object",
-        "required": [
-          "freq_hz",
-          "duty",
-          "samples",
-          "by_hour",
-          "last_seen"
-        ],
-        "properties": {
-          "by_hour": {
-            "type": "array",
-            "items": {
-              "type": "number",
-              "format": "float"
-            }
-          },
-          "duty": {
-            "type": "number",
-            "format": "float"
-          },
-          "freq_hz": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "last_seen": {
-            "type": "string"
-          },
-          "samples": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
-      "OccupancyReport": {
-        "type": "object",
-        "required": [
-          "bucket_hz",
-          "since",
-          "buckets"
-        ],
-        "properties": {
-          "bucket_hz": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "buckets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/OccupancyBucket"
-            }
-          },
-          "since": {
-            "type": "string"
           }
         }
       },

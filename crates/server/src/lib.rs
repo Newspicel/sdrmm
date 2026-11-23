@@ -563,7 +563,6 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
     }
     engine.start_hotplug_prober(HOTPLUG_INTERVAL)?;
     engine.start_level_meter(LEVEL_INTERVAL)?;
-    engine.start_occupancy_collector(HOTPLUG_INTERVAL)?;
     log_start(&config, &engine);
     sweep_import_spools(&engine);
     let store = Store::open(config.db_path.as_deref()).map_err(std::io::Error::other)?;

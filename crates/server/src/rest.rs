@@ -22,14 +22,14 @@ use sdrmm_wire::{
     DeviceInfo, DeviceSettings, DevicesResponse, DfFusionView, DiagnosticsReport, DoctorReport,
     EncoderTypesResponse, ErrorCode, ExamplesResponse, ExportFormat, IonosondeReport,
     LicenseTextResponse, LocateQuery, LogGroupKey, MAX_RECORDING_UPLOAD_BYTES,
-    MAX_SATELLITE_QUERY_LEN, NodeBody, OccupancyReport, PRESET_SNAPSHOT_VERSION, PatchApplyReport,
-    PatchCatalog, PatchChannelRequest, PatchGraph, PresetDevice, PresetInfo, PresetSnapshot,
-    RecordingAnnotation, RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload,
-    RecordingsResponse, SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest,
-    SavedRadio, ScannerStatus, SerialDevicesResponse, ServerEvent, ServerStatus, StateScope,
-    StateSnapshot, TemplateInfo, TemplatesResponse, ToolRequest, ToolResponse, ToolsResponse,
-    TransmittersResponse, TransportInfo, UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceExport,
-    WorkspaceSnapshot, WorkspacesResponse, WriteSerialRequest, WrittenSerial,
+    MAX_SATELLITE_QUERY_LEN, NodeBody, PRESET_SNAPSHOT_VERSION, PatchApplyReport, PatchCatalog,
+    PatchChannelRequest, PatchGraph, PresetDevice, PresetInfo, PresetSnapshot, RecordingAnnotation,
+    RecordingDownloadQuery, RecordingFormat, RecordingInfo, RecordingUpload, RecordingsResponse,
+    SatelliteCatalogQuery, SatelliteCatalogResponse, SaveRadioRequest, SavedRadio, ScannerStatus,
+    SerialDevicesResponse, ServerEvent, ServerStatus, StateScope, StateSnapshot, TemplateInfo,
+    TemplatesResponse, ToolRequest, ToolResponse, ToolsResponse, TransmittersResponse,
+    TransportInfo, UpdateWorkspaceRequest, WorkspaceDetail, WorkspaceExport, WorkspaceSnapshot,
+    WorkspacesResponse, WriteSerialRequest, WrittenSerial,
 };
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -98,11 +98,11 @@ use devices::{
 use info::{
     __path_get_about, __path_get_auth, __path_get_band_plan, __path_get_clients,
     __path_get_diagnostics, __path_get_doctor, __path_get_ionosonde, __path_get_license_text,
-    __path_get_occupancy, __path_get_patch_catalog, __path_get_status, __path_get_transport,
-    __path_list_band_regions, __path_list_tools, __path_locate_band_region, __path_run_tool,
-    get_about, get_auth, get_band_plan, get_clients, get_diagnostics, get_doctor, get_ionosonde,
-    get_license_text, get_occupancy, get_patch_catalog, get_status, get_transport,
-    list_band_regions, list_tools, locate_band_region, run_tool,
+    __path_get_patch_catalog, __path_get_status, __path_get_transport, __path_list_band_regions,
+    __path_list_tools, __path_locate_band_region, __path_run_tool, get_about, get_auth,
+    get_band_plan, get_clients, get_diagnostics, get_doctor, get_ionosonde, get_license_text,
+    get_patch_catalog, get_status, get_transport, list_band_regions, list_tools,
+    locate_band_region, run_tool,
 };
 use media::{
     __path_call_audio, __path_captured_image, __path_list_images, call_audio, captured_image,
@@ -546,7 +546,6 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(sign_in::sign_out))
         .routes(routes!(sign_in::get_me))
         .routes(routes!(get_clients))
-        .routes(routes!(get_occupancy))
         .routes(routes!(get_ionosonde))
         .routes(routes!(get_status))
         .routes(routes!(get_transport))

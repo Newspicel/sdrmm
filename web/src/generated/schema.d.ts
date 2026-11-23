@@ -1092,22 +1092,6 @@ export interface paths {
         patch: operations["update_nanovna_measurement"];
         trace?: never;
     };
-    "/api/occupancy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_occupancy"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/patch/catalog": {
         parameters: {
             query?: never;
@@ -5382,22 +5366,6 @@ export interface components {
             /** Format: double */
             step?: number | null;
             unit?: string | null;
-        };
-        OccupancyBucket: {
-            by_hour: number[];
-            /** Format: float */
-            duty: number;
-            /** Format: int64 */
-            freq_hz: number;
-            last_seen: string;
-            /** Format: int64 */
-            samples: number;
-        };
-        OccupancyReport: {
-            /** Format: int64 */
-            bucket_hz: number;
-            buckets: components["schemas"]["OccupancyBucket"][];
-            since: string;
         };
         OfferState: {
             /** @enum {string} */
@@ -11167,29 +11135,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    get_occupancy: {
-        parameters: {
-            query?: {
-                /** @description Drop buckets observed fewer times than this. A duty cycle from three sightings is not a measurement; the default keeps that out of the report */
-                min_samples?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description How much of the time each slice of spectrum has carried a signal, busiest first. Accumulated from the spectrum tap of every running receiver against absolute frequency, so a scan and a retune both add to the same picture */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OccupancyReport"];
                 };
             };
         };

@@ -7,7 +7,10 @@ use std::sync::{
 use tokio::sync::broadcast;
 
 use super::{Heard, TrunkInput};
-use crate::{Engine, occupancy::OCCUPIED_MARGIN_DB, runtime::SpectrumSnapshot};
+use crate::{Engine, runtime::SpectrumSnapshot};
+
+/// How far above the noise floor a bin must stand to count as carrying a signal.
+const OCCUPIED_MARGIN_DB: f32 = 10.0;
 
 /// The narrowest run of loud bins that can still be a channel rather than a spur.
 const MIN_CARRIER_HZ: f64 = 2_000.0;

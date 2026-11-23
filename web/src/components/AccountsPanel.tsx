@@ -2,12 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { secretSet } from "../canvas/nodes/eventOutput";
-import {
-  newChatAccount,
-  SERVICE_LABEL,
-  SERVICES,
-  withChatService,
-} from "../canvas/nodes/voiceChat";
+import { newChatAccount, SERVICE_LABEL, SERVICES } from "../canvas/nodes/voiceChat";
 import {
   CHAT_ACCOUNTS_KEY,
   chatAccountsQuery,
@@ -21,7 +16,7 @@ import type { ChatAccount, Secret } from "../lib/types";
 import { Button } from "./BaseControls";
 import { ConfirmButton } from "./ConfirmButton";
 import { BTN, BTN_PRIMARY } from "./controls";
-import { ChipRows, Chips, ChoiceChip } from "./face/Chips";
+import { ChipRows, Chips } from "./face/Chips";
 import { TextChip } from "./face/TextChip";
 import { List, ListRow, Panel, PanelHint, PanelToolbar, RowAction } from "./ListPanel";
 
@@ -185,15 +180,9 @@ function AccountForm({
 }) {
   return (
     <div className="flex flex-col gap-3 rounded-control border border-line p-2">
+      <span className="text-xs font-medium text-ink">{SERVICE_LABEL[draft.service]}</span>
       <ChipRows>
         <Chips inset="none">
-          <ChoiceChip
-            label="Service"
-            title="Chat service"
-            value={draft.service}
-            options={SERVICES}
-            onChange={(service) => on.draft(withChatService(draft, service))}
-          />
           <TextChip
             label="Name"
             title="Account name"

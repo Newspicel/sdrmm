@@ -1,50 +1,6 @@
 use super::*;
 
 #[tokio::test]
-async fn occupancy_is_served_and_filtered_by_how_well_observed_it_is() {
-    let (app, state) = test_router_with_state();
-
-    let (status, body) = request(app.clone(), "GET", "/api/occupancy", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let report: sdrmm_wire::OccupancyReport = serde_json::from_slice(&body).expect("json");
-    assert!(report.buckets.is_empty());
-    assert_eq!(report.bucket_hz, sdrmm_engine::occupancy::BUCKET_HZ);
-
-    {
-        let mut occupancy = state
-            .engine
-            .occupancy()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut db = vec![-100.0f32; 128];
-        for round in 0..40 {
-            db[64] = -40.0;
-            db[96] = if round < 4 { -40.0 } else { -100.0 };
-            occupancy.observe(&db, 100e6, 1.6e6, None, 0);
-        }
-    }
-
-    let (status, body) = request(app.clone(), "GET", "/api/occupancy", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let report: sdrmm_wire::OccupancyReport = serde_json::from_slice(&body).expect("json");
-    assert!(
-        report.buckets.len() >= 2,
-        "nothing survived the sample floor"
-    );
-    assert!(
-        report.buckets[0].duty >= report.buckets[1].duty,
-        "the report is not ordered busiest first"
-    );
-    assert_eq!(report.buckets[0].by_hour.len(), 24);
-    assert!(!report.since.is_empty());
-
-    let (status, body) = request(app.clone(), "GET", "/api/occupancy?min_samples=1000", None).await;
-    assert_eq!(status, StatusCode::OK);
-    let report: sdrmm_wire::OccupancyReport = serde_json::from_slice(&body).expect("json");
-    assert!(report.buckets.is_empty());
-}
-
-#[tokio::test]
 async fn the_band_plan_is_served_per_region() {
     let app = test_router();
     let (status, body) = request(app.clone(), "GET", "/api/bandplan/regions", None).await;

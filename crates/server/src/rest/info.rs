@@ -5,8 +5,8 @@ use crate::auth::Identity;
 use super::{
     AboutResponse, ApiError, AppError, AppState, AuthInfo, BandPlan, BandRegionMatch,
     BandRegionsResponse, ClientsResponse, DiagnosticsReport, DoctorReport, IonosondeReport, Json,
-    LicenseTextResponse, LocateQuery, OccupancyReport, PatchCatalog, Path, Query, ServerStatus,
-    State, ToolRequest, ToolResponse, ToolsResponse, TransportInfo,
+    LicenseTextResponse, LocateQuery, PatchCatalog, Path, Query, ServerStatus, State, ToolRequest,
+    ToolResponse, ToolsResponse, TransportInfo,
 };
 
 #[utoipa::path(
@@ -98,40 +98,6 @@ pub(super) async fn get_clients(State(state): State<AppState>) -> Json<ClientsRe
     Json(ClientsResponse {
         clients: state.clients.load(std::sync::atomic::Ordering::Relaxed),
     })
-}
-
-#[utoipa::path(
-    get, path = "/api/occupancy",
-    params(
-        ("min_samples" = Option<u64>, Query,
-         description = "Drop buckets observed fewer times than this. A duty cycle from three \
-                        sightings is not a measurement; the default keeps that out of the report"),
-    ),
-    responses((
-        status = 200,
-        description = "How much of the time each slice of spectrum has carried a signal, busiest \
-                       first. Accumulated from the spectrum tap of every running receiver against \
-                       absolute frequency, so a scan and a retune both add to the same picture",
-        body = OccupancyReport,
-    )),
-)]
-pub(super) async fn get_occupancy(
-    State(state): State<AppState>,
-    Query(query): Query<OccupancyQuery>,
-) -> Json<OccupancyReport> {
-    let occupancy = state
-        .engine
-        .occupancy()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    Json(occupancy.report(query.min_samples.unwrap_or(DEFAULT_MIN_SAMPLES)))
-}
-
-pub(super) const DEFAULT_MIN_SAMPLES: u64 = 30;
-
-#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
-pub(super) struct OccupancyQuery {
-    min_samples: Option<u64>,
 }
 
 #[utoipa::path(

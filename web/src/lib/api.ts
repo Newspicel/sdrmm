@@ -56,7 +56,6 @@ import type {
   NanoVnaMeasurementInfo,
   NodeActed,
   NodeAction,
-  OccupancyReport,
   PairingOffer,
   PatchApplyReport,
   PatchCatalog,
@@ -144,7 +143,6 @@ export const EXAMPLES_KEY = ["get", "/api/examples"] as const;
 export const AUTH_KEY = ["get", "/api/auth"] as const;
 export const DOCTOR_KEY = ["get", "/api/doctor"] as const;
 export const DIAGNOSTICS_KEY = ["get", "/api/diagnostics"] as const;
-export const OCCUPANCY_KEY = ["get", "/api/occupancy"] as const;
 export const IONOSONDE_KEY = ["get", "/api/ionosonde"] as const;
 export const ABOUT_KEY = ["get", "/api/about"] as const;
 export const WORKSPACES_KEY = ["get", "/api/workspaces"] as const;
@@ -178,17 +176,6 @@ export function callAudioUrl(url: string): string {
 
 export function capturedImageUrl(url: string): string {
   return withToken(url);
-}
-
-export function occupancyQuery(minSamples: number) {
-  return queryOptions({
-    queryKey: [...OCCUPANCY_KEY, minSamples] as const,
-    queryFn: async (): Promise<OccupancyReport> =>
-      unwrap(
-        await client.GET("/api/occupancy", { params: { query: { min_samples: minSamples } } }),
-      ),
-    refetchInterval: 15_000,
-  });
 }
 
 export function ionosondeQuery(enabled: boolean) {
