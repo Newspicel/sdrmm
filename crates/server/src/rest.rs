@@ -59,6 +59,7 @@ mod sign_in;
 mod sinks;
 mod sky_scan;
 mod speakers;
+mod speech;
 mod survey;
 mod workspaces;
 
@@ -583,6 +584,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .merge(survey::routes())
         .merge(fusion::routes())
         .merge(denoise::routes())
+        .merge(speech::routes())
         .merge(nanovna::routes())
         .merge(secrets::routes())
         .merge(chat_accounts::routes())

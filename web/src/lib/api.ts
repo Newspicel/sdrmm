@@ -80,6 +80,8 @@ import type {
   SerialDevicesResponse,
   ServerOutputsResponse,
   SkyScanStatus,
+  SpeechModel,
+  SpeechModelsResponse,
   StateSnapshot,
   SurveyAction,
   SurveyGrid,
@@ -160,8 +162,9 @@ export const PHONES_KEY = ["get", "/api/phones"] as const;
 export const FUSION_KEY = ["get", "/api/fusion/{node}"] as const;
 export const SURVEY_KEY = ["get", "/api/survey/{node}"] as const;
 export const DENOISE_MODELS_KEY = ["get", "/api/denoise-models"] as const;
+export const SPEECH_MODELS_KEY = ["get", "/api/speech-models"] as const;
 
-const DENOISE_POLL_MS = 500;
+const MODEL_POLL_MS = 500;
 
 export function stateQuery() {
   return queryOptions({
@@ -385,7 +388,7 @@ export function denoiseModelsQuery(enabled: boolean) {
     enabled,
     refetchInterval: (query) =>
       query.state.data?.models.some((model) => model.state === "downloading")
-        ? DENOISE_POLL_MS
+        ? MODEL_POLL_MS
         : false,
   });
 }
@@ -396,6 +399,26 @@ export async function downloadDenoiseModel(model: DenoiseModel): Promise<void> {
 
 export async function deleteDenoiseModel(model: DenoiseModel): Promise<void> {
   unwrap(await client.DELETE("/api/denoise-models/{model}", { params: { path: { model } } }));
+}
+
+export function speechModelsQuery() {
+  return queryOptions({
+    queryKey: SPEECH_MODELS_KEY,
+    queryFn: async (): Promise<SpeechModelsResponse> =>
+      unwrap(await client.GET("/api/speech-models")),
+    refetchInterval: (query) =>
+      query.state.data?.models.some((model) => model.state === "downloading")
+        ? MODEL_POLL_MS
+        : false,
+  });
+}
+
+export async function downloadSpeechModel(model: SpeechModel): Promise<void> {
+  unwrap(await client.POST("/api/speech-models/{model}", { params: { path: { model } } }));
+}
+
+export async function deleteSpeechModel(model: SpeechModel): Promise<void> {
+  unwrap(await client.DELETE("/api/speech-models/{model}", { params: { path: { model } } }));
 }
 
 export function savedRadiosQuery() {

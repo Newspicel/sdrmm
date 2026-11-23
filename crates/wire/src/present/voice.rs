@@ -254,6 +254,7 @@ impl EventPayload for VoiceCall {
                 }),
             }),
             audio_error: self.audio_error.clone(),
+            text: self.transcript.clone(),
             fields: call_fields(self),
             ..Presentation::of(call_summary(self))
         }
@@ -293,6 +294,7 @@ fn call_fields(c: &VoiceCall) -> Vec<Field> {
             c.key_id.and_then(|id| text_of(format!("{id:X}"))),
         ),
         ("audio", "Audio", text(c.audio_error.as_deref())),
+        ("transcript", "Transcript", text(c.transcript.as_deref())),
     ])
 }
 
@@ -337,6 +339,7 @@ impl EventPayload for Transmission {
                 freq_hz: None,
                 tag: None,
             }),
+            text: self.transcript.clone(),
             fields: transmission_fields(self),
             ..Presentation::of(self.summary())
         }
@@ -382,6 +385,7 @@ fn transmission_fields(t: &Transmission) -> Vec<Field> {
         ("snr", "SNR", number(Some(t.signal.snr_db), Unit::Db, 1)),
         ("duration", "Duration", seconds(t.duration_ms, 2)),
         ("error", "Error", text(t.error.as_deref())),
+        ("transcript", "Transcript", text(t.transcript.as_deref())),
     ])
 }
 

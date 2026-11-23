@@ -10565,6 +10565,20 @@
       "texts": []
     },
     {
+      "name": "NVIDIA Parakeet TDT 0.6B v3",
+      "license": "CC-BY-4.0",
+      "source": "native",
+      "url": "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+      "texts": []
+    },
+    {
+      "name": "Parakeet TDT 0.6B v3 fine-tuned for ATC (qenneth)",
+      "license": "MIT",
+      "source": "native",
+      "url": "https://huggingface.co/qenneth/parakeet-tdt-0.6b-v3-finetuned-for-ATC",
+      "texts": []
+    },
+    {
       "name": "SDRTrunk LTR check table",
       "license": "GPL-3.0-or-later",
       "source": "native",

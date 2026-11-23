@@ -2844,6 +2844,83 @@
       }
     },
     {
+      "kind": "transcriber",
+      "name": "Transcriber",
+      "category": "tool",
+      "summary": "Writes down what calls say",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 320,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "in",
+          "payload": {
+            "type": "events",
+            "kinds": [
+              "call",
+              "transmission"
+            ]
+          },
+          "multi": "many",
+          "keeps": [
+            "clips"
+          ],
+          "takes": "calls and transmissions",
+          "note": "Calls and transmissions with their audio"
+        },
+        {
+          "name": "events",
+          "port_type": "events",
+          "direction": "out",
+          "payload": {
+            "type": "events",
+            "kinds": [
+              "call",
+              "transmission"
+            ]
+          },
+          "multi": "many",
+          "note": "The same events with their text"
+        }
+      ],
+      "default_body": {
+        "kind": "transcriber",
+        "data": {
+          "settings": {
+            "model": "parakeet-tdt-0.6b-v3"
+          }
+        }
+      },
+      "settings": [
+        {
+          "key": "model",
+          "label": "Model",
+          "title": "The speech model that writes the text",
+          "control": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "parakeet-tdt-0.6b-v3",
+                "label": "Parakeet v3",
+                "title": "25 European languages"
+              },
+              {
+                "value": "parakeet-tdt-0.6b-v3-atc",
+                "label": "Parakeet v3 ATC",
+                "title": "Air traffic control English"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "kind": "note",
       "name": "Note",
       "category": "tool",

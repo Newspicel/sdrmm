@@ -2127,9 +2127,11 @@ impl DecoderLogPredicate {
         }
         if let Some(q) = &filter.q {
             terms.push(
-                "(decoder_log.station LIKE ? ESCAPE '\\' OR decoder_log.summary LIKE ? ESCAPE '\\')",
+                "(decoder_log.station LIKE ? ESCAPE '\\' OR decoder_log.summary LIKE ? ESCAPE '\\' \
+                 OR json_extract(decoder_log.event, '$.data.transcript') LIKE ? ESCAPE '\\')",
             );
             let pattern = Value::Text(format!("%{}%", escape_like(q)));
+            params.push(pattern.clone());
             params.push(pattern.clone());
             params.push(pattern);
         }

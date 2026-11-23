@@ -1014,7 +1014,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [use-sync-external-store](https://github.com/react/react#readme) | 1.7.0 | MIT |
 | [zustand](https://github.com/pmndrs/zustand) | 4.5.7, 5.1.0 | MIT |
 
-## Hardware libraries (27)
+## Hardware libraries (29)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -1039,6 +1039,8 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [MetOp AHRPT CADUs (Meti's sat-archive, received by Meti)](https://sat-archive.metislair.com/) | - | CC-BY-SA-4.0 |
 | [NAVAREA limits (United States Coast Guard)](https://www.arcgis.com/home/item.html?id=161e115920164289af6d70130b3e8a1f) | - | LicenseRef-USCG-public-use |
 | [nrsc5 (HD Radio receiver and sample capture)](https://github.com/theori-io/nrsc5) | - | GPL-3.0-or-later |
+| [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) | - | CC-BY-4.0 |
+| [Parakeet TDT 0.6B v3 fine-tuned for ATC (qenneth)](https://huggingface.co/qenneth/parakeet-tdt-0.6b-v3-finetuned-for-ATC) | - | MIT |
 | [SDRTrunk LTR check table](https://github.com/DSheirer/sdrtrunk) | - | GPL-3.0-or-later |
 | [SoapySDR](https://github.com/pothosware/SoapySDR) | - | BSL-1.0 |
 | [SSDV packet format and tables (Philip Heron)](https://codeberg.org/fsphil/ssdv) | - | GPL-3.0-or-later |

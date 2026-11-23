@@ -9,7 +9,7 @@ mod tests;
 use std::sync::Arc;
 
 pub use format::{
-    Binary, ConvSpec, Graph, Node, Op, Unary, Value, Weights, f16_to_f32, f32_to_f16,
+    Binary, ConvSpec, Graph, Index, Node, Op, Stored, Unary, Value, Weights, f16_to_f32, f32_to_f16,
 };
 
 use plan::{Kernel, Slot, Step};

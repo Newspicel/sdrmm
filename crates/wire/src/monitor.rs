@@ -118,6 +118,9 @@ pub struct Transmission {
     pub audio: Option<EventAudio>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What a transcriber heard in the clip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
 }
 
 impl Transmission {

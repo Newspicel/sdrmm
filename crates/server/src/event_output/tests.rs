@@ -85,6 +85,7 @@ fn call() -> VoiceCall {
         audio_error: None,
         talker_alias: None,
         key_id: None,
+        transcript: None,
     }
 }
 
@@ -1477,6 +1478,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
             decoder_confirmed: false,
             audio: Some(audio.clone()),
             error: None,
+            transcript: None,
         }),
         ..decoded()
     };

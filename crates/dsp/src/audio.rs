@@ -5,5 +5,6 @@ pub mod downmix;
 pub mod limiter;
 pub mod mix;
 pub mod noise;
+pub mod speech;
 pub mod squelch;
 pub mod voice_gate;

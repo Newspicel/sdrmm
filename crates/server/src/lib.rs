@@ -72,6 +72,7 @@ mod schedules;
 mod sinks;
 mod sky_scans;
 mod speakers;
+mod speech_models;
 mod store;
 mod stream_out;
 mod surfaces;
@@ -79,6 +80,7 @@ mod survey;
 mod sweeps;
 mod templates;
 pub mod tls;
+mod transcriber;
 mod transmit;
 mod trunking;
 mod voice_chat;
@@ -151,6 +153,8 @@ pub(crate) struct AppState {
     pub(crate) dev_cors: bool,
     pub(crate) data_dir: Option<PathBuf>,
     pub(crate) denoise: Arc<denoise_models::Downloads>,
+    pub(crate) speech: Arc<speech_models::SpeechModels>,
+    pub(crate) transcribers: Arc<transcriber::TranscriberHub>,
     pub(crate) streams: Arc<stream_out::StreamHub>,
     started: std::time::Instant,
 }
@@ -210,6 +214,8 @@ impl AppState {
             dev_cors: false,
             data_dir: None,
             denoise: Arc::default(),
+            speech: Arc::default(),
+            transcribers: Arc::default(),
             streams: Arc::default(),
             started: std::time::Instant::now(),
         }
@@ -371,6 +377,7 @@ fn start_runtime(state: &AppState) -> Background {
     df_fusion::start(state);
     fusion_routes::start(state);
     bearing_fix::start(state);
+    transcriber::start(state);
     sinks::start(state);
     survey::follow(state);
     sweeps::follow(state);
@@ -581,6 +588,7 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
             .engine
             .denoise_models()
             .set_dir(dir.join("denoise-models"));
+        state.speech.set_dir(dir.join("speech-models"));
         state.reference.attach(dir.join("reference"));
     }
     let served = config

@@ -159,7 +159,7 @@ impl DenoiseModel {
     }
 
     #[must_use]
-    pub fn artifact(self) -> DenoiseArtifact {
+    pub fn artifact(self) -> ModelArtifact {
         let (bytes, sha256) = match self {
             Self::Dpdfnet2 => (
                 5_090_797,
@@ -170,19 +170,20 @@ impl DenoiseModel {
                 "9a9acae4e956ecf11e08b3aa961b1adede0ab7a3abe7c2343d27e024472d96f2",
             ),
         };
-        DenoiseArtifact { bytes, sha256 }
+        ModelArtifact { bytes, sha256 }
     }
 }
 
+/// A downloadable model file's exact size and SHA-256, so a download is checked before use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DenoiseArtifact {
+pub struct ModelArtifact {
     pub bytes: u64,
     pub sha256: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub enum DenoiseModelState {
+pub enum ModelState {
     Missing,
     Downloading { received: u64 },
     Ready,
@@ -194,7 +195,7 @@ pub struct DenoiseModelStatus {
     pub model: DenoiseModel,
     pub bytes: u64,
     #[serde(flatten)]
-    pub state: DenoiseModelState,
+    pub state: ModelState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -598,7 +599,7 @@ mod tests {
         let status = DenoiseModelStatus {
             model: DenoiseModel::Dpdfnet8,
             bytes: 10,
-            state: DenoiseModelState::Downloading { received: 4 },
+            state: ModelState::Downloading { received: 4 },
         };
         assert_eq!(
             serde_json::to_value(&status).expect("serializes"),

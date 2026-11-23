@@ -148,7 +148,8 @@ export function matchesFilter(record: DecodedRecord, filter: LogFilter): boolean
   const view = record.view ?? NO_VIEW;
   return (
     view.summary.toLowerCase().includes(q) ||
-    (view.entity != null && view.entity.toLowerCase().includes(q))
+    (view.entity != null && view.entity.toLowerCase().includes(q)) ||
+    (view.text != null && view.text.toLowerCase().includes(q))
   );
 }
 

@@ -1540,6 +1540,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/speech-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_speech_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/speech-models/{model}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["download_speech_model"];
+        delete: operations["delete_speech_model"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/state": {
         parameters: {
             query?: never;
@@ -3320,6 +3352,8 @@ export interface components {
         };
         ControlAck: {
             error?: string | null;
+            /** @description The target follows another controller with a better pass, so this command waits its turn. */
+            outranked?: boolean;
             sweep?: components["schemas"]["SweepStatus"] | null;
             target: string;
             verb?: components["schemas"]["ControlVerb"] | null;
@@ -3352,8 +3386,6 @@ export interface components {
             id: number;
             model_id: string;
             name: string;
-            /** @description The target follows another controller with a better pass, so this command waits its turn. */
-            outranked?: boolean;
             updated_at: string;
             /** Format: int64 */
             user_id?: number | null;
@@ -3618,23 +3650,7 @@ export interface components {
         DenoiseModelsResponse: {
             models: components["schemas"]["DenoiseModelStatus"][];
         };
-        DenoiseModelState: {
-            /** @enum {string} */
-            state: "missing";
-        } | {
-            /** Format: int64 */
-            received: number;
-            /** @enum {string} */
-            state: "downloading";
-        } | {
-            /** @enum {string} */
-            state: "ready";
-        } | {
-            error: string;
-            /** @enum {string} */
-            state: "failed";
-        };
-        DenoiseModelStatus: components["schemas"]["DenoiseModelState"] & {
+        DenoiseModelStatus: components["schemas"]["ModelState"] & {
             /** Format: int64 */
             bytes: number;
             model: components["schemas"]["DenoiseModel"];
@@ -4803,6 +4819,22 @@ export interface components {
             id: number;
             name: string;
         };
+        ModelState: {
+            /** @enum {string} */
+            state: "missing";
+        } | {
+            /** Format: int64 */
+            received: number;
+            /** @enum {string} */
+            state: "downloading";
+        } | {
+            /** @enum {string} */
+            state: "ready";
+        } | {
+            error: string;
+            /** @enum {string} */
+            state: "failed";
+        };
         /** @enum {string} */
         Modulation: "none" | "carrier" | "ook" | "am" | "ssb" | "fm" | "fsk2" | "fsk4" | "fsk8" | "psk2" | "psk4" | "ofdm" | "chirp" | "noise_like" | "unknown";
         /** @enum {string} */
@@ -5302,6 +5334,10 @@ export interface components {
             /** @enum {string} */
             kind: "transmit";
         } | {
+            data: components["schemas"]["TranscriberNode"];
+            /** @enum {string} */
+            kind: "transcriber";
+        } | {
             data: components["schemas"]["NoteNode"];
             /** @enum {string} */
             kind: "note";
@@ -5313,7 +5349,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "encoder" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "stream_out" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note" | "voice_chat";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "stream_out" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "transcriber" | "note" | "voice_chat";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -6349,6 +6385,12 @@ export interface components {
         };
         /** @enum {string} */
         RotatorAxes: "azimuth_elevation" | "azimuth";
+        /** @description The controller a rotator follows: the best pass in view, or else the first to rise. */
+        RotatorLead: {
+            name?: string | null;
+            next_pass?: components["schemas"]["SatellitePass"] | null;
+            node: string;
+        };
         RotatorLink: {
             /** Format: int32 */
             baud: number;
@@ -6385,12 +6427,6 @@ export interface components {
             manual?: components["schemas"]["SkyPoint"];
             mode?: components["schemas"]["RotatorMode"];
             park?: components["schemas"]["SkyPoint"];
-        /** @description The controller a rotator follows: the best pass in view, or else the first to rise. */
-        RotatorLead: {
-            name?: string | null;
-            next_pass?: components["schemas"]["SatellitePass"] | null;
-            node: string;
-        };
             /** Format: double */
             tolerance_deg?: number;
         };
@@ -6398,6 +6434,7 @@ export interface components {
             awaiting_pass?: boolean;
             error?: string | null;
             flipped?: boolean;
+            following?: components["schemas"]["RotatorLead"] | null;
             node: string;
             position?: components["schemas"]["SkyPoint"] | null;
             target?: components["schemas"]["SkyPoint"] | null;
@@ -6434,7 +6471,6 @@ export interface components {
             /** @enum {string} */
             runs: "server";
         };
-            following?: components["schemas"]["RotatorLead"] | null;
         SatelliteCatalogResponse: {
             /** Format: int64 */
             fetched?: number;
@@ -6827,6 +6863,12 @@ export interface components {
             type: "AimUpdate";
         } | {
             data: {
+                status: components["schemas"]["TranscriberStatus"];
+            };
+            /** @enum {string} */
+            type: "TranscriberUpdate";
+        } | {
+            data: {
                 status: components["schemas"]["SkyScanStatus"];
             };
             /** @enum {string} */
@@ -7212,6 +7254,16 @@ export interface components {
          * @enum {string}
          */
         SpectrumOverlap: "off" | "auto" | "full";
+        /** @enum {string} */
+        SpeechModel: "parakeet-tdt-0.6b-v3" | "parakeet-tdt-0.6b-v3-atc";
+        SpeechModelsResponse: {
+            models: components["schemas"]["SpeechModelStatus"][];
+        };
+        SpeechModelStatus: components["schemas"]["ModelState"] & {
+            /** Format: int64 */
+            bytes: number;
+            model: components["schemas"]["SpeechModel"];
+        };
         Spot: {
             at: components["schemas"]["LatLon"];
             callsign: string;
@@ -7608,6 +7660,28 @@ export interface components {
             lon?: number | null;
             /** Format: double */
             speed_mps?: number | null;
+        };
+        TranscriberNode: {
+            settings?: components["schemas"]["TranscriberParams"];
+        };
+        TranscriberParams: {
+            /** @default parakeet-tdt-0.6b-v3 */
+            model: components["schemas"]["SpeechModel"];
+        };
+        /** @description A transcriber's work so far, with the readouts its face shows. */
+        TranscriberStatus: {
+            /** Format: int64 */
+            done: number;
+            /** Format: int64 */
+            dropped: number;
+            error?: string | null;
+            model: components["schemas"]["SpeechModel"];
+            node: string;
+            /** Format: int64 */
+            queued: number;
+            readouts?: components["schemas"]["Field"][];
+            /** Format: int64 */
+            took_ms?: number | null;
         };
         TransmitAction: {
             /** @enum {string} */
@@ -12523,6 +12597,104 @@ export interface operations {
             };
             /** @description Malformed request body */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    list_speech_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every speech model and whether it is here */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpeechModelsResponse"];
+                };
+            };
+        };
+    };
+    download_speech_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Model name */
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Download started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such model */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Already downloading */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No data directory to keep models in */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    delete_speech_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Model name */
+                model: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Model removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such model */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -155,7 +155,11 @@ impl EventFilterNode {
     fn text_verdict(&self, view: &Presentation) -> Verdict {
         match self.contains.as_deref() {
             None | Some("") => Verdict::Unjudged,
-            Some(text) => Verdict::of(view.summary.to_lowercase().contains(&text.to_lowercase())),
+            Some(text) => {
+                let wanted = text.to_lowercase();
+                let said = |seen: &str| seen.to_lowercase().contains(&wanted);
+                Verdict::of(said(&view.summary) || view.text.as_deref().is_some_and(said))
+            }
         }
     }
 
@@ -241,6 +245,7 @@ mod tests {
             talker_alias: None,
             talkgroup_name: None,
             key_id: None,
+            transcript: None,
         }
     }
 

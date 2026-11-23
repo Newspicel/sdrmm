@@ -775,7 +775,13 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
         .collect();
     assert_eq!(
         cycle,
-        vec!["event_filter", "triangulation", "bearing_fix", "voice_chat"]
+        vec![
+            "event_filter",
+            "triangulation",
+            "bearing_fix",
+            "transcriber",
+            "voice_chat"
+        ]
     );
 }
 

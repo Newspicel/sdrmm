@@ -44,6 +44,7 @@ import { spectrumHub } from "./spectrum";
 import { surfaceHub } from "./surface";
 import { useSurveyStore } from "./survey";
 import { pushToast } from "./toasts";
+import { useTranscriberStore } from "./transcriber";
 import type { ServerEvent, StateScope, WorkspacesResponse } from "./types";
 import { retryNodeState } from "./useNodeStateSync";
 import { videoHub } from "./video";
@@ -118,6 +119,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
     s.on("event", useSatelliteStore.getState().observe);
     s.on("event", useRotatorStore.getState().observe);
     s.on("event", useAimStore.getState().observe);
+    s.on("event", useTranscriberStore.getState().observe);
     s.on("event", useSkyScanStore.getState().observe);
     s.on("event", useScheduleStore.getState().observe);
     s.on("event", useLevelStore.getState().observe);

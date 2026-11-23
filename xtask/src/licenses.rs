@@ -36,6 +36,18 @@ const NATIVE: &[Native] = &[
         files: &[],
     },
     Native {
+        name: "NVIDIA Parakeet TDT 0.6B v3",
+        license: "CC-BY-4.0",
+        url: "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
+        files: &[],
+    },
+    Native {
+        name: "Parakeet TDT 0.6B v3 fine-tuned for ATC (qenneth)",
+        license: "MIT",
+        url: "https://huggingface.co/qenneth/parakeet-tdt-0.6b-v3-finetuned-for-ATC",
+        files: &[],
+    },
+    Native {
         name: "FFmpeg 9.0.2",
         license: "LGPL-2.1-or-later",
         url: "https://ffmpeg.org/",

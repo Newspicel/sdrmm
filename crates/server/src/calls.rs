@@ -157,6 +157,7 @@ impl Calls {
             talker_alias: frame.talker_alias,
             talkgroup_name: new.talkgroup_name,
             key_id: frame.key_id,
+            transcript: None,
         };
         inner.audio_bytes += audio.as_ref().map_or(0, Bytes::len);
         inner.calls.push_back(StoredCall {

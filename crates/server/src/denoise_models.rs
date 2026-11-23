@@ -6,14 +6,14 @@ use std::{
 
 use reqwest::Client;
 use sdrmm_engine::{DenoiseModels, Engine};
-use sdrmm_wire::{DenoiseModel, DenoiseModelState, DenoiseModelStatus};
+use sdrmm_wire::{DenoiseModel, DenoiseModelStatus, ModelState};
 use sha2::{Digest, Sha256};
 
 const TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Default)]
 pub(crate) struct Downloads {
-    active: Mutex<HashMap<DenoiseModel, DenoiseModelState>>,
+    active: Mutex<HashMap<DenoiseModel, ModelState>>,
 }
 
 impl Downloads {
@@ -26,8 +26,8 @@ impl Downloads {
                 bytes: model.artifact().bytes,
                 state: match active.get(&model) {
                     Some(state) => state.clone(),
-                    None if models.installed(model) => DenoiseModelState::Ready,
-                    None => DenoiseModelState::Missing,
+                    None if models.installed(model) => ModelState::Ready,
+                    None => ModelState::Missing,
                 },
             })
             .collect()
@@ -36,13 +36,10 @@ impl Downloads {
     pub(crate) fn start(self: &Arc<Self>, engine: &Arc<Engine>, model: DenoiseModel) -> bool {
         {
             let mut active = self.active();
-            if matches!(
-                active.get(&model),
-                Some(DenoiseModelState::Downloading { .. })
-            ) {
+            if matches!(active.get(&model), Some(ModelState::Downloading { .. })) {
                 return false;
             }
-            active.insert(model, DenoiseModelState::Downloading { received: 0 });
+            active.insert(model, ModelState::Downloading { received: 0 });
         }
         let downloads = Arc::clone(self);
         let models = Arc::clone(engine.denoise_models());
@@ -59,7 +56,7 @@ impl Downloads {
                 }
                 Err(error) => {
                     tracing::warn!(model = model.name(), %error, "denoise model download failed");
-                    active.insert(model, DenoiseModelState::Failed { error });
+                    active.insert(model, ModelState::Failed { error });
                 }
             }
         });
@@ -68,12 +65,12 @@ impl Downloads {
 
     pub(crate) fn forget(&self, model: DenoiseModel) {
         let mut active = self.active();
-        if matches!(active.get(&model), Some(DenoiseModelState::Failed { .. })) {
+        if matches!(active.get(&model), Some(ModelState::Failed { .. })) {
             active.remove(&model);
         }
     }
 
-    fn active(&self) -> std::sync::MutexGuard<'_, HashMap<DenoiseModel, DenoiseModelState>> {
+    fn active(&self) -> std::sync::MutexGuard<'_, HashMap<DenoiseModel, ModelState>> {
         self.active.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -103,7 +100,7 @@ impl Downloads {
             }
             self.active().insert(
                 model,
-                DenoiseModelState::Downloading {
+                ModelState::Downloading {
                     received: body.len() as u64,
                 },
             );
@@ -141,7 +138,7 @@ mod tests {
         assert!(
             statuses
                 .iter()
-                .all(|status| status.state == DenoiseModelState::Missing && status.bytes > 0)
+                .all(|status| status.state == ModelState::Missing && status.bytes > 0)
         );
     }
 }

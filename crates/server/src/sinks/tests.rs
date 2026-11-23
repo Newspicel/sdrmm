@@ -99,6 +99,7 @@ fn call(node: &str) -> DecoderEvent {
         audio_error: None,
         talker_alias: None,
         key_id: None,
+        transcript: None,
     })
 }
 

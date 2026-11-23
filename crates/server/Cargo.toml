@@ -68,7 +68,7 @@ rumqttc.workspace = true
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
 rustls-platform-verifier.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 tokio-serial.workspace = true
 
 rmcp.workspace = true

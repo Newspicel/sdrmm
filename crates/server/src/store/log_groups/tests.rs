@@ -27,6 +27,7 @@ fn call(freq_hz: f64, duration_ms: u64) -> DecoderEvent {
         talker_alias: None,
         talkgroup_name: None,
         key_id: None,
+        transcript: None,
     })
 }
 

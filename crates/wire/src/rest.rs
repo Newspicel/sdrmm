@@ -47,6 +47,9 @@ pub struct VoiceCall {
     pub talkgroup_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_id: Option<u16>,
+    /// What a transcriber heard in the clip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
 }
 
 impl VoiceCall {

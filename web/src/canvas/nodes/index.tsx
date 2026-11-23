@@ -67,6 +67,7 @@ const FACES: Partial<Record<NodeKind, Face>> = {
   microphone: lazyFace(() => import("./MicrophoneFace"), "MicrophoneFace"),
   encoder: lazyFace(() => import("./EncoderFace"), "EncoderFace"),
   transmit: lazyFace(() => import("./TransmitFace"), "TransmitFace"),
+  transcriber: lazyFace(() => import("./TranscriberFace"), "TranscriberFace"),
   note: lazyFace(() => import("./NoteFace"), "NoteFace"),
   voice_chat: lazyFace(() => import("./VoiceChatFace"), "VoiceChatFace"),
 };

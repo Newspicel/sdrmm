@@ -246,6 +246,9 @@ pub enum ServerEvent {
     AimUpdate {
         status: Box<crate::aim::AimStatus>,
     },
+    TranscriberUpdate {
+        status: Box<crate::speech::TranscriberStatus>,
+    },
     SkyScanUpdate {
         status: Box<crate::sky_scan::SkyScanStatus>,
     },

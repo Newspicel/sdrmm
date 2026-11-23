@@ -614,6 +614,33 @@ fn decoder_log_insert_and_query_newest_first() {
 }
 
 #[test]
+fn the_log_search_finds_what_a_call_said() {
+    let store = Store::open(None).expect("open");
+    let call: sdrmm_wire::VoiceCall = serde_json::from_value(serde_json::json!({
+        "id": 1, "node": "trunk", "started_at": "2026-08-09T12:00:00Z",
+        "ended_at": "2026-08-09T12:00:04Z", "duration_ms": 4000, "device_set": 0,
+        "channel": 0, "freq_hz": 446_000_000.0, "mode": "dmr", "encrypted": false,
+        "emergency": false, "transcript": "Fahrzeug 3 am Einsatzort",
+    }))
+    .expect("a call");
+    store
+        .insert_decoder_events(&loose(vec![record(
+            "2026-08-09T12:00:04Z",
+            0,
+            DecoderEvent::of(&call),
+        )]))
+        .expect("insert");
+    let heard = query(
+        &store,
+        &DecoderLogQuery {
+            q: Some("einsatzort".to_owned()),
+            ..DecoderLogQuery::default()
+        },
+    );
+    assert_eq!(heard.1, 1);
+}
+
+#[test]
 fn decoder_log_filters_compose() {
     let store = Store::open(None).expect("open");
     seed(&store);

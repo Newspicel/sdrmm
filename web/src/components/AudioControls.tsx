@@ -1,18 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Plus, RotateCw, Trash2, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Plus, X } from "lucide-react";
 import {
   DENOISE_MODELS_KEY,
   deleteDenoiseModel,
   denoiseModelsQuery,
   downloadDenoiseModel,
 } from "../lib/api";
-import type {
-  AudioAgcMode,
-  AudioProcessing,
-  DenoiseModel,
-  DenoiseModelStatus,
-  NotchSettings,
-} from "../lib/types";
+import type { AudioAgcMode, AudioProcessing, DenoiseModel, NotchSettings } from "../lib/types";
 import { Button } from "./BaseControls";
 import { Checkbox } from "./Checkbox";
 import {
@@ -25,8 +19,9 @@ import {
 } from "./channelSettings";
 import { CHIP_SETTING, ICON_BTN_SM, type Options } from "./controls";
 import { ChipField, ChoiceChip, SettingChip, ToggleChip } from "./face/Chips";
-import { formatBytes, formatHz } from "./format";
+import { formatHz } from "./format";
 import { Icon } from "./Icon";
+import { ModelDownload } from "./ModelDownload";
 import { NumberField } from "./NumberField";
 import { rowKeys } from "./rowKeys";
 import { Select } from "./Select";
@@ -206,7 +201,14 @@ function DenoiseChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
               className="w-full"
               onChange={(next) => edit({ denoise: withDenoiseChoice(denoise, next) })}
             />
-            {neural && status !== undefined && <ModelState status={status} />}
+            {neural && status !== undefined && (
+              <ModelDownload
+                status={status}
+                queryKey={DENOISE_MODELS_KEY}
+                download={downloadDenoiseModel}
+                remove={deleteDenoiseModel}
+              />
+            )}
           </ChipField>
           {enabled && (
             <ChipField label="Strength">
@@ -230,59 +232,6 @@ function DenoiseChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {
       )}
     </SettingChip>
   );
-}
-
-function ModelState({ status }: { status: DenoiseModelStatus }) {
-  const queryClient = useQueryClient();
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: DENOISE_MODELS_KEY });
-  const download = useMutation({ mutationFn: downloadDenoiseModel, onSettled: refresh });
-  const remove = useMutation({ mutationFn: deleteDenoiseModel, onSettled: refresh });
-  const size = formatBytes(status.bytes);
-  switch (status.state) {
-    case "ready":
-      return (
-        <Button
-          type="button"
-          className={`${ICON_BTN_SM} hover:text-danger`}
-          aria-label="Remove model"
-          title={`Remove model, frees ${size}`}
-          onClick={() => remove.mutate(status.model)}
-        >
-          <Icon glyph={Trash2} size={12} />
-        </Button>
-      );
-    case "downloading":
-      return (
-        <span className="legend tabular-nums">
-          {Math.floor((status.received / Math.max(status.bytes, 1)) * 100)}%
-        </span>
-      );
-    case "failed":
-      return (
-        <Button
-          type="button"
-          className={`${CHIP_SETTING} text-danger`}
-          title={status.error}
-          onClick={() => download.mutate(status.model)}
-        >
-          <Icon glyph={RotateCw} size={12} />
-          <span className="font-sans">Retry</span>
-        </Button>
-      );
-    case "missing":
-      return (
-        <Button
-          type="button"
-          className={CHIP_SETTING}
-          title="Download model"
-          disabled={download.isPending}
-          onClick={() => download.mutate(status.model)}
-        >
-          <Icon glyph={Download} size={12} />
-          <span className="font-sans">{size}</span>
-        </Button>
-      );
-  }
 }
 
 function PassbandChip({ audio, edit }: { audio: AudioProcessing; edit: Edit }) {

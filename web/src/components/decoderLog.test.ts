@@ -109,6 +109,11 @@ describe("matchesFilter", () => {
     expect(matchesFilter(record(), filter({ q: "nordlicht" }))).toBe(false);
     expect(matchesFilter(record(), filter())).toBe(true);
   });
+
+  it("finds what a transcriber heard", () => {
+    const heard = record({ view: { ...PLANE_VIEW, text: "Fahrzeug 3 am Einsatzort" } });
+    expect(matchesFilter(heard, filter({ q: "einsatzort" }))).toBe(true);
+  });
 });
 
 describe("collectLive", () => {

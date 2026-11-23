@@ -292,6 +292,15 @@ Live fix from each station's newest bearing
 | `events` | in | Events | Bearing, VOR | many. Bearings with a known origin |
 | `events` | out | Events | Bearing fix | many |
 
+### Transcriber
+
+Writes down what calls say
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `events` | in | Events | Call, Transmission | many, keeps clips. Calls and transmissions with their audio |
+| `events` | out | Events | Call, Transmission | many. The same events with their text |
+
 ### Note
 
 Markdown you leave on the canvas

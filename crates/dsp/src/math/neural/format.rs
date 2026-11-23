@@ -17,6 +17,32 @@ pub struct Value {
     pub data: Option<Weights>,
 }
 
+/// Where one tensor's weights sit inside the network file it was indexed from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stored {
+    pub shape: Vec<usize>,
+    pub half: bool,
+    pub at: usize,
+    pub len: usize,
+}
+
+/// A network file's metadata and tensors, located but not copied, so a large model is read once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Index {
+    pub meta: Vec<(String, String)>,
+    pub tensors: Vec<Option<Stored>>,
+}
+
+impl Index {
+    #[must_use]
+    pub fn meta(&self, key: &str) -> Option<&str> {
+        self.meta
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Weights {
     F32(Vec<f32>),
@@ -183,6 +209,31 @@ impl Graph {
             return Err(NetError::Format("trailing bytes".into()));
         }
         Ok(graph)
+    }
+
+    /// The metadata and tensor locations of a network file, leaving the weights in `bytes`.
+    pub fn index(bytes: &[u8]) -> Result<Index, NetError> {
+        let mut input = Reader { bytes, at: 0 };
+        if input.take(MAGIC.len())? != MAGIC {
+            return Err(NetError::Format("not an sdrmm network".into()));
+        }
+        let meta = (0..input.len()?)
+            .map(|_| Ok((input.text()?, input.text()?)))
+            .collect::<Result<_, NetError>>()?;
+        let tensors = (0..input.len()?)
+            .map(|_| input.stored())
+            .collect::<Result<_, _>>()?;
+        for _ in 0..input.len()? {
+            input.op()?;
+            input.list()?;
+            input.list()?;
+        }
+        input.list()?;
+        input.list()?;
+        if input.at != bytes.len() {
+            return Err(NetError::Format("trailing bytes".into()));
+        }
+        Ok(Index { meta, tensors })
     }
 }
 
@@ -446,6 +497,25 @@ impl Reader<'_> {
             other => return Err(NetError::Format(format!("bad weight type {other}"))),
         };
         Ok(Value { shape, data })
+    }
+
+    fn stored(&mut self) -> Result<Option<Stored>, NetError> {
+        let shape = self.list()?;
+        let (half, width) = match self.byte()? {
+            0 => return Ok(None),
+            1 => (false, 4),
+            2 => (true, 2),
+            other => return Err(NetError::Format(format!("bad weight type {other}"))),
+        };
+        let len = self.count(width)?;
+        let at = self.at;
+        self.take(len * width)?;
+        Ok(Some(Stored {
+            shape,
+            half,
+            at,
+            len,
+        }))
     }
 
     fn op(&mut self) -> Result<Op, NetError> {

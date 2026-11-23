@@ -156,6 +156,7 @@ impl Worker {
                 decoder_confirmed: false,
                 audio: None,
                 error: Some(error),
+                transcript: None,
             }),
         });
     }

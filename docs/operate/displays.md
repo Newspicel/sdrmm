@@ -1,6 +1,6 @@
 ---
 title: Displays and logs
-description: Scope, Readout, Decoder log, Map, Video, Export, and Event filter.
+description: Scope, Readout, Decoder log, Map, Video, Export, Event filter and Transcriber.
 ---
 
 ```patch
@@ -45,3 +45,14 @@ Event filter --events--> Decoder log
 ## Event filter
 
 Place between a decoder and any `events` sink. Every active rule must match (**Keep** passes matches; **Drop** hides matches). Rules irrelevant to an event kind are ignored. Chain filters to combine logic (for example Keep POCSAG → Drop `TEST`). Applies to newly arriving events only.
+
+## Transcriber
+
+Place between calls and any `events` sink: a Channel with squelch, a Trunk or a Spectrum monitor. Each call or transmission with a clip goes on with its text. The Decoder log shows and searches it, and an Event filter **Contains** rule matches it. Download the model once on the face (1.3 GB).
+
+| Model | Hears |
+|---|---|
+| Parakeet v3 | 25 European languages, with punctuation |
+| Parakeet v3 ATC | Air traffic control English |
+
+It runs on the server CPU, about 20 times faster than real time on 8 cores. Past 32 waiting clips, calls go on without text and count as **Dropped**.

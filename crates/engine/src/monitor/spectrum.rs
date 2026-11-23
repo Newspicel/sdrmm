@@ -478,6 +478,7 @@ impl SpectrumMonitor {
                 decoder_confirmed: false,
                 audio: None,
                 error: Some(error.to_owned()),
+                transcript: None,
             }),
         }
     }
@@ -561,6 +562,7 @@ fn transmission(
             decoder_confirmed,
             audio: None,
             error: track.error.clone(),
+            transcript: None,
         }),
     }
 }

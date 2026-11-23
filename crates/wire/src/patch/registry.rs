@@ -25,6 +25,7 @@ use crate::{
     satellite::SatelliteNode,
     schedule::ScheduleNode,
     sky_scan::SkyScanNode,
+    speech::TranscriberNode,
     stream_out::StreamOutNode,
     transmit::{EncoderNode, MicrophoneNode, TransmitNode},
     voice_chat::VoiceChatNode,
@@ -603,6 +604,13 @@ nodes! {
                 input(BASEBAND_PORT, Payload::baseband(ANY_BASEBAND)).group(TRANSMIT_SOURCE),
                 output(TRANSMIT_PORT, Payload::Transmit).one(),
             ]),
+            (Transcriber(TranscriberNode), "transcriber", Tool, "Transcriber",
+                "Writes down what calls say", Role::Plain, Face::fit(320), [
+                events_in(Accept::Caps(&[Capability::Clip]))
+                    .keeps(Keeps::Clips)
+                    .noted("Calls and transmissions with their audio"),
+                events_out(kinds!(CALL, TRANSMISSION)).noted("The same events with their text"),
+            ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
             (VoiceChat(VoiceChatNode), "voice_chat", Output, "Voice chat",
@@ -620,6 +628,7 @@ impl NodeKind {
             Self::Triangulation => crate::fusion::TriangulationParams::form(),
             Self::Aim => crate::aim::AimParams::form(),
             Self::SkyScan => crate::sky_scan::SkyScanParams::form(),
+            Self::Transcriber => crate::speech::TranscriberParams::form(),
             _ => Vec::new(),
         }
     }

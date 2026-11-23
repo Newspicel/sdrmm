@@ -11,6 +11,7 @@ mod ident_matrix;
 mod modes;
 mod replay;
 mod resolved_fixtures;
+mod speech_model;
 mod wires;
 
 use std::path::{Path, PathBuf};
@@ -53,6 +54,7 @@ enum Cmd {
         full: bool,
     },
     DenoiseModel,
+    SpeechModel(speech_model::SpeechModelArgs),
     Icons,
     IdentMatrix,
     Compare {
@@ -74,6 +76,7 @@ fn main() -> Result<()> {
         Cmd::NetCapture(args) => capture::run(&args),
         Cmd::Ber { entry, out, full } => ber::run(&root(), &entry, out.as_deref(), full),
         Cmd::DenoiseModel => denoise_model::run(&root()),
+        Cmd::SpeechModel(args) => speech_model::run(&root(), &args),
         Cmd::Icons => icons::icons(&root()),
         Cmd::IdentMatrix => ident_matrix::run(&root()),
         Cmd::Compare { suite } => compare::run(&root(), &suite),

@@ -407,6 +407,9 @@ fn greet(state: &AppState, out: &Outbox, identity: &Identity) {
     for rotator in state.rotators.snapshot() {
         let _ = out.send(text_event(&rotator));
     }
+    for transcriber in state.transcribers.snapshot() {
+        let _ = out.send(text_event(&transcriber));
+    }
     for aim in state.aims.snapshot() {
         let _ = out.send(text_event(&aim));
     }

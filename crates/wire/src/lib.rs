@@ -49,6 +49,7 @@ pub mod scan;
 pub mod schedule;
 pub mod sink;
 pub mod sky_scan;
+pub mod speech;
 pub mod state;
 pub mod stream_out;
 pub mod survey;
@@ -76,11 +77,11 @@ pub use array::{
 };
 pub use audio::{
     AudioAgcMode, AudioFilterSettings, AudioFrom, AudioProcessing, AudioRoute,
-    ClickRemovalSettings, DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseArtifact, DenoiseMode,
-    DenoiseModel, DenoiseModelState, DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings,
-    MAX_AUDIO_FX_CHAIN, MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD,
-    MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ, MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ,
-    MIN_BLANKER_THRESHOLD, MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB,
+    ClickRemovalSettings, DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseMode, DenoiseModel,
+    DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings, MAX_AUDIO_FX_CHAIN,
+    MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD, MAX_CLICK_THRESHOLD,
+    MAX_NOTCH_WIDTH_HZ, MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ, MIN_BLANKER_THRESHOLD,
+    MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB, ModelArtifact, ModelState,
     NoiseBlankerSettings, NotchSettings, PeakSettings, ServerOutputsResponse,
 };
 pub use bandplan::{
@@ -275,6 +276,10 @@ pub use sink::{
     PropagationView, SinkFeed, SinkUpdate, SurfaceRef,
 };
 pub use sky_scan::{MAX_SKY_CELLS, SkyCell, SkyScanNode, SkyScanParams, SkyScanStatus};
+pub use speech::{
+    SPEECH_MODELS_PREFIX, SPEECH_MODELS_URL, SpeechModel, SpeechModelStatus, SpeechModelsResponse,
+    TranscriberNode, TranscriberParams, TranscriberStatus,
+};
 pub use state::{
     AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
     NodeStream, PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,

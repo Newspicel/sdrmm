@@ -4979,6 +4979,103 @@
         }
       }
     },
+    "/api/speech-models": {
+      "get": {
+        "operationId": "list_speech_models",
+        "responses": {
+          "200": {
+            "description": "Every speech model and whether it is here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechModelsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/speech-models/{model}": {
+      "post": {
+        "operationId": "download_speech_model",
+        "parameters": [
+          {
+            "name": "model",
+            "in": "path",
+            "description": "Model name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Download started"
+          },
+          "404": {
+            "description": "No such model",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already downloading",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No data directory to keep models in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_speech_model",
+        "parameters": [
+          {
+            "name": "model",
+            "in": "path",
+            "description": "Model name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Model removed"
+          },
+          "404": {
+            "description": "No such model",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/state": {
       "get": {
         "operationId": "get_state",
@@ -11322,6 +11419,10 @@
               "null"
             ]
           },
+          "outranked": {
+            "type": "boolean",
+            "description": "The target follows another controller with a better pass, so this command waits its turn."
+          },
           "sweep": {
             "oneOf": [
               {
@@ -11419,10 +11520,6 @@
             "type": "string"
           }
         }
-          "outranked": {
-            "type": "boolean",
-            "description": "The target follows another controller with a better pass, so this command waits its turn."
-          },
       },
       "CpsCodeplugDetail": {
         "allOf": [
@@ -12498,80 +12595,10 @@
           "dpdfnet8_8khz"
         ]
       },
-      "DenoiseModelState": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "state"
-            ],
-            "properties": {
-              "state": {
-                "type": "string",
-                "enum": [
-                  "missing"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "received",
-              "state"
-            ],
-            "properties": {
-              "received": {
-                "type": "integer",
-                "format": "int64",
-                "minimum": 0
-              },
-              "state": {
-                "type": "string",
-                "enum": [
-                  "downloading"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "state"
-            ],
-            "properties": {
-              "state": {
-                "type": "string",
-                "enum": [
-                  "ready"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "error",
-              "state"
-            ],
-            "properties": {
-              "error": {
-                "type": "string"
-              },
-              "state": {
-                "type": "string",
-                "enum": [
-                  "failed"
-                ]
-              }
-            }
-          }
-        ]
-      },
       "DenoiseModelStatus": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/DenoiseModelState"
+            "$ref": "#/components/schemas/ModelState"
           },
           {
             "type": "object",
@@ -16902,6 +16929,76 @@
           }
         }
       },
+      "ModelState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "missing"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "received",
+              "state"
+            ],
+            "properties": {
+              "received": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "downloading"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ready"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "state"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "Modulation": {
         "type": "string",
         "enum": [
@@ -19076,6 +19173,24 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/TranscriberNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "transcriber"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
                 "$ref": "#/components/schemas/NoteNode"
               },
               "kind": {
@@ -19154,6 +19269,7 @@
           "microphone",
           "encoder",
           "transmit",
+          "transcriber",
           "note",
           "voice_chat"
         ]
@@ -23111,6 +23227,34 @@
           "azimuth"
         ]
       },
+      "RotatorLead": {
+        "type": "object",
+        "description": "The controller a rotator follows: the best pass in view, or else the first to rise.",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_pass": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatellitePass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node": {
+            "type": "string"
+          }
+        }
+      },
       "RotatorLink": {
         "oneOf": [
           {
@@ -23227,34 +23371,6 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/RotatorLink"
-      "RotatorLead": {
-        "type": "object",
-        "description": "The controller a rotator follows: the best pass in view, or else the first to rise.",
-        "required": [
-          "node"
-        ],
-        "properties": {
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "next_pass": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/SatellitePass"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "node": {
-            "type": "string"
-          }
-        }
-      },
               },
               {
                 "type": "null"
@@ -23293,6 +23409,16 @@
           },
           "flipped": {
             "type": "boolean"
+          },
+          "following": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RotatorLead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "node": {
             "type": "string"
@@ -23410,16 +23536,6 @@
                   {
                     "$ref": "#/components/schemas/ChannelAddr"
                   },
-          "following": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/RotatorLead"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
                   {
                     "type": "null"
                   }
@@ -24931,6 +25047,32 @@
                 ],
                 "properties": {
                   "status": {
+                    "$ref": "#/components/schemas/TranscriberStatus"
+                  }
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "TranscriberUpdate"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
                     "$ref": "#/components/schemas/SkyScanStatus"
                   }
                 }
@@ -26265,6 +26407,51 @@
           "auto",
           "full"
         ]
+      },
+      "SpeechModel": {
+        "type": "string",
+        "enum": [
+          "parakeet-tdt-0.6b-v3",
+          "parakeet-tdt-0.6b-v3-atc"
+        ]
+      },
+      "SpeechModelStatus": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ModelState"
+          },
+          {
+            "type": "object",
+            "required": [
+              "model",
+              "bytes"
+            ],
+            "properties": {
+              "bytes": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "model": {
+                "$ref": "#/components/schemas/SpeechModel"
+              }
+            }
+          }
+        ]
+      },
+      "SpeechModelsResponse": {
+        "type": "object",
+        "required": [
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpeechModelStatus"
+            }
+          }
+        }
       },
       "Spot": {
         "type": "object",
@@ -27743,6 +27930,77 @@
               "null"
             ],
             "format": "double"
+          }
+        }
+      },
+      "TranscriberNode": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/TranscriberParams"
+          }
+        }
+      },
+      "TranscriberParams": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/SpeechModel",
+            "default": "parakeet-tdt-0.6b-v3"
+          }
+        }
+      },
+      "TranscriberStatus": {
+        "type": "object",
+        "description": "A transcriber's work so far, with the readouts its face shows.",
+        "required": [
+          "node",
+          "model",
+          "queued",
+          "done",
+          "dropped"
+        ],
+        "properties": {
+          "done": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "dropped": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "$ref": "#/components/schemas/SpeechModel"
+          },
+          "node": {
+            "type": "string"
+          },
+          "queued": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "readouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            }
+          },
+          "took_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           }
         }
       },

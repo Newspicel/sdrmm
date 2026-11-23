@@ -198,6 +198,7 @@ fn a_kind_the_sink_does_not_accept_is_not_stamped_and_counts_as_ignored() {
         talker_alias: None,
         talkgroup_name: None,
         key_id: None,
+        transcript: None,
     });
 
     assert_eq!(
