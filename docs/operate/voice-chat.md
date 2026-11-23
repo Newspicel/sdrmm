@@ -35,10 +35,10 @@ A new name or nickname applies live. Other changes reconnect.
 | **Account** | Which chat account to use |
 | **Channel** | Discord: voice channel id. TeamSpeak: channel name or path, empty for the default channel. Matrix: room id or alias |
 | **Allowed** | Discord: user ids. TeamSpeak: unique ids. Matrix: `@user:server` ids. Empty means anyone. A talker not yet known by id never matches |
-| **To air** | What chat sends to the radio |
-| **To chat** | What the radio sends to chat |
+| **From channel** | What the channel sends to the radio |
+| **To channel** | What the radio sends to the channel |
 
-**To air** and **To chat** each have **Send** (**Voice activity** or **Continuous**), **Level**, and **Hang**. Voice activity opens above the level and stays open for the hang time.
+**From channel** and **To channel** each have **Send** (**Voice activity** or **Continuous**), **Level**, and **Hang**. Voice activity opens above the level and stays open for the hang time.
 
 ## Matrix
 
@@ -56,4 +56,4 @@ Wire channel `audio` into Voice chat, and Voice chat `audio` into an Encoder, th
 
 - One voice channel per node.
 - The node stays in its channel while it is on the canvas, wired or not.
-- Continuous **To air** keeps an armed Transmitter keyed.
+- Continuous **From channel** keeps an armed Transmitter keyed.

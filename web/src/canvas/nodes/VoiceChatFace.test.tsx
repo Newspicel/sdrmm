@@ -35,23 +35,23 @@ describe("VoiceChatFace", () => {
 
   it("keeps its meters and talking list before any status arrives", () => {
     const html = render();
-    expect(html).toContain('aria-label="To chat level"');
-    expect(html).toContain('aria-label="To air level"');
+    expect(html).toContain('aria-label="To channel level"');
+    expect(html).toContain('aria-label="From channel level"');
     expect(html).toContain('aria-valuenow="0"');
     expect(html).toContain(">Talking<");
   });
 
   it("offers each direction voice activity or continuous, never push to talk", () => {
     const html = render(true);
-    expect(html).toContain("To air: when audio is sent");
-    expect(html).toContain("To chat: when audio is sent");
+    expect(html).toContain("From channel: when audio is sent");
+    expect(html).toContain("To channel: when audio is sent");
     expect(html).toContain("Voice activity");
     expect(html).not.toContain("Push to talk");
   });
 
   it("offers a volume slider per direction, from silence to double", () => {
     const html = render(true);
-    for (const name of ["To air", "To chat"]) {
+    for (const name of ["From channel", "To channel"]) {
       expect(html).toContain(`aria-label="${name} volume"`);
     }
     expect(html).toContain('max="200"');

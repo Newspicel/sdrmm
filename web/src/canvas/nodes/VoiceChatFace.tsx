@@ -108,14 +108,14 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
       <FaceBody>
         <div className="flex flex-col px-2 py-2">
           <GateMeter
-            label="To chat"
-            title="Patch audio going into the chat"
+            label="To channel"
+            title="Patch audio going into the channel"
             db={status?.to_chat_db}
             open={status?.to_chat_open === true}
           />
           <GateMeter
-            label="To air"
-            title="Chat voices going to the transmitter"
+            label="From channel"
+            title="Channel voices going to the transmitter"
             db={status?.to_air_db}
             open={status?.to_air_open === true}
           />
@@ -155,8 +155,8 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
             />
           </Chips>
         </InspectSection>
-        {gate("to_air", "To air")}
-        {gate("to_chat", "To chat")}
+        {gate("to_air", "From channel")}
+        {gate("to_chat", "To channel")}
       </Inspect>
     </NodeShell>
   );
