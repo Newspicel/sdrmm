@@ -1,5 +1,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
-use sdrmm_wire::{ChatAccount, ChatService, MAX_CHAT_ACCOUNT_LEN, event_output::Secret};
+use sdrmm_wire::{
+    ChatAccount, ChatService, MAX_CHAT_ACCOUNT_LEN, MAX_DISCORD_NICKNAME_LEN, event_output::Secret,
+};
 
 use super::{Store, StoreError, now_rfc3339, secrets};
 
@@ -110,10 +112,15 @@ fn check(account: &ChatAccount) -> Result<(), StoreError> {
             }
             Ok(())
         }
-        ChatService::Discord { token } => token
-            .valid()
-            .then_some(())
-            .ok_or(StoreError::ChatAccountField("token")),
+        ChatService::Discord { token, nickname } => {
+            if nickname.encode_utf16().count() > MAX_DISCORD_NICKNAME_LEN {
+                return Err(StoreError::ChatAccountField("nickname"));
+            }
+            token
+                .valid()
+                .then_some(())
+                .ok_or(StoreError::ChatAccountField("token"))
+        }
     }
 }
 
@@ -142,7 +149,7 @@ fn write(conn: &Connection, account: &ChatAccount, new: bool) -> Result<(), Stor
 
 fn secret_ids(service: &ChatService) -> Vec<&str> {
     let secrets: Vec<&Secret> = match service {
-        ChatService::Discord { token } => vec![token],
+        ChatService::Discord { token, .. } => vec![token],
         ChatService::Teamspeak {
             password, identity, ..
         } => vec![password, identity],
@@ -205,13 +212,14 @@ fn settle_service(
     current: Option<&ChatService>,
 ) -> Result<ChatService, StoreError> {
     match incoming {
-        ChatService::Discord { token } => {
+        ChatService::Discord { token, nickname } => {
             let held = match current {
-                Some(ChatService::Discord { token }) => Some(token),
+                Some(ChatService::Discord { token, .. }) => Some(token),
                 _ => None,
             };
             Ok(ChatService::Discord {
                 token: settle(conn, &token, held)?,
+                nickname,
             })
         }
         ChatService::Teamspeak {
@@ -274,7 +282,7 @@ mod tests {
     fn main_secret_of(account: &ChatAccount) -> Secret {
         match &account.service {
             ChatService::Teamspeak { password, .. } => password.clone(),
-            ChatService::Discord { token } => token.clone(),
+            ChatService::Discord { token, .. } => token.clone(),
         }
     }
 
@@ -365,6 +373,7 @@ mod tests {
             name: "Club".to_owned(),
             service: ChatService::Discord {
                 token: inline("tok"),
+                nickname: String::new(),
             },
         };
 
@@ -428,5 +437,21 @@ mod tests {
             address.clear();
         }
         assert!(store.create_chat_account(homeless).is_err());
+    }
+
+    #[test]
+    fn a_discord_nickname_fits_discord() {
+        let store = Store::open(None).expect("store");
+        let named = |nickname: String| ChatAccount {
+            id: String::new(),
+            name: "Club".to_owned(),
+            service: ChatService::Discord {
+                token: inline("tok"),
+                nickname,
+            },
+        };
+        let longest = "é".repeat(MAX_DISCORD_NICKNAME_LEN);
+        assert!(store.create_chat_account(named(longest.clone())).is_ok());
+        assert!(store.create_chat_account(named(longest + "x")).is_err());
     }
 }

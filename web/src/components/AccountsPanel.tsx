@@ -21,6 +21,7 @@ import { TextChip } from "./face/TextChip";
 import { List, ListRow, Panel, PanelHint, PanelToolbar, RowAction } from "./ListPanel";
 
 const NAME_LEN = VOICE_CHAT_LIMITS.account_len;
+const DISCORD_NICK_LEN = VOICE_CHAT_LIMITS.discord_nickname_len;
 
 export interface AccountActions {
   draft: (account: ChatAccount | null) => void;
@@ -219,12 +220,21 @@ function ServiceFields({
 }) {
   if (draft.service === "discord") {
     return (
-      <SecretField
-        label="Token"
-        title="Discord bot token, kept on this server"
-        secret={draft.token}
-        onSet={(token) => onDraft({ ...draft, token })}
-      />
+      <>
+        <TextChip
+          label="Nickname"
+          title="Name shown in each server. Empty keeps the bot's name"
+          value={draft.nickname ?? ""}
+          maxLength={DISCORD_NICK_LEN}
+          onCommit={(nickname) => onDraft({ ...draft, nickname })}
+        />
+        <SecretField
+          label="Token"
+          title="Discord bot token, kept on this server"
+          secret={draft.token}
+          onSet={(token) => onDraft({ ...draft, token })}
+        />
+      </>
     );
   }
   return (

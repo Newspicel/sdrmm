@@ -32,7 +32,7 @@ async fn created_account_keeps_token_out_of_the_body() {
     assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&body));
     assert!(!String::from_utf8_lossy(&body).contains(TOKEN));
     let account = parse(&body);
-    let ChatService::Discord { token } = &account.service else {
+    let ChatService::Discord { token, .. } = &account.service else {
         panic!("a discord account stays discord");
     };
     assert_eq!(

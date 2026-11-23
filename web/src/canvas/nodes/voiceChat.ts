@@ -103,5 +103,5 @@ export function newChatAccount(service: ChatServiceKind): ChatAccount {
   if (service === "teamspeak") {
     return { id: "", name: "", service, address: "", nickname: "" };
   }
-  return { id: "", name: "", service };
+  return { id: "", name: "", service, nickname: "" };
 }

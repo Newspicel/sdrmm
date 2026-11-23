@@ -42,16 +42,19 @@ const BACKLOG: usize = 5;
 
 pub(crate) struct Discord {
     token: String,
+    /// Followed in every server the bot sits in, renaming it there without leaving.
+    nickname: watch::Sender<String>,
     gateway: Mutex<Option<Arc<Gateway>>>,
     alive: mpsc::Sender<()>,
     _alive: mpsc::Receiver<()>,
 }
 
 impl Discord {
-    pub(crate) fn new(token: String) -> Self {
+    pub(crate) fn new(token: String, nickname: String) -> Self {
         let (alive, keep) = mpsc::channel(1);
         Self {
             token,
+            nickname: watch::Sender::new(nickname),
             gateway: Mutex::new(None),
             alive,
             _alive: keep,
@@ -73,8 +76,13 @@ impl Discord {
             return Err(VoiceChatError::Clash(taken));
         }
         let (link, ends) = link::link();
-        runtime.spawn(run(gateway, id, ends, self.alive.clone()));
+        let names = self.nickname.subscribe();
+        runtime.spawn(run(gateway, id, ends, names, self.alive.clone()));
         Ok(link)
+    }
+
+    pub(crate) fn rename(&self, nickname: String) {
+        self.nickname.send_replace(nickname);
     }
 
     /// The bot's gateway, started by the first join.
@@ -100,12 +108,13 @@ async fn run(
     gateway: Arc<Gateway>,
     channel: Id<ChannelMarker>,
     mut ends: Ends,
+    names: watch::Receiver<String>,
     alive: mpsc::Sender<()>,
 ) {
     let mut backoff = Backoff::new();
     loop {
         let ended = tokio::select! {
-            ended = attempt(&gateway, channel, &mut ends, &mut backoff) => ended,
+            ended = attempt(&gateway, channel, &mut ends, &names, &mut backoff) => ended,
             () = alive.closed() => return,
         };
         match ended {
@@ -127,6 +136,7 @@ async fn attempt(
     gateway: &Arc<Gateway>,
     channel: Id<ChannelMarker>,
     ends: &mut Ends,
+    names: &watch::Receiver<String>,
     backoff: &mut Backoff,
 ) -> Ended {
     let mut voice = gateway.voice();
@@ -156,13 +166,32 @@ async fn attempt(
     ends.outbox.clear();
     ends.inbox.set(LinkState::Joined);
     backoff.reset();
+    let naming = tokio::spawn(keep_named(Arc::clone(gateway), guild, names.clone()));
     let ended = stream(&track, &frames, &mut news, &mut voice, ends).await;
+    naming.abort();
     if leaves(&gateway.seats, guild, &ends.inbox, &ended).await
         && let Err(error) = songbird.remove(guild).await
     {
         tracing::debug!(%error, "Discord leave");
     }
     ended
+}
+
+/// Shows the account's nickname in `guild` while a link sits there, following renames. An
+/// empty one leaves the bot's name alone, until a rename to it clears a nickname set before.
+async fn keep_named(
+    gateway: Arc<Gateway>,
+    guild: Id<GuildMarker>,
+    mut names: watch::Receiver<String>,
+) {
+    let first = names.borrow_and_update().clone();
+    if !first.is_empty() {
+        gateway.nickname(guild, &first).await;
+    }
+    while names.changed().await.is_ok() {
+        let nickname = names.borrow_and_update().clone();
+        gateway.nickname(guild, &nickname).await;
+    }
 }
 
 /// Whether an ended link takes the bot out of the server's voice. A released one first waits
@@ -412,6 +441,15 @@ impl Gateway {
 
     fn talker(&self, user: u64) -> Talker {
         talker(&lock(&self.names), user)
+    }
+
+    /// Sets the bot's nickname in `guild`, an empty one clearing it. A refusal, such as a
+    /// missing Change Nickname permission, keeps the old name and the link.
+    async fn nickname(&self, guild: Id<GuildMarker>, nickname: &str) {
+        let nick = (!nickname.is_empty()).then_some(nickname);
+        if let Err(error) = self.http.update_current_member(guild).nick(nick).await {
+            tracing::warn!(%error, %guild, "Discord nickname not set");
+        }
     }
 
     fn learn_guild(&self, guild: &GuildCreate) {

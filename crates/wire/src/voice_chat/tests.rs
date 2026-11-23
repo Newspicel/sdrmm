@@ -106,6 +106,7 @@ fn chat_account_round_trips() {
             name: "Club".to_owned(),
             service: ChatService::Discord {
                 token: Secret::stored("tok_1"),
+                nickname: "Relay".to_owned(),
             },
         },
         ChatAccount {
@@ -129,6 +130,7 @@ fn chat_account_round_trips() {
         name: "n".to_owned(),
         service: ChatService::Discord {
             token: Secret::default(),
+            nickname: String::new(),
         },
     })
     .expect("json");

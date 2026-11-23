@@ -10361,6 +10361,9 @@
               "service"
             ],
             "properties": {
+              "nickname": {
+                "type": "string"
+              },
               "service": {
                 "type": "string",
                 "enum": [

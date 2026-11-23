@@ -17,15 +17,10 @@ pub(crate) trait Links: Send + Sync {
     fn settle(&self, used: &[ChatAccount]) -> Vec<String>;
 }
 
-struct Held {
-    service: Service,
-    session: Session,
-}
-
 /// One live session per chat account in use, shared by every node on that account.
 pub(crate) struct Sessions {
     store: Arc<Store>,
-    held: Mutex<HashMap<String, Held>>,
+    held: Mutex<HashMap<String, Session>>,
 }
 
 impl Sessions {
@@ -36,15 +31,16 @@ impl Sessions {
         }
     }
 
-    fn lock(&self) -> MutexGuard<'_, HashMap<String, Held>> {
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, Session>> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The account with its credentials read from this server's store.
     fn service(&self, account: &ChatAccount) -> Result<Service, String> {
         match &account.service {
-            ChatService::Discord { token } => Ok(Service::Discord {
+            ChatService::Discord { token, nickname } => Ok(Service::Discord {
                 token: self.required(token, "Token")?,
+                nickname: nickname.trim().to_owned(),
             }),
             ChatService::Teamspeak {
                 address,
@@ -84,43 +80,35 @@ impl Links for Sessions {
     fn join(&self, account: &ChatAccount, channel: &str) -> Result<Link, String> {
         let service = self.service(account)?;
         let mut held = self.lock();
-        let live = match held.entry(account.id.clone()) {
-            Entry::Occupied(found) if found.get().service == service => found.into_mut(),
-            Entry::Occupied(mut stale) => {
-                stale.insert(Held::open(service));
-                stale.into_mut()
+        let session = match held.entry(account.id.clone()) {
+            Entry::Occupied(found) => {
+                let session = found.into_mut();
+                if let Err(service) = session.update(service) {
+                    *session = Session::open(service);
+                }
+                session
             }
-            Entry::Vacant(free) => free.insert(Held::open(service)),
+            Entry::Vacant(free) => free.insert(Session::open(service)),
         };
-        live.session
-            .join(channel)
-            .map_err(|error| error.to_string())
+        session.join(channel).map_err(|error| error.to_string())
     }
 
     fn settle(&self, used: &[ChatAccount]) -> Vec<String> {
-        let now: HashMap<&str, Option<Service>> = used
+        let mut now: HashMap<&str, Option<Service>> = used
             .iter()
             .map(|account| (account.id.as_str(), self.service(account).ok()))
             .collect();
         let mut closed = Vec::new();
-        self.lock().retain(|id, held| {
+        self.lock().retain(|id, session| {
             let kept = now
-                .get(id.as_str())
-                .is_some_and(|service| service.as_ref() == Some(&held.service));
+                .remove(id.as_str())
+                .flatten()
+                .is_some_and(|service| session.update(service).is_ok());
             if !kept {
                 closed.push(id.clone());
             }
             kept
         });
         closed
-    }
-}
-
-impl Held {
-    fn open(service: Service) -> Self {
-        Self {
-            session: Session::open(service.clone()),
-            service,
-        }
     }
 }

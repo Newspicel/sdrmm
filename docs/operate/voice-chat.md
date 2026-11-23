@@ -22,8 +22,10 @@ Add accounts in **Library > Accounts**. They are server-wide, and every workspac
 
 | Kind | Fields |
 |---|---|
-| **Discord** | Bot token from the Discord developer portal. The bot needs **View Channel**, **Connect** and **Speak**. |
+| **Discord** | Bot token from the Discord developer portal, optional nickname. The bot needs **View Channel**, **Connect** and **Speak**, and **Change Nickname** for a nickname. |
 | **TeamSpeak** | Address, optional password, nickname. The server makes the identity. **Clear** drops a saved password. |
+
+A new name or nickname applies live. Other changes reconnect.
 
 ## Voice chat node
 

@@ -12,6 +12,8 @@ pub const DEFAULT_VOICE_VOLUME: f64 = 1.0;
 pub const MIN_VOICE_VOLUME: f64 = 0.0;
 pub const MAX_VOICE_VOLUME: f64 = 2.0;
 pub const MAX_CHAT_ACCOUNT_LEN: usize = 64;
+/// Discord counts a nickname in UTF-16 units.
+pub const MAX_DISCORD_NICKNAME_LEN: usize = 32;
 pub const MAX_CHAT_CHANNEL_LEN: usize = 255;
 pub const MAX_CHAT_ALLOWED: usize = 64;
 pub const MAX_CHAT_ALLOWED_LEN: usize = 64;
@@ -92,6 +94,8 @@ pub enum ChatService {
     Discord {
         #[serde(default)]
         token: Secret,
+        #[serde(default)]
+        nickname: String,
     },
     Teamspeak {
         address: String,

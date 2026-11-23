@@ -5,7 +5,7 @@ use std::collections::hash_map::Entry;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 use tsclient_rs::{ChannelInfo, Client, ClientInfo, ClientOptions, Event, VoiceData};
 
@@ -29,13 +29,14 @@ const DEFAULT_CHANNEL: &str = "default channel";
 pub(crate) struct Account {
     pub(crate) address: String,
     pub(crate) password: Option<String>,
-    pub(crate) nickname: String,
     pub(crate) identity: String,
 }
 
 /// A `TeamSpeak` client sits in one channel, so the session holds one seat.
 pub(crate) struct TeamSpeak {
     account: Arc<Account>,
+    /// Followed by the connection, which renames its client without leaving.
+    nickname: watch::Sender<String>,
     seat: Mutex<Option<Seat>>,
     /// Hands the next link to the connection already running, if it still waits for one.
     handover: Mutex<Option<mpsc::Sender<Place>>>,
@@ -44,10 +45,11 @@ pub(crate) struct TeamSpeak {
 }
 
 impl TeamSpeak {
-    pub(crate) fn new(account: Account) -> Self {
+    pub(crate) fn new(account: Account, nickname: String) -> Self {
         let (alive, keep) = mpsc::channel(1);
         Self {
             account: Arc::new(account),
+            nickname: watch::Sender::new(nickname),
             seat: Mutex::new(None),
             handover: Mutex::new(None),
             alive,
@@ -79,6 +81,10 @@ impl TeamSpeak {
         Ok(link)
     }
 
+    pub(crate) fn rename(&self, nickname: String) {
+        self.nickname.send_replace(nickname);
+    }
+
     fn hand_over(&self, place: Place) -> Result<(), Place> {
         match lock(&self.handover).as_ref() {
             Some(next) => next
@@ -91,10 +97,11 @@ impl TeamSpeak {
     fn connect(&self, place: Place) -> Result<(), VoiceChatError> {
         let (next, takeovers) = mpsc::channel(1);
         let account = Arc::clone(&self.account);
+        let names = self.nickname.subscribe();
         let alive = self.alive.clone();
         std::thread::Builder::new()
             .name("teamspeak".into())
-            .spawn(move || run_on_own_thread(&account, place, takeovers, &alive))
+            .spawn(move || run_on_own_thread(&account, place, takeovers, names, &alive))
             .map_err(|error| VoiceChatError::Start(error.to_string()))?;
         *lock(&self.handover) = Some(next);
         Ok(())
@@ -123,13 +130,14 @@ fn run_on_own_thread(
     account: &Account,
     place: Place,
     takeovers: mpsc::Receiver<Place>,
+    mut names: watch::Receiver<String>,
     alive: &mpsc::Sender<()>,
 ) {
     match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
     {
-        Ok(runtime) => runtime.block_on(run(account, place, takeovers, alive)),
+        Ok(runtime) => runtime.block_on(run(account, place, takeovers, &mut names, alive)),
         Err(error) => place
             .ends
             .inbox
@@ -148,24 +156,29 @@ async fn run(
     account: &Account,
     mut place: Place,
     mut takeovers: mpsc::Receiver<Place>,
+    names: &mut watch::Receiver<String>,
     alive: &mpsc::Sender<()>,
 ) {
     let mut backoff = Backoff::new();
     loop {
-        let released =
-            match connected(account, &mut place, &mut takeovers, &mut backoff, alive).await {
-                Ended::Released => true,
-                Ended::Redial => false,
-                Ended::Failed(reason) => {
-                    place.ends.inbox.set(LinkState::Failed(reason));
-                    tokio::select! {
-                        () = tokio::time::sleep(backoff.step()) => false,
-                        () = place.ends.inbox.released() => true,
-                        () = alive.closed() => return,
-                        never = place.ends.outbox.discard() => match never {},
-                    }
+        let line = Line {
+            takeovers: &mut takeovers,
+            names: &mut *names,
+            alive,
+        };
+        let released = match connected(account, &mut place, line, &mut backoff).await {
+            Ended::Released => true,
+            Ended::Redial => false,
+            Ended::Failed(reason) => {
+                place.ends.inbox.set(LinkState::Failed(reason));
+                tokio::select! {
+                    () = tokio::time::sleep(backoff.step()) => false,
+                    () = place.ends.inbox.released() => true,
+                    () = alive.closed() => return,
+                    never = place.ends.outbox.discard() => match never {},
                 }
-            };
+            }
+        };
         if released {
             match handed_over(&mut takeovers).await {
                 Some(next) => place = next,
@@ -175,22 +188,35 @@ async fn run(
     }
 }
 
+/// What a connection follows besides its link: the links handed over, the account's
+/// nickname, and whether the session still lives.
+struct Line<'a> {
+    takeovers: &'a mut mpsc::Receiver<Place>,
+    names: &'a mut watch::Receiver<String>,
+    alive: &'a mpsc::Sender<()>,
+}
+
 /// One connection, from handshake to leaving, moved to each link handed over meanwhile.
 async fn connected(
     account: &Account,
     place: &mut Place,
-    takeovers: &mut mpsc::Receiver<Place>,
+    line: Line<'_>,
     backoff: &mut Backoff,
-    alive: &mpsc::Sender<()>,
 ) -> Ended {
+    let Line {
+        takeovers,
+        names,
+        alive,
+    } = line;
     let Place { channel, ends } = place;
     let Ok(identity) = tsclient_rs::identityFromString(&account.identity) else {
         return Ended::Failed("bad identity".into());
     };
+    let nickname = names.borrow_and_update().clone();
     let mut client = Client::new(
         identity,
         account.address.clone(),
-        account.nickname.clone(),
+        nickname,
         options(account, channel),
     );
     let mut events = forward_events(&client);
@@ -205,7 +231,7 @@ async fn connected(
     let mut ended = match shaken {
         Some(Ok(())) => {
             backoff.reset();
-            joined(&client, &mut events, ends, alive).await
+            joined(&client, &mut events, ends, names, alive).await
         }
         Some(Err(reason)) => Ended::Failed(reason),
         None => Ended::Released,
@@ -219,7 +245,7 @@ async fn connected(
             Ended::Redial
         } else {
             match move_to(&client, &place.channel, lobby).await {
-                Ok(()) => joined(&client, &mut events, &mut place.ends, alive).await,
+                Ok(()) => joined(&client, &mut events, &mut place.ends, names, alive).await,
                 Err(reason) => Ended::Failed(reason),
             }
         };
@@ -234,11 +260,20 @@ async fn joined(
     client: &Client,
     events: &mut mpsc::UnboundedReceiver<Event>,
     ends: &mut Ends,
+    names: &mut watch::Receiver<String>,
     alive: &mpsc::Sender<()>,
 ) -> Ended {
     ends.outbox.clear();
     ends.inbox.set(LinkState::Joined);
-    talk(client, events, ends, alive).await
+    talk(client, events, ends, names, alive).await
+}
+
+/// Gives the client the account's new nickname in place. A refused one ends the connection,
+/// so the next one comes up under the new name.
+async fn rename(client: &Client, nickname: &str) -> Result<(), String> {
+    tsclient_rs::clientUpdate(client, &[("client_nickname", nickname)])
+        .await
+        .map_err(|error| format!("rename: {error}"))
 }
 
 /// Without a channel the client asks for none, and the server seats it in its default.
@@ -349,6 +384,7 @@ async fn talk(
     client: &Client,
     events: &mut mpsc::UnboundedReceiver<Event>,
     ends: &mut Ends,
+    names: &mut watch::Receiver<String>,
     alive: &mpsc::Sender<()>,
 ) -> Ended {
     let mut voice = match Voice::new() {
@@ -366,6 +402,12 @@ async fn talk(
                 None => return Ended::Failed("connection lost".into()),
             },
             outgoing = ends.outbox.next() => voice.say(client, outgoing),
+            Ok(()) = names.changed() => {
+                let nickname = names.borrow_and_update().clone();
+                if let Err(reason) = rename(client, &nickname).await {
+                    return Ended::Failed(reason);
+                }
+            }
             () = ends.inbox.released() => return Ended::Released,
             () = alive.closed() => return Ended::Released,
         }
@@ -522,12 +564,23 @@ mod tests {
     }
 
     fn session() -> TeamSpeak {
-        TeamSpeak::new(Account {
-            address: "127.0.0.1:9".into(),
-            password: None,
-            nickname: "sdrmm".into(),
-            identity: crate::new_teamspeak_identity(),
-        })
+        TeamSpeak::new(
+            Account {
+                address: "127.0.0.1:9".into(),
+                password: None,
+                identity: crate::new_teamspeak_identity(),
+            },
+            "sdrmm".into(),
+        )
+    }
+
+    #[test]
+    fn a_rename_reaches_the_running_connection() {
+        let session = session();
+        let mut names = session.nickname.subscribe();
+        session.rename("relay".into());
+        assert!(names.has_changed().unwrap());
+        assert_eq!(*names.borrow_and_update(), "relay");
     }
 
     #[test]
@@ -549,7 +602,6 @@ mod tests {
         let account = Account {
             address: "127.0.0.1:9".into(),
             password: None,
-            nickname: "sdrmm".into(),
             identity: String::new(),
         };
         assert_eq!(options(&account, "").default_channel, None);

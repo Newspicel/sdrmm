@@ -3070,6 +3070,7 @@ export interface components {
             accounts: components["schemas"]["ChatAccount"][];
         };
         ChatService: {
+            nickname?: string;
             /** @enum {string} */
             service: "discord";
             token?: components["schemas"]["Secret"];

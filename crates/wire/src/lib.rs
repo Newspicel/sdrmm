@@ -314,8 +314,8 @@ pub use transmit::{
 pub use voice_chat::{
     ChatAccount, ChatAccountsResponse, ChatService, ChatTalker, DEFAULT_VOX_HANG_MS,
     DEFAULT_VOX_THRESHOLD_DB, MAX_CHAT_ACCOUNT_LEN, MAX_CHAT_ALLOWED, MAX_CHAT_ALLOWED_LEN,
-    MAX_CHAT_CHANNEL_LEN, MAX_VOX_HANG_MS, SendMode, VoiceChatNode, VoiceChatState,
-    VoiceChatStatus, VoiceGateSettings,
+    MAX_CHAT_CHANNEL_LEN, MAX_DISCORD_NICKNAME_LEN, MAX_VOX_HANG_MS, SendMode, VoiceChatNode,
+    VoiceChatState, VoiceChatStatus, VoiceGateSettings,
 };
 pub use workspace::{
     CreateWorkspaceRequest, DroppedNode, MAX_NAME_LEN, MAX_REGION_ID_LEN, NoticeWire,

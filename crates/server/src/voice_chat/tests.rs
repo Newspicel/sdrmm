@@ -68,6 +68,7 @@ fn account() -> ChatAccount {
         name: "Club".to_owned(),
         service: ChatService::Discord {
             token: Secret::Inline("token".to_owned()),
+            nickname: String::new(),
         },
     }
 }
@@ -551,6 +552,40 @@ fn an_edited_account_reopens_its_session() {
     drop(link);
     sessions.join(&moved, CHANNEL).expect("join again");
     assert_eq!(sessions.settle(&[]), [club.id]);
+}
+
+#[test]
+fn a_renamed_account_keeps_its_session() {
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let club = store
+        .create_chat_account(ChatAccount {
+            id: String::new(),
+            name: "Club".to_owned(),
+            service: ChatService::Teamspeak {
+                address: "127.0.0.1:9".to_owned(),
+                password: Secret::default(),
+                nickname: String::new(),
+                identity: Secret::default(),
+            },
+        })
+        .expect("create");
+    let sessions = Sessions::new(store.clone());
+    let _lobby = sessions.join(&club, CHANNEL).expect("join");
+    let mut renamed = club.clone();
+    "Net".clone_into(&mut renamed.name);
+    if let ChatService::Teamspeak { nickname, .. } = &mut renamed.service {
+        "relay".clone_into(nickname);
+    }
+    let renamed = store
+        .update_chat_account(&club.id, renamed)
+        .expect("update");
+    assert!(
+        sessions
+            .join(&renamed, "Ops")
+            .is_err_and(|error| error.contains(CHANNEL)),
+        "a reopened session would have let a second channel in"
+    );
+    assert!(sessions.settle(std::slice::from_ref(&renamed)).is_empty());
 }
 
 #[test]

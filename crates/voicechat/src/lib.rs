@@ -25,6 +25,8 @@ const TEAMSPEAK_LEVEL: i32 = 8;
 pub enum Service {
     Discord {
         token: String,
+        /// Empty keeps the bot's own name.
+        nickname: String,
     },
     TeamSpeak {
         address: String,
@@ -38,7 +40,10 @@ pub enum Service {
 impl fmt::Debug for Service {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Discord { .. } => f.debug_struct("Discord").finish_non_exhaustive(),
+            Self::Discord { nickname, .. } => f
+                .debug_struct("Discord")
+                .field("nickname", nickname)
+                .finish_non_exhaustive(),
             Self::TeamSpeak {
                 address, nickname, ..
             } => f
@@ -46,6 +51,38 @@ impl fmt::Debug for Service {
                 .field("address", address)
                 .field("nickname", nickname)
                 .finish_non_exhaustive(),
+        }
+    }
+}
+
+impl Service {
+    /// The name shown in the channel.
+    fn nickname(&self) -> &str {
+        match self {
+            Self::Discord { nickname, .. } | Self::TeamSpeak { nickname, .. } => nickname,
+        }
+    }
+
+    /// Whether `next` is this account under another nickname, which a live session takes
+    /// without leaving its channels.
+    fn renamed_to(&self, next: &Self) -> bool {
+        match (self, next) {
+            (Self::Discord { token, .. }, Self::Discord { token: next, .. }) => token == next,
+            (
+                Self::TeamSpeak {
+                    address,
+                    password,
+                    identity,
+                    ..
+                },
+                Self::TeamSpeak {
+                    address: next_address,
+                    password: next_password,
+                    identity: next_identity,
+                    ..
+                },
+            ) => address == next_address && password == next_password && identity == next_identity,
+            _ => false,
         }
     }
 }
@@ -90,6 +127,7 @@ pub enum VoiceChatError {
 
 /// One live account. It connects on the first join and goes offline when dropped.
 pub struct Session {
+    service: Service,
     backend: Backend,
 }
 
@@ -100,21 +138,47 @@ enum Backend {
 
 impl Session {
     pub fn open(service: Service) -> Self {
-        let backend = match service {
-            Service::Discord { token } => Backend::Discord(discord::Discord::new(token)),
+        let backend = match service.clone() {
+            Service::Discord { token, nickname } => {
+                Backend::Discord(discord::Discord::new(token, nickname))
+            }
             Service::TeamSpeak {
                 address,
                 password,
                 nickname,
                 identity,
-            } => Backend::TeamSpeak(teamspeak::TeamSpeak::new(teamspeak::Account {
-                address,
-                password,
+            } => Backend::TeamSpeak(teamspeak::TeamSpeak::new(
+                teamspeak::Account {
+                    address,
+                    password,
+                    identity,
+                },
                 nickname,
-                identity,
-            })),
+            )),
         };
-        Self { backend }
+        Self { service, backend }
+    }
+
+    pub fn service(&self) -> &Service {
+        &self.service
+    }
+
+    /// Takes `service` in place when only its nickname changed, so every link stays joined.
+    /// Any other change hands it back: the account must open a new session.
+    pub fn update(&mut self, service: Service) -> Result<(), Service> {
+        if service == self.service {
+            return Ok(());
+        }
+        if !self.service.renamed_to(&service) {
+            return Err(service);
+        }
+        let nickname = service.nickname().to_owned();
+        match &self.backend {
+            Backend::Discord(discord) => discord.rename(nickname),
+            Backend::TeamSpeak(teamspeak) => teamspeak.rename(nickname),
+        }
+        self.service = service;
+        Ok(())
     }
 
     /// Joins `channel`: a Discord voice channel id, or a `TeamSpeak` channel name or path,
@@ -158,7 +222,8 @@ mod tests {
         let printed = format!(
             "{:?} {:?}",
             Service::Discord {
-                token: "bot-token".into()
+                token: "bot-token".into(),
+                nickname: "Relay".into(),
             },
             Service::TeamSpeak {
                 address: "ts.example".into(),
@@ -206,7 +271,52 @@ mod tests {
     fn discord() -> Session {
         Session::open(Service::Discord {
             token: "token".into(),
+            nickname: String::new(),
         })
+    }
+
+    fn renamed(service: &Service, to: &str) -> Service {
+        let mut next = service.clone();
+        match &mut next {
+            Service::Discord { nickname, .. } | Service::TeamSpeak { nickname, .. } => {
+                to.clone_into(nickname);
+            }
+        }
+        next
+    }
+
+    #[test]
+    fn a_new_nickname_keeps_the_session_and_its_link() {
+        let mut session = teamspeak();
+        let _lobby = session.join("Lobby").unwrap();
+        let next = renamed(session.service(), "relay");
+        assert_eq!(session.update(next.clone()), Ok(()));
+        assert_eq!(session.service(), &next);
+        assert_eq!(
+            session.join("Ops").unwrap_err(),
+            VoiceChatError::Clash("Lobby".into())
+        );
+        let mut session = discord();
+        let next = renamed(session.service(), "Relay");
+        assert_eq!(session.update(next.clone()), Ok(()));
+        assert_eq!(session.service(), &next);
+    }
+
+    #[test]
+    fn other_changes_need_a_new_session() {
+        let mut session = teamspeak();
+        let mut moved = renamed(session.service(), "relay");
+        if let Service::TeamSpeak { address, .. } = &mut moved {
+            "127.0.0.1:10".clone_into(address);
+        }
+        assert_eq!(session.update(moved.clone()), Err(moved));
+        let mut session = discord();
+        let swapped = Service::Discord {
+            token: "other".into(),
+            nickname: String::new(),
+        };
+        assert_eq!(session.update(swapped.clone()), Err(swapped));
+        assert!(session.update(renamed(&teamspeak().service, "x")).is_err());
     }
 
     #[test]
