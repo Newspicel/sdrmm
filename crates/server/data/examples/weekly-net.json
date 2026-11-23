@@ -1,0 +1,177 @@
+{
+  "version": 2,
+  "name": "Weekly net",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "sched",
+          "kind": "schedule",
+          "data": {
+            "windows": [
+              {
+                "start_min": 1140,
+                "stop_min": 1200,
+                "days": [
+                  "wednesday"
+                ]
+              }
+            ]
+          },
+          "position": {
+            "x": -520,
+            "y": 0
+          }
+        },
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "rx",
+          "kind": "channel",
+          "data": {
+            "channel_type": "nfm",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520,
+            "y": 0
+          }
+        },
+        {
+          "id": "spk",
+          "kind": "speaker",
+          "data": {
+            "output": null,
+            "volumes": {}
+          },
+          "position": {
+            "x": 1040,
+            "y": -80
+          }
+        },
+        {
+          "id": "rec",
+          "kind": "audio_recorder",
+          "data": {
+            "recording": false,
+            "skip_silence": true
+          },
+          "position": {
+            "x": 1040,
+            "y": 300
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Weekly net\n\n**Schedule** opens the radio and runs the **Audio recorder** on Wednesdays from 19:00 to 20:00, on the server's clock.\n\nChange the window and the frequency to your own net."
+          },
+          "position": {
+            "x": 0,
+            "y": 420
+          },
+          "size": {
+            "w": 440,
+            "h": 220
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "sched",
+            "port": "control"
+          },
+          "to": {
+            "node": "dev",
+            "port": "control"
+          }
+        },
+        {
+          "from": {
+            "node": "sched",
+            "port": "control"
+          },
+          "to": {
+            "node": "rec",
+            "port": "control"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "rx",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "rx",
+            "port": "audio"
+          },
+          "to": {
+            "node": "spk",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "rx",
+            "port": "audio"
+          },
+          "to": {
+            "node": "rec",
+            "port": "audio"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 3
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 145500000,
+          "sample_rate": 1024000
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "rx",
+        "settings": {
+          "frequency_hz": 145500000,
+          "params": {
+            "type": "nfm",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

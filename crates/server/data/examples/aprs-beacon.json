@@ -1,0 +1,173 @@
+{
+  "version": 2,
+  "name": "APRS beacon",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {
+            "radio_use": "both"
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "rx",
+          "kind": "channel",
+          "data": {
+            "channel_type": "aprs",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520,
+            "y": 0
+          }
+        },
+        {
+          "id": "map",
+          "kind": "map",
+          "position": {
+            "x": 1040,
+            "y": -80
+          }
+        },
+        {
+          "id": "log",
+          "kind": "decoder_log",
+          "data": {},
+          "position": {
+            "x": 1040,
+            "y": 360
+          }
+        },
+        {
+          "id": "enc",
+          "kind": "encoder",
+          "data": {
+            "encoder_type": "aprs"
+          },
+          "position": {
+            "x": 520,
+            "y": 760
+          }
+        },
+        {
+          "id": "tx",
+          "kind": "transmit",
+          "data": {},
+          "position": {
+            "x": 1040,
+            "y": 760
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## APRS beacon\n\nWrite a position or message on the **Encoder** and send it; **Transmitter** puts it on the air.\n\nThe **Channel** decodes everyone else onto the **Map** and the **Decoder log**. 144.800 MHz is APRS in Europe, 144.390 MHz in North America."
+          },
+          "position": {
+            "x": 0,
+            "y": 420
+          },
+          "size": {
+            "w": 440,
+            "h": 260
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "rx",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "rx",
+            "port": "events"
+          },
+          "to": {
+            "node": "map",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "rx",
+            "port": "events"
+          },
+          "to": {
+            "node": "log",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "enc",
+            "port": "baseband"
+          },
+          "to": {
+            "node": "tx",
+            "port": "baseband"
+          }
+        },
+        {
+          "from": {
+            "node": "tx",
+            "port": "transmit"
+          },
+          "to": {
+            "node": "dev",
+            "port": "transmit"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 144800000,
+          "sample_rate": 1024000
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "rx",
+        "settings": {
+          "frequency_hz": 144800000,
+          "params": {
+            "type": "aprs",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

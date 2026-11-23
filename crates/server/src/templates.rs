@@ -460,6 +460,21 @@ mod tests {
     }
 
     #[test]
+    fn every_decoder_has_a_template() {
+        let templated: std::collections::HashSet<&str> = all()
+            .iter()
+            .flat_map(|template| template.channels.iter())
+            .map(|channel| channel.params.type_id())
+            .collect();
+        let missing: Vec<String> = sdrmm_engine::channel_types()
+            .into_iter()
+            .map(|descriptor| descriptor.type_id)
+            .filter(|type_id| !templated.contains(type_id.as_str()))
+            .collect();
+        assert!(missing.is_empty(), "no template runs {missing:?}");
+    }
+
+    #[test]
     fn unknown_ids_are_none() {
         assert!(get("nope").is_none());
         assert!(get("").is_none());

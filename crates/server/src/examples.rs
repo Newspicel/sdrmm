@@ -106,18 +106,42 @@ static EXAMPLES: &[Example] = &[
         description: "Bearing over frequency, baseline visibilities and polarisation.",
         body: packed_data!("examples/array-lab.json"),
     },
-];
-
-/// Kinds no shipped example can hold: a plugin processor runs only once its plugin is loaded,
-/// a voice chat only with the operator's own chat account.
-#[cfg(test)]
-const UNCOVERED: &[sdrmm_wire::NodeKind] = &[
-    sdrmm_wire::NodeKind::Schedule,
-    sdrmm_wire::NodeKind::Processor,
-    sdrmm_wire::NodeKind::Microphone,
-    sdrmm_wire::NodeKind::Encoder,
-    sdrmm_wire::NodeKind::Transmit,
-    sdrmm_wire::NodeKind::VoiceChat,
+    Example {
+        id: "fm-transceiver",
+        name: "FM transceiver",
+        description: "Talk and listen on 2 m FM with a transmit-capable radio.",
+        body: packed_data!("examples/fm-transceiver.json"),
+    },
+    Example {
+        id: "hf-transceiver",
+        name: "SSB transceiver",
+        description: "Voice on 20 m upper sideband, both ways.",
+        body: packed_data!("examples/hf-transceiver.json"),
+    },
+    Example {
+        id: "am-transceiver",
+        name: "AM transceiver",
+        description: "AM voice on 10 m, both ways.",
+        body: packed_data!("examples/am-transceiver.json"),
+    },
+    Example {
+        id: "aprs-beacon",
+        name: "APRS beacon",
+        description: "Sends your position as APRS and maps what others send.",
+        body: packed_data!("examples/aprs-beacon.json"),
+    },
+    Example {
+        id: "voice-chat-gateway",
+        name: "Voice chat gateway",
+        description: "A 2 m FM channel linked to Discord or TeamSpeak.",
+        body: packed_data!("examples/voice-chat-gateway.json"),
+    },
+    Example {
+        id: "weekly-net",
+        name: "Weekly net",
+        description: "Opens the radio and records the club net every Wednesday evening.",
+        body: packed_data!("examples/weekly-net.json"),
+    },
 ];
 
 #[derive(Debug)]
@@ -252,11 +276,15 @@ mod tests {
         assert_eq!(needs("trunked-talkgroups"), (1, 0, 0));
         assert_eq!(needs("network-feed"), (1, 0, 0));
         assert_eq!(needs("vor-fix"), (1, 0, 0));
+        assert_eq!(needs("fm-transceiver"), (1, 0, 0));
+        assert_eq!(needs("aprs-beacon"), (1, 0, 0));
+        assert_eq!(needs("voice-chat-gateway"), (1, 0, 0));
+        assert_eq!(needs("weekly-net"), (1, 0, 0));
     }
 
     #[test]
-    fn every_node_kind_is_covered_or_listed() {
-        let mut covered: BTreeSet<NodeKind> = UNCOVERED.iter().copied().collect();
+    fn every_node_kind_has_an_example() {
+        let mut covered = BTreeSet::new();
         for info in all().expect("examples list") {
             covered.extend(info.node_kinds);
         }
@@ -270,10 +298,51 @@ mod tests {
             .filter(|kind| !covered.contains(kind))
             .copied()
             .collect();
-        assert!(
-            missing.is_empty(),
-            "no example shows {missing:?}; add one or list it in UNCOVERED"
-        );
+        assert!(missing.is_empty(), "no example shows {missing:?}");
+    }
+
+    fn graphs() -> Vec<(&'static str, sdrmm_wire::PatchGraph)> {
+        EXAMPLES
+            .iter()
+            .map(|example| {
+                let parsed: WorkspaceExport =
+                    crate::json::from_value(&export(example.id).expect("export"))
+                        .expect(example.id);
+                (example.id, parsed.snapshot.graph)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_encoder_has_an_example() {
+        let used: BTreeSet<String> = graphs()
+            .iter()
+            .flat_map(|(_, graph)| graph.nodes.iter())
+            .filter_map(|node| match &node.body {
+                sdrmm_wire::NodeBody::Encoder(encoder) => Some(encoder.encoder_type.clone()),
+                _ => None,
+            })
+            .collect();
+        let missing: Vec<String> = sdrmm_engine::Engine::new(None)
+            .encoder_types()
+            .into_iter()
+            .map(|encoder| encoder.type_id)
+            .filter(|type_id| !used.contains(type_id))
+            .collect();
+        assert!(missing.is_empty(), "no example sends {missing:?}");
+    }
+
+    #[test]
+    fn every_example_resolves_without_a_refused_wire() {
+        let descriptors = sdrmm_engine::Engine::new(None).channel_types();
+        let ctx = sdrmm_wire::patch::resolve::ResolveCtx {
+            descriptors: Some(&descriptors),
+            live: None,
+        };
+        for (id, graph) in graphs() {
+            let (_, refused) = sdrmm_wire::patch::resolve::compile_draft(&graph, &ctx);
+            assert!(refused.is_empty(), "{id}: {refused:?}");
+        }
     }
 
     #[test]

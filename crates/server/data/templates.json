@@ -604,8 +604,8 @@
   {
     "id": "marine-vhf",
     "name": "Marine VHF",
-    "description": "Marine voice channels around 156–162 MHz.",
-    "explainer": "Channel 16 (156.800 MHz) is the international distress and calling channel and is monitored everywhere; working traffic moves off it. Marine VHF is narrowband FM, 25 kHz apart.",
+    "description": "Marine voice on channel 16 and DSC alerts on channel 70.",
+    "explainer": "Channel 16 (156.800 MHz) is the international distress and calling channel and is monitored everywhere; working traffic moves off it. Marine VHF is narrowband FM, 25 kHz apart. Channel 70 (156.525 MHz) carries DSC distress and calling alerts.",
     "center_hz": 156800000.0,
     "sample_rate": 1024000.0,
     "channels": [
@@ -617,6 +617,16 @@
         },
         "sinks": [
           "speaker"
+        ]
+      },
+      {
+        "frequency_hz": 156525000.0,
+        "params": {
+          "type": "dsc",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
         ]
       }
     ]
@@ -1070,6 +1080,876 @@
           "map",
           "log",
           "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "vdl2",
+    "name": "Aircraft data (VDL2)",
+    "description": "VHF Data Link Mode 2 messages from aircraft.",
+    "explainer": "VDL2 replaces ACARS on busy routes, at 31.5 kbit/s. 136.975 MHz is the common channel; Europe adds 136.725, 136.775 and 136.875 MHz.",
+    "center_hz": 136850000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 136725000.0,
+        "params": {
+          "type": "vdl2",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 136775000.0,
+        "params": {
+          "type": "vdl2",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 136875000.0,
+        "params": {
+          "type": "vdl2",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 136975000.0,
+        "params": {
+          "type": "vdl2",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hfdl",
+    "name": "Aircraft data (HFDL)",
+    "description": "HF datalink from aircraft over oceans.",
+    "explainer": "Aircraft far from land send position reports and messages on HF. Ground stations change frequency with the time of day; these are four around 10 MHz.",
+    "center_hz": 10060000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 10027000.0,
+        "params": {
+          "type": "hfdl",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 10063000.0,
+        "params": {
+          "type": "hfdl",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 10081000.0,
+        "params": {
+          "type": "hfdl",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 10093000.0,
+        "params": {
+          "type": "hfdl",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "uat",
+    "name": "Aircraft (UAT 978)",
+    "description": "US aircraft positions and FIS-B weather on 978 MHz.",
+    "explainer": "General aviation in the US sends positions on 978 MHz instead of 1090 MHz. Ground stations add weather and traffic.",
+    "center_hz": 978000000.0,
+    "sample_rate": 2083334.0,
+    "channels": [
+      {
+        "frequency_hz": 978000000.0,
+        "params": {
+          "type": "uat",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "vor-ils",
+    "name": "VOR and ILS",
+    "description": "Bearing to a VOR and deviation from an ILS localizer.",
+    "explainer": "Set each channel to a beacon near you: VORs sit on even tenths from 108 MHz, localizers on odd tenths below 112 MHz.",
+    "center_hz": 110450000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 110600000.0,
+        "params": {
+          "type": "vor",
+          "settings": {}
+        },
+        "sinks": [
+          "readout"
+        ]
+      },
+      {
+        "frequency_hz": 110300000.0,
+        "params": {
+          "type": "ils",
+          "settings": {}
+        },
+        "sinks": [
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inmarsat-aero",
+    "name": "Inmarsat Aero",
+    "description": "Aircraft datalink relayed by Inmarsat.",
+    "explainer": "Aircraft messages relayed by geostationary satellites near 1545 MHz. Point a patch antenna at the satellite and retune to its channel.",
+    "center_hz": 1545000000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 1545000000.0,
+        "params": {
+          "type": "inmarsat_aero",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inmarsat-stdc",
+    "name": "Inmarsat C (EGC)",
+    "description": "Maritime safety and text messages by satellite.",
+    "explainer": "EGC carries navigational warnings and weather for ships. 1537.70 MHz is the EMEA satellite; other regions use other channels.",
+    "center_hz": 1537700000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 1537700000.0,
+        "params": {
+          "type": "inmarsat_stdc",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "iridium",
+    "name": "Iridium bursts",
+    "description": "Ring alerts and bursts from Iridium satellites.",
+    "explainer": "Iridium satellites pass every few minutes. The simplex channels at 1626 MHz carry ring alerts with the satellite position.",
+    "center_hz": 1626250000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 1626250000.0,
+        "params": {
+          "type": "iridium",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "goes-hrit",
+    "name": "GOES HRIT",
+    "description": "GOES-R pictures and bulletins at 1694.1 MHz.",
+    "explainer": "GOES-East and GOES-West are geostationary: point a dish once and receive full disk pictures all day.",
+    "center_hz": 1694100000.0,
+    "sample_rate": 1854000.0,
+    "channels": [
+      {
+        "frequency_hz": 1694100000.0,
+        "params": {
+          "type": "goes_hrit",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gk2a-lrit",
+    "name": "GK-2A LRIT",
+    "description": "GK-2A pictures and bulletins at 1692.14 MHz.",
+    "explainer": "GK-2A covers Asia and the Pacific from 128.2° east. A small dish is enough.",
+    "center_hz": 1692140000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 1692140000.0,
+        "params": {
+          "type": "gk2a_lrit",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hrpt",
+    "name": "HRPT (L band)",
+    "description": "Full resolution pictures from polar weather satellites.",
+    "explainer": "Meteor-M, NOAA and MetOp send HRPT near 1700 MHz during a pass. A tracked dish or helix is needed; use the Satellite node for Doppler.",
+    "center_hz": 1700000000.0,
+    "sample_rate": 2661600.0,
+    "channels": [
+      {
+        "frequency_hz": 1700000000.0,
+        "params": {
+          "type": "hrpt",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "noaa-apt",
+    "name": "NOAA APT",
+    "description": "Pictures from NOAA APT pass recordings.",
+    "explainer": "NOAA 15, 18 and 19 left the air in 2025. Play an old pass recording on the Device.",
+    "center_hz": 137100000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 137100000.0,
+        "params": {
+          "type": "apt",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "horus",
+    "name": "Horus balloons",
+    "description": "Horus Binary telemetry from high-altitude balloons.",
+    "explainer": "Amateur balloons send position and sensors on 434 MHz, often near 434.200 MHz.",
+    "center_hz": 434200000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 434200000.0,
+        "params": {
+          "type": "horus",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wenet",
+    "name": "Wenet pictures",
+    "description": "Live pictures from amateur balloons.",
+    "explainer": "Wenet sends JPEG pictures at 115 kbit/s, usually on 443.500 MHz.",
+    "center_hz": 443500000.0,
+    "sample_rate": 921416.0,
+    "channels": [
+      {
+        "frequency_hz": 443500000.0,
+        "params": {
+          "type": "wenet",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lora",
+    "name": "LoRa and Meshtastic (868 MHz)",
+    "description": "LoRaWAN and Meshtastic packets in the EU band.",
+    "explainer": "868.1 MHz is a LoRaWAN uplink channel; 869.525 MHz is the Meshtastic EU default.",
+    "center_hz": 868800000.0,
+    "sample_rate": 2400000.0,
+    "channels": [
+      {
+        "frequency_hz": 868100000.0,
+        "params": {
+          "type": "lora",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 869525000.0,
+        "params": {
+          "type": "lora",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dect",
+    "name": "DECT phones",
+    "description": "DECT cordless phone carriers and calls.",
+    "explainer": "DECT uses ten carriers from 1881.792 to 1897.344 MHz. Retune to the one your scope shows busy.",
+    "center_hz": 1897344000.0,
+    "sample_rate": 2304000.0,
+    "channels": [
+      {
+        "frequency_hz": 1897344000.0,
+        "params": {
+          "type": "dect",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gsm",
+    "name": "GSM cell",
+    "description": "Cell identity and broadcast of a GSM carrier.",
+    "explainer": "Tune to a cell's broadcast carrier. 935.2 MHz is ARFCN 1 of GSM 900.",
+    "center_hz": 935200000.0,
+    "sample_rate": 2000000.0,
+    "channels": [
+      {
+        "frequency_hz": 935200000.0,
+        "params": {
+          "type": "gsm",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "signal-id",
+    "name": "Signal identifier",
+    "description": "Guesses what an unknown signal is.",
+    "explainer": "Put the channel on a signal you do not know; the readout names the most likely mode.",
+    "center_hz": 433920000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 433920000.0,
+        "params": {
+          "type": "ident",
+          "settings": {}
+        },
+        "sinks": [
+          "readout",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hd-radio",
+    "name": "HD Radio",
+    "description": "NRSC-5 station information and digital audio.",
+    "explainer": "HD Radio adds digital sidebands to US FM stations. Retune to a station near you.",
+    "center_hz": 98100000.0,
+    "sample_rate": 558140.625,
+    "channels": [
+      {
+        "frequency_hz": 98100000.0,
+        "params": {
+          "type": "hd_radio",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "drm",
+    "name": "DRM shortwave",
+    "description": "Digital Radio Mondiale broadcasts.",
+    "explainer": "Few stations broadcast DRM. Look up a schedule and retune to one.",
+    "center_hz": 13650000.0,
+    "sample_rate": 192000.0,
+    "channels": [
+      {
+        "frequency_hz": 13650000.0,
+        "params": {
+          "type": "drm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dvbt",
+    "name": "DVB-T",
+    "description": "A DVB-T or T2 multiplex.",
+    "explainer": "506 MHz is UHF channel 25. Retune to a multiplex near you.",
+    "center_hz": 506000000.0,
+    "sample_rate": 9142857.142857144,
+    "channels": [
+      {
+        "frequency_hz": 506000000.0,
+        "params": {
+          "type": "dvbt",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "atv",
+    "name": "Analog ATV (23 cm)",
+    "description": "Amateur analog TV picture and sound.",
+    "explainer": "Amateur ATV repeaters often output on 23 cm. Retune to one near you.",
+    "center_hz": 1255000000.0,
+    "sample_rate": 20000000.0,
+    "channels": [
+      {
+        "frequency_hz": 1255000000.0,
+        "params": {
+          "type": "atv",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "speaker"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "datv",
+    "name": "Digital ATV (70 cm)",
+    "description": "DVB-S and S2 amateur TV.",
+    "explainer": "Digital amateur TV on 437 MHz. Retune to a repeater or station near you.",
+    "center_hz": 437000000.0,
+    "sample_rate": 2000000.0,
+    "channels": [
+      {
+        "frequency_hz": 437000000.0,
+        "params": {
+          "type": "datv",
+          "settings": {}
+        },
+        "sinks": [
+          "video",
+          "readout"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "pro-digital-voice",
+    "name": "Professional digital voice",
+    "description": "P25, NXDN and Tetrapol side by side.",
+    "explainer": "One decoder per system on the same frequency: whichever locks is the mode. Retune to a channel near you.",
+    "center_hz": 420000000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "p25",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "p25p2",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "nxdn",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "tetrapol",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "trunk-control",
+    "name": "Trunk control channels",
+    "description": "MPT 1327, EDACS and LTR side by side.",
+    "explainer": "One decoder per system on the same frequency: whichever locks names the system. Retune to a control channel near you.",
+    "center_hz": 420000000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "mpt1327",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "edacs",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 420000000.0,
+        "params": {
+          "type": "ltr",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dpmr446",
+    "name": "dPMR446",
+    "description": "Licence-free digital walkie-talkies at 446 MHz.",
+    "explainer": "dPMR446 has 16 channels 6.25 kHz apart from 446.103125 MHz. This is channel 1.",
+    "center_hz": 446150000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 446103125.0,
+        "params": {
+          "type": "dpmr",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fm-signalling",
+    "name": "FM signalling",
+    "description": "DTMF, Selcall, MDC-1200 and FleetSync on one FM channel.",
+    "explainer": "Business and public service radios send IDs and digits before a call. Retune to a channel near you.",
+    "center_hz": 453000000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 453000000.0,
+        "params": {
+          "type": "nfm",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker"
+        ],
+        "squelch": {
+          "mode": "auto",
+          "margin_db": 8
+        }
+      },
+      {
+        "frequency_hz": 453000000.0,
+        "params": {
+          "type": "dtmf",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 453000000.0,
+        "params": {
+          "type": "selcall",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 453000000.0,
+        "params": {
+          "type": "mdc1200",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 453000000.0,
+        "params": {
+          "type": "fleetsync",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "benshi",
+    "name": "Benshi chat",
+    "description": "Chat, positions and calls from Benshi handhelds.",
+    "explainer": "Benshi handhelds send text and positions on any channel. 145.500 MHz is the 2 m calling channel.",
+    "center_hz": 145500000.0,
+    "sample_rate": 1024000.0,
+    "channels": [
+      {
+        "frequency_hz": 145500000.0,
+        "params": {
+          "type": "bss",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "freedv",
+    "name": "FreeDV (20 m)",
+    "description": "HF digital voice on 14.236 MHz.",
+    "explainer": "FreeDV 1600 fits voice into 1.25 kHz. 14.236 MHz is the 20 m activity frequency.",
+    "center_hz": 14236000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 14236000.0,
+        "params": {
+          "type": "freedv",
+          "settings": {}
+        },
+        "sinks": [
+          "speaker",
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "cw-skimmer",
+    "name": "CW skimmer (20 m)",
+    "description": "Every Morse signal in the CW segment at once.",
+    "explainer": "Each signal is decoded and logged with its call. Spots appear as stations call CQ.",
+    "center_hz": 14025000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 14025000.0,
+        "params": {
+          "type": "cw_skimmer",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hf-weak-signal",
+    "name": "JT65, JT9 and JS8 (20 m)",
+    "description": "Older weak signal modes and JS8Call chat.",
+    "explainer": "JT65 on 14.076 MHz, JT9 and JS8 on 14.078 MHz. Decoding needs an accurate clock.",
+    "center_hz": 14077000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 14076000.0,
+        "params": {
+          "type": "jt65",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 14078000.0,
+        "params": {
+          "type": "jt9",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 14078000.0,
+        "params": {
+          "type": "js8",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "six-metre-scatter",
+    "name": "6 m scatter",
+    "description": "MSK144 meteor pings and Q65 on 6 metres.",
+    "explainer": "Meteor trails reflect 6 m for a fraction of a second. MSK144 catches those pings on 50.260 MHz; Q65 handles scatter and EME on 50.275 MHz.",
+    "center_hz": 50270000.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 50260000.0,
+        "params": {
+          "type": "msk144",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 50275000.0,
+        "params": {
+          "type": "q65",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lf-mf-fst4",
+    "name": "FST4 and FST4W (630 m)",
+    "description": "LF and MF weak signal contacts and beacons.",
+    "explainer": "FST4W beacons and FST4 contacts share the 630 m dial on 474.2 kHz.",
+    "center_hz": 474200.0,
+    "sample_rate": 250000.0,
+    "channels": [
+      {
+        "frequency_hz": 474200.0,
+        "params": {
+          "type": "fst4",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
+        ]
+      },
+      {
+        "frequency_hz": 474200.0,
+        "params": {
+          "type": "fst4w",
+          "settings": {}
+        },
+        "sinks": [
+          "log"
         ]
       }
     ]

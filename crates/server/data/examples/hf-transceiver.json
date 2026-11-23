@@ -1,0 +1,195 @@
+{
+  "version": 2,
+  "name": "SSB transceiver",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {
+            "radio_use": "both"
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "scope",
+          "kind": "scope",
+          "position": {
+            "x": 520,
+            "y": -40
+          }
+        },
+        {
+          "id": "rx",
+          "kind": "channel",
+          "data": {
+            "channel_type": "ssb",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520,
+            "y": 340
+          }
+        },
+        {
+          "id": "spk",
+          "kind": "speaker",
+          "data": {
+            "output": null,
+            "volumes": {}
+          },
+          "position": {
+            "x": 1040,
+            "y": 340
+          }
+        },
+        {
+          "id": "mic",
+          "kind": "microphone",
+          "data": {},
+          "position": {
+            "x": 0,
+            "y": 760
+          }
+        },
+        {
+          "id": "enc",
+          "kind": "encoder",
+          "data": {
+            "encoder_type": "ssb"
+          },
+          "position": {
+            "x": 520,
+            "y": 760
+          }
+        },
+        {
+          "id": "tx",
+          "kind": "transmit",
+          "data": {},
+          "position": {
+            "x": 1040,
+            "y": 760
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## SSB transceiver\n\n**Microphone** into an SSB **Encoder**, on the air through **Transmitter**. The **Channel** plays the band.\n\nHold the key to talk. Needs a licence and an amplifier for real range."
+          },
+          "position": {
+            "x": 0,
+            "y": 1100
+          },
+          "size": {
+            "w": 480,
+            "h": 240
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "scope",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "rx",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "rx",
+            "port": "audio"
+          },
+          "to": {
+            "node": "spk",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "mic",
+            "port": "audio"
+          },
+          "to": {
+            "node": "enc",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "enc",
+            "port": "baseband"
+          },
+          "to": {
+            "node": "tx",
+            "port": "baseband"
+          }
+        },
+        {
+          "from": {
+            "node": "tx",
+            "port": "transmit"
+          },
+          "to": {
+            "node": "dev",
+            "port": "transmit"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 3
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 14285000,
+          "sample_rate": 250000
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "rx",
+        "settings": {
+          "frequency_hz": 14285000,
+          "params": {
+            "type": "ssb",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

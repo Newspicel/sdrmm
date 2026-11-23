@@ -1,0 +1,165 @@
+{
+  "version": 2,
+  "name": "Voice chat gateway",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {
+            "radio_use": "both"
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "rx",
+          "kind": "channel",
+          "data": {
+            "channel_type": "nfm",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520,
+            "y": 0
+          }
+        },
+        {
+          "id": "chat",
+          "kind": "voice_chat",
+          "data": {},
+          "position": {
+            "x": 1040,
+            "y": 0
+          }
+        },
+        {
+          "id": "enc",
+          "kind": "encoder",
+          "data": {
+            "encoder_type": "nfm"
+          },
+          "position": {
+            "x": 1560,
+            "y": 0
+          }
+        },
+        {
+          "id": "tx",
+          "kind": "transmit",
+          "data": {},
+          "position": {
+            "x": 2080,
+            "y": 0
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## Voice chat gateway\n\nWhat the **Channel** hears goes to **Voice chat**; what the chat says goes back on the air through the **Encoder** and **Transmitter**.\n\nPick an account and channel on **Voice chat**. Run it only where your licence allows an unattended gateway."
+          },
+          "position": {
+            "x": 0,
+            "y": 420
+          },
+          "size": {
+            "w": 480,
+            "h": 260
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "rx",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "rx",
+            "port": "audio"
+          },
+          "to": {
+            "node": "chat",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "chat",
+            "port": "audio"
+          },
+          "to": {
+            "node": "enc",
+            "port": "audio"
+          }
+        },
+        {
+          "from": {
+            "node": "enc",
+            "port": "baseband"
+          },
+          "to": {
+            "node": "tx",
+            "port": "baseband"
+          }
+        },
+        {
+          "from": {
+            "node": "tx",
+            "port": "transmit"
+          },
+          "to": {
+            "node": "dev",
+            "port": "transmit"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 4
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 145500000,
+          "sample_rate": 1024000
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "rx",
+        "settings": {
+          "frequency_hz": 145500000,
+          "params": {
+            "type": "nfm",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

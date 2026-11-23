@@ -46,7 +46,7 @@
           "id": "ch",
           "kind": "channel",
           "data": {
-            "channel_type": "apt",
+            "channel_type": "lrpt",
             "tuning_locked": false
           },
           "position": {
@@ -103,7 +103,7 @@
           "id": "note",
           "kind": "note",
           "data": {
-            "text": "## Satellite pass\n\n**GPS position** is your station. Everything that points or predicts needs it.\n\n**Satellite** predicts the next pass and, during it, tunes the decoder for Doppler, aims the rotator, and opens the radio only for the pass.\n\n**Rotator** points the antenna. Without one, delete it: the rest still works on a fixed antenna.\n\n**Channel** decodes APT. Pick the satellite in the Satellite node, not here.\n\n**Video** is where the weather image appears, line by line as the pass comes in. APT sends a picture, so without this node the pass decodes to a log of rows you cannot look at.\n\n**Recorder**, once armed, keeps the raw IQ of each pass, so you can decode it again later with different settings.\n\n**Map** draws the ground track. **Decoder log** keeps what came down.\n\nPick a radio on the Device node to start."
+            "text": "## Satellite pass\n\n**GPS position** is your station. Everything that points or predicts needs it.\n\n**Satellite** predicts the next pass and, during it, tunes the decoder for Doppler, aims the rotator, and opens the radio only for the pass.\n\n**Rotator** points the antenna. Without one, delete it: the rest still works on a fixed antenna.\n\n**Channel** decodes Meteor LRPT. Pick the satellite in the Satellite node, not here.\n\n**Video** is where the weather image appears, line by line as the pass comes in. LRPT sends a picture, so without this node the pass decodes to a log of rows you cannot look at.\n\n**Recorder**, once armed, keeps the raw IQ of each pass, so you can decode it again later with different settings.\n\n**Map** draws the ground track. **Decoder log** keeps what came down.\n\nPick a radio on the Device node to start."
           },
           "position": {
             "x": 0.0,
@@ -256,7 +256,7 @@
       {
         "node": "dev",
         "settings": {
-          "center_hz": 137100000.0,
+          "center_hz": 137900000.0,
           "sample_rate": 2400000.0
         }
       }
@@ -265,9 +265,9 @@
       {
         "node": "ch",
         "settings": {
-          "frequency_hz": 137100000.0,
+          "frequency_hz": 137900000.0,
           "params": {
-            "type": "apt",
+            "type": "lrpt",
             "settings": {}
           }
         }
