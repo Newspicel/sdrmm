@@ -15,11 +15,11 @@ use serde_json::Value;
 use tokio::sync::broadcast::{self, error::RecvError};
 use tokio::sync::{mpsc, watch};
 
-use super::connect::{self, Fault, NOT_SIGNED_IN};
+use super::connect::{self, Fault};
 use super::{Ready, Status};
 use crate::link::Backoff;
-use crate::matrix::MatrixAccount;
 use crate::matrix::call::SyncEvent;
+use crate::matrix::{MatrixAccount, MatrixLogin};
 
 /// How long one sync request waits on the homeserver for news.
 const SYNC_WAIT: Duration = Duration::from_secs(30);
@@ -32,6 +32,27 @@ pub(super) struct Line {
     pub(super) status: watch::Sender<Status>,
     pub(super) saved: watch::Sender<Option<String>>,
     pub(super) names: watch::Receiver<String>,
+    /// The recovery key this backend set up, kept in every session it saves.
+    pub(super) made: Option<String>,
+    /// Log in anew instead of restoring the session in hand.
+    pub(super) fresh: bool,
+    /// Whether the one new login a revoked session allows was used since the account was last
+    /// ready.
+    pub(super) relogged: bool,
+}
+
+impl Line {
+    /// A password account whose session the homeserver forgot logs in once more before the
+    /// fault lasts.
+    fn relogin(&mut self, fault: &Fault) -> bool {
+        let password = matches!(self.account.login, MatrixLogin::Password(_));
+        if !fault.revoked || !password || self.relogged {
+            return false;
+        }
+        self.relogged = true;
+        self.fresh = true;
+        true
+    }
 }
 
 /// Keeps the account's client up until the session drops, retrying what a retry can fix.
@@ -42,6 +63,11 @@ pub(super) async fn run_account(mut line: Line, alive: mpsc::Sender<()>) {
             fault = connected(&mut line, &mut backoff) => fault,
             () = alive.closed() => return,
         };
+        if line.relogin(&fault) {
+            tracing::warn!("Matrix session revoked, logging in again");
+            line.status.send_replace(Status::Starting);
+            continue;
+        }
         tracing::warn!(reason = fault.reason, "Matrix account down");
         line.status.send_replace(Status::Failed(fault.reason));
         if !fault.retry {
@@ -58,23 +84,37 @@ pub(super) async fn run_account(mut line: Line, alive: mpsc::Sender<()>) {
 /// One client, from opening it to the fault that ends it.
 async fn connected(line: &mut Line, backoff: &mut Backoff) -> Fault {
     let account = &*line.account;
-    let session = line
-        .saved
-        .borrow()
-        .clone()
-        .or_else(|| account.session.clone());
-    let client = match connect::open(account, session.as_deref(), &line.saved).await {
+    let session = if line.fresh {
+        None
+    } else {
+        line.saved
+            .borrow()
+            .clone()
+            .or_else(|| account.session.clone())
+    };
+    let opened = connect::open(
+        account,
+        session.as_deref(),
+        &line.saved,
+        line.made.as_deref(),
+    );
+    let client = match opened.await {
         Ok(client) => client,
         Err(fault) => return fault,
     };
+    line.fresh = false;
     let changes = client.subscribe_to_session_changes();
     let (events, _) = broadcast::channel(EVENTS);
     match client.sync_once(settings()).await {
         Ok(first) => fan_out(&first, &events),
         Err(error) => return sync_fault(&error),
     }
-    if let Err(fault) = connect::trust(&client, account).await {
+    let had = line.made.is_some();
+    if let Err(fault) = connect::trust(&client, account, &mut line.made).await {
         return fault;
+    }
+    if !had && line.made.is_some() {
+        connect::save(&client, &line.saved, line.made.as_deref());
     }
     line.status.send_replace(Status::Ready(Arc::new(Ready {
         client: client.clone(),
@@ -82,9 +122,11 @@ async fn connected(line: &mut Line, backoff: &mut Backoff) -> Fault {
         events: events.downgrade(),
     })));
     backoff.reset();
+    line.relogged = false;
+    let made = line.made.as_deref();
     tokio::select! {
         fault = sync(&client, &events) => fault,
-        fault = keep_saved(&client, changes, &line.saved) => fault,
+        fault = keep_saved(&client, changes, &line.saved, made) => fault,
         never = keep_named(&client, &mut line.names) => match never {},
     }
 }
@@ -122,7 +164,7 @@ fn sync_fault(error: &matrix_sdk::Error) -> Fault {
         error.client_api_error_kind(),
         Some(ErrorKind::UnknownToken { .. })
     ) {
-        Fault::lasting(NOT_SIGNED_IN)
+        Fault::revoked()
     } else {
         tracing::warn!(%error, "Matrix sync failed");
         Fault::passing("Homeserver unreachable")
@@ -200,13 +242,14 @@ async fn keep_saved(
     client: &Client,
     mut changes: broadcast::Receiver<SessionChange>,
     saved: &watch::Sender<Option<String>>,
+    made: Option<&str>,
 ) -> Fault {
     loop {
         match changes.recv().await {
             Ok(SessionChange::TokensRefreshed) | Err(RecvError::Lagged(_)) => {
-                connect::save(client, saved);
+                connect::save(client, saved, made);
             }
-            Ok(SessionChange::UnknownToken(_)) => return Fault::lasting(NOT_SIGNED_IN),
+            Ok(SessionChange::UnknownToken(_)) => return Fault::revoked(),
             Err(RecvError::Closed) => return std::future::pending().await,
         }
     }

@@ -20,6 +20,8 @@ const DEVICE_NAME: &str = "sdrmm";
 pub(crate) struct Fault {
     pub(crate) reason: String,
     pub(crate) retry: bool,
+    /// The homeserver forgot the session: a password account may log in anew.
+    pub(crate) revoked: bool,
 }
 
 impl Fault {
@@ -28,6 +30,7 @@ impl Fault {
         Self {
             reason: reason.to_owned(),
             retry: false,
+            revoked: false,
         }
     }
 
@@ -35,6 +38,14 @@ impl Fault {
         Self {
             reason: reason.to_owned(),
             retry: true,
+            revoked: false,
+        }
+    }
+
+    pub(crate) fn revoked() -> Self {
+        Self {
+            revoked: true,
+            ..Self::lasting(NOT_SIGNED_IN)
         }
     }
 }
@@ -65,10 +76,31 @@ impl Saved {
     }
 }
 
-/// Hands the client's current session out to be kept.
-pub(crate) fn save(client: &Client, saved: &watch::Sender<Option<String>>) {
-    if let Some(json) = Saved::of(client).as_ref().and_then(Saved::json) {
-        saved.send_replace(Some(json));
+/// A session handed out to be kept, with the recovery key this device made. The server moves
+/// the key into the account's secrets.
+#[derive(Serialize)]
+struct Kept<'a> {
+    #[serde(flatten)]
+    saved: Saved,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery_key: Option<&'a str>,
+}
+
+/// Hands the client's current session out to be kept, with `made`, the recovery key this
+/// device set up, if any.
+pub(crate) fn save(client: &Client, saved: &watch::Sender<Option<String>>, made: Option<&str>) {
+    let Some(session) = Saved::of(client) else {
+        return;
+    };
+    let kept = Kept {
+        saved: session,
+        recovery_key: made,
+    };
+    match serde_json::to_string(&kept) {
+        Ok(json) => {
+            saved.send_replace(Some(json));
+        }
+        Err(error) => tracing::warn!(%error, "Matrix session not saved"),
     }
 }
 
@@ -104,6 +136,7 @@ pub(crate) async fn open(
     account: &MatrixAccount,
     session: Option<&str>,
     saved: &watch::Sender<Option<String>>,
+    made: Option<&str>,
 ) -> Result<Client, Fault> {
     if session.is_none() {
         if account.login == MatrixLogin::OAuth {
@@ -112,7 +145,7 @@ pub(crate) async fn open(
         clear_store(&account.store).await?;
     }
     let client = build_client(&account.homeserver, Some(&account.store)).await?;
-    sign_in(&client, account, session, saved).await?;
+    sign_in(&client, account, session, saved, made).await?;
     Ok(client)
 }
 
@@ -122,6 +155,7 @@ pub(crate) async fn sign_in(
     account: &MatrixAccount,
     session: Option<&str>,
     saved: &watch::Sender<Option<String>>,
+    made: Option<&str>,
 ) -> Result<(), Fault> {
     if let Some(session) = session {
         return restore(client, session).await;
@@ -136,7 +170,7 @@ pub(crate) async fn sign_in(
         .send()
         .await
         .map_err(|error| login_fault(&error))?;
-    save(client, saved);
+    save(client, saved, made);
     Ok(())
 }
 
@@ -198,8 +232,13 @@ async fn restore(client: &Client, session: &str) -> Result<(), Fault> {
 }
 
 /// Makes the device trusted: cross-signing set up on a fresh account, or unlocked with the
-/// recovery key on one that has it, so Element shares keys with it.
-pub(crate) async fn trust(client: &Client, account: &MatrixAccount) -> Result<(), Fault> {
+/// recovery key on one that has it, so Element shares keys with it. A fresh account's new
+/// recovery key lands in `made`; it unlocks a later device when the account has none.
+pub(crate) async fn trust(
+    client: &Client,
+    account: &MatrixAccount,
+    made: &mut Option<String>,
+) -> Result<(), Fault> {
     let encryption = client.encryption();
     encryption.wait_for_e2ee_initialization_tasks().await;
     if encryption
@@ -221,9 +260,23 @@ pub(crate) async fn trust(client: &Client, account: &MatrixAccount) -> Result<()
             Fault::passing(UNREACHABLE)
         })?;
     if identity.is_none() {
-        return bootstrap(client, account, &user).await;
+        bootstrap(client, account, &user).await?;
+        *made = enable_recovery(client).await;
+        return Ok(());
     }
-    recover(client, account).await
+    let key = account.recovery_key.as_deref().or(made.as_deref());
+    recover(client, key).await
+}
+
+/// Keeps cross-signing behind a new recovery key, so a later device can unlock it.
+async fn enable_recovery(client: &Client) -> Option<String> {
+    client
+        .encryption()
+        .recovery()
+        .enable()
+        .await
+        .inspect_err(|error| tracing::warn!(%error, "Matrix recovery not enabled"))
+        .ok()
 }
 
 /// Sets up cross-signing, answering the password prompt a homeserver may raise.
@@ -252,10 +305,8 @@ async fn bootstrap(client: &Client, account: &MatrixAccount, user: &UserId) -> R
         .map_err(|error| refused(&error))
 }
 
-async fn recover(client: &Client, account: &MatrixAccount) -> Result<(), Fault> {
-    let key = account
-        .recovery_key
-        .as_deref()
+async fn recover(client: &Client, key: Option<&str>) -> Result<(), Fault> {
+    let key = key
         .map(str::trim)
         .filter(|key| !key.is_empty())
         .ok_or_else(|| Fault::lasting("Recovery key needed"))?;

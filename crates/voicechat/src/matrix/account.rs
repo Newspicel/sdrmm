@@ -109,6 +109,9 @@ impl Matrix {
             status,
             saved: self.saved.clone(),
             names: self.nickname.subscribe(),
+            made: None,
+            fresh: false,
+            relogged: false,
         };
         runtime.spawn(sync::run_account(line, self.alive.clone()));
         *slot = Some(watched.clone());

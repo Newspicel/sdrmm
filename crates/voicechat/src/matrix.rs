@@ -88,7 +88,8 @@ impl MatrixAccount {
         self.homeserver == next.homeserver
             && self.user == next.user
             && self.login == next.login
-            && self.recovery_key == next.recovery_key
+            && (self.recovery_key == next.recovery_key
+                || next.recovery_key.is_some() && next.recovery_key == made_key(latest))
             && self.store == next.store
             && (next.session == self.session || same_device(next.session.as_deref(), latest))
     }
@@ -112,6 +113,28 @@ pub fn session_access_token(session: &str) -> Option<String> {
     serde_json::from_str::<Tokens>(session)
         .ok()
         .map(|tokens| tokens.access_token)
+}
+
+#[derive(Deserialize)]
+struct Made {
+    recovery_key: Option<String>,
+}
+
+fn made_key(session: Option<&str>) -> Option<String> {
+    serde_json::from_str::<Made>(session?).ok()?.recovery_key
+}
+
+/// Splits the recovery key a backend set up off the session it saved: the session to keep and
+/// the key, which belongs in the account's secrets. None when the session carries no key.
+#[must_use]
+pub fn take_recovery_key(session: &str) -> Option<(String, String)> {
+    let mut json: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(session).ok()?;
+    let serde_json::Value::String(key) = json.remove("recovery_key")? else {
+        return None;
+    };
+    let rest = serde_json::to_string(&json).ok()?;
+    Some((rest, key))
 }
 
 /// Who a saved session signs in as.

@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::time::timeout;
 
-use super::account::connect::{Fault, Saved, build_client, open, sign_in};
+use super::account::connect::{Fault, Saved, build_client, open, save, sign_in};
 use super::account::sync::{key_of, members_of};
 use super::call::SyncEvent;
 use super::*;
@@ -61,7 +61,9 @@ async fn password_login_saves_a_session() {
         .await
         .unwrap();
     let saved = watch::Sender::new(None);
-    sign_in(&client, &account, None, &saved).await.unwrap();
+    sign_in(&client, &account, None, &saved, None)
+        .await
+        .unwrap();
     let json = saved_json(saved.borrow().as_deref().unwrap());
     assert_eq!(json["kind"], "matrix");
     assert_eq!(json["user_id"], client.user_id().unwrap().as_str());
@@ -89,7 +91,7 @@ async fn restore_skips_login() {
         .await
         .unwrap();
     let saved = watch::Sender::new(None);
-    sign_in(&client, &account, Some(&session), &saved)
+    sign_in(&client, &account, Some(&session), &saved, None)
         .await
         .unwrap();
     assert_eq!(client.user_id().unwrap(), "@bot:x.org");
@@ -337,7 +339,7 @@ async fn store_of_device_a(homeserver: &str, dir: &std::path::Path) -> MatrixSto
     let client = build_client(homeserver, Some(&store)).await.unwrap();
     let saved = watch::Sender::new(None);
     let account = account(homeserver, MatrixLogin::Password("hunter2".into()));
-    sign_in(&client, &account, Some(&device_session("A")), &saved)
+    sign_in(&client, &account, Some(&device_session("A")), &saved, None)
         .await
         .unwrap();
     client
@@ -355,7 +357,7 @@ async fn a_fresh_login_starts_on_a_cleared_store() {
     let mut account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
     account.store = store_of_device_a(&server.uri(), dir.path()).await;
     let saved = watch::Sender::new(None);
-    let client = open(&account, None, &saved).await.unwrap();
+    let client = open(&account, None, &saved, None).await.unwrap();
     assert_ne!(client.device_id().unwrap(), "A");
     assert!(saved.borrow().is_some());
 }
@@ -367,7 +369,7 @@ async fn a_store_of_another_device_is_a_lasting_fault() {
     let mut account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
     account.store = store_of_device_a(&server.uri(), dir.path()).await;
     let saved = watch::Sender::new(None);
-    let fault = open(&account, Some(&device_session("B")), &saved)
+    let fault = open(&account, Some(&device_session("B")), &saved, None)
         .await
         .err()
         .unwrap();
@@ -424,4 +426,89 @@ fn a_saved_session_hands_out_its_access_token() {
     assert_eq!(session_access_token("{}"), None);
     assert_eq!(session_user(&oauth).as_deref(), Some("@bot:x.org"));
     assert_eq!(session_user("{}"), None);
+}
+
+async fn failed_with(session: &Session) -> LinkState {
+    let mut link = session.join("!room:x.org").unwrap();
+    timeout(
+        PATIENCE,
+        link.state
+            .wait_for(|state| matches!(state, LinkState::Failed(_))),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .clone()
+}
+
+#[tokio::test]
+async fn a_revoked_password_session_logs_in_once_more() {
+    let server = homeserver().await;
+    server.mock_login().ok().expect(2).mount().await;
+    server.mock_sync().error_unknown_token(false).mount().await;
+    let account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
+    let session = Session::open(Service::Matrix(account));
+    assert_eq!(
+        failed_with(&session).await,
+        LinkState::Failed("Not signed in".into())
+    );
+}
+
+#[tokio::test]
+async fn a_revoked_oauth_session_does_not_log_in() {
+    let server = homeserver().await;
+    server.mock_login().ok().expect(0).mount().await;
+    server.mock_sync().error_unknown_token(false).mount().await;
+    let mut account = account(&server.uri(), MatrixLogin::OAuth);
+    account.session = Some(device_session("BOT"));
+    let session = Session::open(Service::Matrix(account));
+    assert_eq!(
+        failed_with(&session).await,
+        LinkState::Failed("Not signed in".into())
+    );
+}
+
+#[tokio::test]
+async fn a_saved_session_carries_the_recovery_key_it_made() {
+    let server = homeserver().await;
+    let account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
+    let client = build_client(&account.homeserver, Some(&account.store))
+        .await
+        .unwrap();
+    let saved = watch::Sender::new(None);
+    sign_in(
+        &client,
+        &account,
+        Some(&device_session("BOT")),
+        &saved,
+        None,
+    )
+    .await
+    .unwrap();
+    save(&client, &saved, Some("EsTc made"));
+    let kept = saved.borrow().clone().unwrap();
+    assert_eq!(saved_json(&kept)["recovery_key"], "EsTc made");
+    let (session, key) = take_recovery_key(&kept).unwrap();
+    assert_eq!(key, "EsTc made");
+    assert_eq!(saved_json(&session).get("recovery_key"), None);
+    assert_eq!(session_user(&session).as_deref(), Some("@bot:x.org"));
+    assert_eq!(take_recovery_key(&session), None);
+
+    save(&client, &saved, None);
+    assert_eq!(
+        saved_json(saved.borrow().as_deref().unwrap()).get("recovery_key"),
+        None
+    );
+}
+
+#[test]
+fn the_recovery_key_a_backend_made_keeps_its_session() {
+    let before = account("https://x.org", MatrixLogin::Password("hunter2".into()));
+    let mut next = before.clone();
+    next.recovery_key = Some("EsTc made".into());
+    let latest = r#"{"kind":"matrix","user_id":"@bot:x.org","device_id":"BOT","access_token":"t","recovery_key":"EsTc made"}"#;
+    assert!(before.renamed_to(&next, Some(latest)));
+    next.recovery_key = Some("EsTc other".into());
+    assert!(!before.renamed_to(&next, Some(latest)));
+    assert!(!before.renamed_to(&next, None));
 }

@@ -13,7 +13,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 pub use link::{Hold, Link};
 pub use matrix::{
     MatrixAccount, MatrixLogin, MatrixStore, SignIn, SignedIn, matrix_sign_in,
-    session_access_token, session_user,
+    session_access_token, session_user, take_recovery_key,
 };
 use tokio::runtime::Handle;
 use tokio::sync::watch;
