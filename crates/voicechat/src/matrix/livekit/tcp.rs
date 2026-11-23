@@ -43,19 +43,32 @@ impl TcpLinks {
             tracing::debug!(len = packet.len(), "packet too long for TCP");
             return;
         };
-        if !self.links.contains_key(&to) {
-            if self.links.len() >= MAX_LINKS {
-                return;
-            }
-            let (outgoing_tx, outgoing) = mpsc::channel(QUEUE);
-            tokio::spawn(link(to, outgoing, self.heard_tx.clone()));
-            self.links.insert(to, outgoing_tx);
+        let framed = match self.links.get(&to) {
+            None => framed,
+            Some(link) => match link.try_send(framed) {
+                Ok(()) => return,
+                Err(TrySendError::Full(_)) => return tracing::debug!(%to, "TCP packet dropped"),
+                Err(TrySendError::Closed(framed)) => framed,
+            },
+        };
+        if self.links.remove(&to).is_some() {
+            tracing::debug!(%to, "TCP candidate dialled again");
         }
-        if let Some(link) = self.links.get(&to)
-            && let Err(TrySendError::Full(_)) = link.try_send(framed)
-        {
+        self.dial(to, framed);
+    }
+
+    /// Opens a connection to `to` with `first` queued on it.
+    fn dial(&mut self, to: SocketAddr, first: Vec<u8>) {
+        self.links.retain(|_, link| !link.is_closed());
+        if self.links.len() >= MAX_LINKS {
+            return tracing::warn!(%to, "too many TCP candidates, packet dropped");
+        }
+        let (outgoing_tx, outgoing) = mpsc::channel(QUEUE);
+        if outgoing_tx.try_send(first).is_err() {
             tracing::debug!(%to, "TCP packet dropped");
         }
+        tokio::spawn(link(to, outgoing, self.heard_tx.clone()));
+        self.links.insert(to, outgoing_tx);
     }
 
     /// The next packet any connection received. Pends while there is none.
@@ -143,17 +156,37 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_address_that_refuses_loses_its_packets() {
+    async fn an_address_that_refused_is_dialled_again() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let closed = listener.local_addr().unwrap();
         drop(listener);
         let mut links = TcpLinks::new();
 
         links.send(closed, b"ping");
+        timeout(Duration::from_secs(2), async {
+            while !links.links[&closed].is_closed() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
         links.send(closed, b"again");
 
-        assert_eq!(links.links.len(), 1);
+        assert!(!links.links[&closed].is_closed());
         let none = timeout(Duration::from_millis(200), links.recv()).await;
         assert!(none.is_err());
+    }
+
+    #[tokio::test]
+    async fn links_beyond_the_cap_are_not_opened() {
+        let mut listeners = Vec::new();
+        let mut links = TcpLinks::new();
+        for _ in 0..=MAX_LINKS {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            links.send(listener.local_addr().unwrap(), b"ping");
+            listeners.push(listener);
+        }
+
+        assert_eq!(links.links.len(), MAX_LINKS);
     }
 }
