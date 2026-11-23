@@ -110,6 +110,7 @@ const SDRPLAY_PRIORITY: u8 = 25;
 #[cfg(any(
     feature = "cr8",
     feature = "aaronia",
+    feature = "tektronix",
     feature = "rtlsdr",
     feature = "hackrf",
     feature = "airspy",
@@ -188,6 +189,11 @@ pub fn registry(
     registry.register(
         NATIVE_PRIORITY,
         Box::new(sdrmm_device_aaronia::AaroniaDriver::new()),
+    );
+    #[cfg(feature = "tektronix")]
+    registry.register(
+        NATIVE_PRIORITY,
+        Box::new(sdrmm_device_tektronix::TektronixDriver::new()),
     );
     #[cfg(feature = "rtlsdr")]
     registry.register(

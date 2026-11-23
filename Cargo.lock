@@ -7761,6 +7761,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdrmm-device-tektronix"
+version = "0.0.0"
+dependencies = [
+ "libloading 0.9.0",
+ "num-complex",
+ "sdrmm-device",
+ "sdrmm-wire",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "sdrmm-device-virtual"
 version = "0.0.0"
 dependencies = [
@@ -7832,6 +7844,7 @@ dependencies = [
  "sdrmm-device-sdrplay",
  "sdrmm-device-soapy",
  "sdrmm-device-spyserver",
+ "sdrmm-device-tektronix",
  "sdrmm-device-virtual",
  "sdrmm-dsp",
  "sdrmm-modem",

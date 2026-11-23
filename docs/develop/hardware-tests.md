@@ -22,6 +22,14 @@ SDRMM_RTL_TEST_RATE=3200000 SDRMM_RTL_TEST_SECONDS=60 \
   cargo test -p sdrmm-device-rtlsdr --lib hardware_counter_stream_is_continuous -- --ignored --nocapture
 ```
 
+## Tektronix RSA
+
+```sh
+cargo test -p sdrmm-device-tektronix -- --ignored --nocapture --test-threads=1
+```
+
+Streams every rate without loss, retunes and changes rate while streaming, checks a gain step moves the level by as much. The gain test needs FM broadcast on the input.
+
 ## KrakenSDR
 
 ```sh
