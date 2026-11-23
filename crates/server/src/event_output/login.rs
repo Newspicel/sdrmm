@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use sdrmm_wire::{AccountKind, AccountService, EventOutputTarget, Secret};
+use sdrmm_wire::{AccountKind, AccountService, EventOutputTarget, MatrixLogin, Secret};
 
 use crate::Store;
 
@@ -75,10 +75,20 @@ fn read(store: &Store, id: &str, kind: AccountKind) -> Result<Login, String> {
         },
         AccountService::Matrix {
             homeserver_url,
+            login,
             access_token,
+            session,
+            ..
         } => Login::Matrix {
             homeserver_url: homeserver_url.clone(),
-            access_token: required(access_token, "Matrix token")?,
+            access_token: if *login == MatrixLogin::Token {
+                required(access_token, "Matrix token")?
+            } else {
+                reveal(session, "Matrix session")?
+                    .as_deref()
+                    .and_then(sdrmm_voicechat::session_access_token)
+                    .ok_or_else(|| "Matrix is not signed in".to_owned())?
+            },
         },
         AccountService::Mqtt {
             broker_url,

@@ -2,7 +2,8 @@ use std::{collections::HashMap, convert::Infallible};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use sdrmm_wire::{
-    Account, AccountService, MAX_ACCOUNT_LEN, NodeBody, NodeKind, Secret, WorkspaceSnapshot,
+    Account, AccountService, MAX_ACCOUNT_LEN, MatrixLogin, NodeBody, NodeKind, Secret,
+    WorkspaceSnapshot,
 };
 use serde_json::{Map, Value, json};
 
@@ -175,7 +176,14 @@ fn split(target: &Value) -> Option<(AccountService, Map<String, Value>)> {
         "matrix" => (
             AccountService::Matrix {
                 homeserver_url: text("homeserver_url"),
+                user: String::new(),
+                login: MatrixLogin::Token,
                 access_token: secret("access_token"),
+                password: Secret::default(),
+                nickname: String::new(),
+                recovery_key: Secret::default(),
+                session: Secret::default(),
+                store_key: Secret::default(),
             },
             "room_id",
         ),

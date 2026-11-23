@@ -60,6 +60,10 @@ impl Links for FakeLinks {
     fn settle(&self, _used: &[Account]) -> Vec<String> {
         Vec::new()
     }
+
+    fn fault(&self, _account: &str) -> Option<String> {
+        None
+    }
 }
 
 fn account() -> Account {
@@ -537,7 +541,7 @@ fn an_edited_account_reopens_its_session() {
             },
         })
         .expect("create");
-    let sessions = Sessions::new(store.clone());
+    let sessions = Sessions::new(store.clone(), None);
     let link = sessions.join(&club, CHANNEL).expect("join");
     assert!(sessions.settle(std::slice::from_ref(&club)).is_empty());
     let mut moved = club.clone();
@@ -555,6 +559,36 @@ fn an_edited_account_reopens_its_session() {
 }
 
 #[test]
+fn a_token_login_cannot_join_voice() {
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let room = store
+        .create_account(Account {
+            id: String::new(),
+            name: "Room".to_owned(),
+            service: AccountService::Matrix {
+                homeserver_url: "https://matrix.example".to_owned(),
+                user: String::new(),
+                login: sdrmm_wire::MatrixLogin::Token,
+                access_token: Secret::Inline("tok".to_owned()),
+                password: Secret::default(),
+                nickname: String::new(),
+                recovery_key: Secret::default(),
+                session: Secret::default(),
+                store_key: Secret::default(),
+            },
+        })
+        .expect("create");
+    let sessions = Sessions::new(store, None);
+    assert_eq!(
+        sessions
+            .join(&room, "!room:matrix.example")
+            .err()
+            .as_deref(),
+        Some("Voice needs password or OAuth login")
+    );
+}
+
+#[test]
 fn a_renamed_account_keeps_its_session() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
     let club = store
@@ -569,7 +603,7 @@ fn a_renamed_account_keeps_its_session() {
             },
         })
         .expect("create");
-    let sessions = Sessions::new(store.clone());
+    let sessions = Sessions::new(store.clone(), None);
     let _lobby = sessions.join(&club, CHANNEL).expect("join");
     let mut renamed = club.clone();
     "Net".clone_into(&mut renamed.name);

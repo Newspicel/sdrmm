@@ -101,6 +101,19 @@ struct Owner {
     device_id: String,
 }
 
+#[derive(Deserialize)]
+struct Tokens {
+    access_token: String,
+}
+
+/// The access token inside a saved session, for a client that only sends events.
+#[must_use]
+pub fn session_access_token(session: &str) -> Option<String> {
+    serde_json::from_str::<Tokens>(session)
+        .ok()
+        .map(|tokens| tokens.access_token)
+}
+
 fn same_device(next: Option<&str>, latest: Option<&str>) -> bool {
     let owner = |json: &str| serde_json::from_str::<Owner>(json).ok();
     match (next.and_then(owner), latest.and_then(owner)) {

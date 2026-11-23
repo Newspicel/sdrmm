@@ -227,6 +227,100 @@
         }
       }
     },
+    "/api/accounts/{id}/sign-in": {
+      "get": {
+        "operationId": "sign_in_state",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Account id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Where the sign-in stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixSignInState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "start_sign_in",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Account id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Open the link and enter the code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixSignInPrompt"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not a Matrix OAuth account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The homeserver refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/arrays": {
       "get": {
         "operationId": "list_arrays",
@@ -6286,6 +6380,7 @@
           },
           {
             "type": "object",
+            "description": "`session` and `store_key` are kept by the server and never taken from a request.",
             "required": [
               "homeserver_url",
               "service"
@@ -6297,11 +6392,32 @@
               "homeserver_url": {
                 "type": "string"
               },
+              "login": {
+                "$ref": "#/components/schemas/MatrixLogin"
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "password": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "recovery_key": {
+                "$ref": "#/components/schemas/Secret"
+              },
               "service": {
                 "type": "string",
                 "enum": [
                   "matrix"
                 ]
+              },
+              "session": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "store_key": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "user": {
+                "type": "string"
               }
             }
           },
@@ -16277,6 +16393,94 @@
           "cross",
           "square",
           "triangle"
+        ]
+      },
+      "MatrixLogin": {
+        "type": "string",
+        "description": "How a Matrix account signs in. A token only sends events; voice needs a device of its own,\nmade by a password or an OAuth sign-in.",
+        "enum": [
+          "token",
+          "password",
+          "oauth"
+        ]
+      },
+      "MatrixSignInPrompt": {
+        "type": "object",
+        "description": "What the operator opens to approve a Matrix OAuth sign-in.",
+        "required": [
+          "verification_uri",
+          "user_code",
+          "expires_in_s"
+        ],
+        "properties": {
+          "expires_in_s": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "user_code": {
+            "type": "string"
+          },
+          "verification_uri": {
+            "type": "string"
+          }
+        }
+      },
+      "MatrixSignInState": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "idle"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MatrixSignInPrompt"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "state"
+                ],
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "pending"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "state"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
         ]
       },
       "MdnsState": {

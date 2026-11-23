@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use matrix_sdk::authentication::matrix::MatrixSession;
+use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::deserialized_responses::{
     AlgorithmInfo, EncryptionInfo, ProcessedToDeviceEvent, TimelineEvent, VerificationLevel,
     VerificationState,
@@ -366,4 +367,29 @@ async fn the_first_login_handed_back_keeps_the_link() {
         session.join("!room:x.org").unwrap_err(),
         crate::VoiceChatError::Clash("!room:x.org".into())
     );
+}
+
+#[test]
+fn a_saved_session_hands_out_its_access_token() {
+    assert_eq!(
+        session_access_token(&device_session("A")).as_deref(),
+        Some("token")
+    );
+    let oauth = Saved::OAuth(OAuthSession {
+        client_id: ClientId::new("client".into()),
+        user: UserSession {
+            meta: SessionMeta {
+                user_id: owned_user_id!("@bot:x.org"),
+                device_id: owned_device_id!("BOT"),
+            },
+            tokens: SessionTokens {
+                access_token: "oauth-token".into(),
+                refresh_token: Some("refresh".into()),
+            },
+        },
+    })
+    .json()
+    .unwrap();
+    assert_eq!(session_access_token(&oauth).as_deref(), Some("oauth-token"));
+    assert_eq!(session_access_token("{}"), None);
 }

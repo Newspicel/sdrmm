@@ -1,11 +1,13 @@
-use sdrmm_wire::{Account, AccountsResponse};
+use sdrmm_wire::{Account, AccountsResponse, MatrixSignInPrompt, MatrixSignInState};
 
 use super::{ApiError, AppError, AppState, Json, OpenApiRouter, Path, State, StatusCode, routes};
+use crate::voice_chat::SignInError;
 
 pub(super) fn routes() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(list_accounts, create_account))
         .routes(routes!(update_account, delete_account))
+        .routes(routes!(start_sign_in, sign_in_state))
 }
 
 #[utoipa::path(
@@ -84,6 +86,67 @@ pub(super) async fn delete_account(
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
     let store = state.store.clone();
-    tokio::task::spawn_blocking(move || store.delete_account(&id)).await??;
+    let deleted = id.clone();
+    tokio::task::spawn_blocking(move || store.delete_account(&deleted)).await??;
+    state.chat_sessions.forget(&id);
+    if let Some(dir) = state.chat_sessions.store_dir(&id) {
+        remove_store(&dir).await?;
+    }
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn remove_store(dir: &std::path::Path) -> Result<(), AppError> {
+    match tokio::fs::remove_dir_all(dir).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(AppError::internal(format!(
+            "Matrix store not removed: {error}"
+        ))),
+    }
+}
+
+async fn find(state: &AppState, id: String) -> Result<Account, AppError> {
+    let store = state.store.clone();
+    let missing = format!("account {id} not found");
+    tokio::task::spawn_blocking(move || store.account(&id))
+        .await??
+        .ok_or_else(|| AppError::not_found(missing))
+}
+
+#[utoipa::path(
+    post, path = "/api/accounts/{id}/sign-in",
+    params(("id" = String, Path, description = "Account id")),
+    responses(
+        (status = 200, description = "Open the link and enter the code", body = MatrixSignInPrompt),
+        (status = 404, description = "Account not found", body = ApiError),
+        (status = 409, description = "Not a Matrix OAuth account", body = ApiError),
+        (status = 503, description = "The homeserver refused", body = ApiError),
+    ),
+)]
+pub(super) async fn start_sign_in(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<MatrixSignInPrompt>, AppError> {
+    let account = find(&state, id).await?;
+    match state.chat_sessions.clone().sign_in(account).await {
+        Ok(prompt) => Ok(Json(prompt)),
+        Err(SignInError::NotOAuth) => Err(AppError::conflict("Not a Matrix OAuth account")),
+        Err(SignInError::Refused(reason)) => Err(AppError::unavailable(reason)),
+    }
+}
+
+#[utoipa::path(
+    get, path = "/api/accounts/{id}/sign-in",
+    params(("id" = String, Path, description = "Account id")),
+    responses(
+        (status = 200, description = "Where the sign-in stands", body = MatrixSignInState),
+        (status = 404, description = "Account not found", body = ApiError),
+    ),
+)]
+pub(super) async fn sign_in_state(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<MatrixSignInState>, AppError> {
+    let account = find(&state, id).await?;
+    Ok(Json(state.chat_sessions.sign_in_state(&account.id)))
 }

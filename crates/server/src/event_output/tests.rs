@@ -11,9 +11,9 @@ use axum::{
 use reqwest::StatusCode;
 use sdrmm_channels::RttyText;
 use sdrmm_wire::{
-    AccountService, ChannelNode, DecoderEvent, EventAudio, EventOutputNode, PatchEdge, PatchGraph,
-    PatchNode, PortRef, Position, RackLayout, Secret, UpdateWorkspaceRequest, VoiceCall,
-    WorkspaceSnapshot,
+    AccountService, ChannelNode, DecoderEvent, EventAudio, EventOutputNode, MatrixLogin, PatchEdge,
+    PatchGraph, PatchNode, PortRef, Position, RackLayout, Secret, UpdateWorkspaceRequest,
+    VoiceCall, WorkspaceSnapshot,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -1082,25 +1082,97 @@ async fn an_account_of_another_service_is_refused() {
     );
 }
 
+fn matrix_bot(login: MatrixLogin, access_token: Secret) -> AccountService {
+    AccountService::Matrix {
+        homeserver_url: "https://matrix.example".to_owned(),
+        user: "@bot:matrix.example".to_owned(),
+        login,
+        access_token,
+        password: Secret::default(),
+        nickname: String::new(),
+        recovery_key: Secret::default(),
+        session: Secret::default(),
+        store_key: Secret::default(),
+    }
+}
+
+fn matrix_room(account: String) -> EventOutputTarget {
+    EventOutputTarget::Matrix {
+        account,
+        room_id: "!radio:matrix.example".to_owned(),
+    }
+}
+
 #[tokio::test]
 async fn a_matrix_account_without_its_token_cannot_send() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
     let room = account(
         &store,
         "Room",
-        AccountService::Matrix {
-            homeserver_url: "https://matrix.example".to_owned(),
-            access_token: Secret::default(),
-        },
+        matrix_bot(MatrixLogin::Token, Secret::Inline("tok".to_owned())),
     );
-    let target = EventOutputTarget::Matrix {
-        account: room,
-        room_id: "!radio:matrix.example".to_owned(),
-    };
-
+    store
+        .hold()
+        .execute("UPDATE secrets SET value = ''", [])
+        .expect("emptied");
     assert_eq!(
-        problem_of(&store, target).await.as_deref(),
+        problem_of(&store, matrix_room(room)).await.as_deref(),
         Some("Matrix token is not set")
+    );
+
+    let bot = account(
+        &store,
+        "Bot",
+        matrix_bot(MatrixLogin::Oauth, Secret::default()),
+    );
+    assert_eq!(
+        problem_of(&store, matrix_room(bot)).await.as_deref(),
+        Some("Matrix is not signed in")
+    );
+}
+
+#[tokio::test]
+async fn a_signed_in_matrix_account_delivers_with_its_session_token() {
+    let (base, captures) = server().await;
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let bot = account(
+        &store,
+        "Bot",
+        matrix_bot(MatrixLogin::Oauth, Secret::default()),
+    );
+    store
+        .set_account_session(
+            &bot,
+            r#"{"kind":"oauth","client_id":"c","user_id":"@bot:matrix.example","device_id":"D","access_token":"session-token"}"#,
+        )
+        .expect("signed in");
+    store
+        .hold()
+        .execute(
+            "UPDATE accounts SET body = replace(body, 'https://matrix.example', ?1)",
+            [format!("{base}/matrix")],
+        )
+        .expect("pointed at the capture");
+    let statuses = status::Statuses::default();
+    let mut bindings = [binding("room", matrix_room(bot))];
+    statuses.configure(&bindings);
+    resolve_logins(&store, &mut bindings, &statuses).await;
+    let [bound] = bindings;
+    let delivery = Delivery {
+        login: bound.login,
+        ..delivery_to("room", bound.target, &decoded())
+    };
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    sender.send(delivery).await.expect("queued");
+    drop(sender);
+
+    deliver_all(senders(None), receiver, statuses.clone()).await;
+
+    assert_eq!(statuses.get("room").expect("status").delivered, 1);
+    let captured = captures.lock().expect("captures");
+    assert_eq!(
+        captured[0].authorization.as_deref(),
+        Some("Bearer session-token")
     );
 }
 

@@ -11,6 +11,7 @@ pub const MAX_SECRET_LEN: usize = 4_096;
 pub const MAX_SECRET_ID_LEN: usize = 64;
 pub const MAX_MQTT_USERNAME_LEN: usize = 255;
 pub const MAX_SQL_USERNAME_LEN: usize = 63;
+pub const MAX_MATRIX_USER_LEN: usize = 255;
 
 /// A credential an account holds. The server keeps the value in its own store and the account
 /// names it by id, so a listing never carries it.
@@ -114,8 +115,38 @@ impl AccountKind {
     /// Whether a voice chat joins through this kind of account.
     #[must_use]
     pub const fn chat(self) -> bool {
-        matches!(self, Self::Discord | Self::Teamspeak)
+        matches!(self, Self::Discord | Self::Teamspeak | Self::Matrix)
     }
+}
+
+/// How a Matrix account signs in. A token only sends events; voice needs a device of its own,
+/// made by a password or an OAuth sign-in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MatrixLogin {
+    #[default]
+    Token,
+    Password,
+    Oauth,
+}
+
+/// What the operator opens to approve a Matrix OAuth sign-in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct MatrixSignInPrompt {
+    pub verification_uri: String,
+    pub user_code: String,
+    pub expires_in_s: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum MatrixSignInState {
+    #[default]
+    Idle,
+    Pending(MatrixSignInPrompt),
+    Failed {
+        error: String,
+    },
 }
 
 /// Where an account signs in and with what. Credentials are [`Secret`]s; everything else is a
@@ -142,10 +173,25 @@ pub enum AccountService {
         #[serde(default)]
         url: Secret,
     },
+    /// `session` and `store_key` are kept by the server and never taken from a request.
     Matrix {
         homeserver_url: String,
         #[serde(default)]
+        user: String,
+        #[serde(default)]
+        login: MatrixLogin,
+        #[serde(default)]
         access_token: Secret,
+        #[serde(default)]
+        password: Secret,
+        #[serde(default)]
+        nickname: String,
+        #[serde(default)]
+        recovery_key: Secret,
+        #[serde(default)]
+        session: Secret,
+        #[serde(default)]
+        store_key: Secret,
     },
     Mqtt {
         broker_url: String,
@@ -192,9 +238,25 @@ impl AccountService {
                 password, identity, ..
             } => vec![password, identity],
             Self::Webhook { url } => vec![url],
-            Self::Matrix { access_token, .. } => vec![access_token],
+            Self::Matrix {
+                access_token,
+                password,
+                recovery_key,
+                ..
+            } => vec![access_token, password, recovery_key],
             Self::Mqtt { password, .. } | Self::Postgres { password, .. } => vec![password],
             Self::Influx { token, .. } => vec![token],
+        }
+    }
+
+    /// The credentials this server makes and keeps itself, apart from [`Self::credentials`].
+    #[must_use]
+    pub fn managed(&self) -> Vec<&Secret> {
+        match self {
+            Self::Matrix {
+                session, store_key, ..
+            } => vec![session, store_key],
+            _ => Vec::new(),
         }
     }
 
@@ -207,7 +269,20 @@ impl AccountService {
                 password, identity, ..
             } => vec![(password, true), (identity, false)],
             Self::Webhook { url } => vec![(url, false)],
-            Self::Matrix { access_token, .. } => vec![(access_token, false)],
+            Self::Matrix {
+                login,
+                access_token,
+                password,
+                recovery_key,
+                ..
+            } => {
+                let login = *login;
+                vec![
+                    (access_token, login != MatrixLogin::Token),
+                    (password, login != MatrixLogin::Password),
+                    (recovery_key, true),
+                ]
+            }
             Self::Mqtt { password, .. } | Self::Postgres { password, .. } => vec![(password, true)],
             Self::Influx { token, .. } => vec![(token, true)],
         }
@@ -250,10 +325,30 @@ impl AccountService {
             ),
             Self::Matrix {
                 homeserver_url,
+                user,
+                login,
                 access_token,
+                password,
+                nickname,
+                recovery_key,
+                ..
             } => {
+                let token = *login == MatrixLogin::Token;
                 holds(valid_url(homeserver_url, &["https"]), "homeserver_url")?;
-                holds(access_token.valid(), "access_token")
+                holds(
+                    (token && user.is_empty()) || valid_matrix_user(user),
+                    "user",
+                )?;
+                holds(nickname.chars().count() <= MAX_ACCOUNT_LEN, "nickname")?;
+                holds(
+                    access_token.valid() && (!token || access_token.is_set()),
+                    "access_token",
+                )?;
+                holds(
+                    password.valid() && (*login != MatrixLogin::Password || password.is_set()),
+                    "password",
+                )?;
+                holds(recovery_key.valid(), "recovery_key")
             }
             Self::Mqtt {
                 broker_url,
@@ -287,6 +382,16 @@ impl AccountService {
 
 fn holds(ok: bool, field: &'static str) -> Result<(), &'static str> {
     if ok { Ok(()) } else { Err(field) }
+}
+
+/// `@local:server`, without spaces.
+fn valid_matrix_user(user: &str) -> bool {
+    user.len() <= MAX_MATRIX_USER_LEN
+        && !user.contains(char::is_whitespace)
+        && user
+            .strip_prefix('@')
+            .and_then(|rest| rest.split_once(':'))
+            .is_some_and(|(local, server)| !local.is_empty() && !server.is_empty())
 }
 
 /// An absolute URL in one of `schemes` that carries no login of its own: the login belongs in

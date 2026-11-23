@@ -70,7 +70,8 @@ pub mod ws;
 pub use about::{API_PROTOCOL, AboutResponse, Attribution, ComponentSource, LicenseTextResponse};
 pub use account::{
     Account, AccountKind, AccountService, AccountsResponse, MAX_ACCOUNT_LEN,
-    MAX_DISCORD_NICKNAME_LEN, MAX_MQTT_USERNAME_LEN, MAX_SECRET_LEN, MAX_URL_LEN, Secret,
+    MAX_DISCORD_NICKNAME_LEN, MAX_MATRIX_USER_LEN, MAX_MQTT_USERNAME_LEN, MAX_SECRET_LEN,
+    MAX_URL_LEN, MatrixLogin, MatrixSignInPrompt, MatrixSignInState, Secret,
 };
 pub use aim::{AimNode, AimParams, AimStatus, MAX_AIM_ENTITY_LEN};
 pub use array::{

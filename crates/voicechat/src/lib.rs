@@ -11,7 +11,9 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub use link::{Hold, Link};
-pub use matrix::{MatrixAccount, MatrixLogin, MatrixStore, SignIn, SignedIn, matrix_sign_in};
+pub use matrix::{
+    MatrixAccount, MatrixLogin, MatrixStore, SignIn, SignedIn, matrix_sign_in, session_access_token,
+};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 

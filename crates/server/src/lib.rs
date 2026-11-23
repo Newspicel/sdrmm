@@ -152,6 +152,7 @@ pub(crate) struct AppState {
     pub(crate) server_name: Arc<str>,
     pub(crate) dev_cors: bool,
     pub(crate) data_dir: Option<PathBuf>,
+    pub(crate) chat_sessions: Arc<voice_chat::Sessions>,
     pub(crate) denoise: Arc<denoise_models::Downloads>,
     pub(crate) speech: Arc<speech_models::SpeechModels>,
     pub(crate) transcribers: Arc<transcriber::TranscriberHub>,
@@ -165,6 +166,7 @@ impl AppState {
         let phones = Arc::new(phones::Phones::new(store.clone()));
         let runs = Arc::new(run_gate::RunGate::default());
         let sessions = Arc::new(auth::Sessions::new(store.clone()));
+        let chat_sessions = Arc::new(voice_chat::Sessions::new(store.clone(), None));
         Self {
             engine,
             store,
@@ -213,6 +215,7 @@ impl AppState {
             server_name: net::host_label().into(),
             dev_cors: false,
             data_dir: None,
+            chat_sessions,
             denoise: Arc::default(),
             speech: Arc::default(),
             transcribers: Arc::default(),
@@ -583,6 +586,10 @@ pub async fn serve(config: Config, engine: Arc<Engine>) -> std::io::Result<Serve
         .as_deref()
         .and_then(Path::parent)
         .map(Path::to_path_buf);
+    state.chat_sessions = Arc::new(voice_chat::Sessions::new(
+        state.store.clone(),
+        state.data_dir.clone(),
+    ));
     if let Some(dir) = &state.data_dir {
         state
             .engine

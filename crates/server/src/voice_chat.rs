@@ -30,7 +30,8 @@ mod status;
 mod to_air;
 mod to_chat;
 
-use hub::{Links, Sessions};
+use hub::Links;
+pub(crate) use hub::{Sessions, SignInError};
 use status::Meters;
 use to_air::{Air, Said};
 use to_chat::Feed;
@@ -129,9 +130,7 @@ pub(crate) fn follow(state: &AppState) {
         tracing::warn!("no runtime in context: voice chat will not follow the patch");
         return;
     };
-    let chats = Arc::new(Mutex::new(VoiceChats::new(Arc::new(Sessions::new(
-        state.store.clone(),
-    )))));
+    let chats = Arc::new(Mutex::new(VoiceChats::new(state.chat_sessions.clone())));
     let mut accounts = state.store.subscribe_accounts();
     accounts.mark_changed();
     let mut armed = state.encoders.subscribe_changes();
@@ -231,9 +230,13 @@ impl VoiceChats {
         let mut nodes: Vec<&String> = wanted.keys().collect();
         nodes.sort();
         for node in nodes {
-            match self.run(ctx, node, &wanted[node]) {
-                Ok(joined) => problems.extend(joined.fault().map(|text| problem(node, text))),
-                Err(text) => problems.push(problem(node, text)),
+            let fault = match self.run(ctx, node, &wanted[node]) {
+                Ok(joined) => joined.fault(),
+                Err(text) => Some(text),
+            };
+            let account = &wanted[node].account.id;
+            if let Some(text) = fault.or_else(|| self.links.fault(account)) {
+                problems.push(problem(node, text));
             }
         }
         problems

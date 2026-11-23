@@ -68,6 +68,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/{id}/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["sign_in_state"];
+        put?: never;
+        post: operations["start_sign_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/arrays": {
         parameters: {
             query?: never;
@@ -1938,8 +1954,15 @@ export interface components {
         } | {
             access_token?: components["schemas"]["Secret"];
             homeserver_url: string;
+            login?: components["schemas"]["MatrixLogin"];
+            nickname?: string;
+            password?: components["schemas"]["Secret"];
+            recovery_key?: components["schemas"]["Secret"];
             /** @enum {string} */
             service: "matrix";
+            session?: components["schemas"]["Secret"];
+            store_key?: components["schemas"]["Secret"];
+            user?: string;
         } | {
             broker_url: string;
             password?: components["schemas"]["Secret"];
@@ -4667,6 +4690,30 @@ export interface components {
         };
         /** @enum {string} */
         MarkShape: "dot" | "cross" | "square" | "triangle";
+        /**
+         * @description How a Matrix account signs in. A token only sends events; voice needs a device of its own,
+         *     made by a password or an OAuth sign-in.
+         * @enum {string}
+         */
+        MatrixLogin: "token" | "password" | "oauth";
+        /** @description What the operator opens to approve a Matrix OAuth sign-in. */
+        MatrixSignInPrompt: {
+            /** Format: int32 */
+            expires_in_s: number;
+            user_code: string;
+            verification_uri: string;
+        };
+        MatrixSignInState: {
+            /** @enum {string} */
+            state: "idle";
+        } | (components["schemas"]["MatrixSignInPrompt"] & {
+            /** @enum {string} */
+            state: "pending";
+        }) | {
+            error: string;
+            /** @enum {string} */
+            state: "failed";
+        };
         MdnsState: {
             /** @enum {string} */
             state: "off";
@@ -8545,6 +8592,88 @@ export interface operations {
             };
             /** @description Account not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    sign_in_state: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Where the sign-in stands */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatrixSignInState"];
+                };
+            };
+            /** @description Account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    start_sign_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Open the link and enter the code */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatrixSignInPrompt"];
+                };
+            };
+            /** @description Account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not a Matrix OAuth account */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The homeserver refused */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

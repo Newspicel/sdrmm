@@ -1,5 +1,5 @@
 use rusqlite::{Connection, OptionalExtension, params};
-use sdrmm_wire::{Account, AccountService, Secret};
+use sdrmm_wire::{Account, AccountService, MatrixLogin, Secret};
 
 use super::{Store, StoreError, now_rfc3339, secrets};
 
@@ -49,6 +49,27 @@ impl Store {
         self.accounts_changed();
         self.secrets_changed();
         Ok(account)
+    }
+
+    /// Keeps `session` as the Matrix account's saved sign-in.
+    pub fn set_account_session(&self, id: &str, session: &str) -> Result<(), StoreError> {
+        let conn = self.lock();
+        let tx = conn.unchecked_transaction()?;
+        let mut account = read(&tx, id)?;
+        let AccountService::Matrix { session: held, .. } = &mut account.service else {
+            return Err(StoreError::AccountField("service"));
+        };
+        if let Secret::Stored { secret } = held {
+            secrets::put(&tx, secret, session)?;
+        } else {
+            *held = Secret::stored(secrets::insert(&tx, session)?);
+            write(&tx, &account, false)?;
+        }
+        tx.commit()?;
+        drop(conn);
+        self.accounts_changed();
+        self.secrets_changed();
+        Ok(())
     }
 
     pub fn delete_account(&self, id: &str) -> Result<(), StoreError> {
@@ -134,6 +155,7 @@ fn secret_ids(service: &AccountService) -> Vec<&str> {
     service
         .credentials()
         .into_iter()
+        .chain(service.managed())
         .filter_map(|secret| match secret {
             Secret::Stored { secret } => Some(secret.as_str()),
             Secret::Inline(_) => None,
@@ -199,7 +221,53 @@ fn settle_service(
             *identity = Secret::stored(secrets::insert(conn, &fresh)?);
         }
     }
+    settle_matrix(conn, &mut incoming, current)?;
     Ok(incoming)
+}
+
+/// Keeps the account's own session while it still signs in as the same user the same way, and
+/// its store key for good. A login with a device of its own gets a fresh key.
+fn settle_matrix(
+    conn: &Connection,
+    incoming: &mut AccountService,
+    current: Option<&AccountService>,
+) -> Result<(), StoreError> {
+    let AccountService::Matrix {
+        homeserver_url,
+        user,
+        login,
+        session,
+        store_key,
+        ..
+    } = incoming
+    else {
+        return Ok(());
+    };
+    let held = match current {
+        Some(AccountService::Matrix {
+            homeserver_url: held_url,
+            user: held_user,
+            login: held_login,
+            session: held_session,
+            store_key: held_key,
+            ..
+        }) => Some((
+            held_url == homeserver_url && held_user == user && held_login == login,
+            held_session,
+            held_key,
+        )),
+        _ => None,
+    };
+    *session = held
+        .filter(|(same, ..)| *same)
+        .map_or_default(|(_, session, _)| session.clone());
+    *store_key = held.map_or_default(|(.., key)| key.clone());
+    if !store_key.is_set() && *login != MatrixLogin::Token {
+        let fresh: String =
+            conn.query_row("SELECT lower(hex(randomblob(32)))", [], |row| row.get(0))?;
+        *store_key = Secret::stored(secrets::insert(conn, &fresh)?);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
