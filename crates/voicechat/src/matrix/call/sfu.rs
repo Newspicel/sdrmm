@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use livekit_protocol::{
-    JoinResponse, ParticipantUpdate, SessionDescription, SignalTarget, signal_request,
-    signal_response,
+    JoinResponse, ParticipantUpdate, SessionDescription, SignalTarget, TrickleRequest,
+    signal_request, signal_response,
 };
 use str0m::Candidate;
 use str0m::change::{SdpAnswer, SdpOffer};
@@ -88,6 +88,15 @@ pub(crate) async fn sfu_address(url: &Url) -> Result<SocketAddr, String> {
         .or_else(|| found.first())
         .copied()
         .ok_or_else(no_route)
+}
+
+/// A candidate the SFU trickled. One that does not parse is skipped: the others may still
+/// connect.
+fn trickled(trickle: &TrickleRequest) -> Option<Candidate> {
+    candidate_of(trickle).unwrap_or_else(|reason| {
+        tracing::warn!(reason, "SFU candidate skipped");
+        None
+    })
 }
 
 fn description(kind: &str, sdp: String, id: u32) -> SessionDescription {
@@ -368,7 +377,7 @@ impl Connection {
             signal_response::Message::Answer(answer) => self.on_answer(&answer),
             signal_response::Message::Offer(offer) => self.on_offer(offer).await,
             signal_response::Message::Trickle(trickle) => {
-                if let Some(candidate) = candidate_of(&trickle)? {
+                if let Some(candidate) = trickled(&trickle) {
                     self.on_candidate(trickle.target, candidate);
                 }
                 Ok(())
@@ -450,5 +459,14 @@ mod tests {
         );
         let tls = Url::parse("wss://127.0.0.1/rtc").unwrap();
         assert_eq!(sfu_address(&tls).await.unwrap().port(), 443);
+    }
+
+    #[test]
+    fn a_broken_candidate_is_skipped() {
+        let broken = TrickleRequest {
+            candidate_init: "nope".to_owned(),
+            ..Default::default()
+        };
+        assert!(trickled(&broken).is_none());
     }
 }
