@@ -26,16 +26,16 @@ import { SerialDialog } from "./components/SerialDialog";
 import { ServerDown } from "./components/ServerDown";
 import { Toasts } from "./components/Toasts";
 import { ViewOnly } from "./components/ViewOnly";
-import {
-  channelTypesQuery,
-  encoderTypesQuery,
-  patchCatalogQuery,
-  resolvedQuery,
-  stateQuery,
-} from "./lib/api";
+import { channelTypesQuery, encoderTypesQuery, patchCatalogQuery, stateQuery } from "./lib/api";
 import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
-import { activePatch, boundChannels, boundRadios, channelOwners } from "./lib/resolved";
+import {
+  activePatch,
+  boundChannels,
+  boundRadios,
+  channelOwners,
+  resolvedQuery,
+} from "./lib/resolved";
 import { closeToast, pushToast } from "./lib/toasts";
 import type {
   NodeProblem,

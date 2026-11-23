@@ -15,6 +15,7 @@ import {
   inputsOf,
   observeResolved,
   reachesOf,
+  readResolved,
   runningSet,
   withPatch,
   withProblems,
@@ -125,6 +126,20 @@ describe("the resolved store", () => {
     expect(state?.patch.nodes).toHaveLength(5);
     observeResolved(client, { type: "Hello", data: {} } as never);
     expect(client.getQueryData<ResolvedState>(RESOLVED_KEY)).toBe(state);
+  });
+
+  it("keeps a push that lands while an older read is in flight", async () => {
+    const client = new QueryClient();
+    const stale = { node: "voice", source: "bind" as const, text: "Not placed on its radio" };
+    const old: ResolvedState = { patch: patch(), problems: [stale] };
+    let answer: (state: ResolvedState) => void = () => {};
+    const reading = readResolved(client, () => new Promise((done) => (answer = done)));
+    observeResolved(client, { type: "NodeProblems", data: { problems: [] } });
+    answer(old);
+    const read = await reading;
+    expect(read.problems).toEqual([]);
+    expect(read.patch).toBe(old.patch);
+    expect(await readResolved(client, async () => old)).toEqual(old);
   });
 
   it("keeps problems when a patch arrives and the patch when problems do", () => {

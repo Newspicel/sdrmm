@@ -1,6 +1,6 @@
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { useWorkspaceContext } from "../canvas/context";
-import { RESOLVED_KEY } from "./api";
+import { client, RESOLVED_KEY, unwrap } from "./api";
 import { streamSource } from "./ports";
 import type {
   ChannelAddr,
@@ -36,14 +36,61 @@ export function withProblems(
   return { ...(state ?? EMPTY), problems };
 }
 
+interface Heard {
+  patch: number;
+  problems: number;
+}
+
+const HEARD = new WeakMap<QueryClient, Heard>();
+
+function heardOf(queryClient: QueryClient): Heard {
+  let heard = HEARD.get(queryClient);
+  if (heard === undefined) {
+    heard = { patch: 0, problems: 0 };
+    HEARD.set(queryClient, heard);
+  }
+  return heard;
+}
+
 export function observeResolved(queryClient: QueryClient, event: ServerEvent): void {
   if (event.type === "PatchResolved") {
+    heardOf(queryClient).patch += 1;
     queryClient.setQueryData<ResolvedState>(RESOLVED_KEY, (state) => withPatch(state, event.data));
   } else if (event.type === "NodeProblems") {
+    heardOf(queryClient).problems += 1;
     queryClient.setQueryData<ResolvedState>(RESOLVED_KEY, (state) =>
       withProblems(state, event.data.problems),
     );
   }
+}
+
+/** A read can land after a push the server sent later. The push is newer, so what it carried stays. */
+export async function readResolved(
+  queryClient: QueryClient,
+  read: () => Promise<ResolvedState>,
+): Promise<ResolvedState> {
+  const before = { ...heardOf(queryClient) };
+  const fresh = await read();
+  const after = heardOf(queryClient);
+  const held = queryClient.getQueryData<ResolvedState>(RESOLVED_KEY);
+  if (held === undefined) {
+    return fresh;
+  }
+  return {
+    patch: after.patch === before.patch ? fresh.patch : held.patch,
+    problems: after.problems === before.problems ? fresh.problems : held.problems,
+  };
+}
+
+export function resolvedQuery() {
+  return queryOptions({
+    queryKey: RESOLVED_KEY,
+    queryFn: ({ client: queryClient }): Promise<ResolvedState> =>
+      readResolved(queryClient, async () =>
+        unwrap(await client.GET("/api/workspaces/active/resolved")),
+      ),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 }
 
 export function activePatch(

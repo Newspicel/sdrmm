@@ -73,7 +73,6 @@ import type {
   RecordingFormat,
   RecordingInfo,
   RecordingsResponse,
-  ResolvedState,
   SatelliteCatalogResponse,
   SavedRadio,
   SaveNanoVnaMeasurementRequest,
@@ -684,15 +683,6 @@ export function patchCatalogQuery() {
   return queryOptions({
     queryKey: PATCH_CATALOG_KEY,
     queryFn: async (): Promise<PatchCatalog> => unwrap(await client.GET("/api/patch/catalog")),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-}
-
-export function resolvedQuery() {
-  return queryOptions({
-    queryKey: RESOLVED_KEY,
-    queryFn: async (): Promise<ResolvedState> =>
-      unwrap(await client.GET("/api/workspaces/active/resolved")),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
