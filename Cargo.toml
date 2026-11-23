@@ -265,7 +265,7 @@ tsclient-rs = "0.3.3"
 # Matrix voice. Pinned to a git rev of matrix-rust-sdk main because released
 # matrix-sdk-sqlite needs rusqlite 0.40 and clashes with the workspace's 0.41.
 # Return to crates.io once a release uses rusqlite 0.41.
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", rev = "f4a94ad6141846f9ddaa8be5117260d1311196b9", default-features = false, features = ["e2e-encryption", "automatic-room-key-forwarding", "sqlite", "rustls-aws-lc-rs"] }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", rev = "f4a94ad6141846f9ddaa8be5117260d1311196b9", default-features = false, features = ["e2e-encryption", "automatic-room-key-forwarding", "experimental-send-custom-to-device", "sqlite", "rustls-aws-lc-rs"] }
 matrix-sdk-sqlite = { git = "https://github.com/matrix-org/matrix-rust-sdk", rev = "f4a94ad6141846f9ddaa8be5117260d1311196b9", default-features = false }
 livekit-protocol = "0.9"
 prost = "0.14"

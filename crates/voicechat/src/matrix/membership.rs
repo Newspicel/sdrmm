@@ -1,12 +1,14 @@
 //! Who is in a call and where to reach their media.
 
+use std::collections::HashSet;
+
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-const LEGACY_TYPE: &str = "org.matrix.msc3401.call.member";
-const RTC_TYPE: &str = "m.rtc.member";
+pub(crate) const LEGACY_TYPE: &str = "org.matrix.msc3401.call.member";
+pub(crate) const RTC_TYPE: &str = "m.rtc.member";
 const APPLICATION: &str = "m.call";
 const EXPIRES_MS: u64 = 14_400_000;
 const LIVEKIT: &str = "livekit";
@@ -30,6 +32,13 @@ pub(crate) struct Member {
 
 /// A room state event as `(type, state key, content)`.
 pub(crate) type StateEntry = (String, String, Value);
+
+/// A call member state event and the `origin_server_ts` the server gave it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CallState {
+    pub entry: StateEntry,
+    pub sent_ms: u64,
+}
 
 fn focus_of(transport: &Value) -> Option<Focus> {
     let kind = transport.get("type")?.as_str()?;
@@ -86,7 +95,8 @@ fn legacy_user(state_key: &str, device: &str, call_id: &str) -> Option<String> {
     user.starts_with('@').then(|| user.to_owned())
 }
 
-fn parse_legacy(state_key: &str, content: &Value, now_ms: u64) -> Option<Parsed> {
+/// An entry without `created_ts` dates from `sent_ms`, as js-sdk `CallMembership` reads it.
+fn parse_legacy(state_key: &str, content: &Value, sent_ms: u64, now_ms: u64) -> Option<Parsed> {
     if str_field(content, "application")? != APPLICATION {
         return None;
     }
@@ -95,12 +105,15 @@ fn parse_legacy(state_key: &str, content: &Value, now_ms: u64) -> Option<Parsed>
         return None;
     }
     let device = str_field(content, "device_id")?;
-    let created_ts = content.get("created_ts").and_then(Value::as_u64);
+    let created_ts = content
+        .get("created_ts")
+        .and_then(Value::as_u64)
+        .unwrap_or(sent_ms);
     let expires = content
         .get("expires")
         .and_then(Value::as_u64)
         .unwrap_or(EXPIRES_MS);
-    if created_ts.is_some_and(|created| created.saturating_add(expires) <= now_ms) {
+    if created_ts.saturating_add(expires) <= now_ms {
         return None;
     }
     let user = legacy_user(state_key, device, call_id)?;
@@ -113,7 +126,7 @@ fn parse_legacy(state_key: &str, content: &Value, now_ms: u64) -> Option<Parsed>
             membership_id,
             focus: published_focus(content.get("foci_preferred")),
         },
-        created_ts: created_ts.unwrap_or(now_ms),
+        created_ts,
     })
 }
 
@@ -129,7 +142,7 @@ fn is_left(content: &Value) -> bool {
     membership == Some("leave") || only_slot
 }
 
-fn parse_rtc(content: &Value, now_ms: u64) -> Option<Parsed> {
+fn parse_rtc(content: &Value, sent_ms: u64) -> Option<Parsed> {
     if is_left(content) {
         return None;
     }
@@ -147,26 +160,31 @@ fn parse_rtc(content: &Value, now_ms: u64) -> Option<Parsed> {
             membership_id: str_field(member, "id")?.to_owned(),
             focus: published_focus(content.pointer("/transports/published")),
         },
-        created_ts: now_ms,
+        created_ts: sent_ms,
     })
 }
 
-fn parse_entry((kind, state_key, content): &StateEntry, now_ms: u64) -> Option<Parsed> {
+fn parse_entry(state: &CallState, now_ms: u64) -> Option<Parsed> {
+    let (kind, state_key, content) = &state.entry;
     match kind.as_str() {
-        LEGACY_TYPE => parse_legacy(state_key, content, now_ms),
-        RTC_TYPE => parse_rtc(content, now_ms),
+        LEGACY_TYPE => parse_legacy(state_key, content, state.sent_ms, now_ms),
+        RTC_TYPE => parse_rtc(content, state.sent_ms),
         _ => None,
     }
 }
 
 /// Live members of the call, oldest first, without `skip` (our own user and device).
-pub(crate) fn members(states: &[StateEntry], now_ms: u64, skip: (&str, &str)) -> Vec<Member> {
+/// A device with both a legacy and a new membership counts once, at its newest.
+pub(crate) fn members(states: &[CallState], now_ms: u64, skip: (&str, &str)) -> Vec<Member> {
     let mut parsed: Vec<Parsed> = states
         .iter()
-        .filter_map(|entry| parse_entry(entry, now_ms))
+        .filter_map(|state| parse_entry(state, now_ms))
         .filter(|p| (p.member.user.as_str(), p.member.device.as_str()) != skip)
         .collect();
-    parsed.sort_by_key(|p| p.created_ts);
+    parsed.sort_by_key(|p| std::cmp::Reverse(p.created_ts));
+    let mut seen = HashSet::new();
+    parsed.retain(|p| seen.insert((p.member.user.clone(), p.member.device.clone())));
+    parsed.reverse();
     parsed.into_iter().map(|p| p.member).collect()
 }
 
@@ -201,6 +219,23 @@ pub(crate) fn our_membership(
         state_key(user, device, owned_keys),
         content,
     )
+}
+
+/// When our membership lapses: `created_ts` plus `expires`.
+pub(crate) fn expires_at((_, _, content): &StateEntry) -> Option<u64> {
+    let created = content.get("created_ts")?.as_u64()?;
+    let expires = content.get("expires")?.as_u64()?;
+    Some(created.saturating_add(expires))
+}
+
+/// Keeps our membership one more expiry period, as js-sdk `MembershipManager` does: same
+/// `created_ts`, larger `expires`.
+pub(crate) fn extend((_, _, content): &mut StateEntry) {
+    let expires = content
+        .get("expires")
+        .and_then(Value::as_u64)
+        .unwrap_or(EXPIRES_MS);
+    content["expires"] = json!(expires.saturating_add(EXPIRES_MS));
 }
 
 pub(crate) fn our_leave(user: &str, device: &str, owned_keys: bool) -> StateEntry {

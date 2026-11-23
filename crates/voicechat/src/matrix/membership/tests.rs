@@ -28,6 +28,16 @@ fn legacy(user: &str, device: &str, created: u64, expires: u64, url: &str) -> St
     )
 }
 
+fn stamped(states: &[StateEntry]) -> Vec<CallState> {
+    states
+        .iter()
+        .map(|entry| CallState {
+            entry: entry.clone(),
+            sent_ms: NOW,
+        })
+        .collect()
+}
+
 fn rtc(user: &str, device: &str, id: &str, url: &str) -> StateEntry {
     (
         RTC.into(),
@@ -90,7 +100,7 @@ fn legacy_and_new_members_both_read() {
         ),
         rtc("@b:y.org", "BBB", "member-b", "https://lk.y.org"),
     ];
-    let got = members(&states, NOW, ("", ""));
+    let got = members(&stamped(&states), NOW, ("", ""));
     assert_eq!(got.len(), 2);
     let a = got.iter().find(|m| m.user == "@a:x.org").unwrap();
     assert_eq!(a.device, "AAA");
@@ -122,7 +132,7 @@ fn expired_and_empty_members_are_gone() {
         left,
         legacy("@d:x.org", "DDD", NOW - 10, 14_400_000, "https://lk.x.org"),
     ];
-    let got = members(&states, NOW, ("", ""));
+    let got = members(&stamped(&states), NOW, ("", ""));
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].user, "@d:x.org");
 }
@@ -133,7 +143,7 @@ fn our_own_membership_is_not_a_peer() {
         legacy("@me:x.org", "PHONE", NOW, 14_400_000, "https://lk.x.org"),
         legacy("@me:x.org", "LAPTOP", NOW, 14_400_000, "https://lk.x.org"),
     ];
-    let got = members(&states, NOW, ("@me:x.org", "PHONE"));
+    let got = members(&stamped(&states), NOW, ("@me:x.org", "PHONE"));
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].device, "LAPTOP");
 }
@@ -194,7 +204,7 @@ fn oldest_member_picks_the_focus() {
             "https://old.example",
         ),
     ];
-    let got = members(&states, NOW, ("", ""));
+    let got = members(&stamped(&states), NOW, ("", ""));
     assert_eq!(got[0].user, "@old:x.org");
     let ours = focus("https://ours.example");
     assert_eq!(active_focus(&got, &ours), focus("https://old.example"));
@@ -227,7 +237,7 @@ fn our_membership_has_the_current_shape() {
 fn our_membership_reads_back_as_a_member() {
     let ours = focus("https://lk.example");
     let entry = our_membership("@me:x.org", "DEV", &ours, NOW, true);
-    let got = members(&[entry], NOW, ("", ""));
+    let got = members(&stamped(&[entry]), NOW, ("", ""));
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].user, "@me:x.org");
     assert_eq!(got[0].focus, Some(ours));
@@ -240,4 +250,66 @@ fn leaving_clears_the_same_key() {
     let (ty, key, content) = our_leave("@me:x.org", "DEV", false);
     assert_eq!((ty.as_str(), key), (LEGACY, join_key));
     assert_eq!(content, json!({}));
+}
+
+#[test]
+fn a_device_counts_once_at_its_newest_membership() {
+    let old = legacy(
+        "@a:x.org",
+        "AAA",
+        NOW - 5000,
+        14_400_000,
+        "https://old.example",
+    );
+    let new = rtc("@a:x.org", "AAA", "member-a", "https://new.example");
+    let states = [
+        CallState {
+            entry: old,
+            sent_ms: NOW - 5000,
+        },
+        CallState {
+            entry: new,
+            sent_ms: NOW - 10,
+        },
+    ];
+    let got = members(&states, NOW, ("", ""));
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].membership_id, "member-a");
+    assert_eq!(got[0].focus, Some(focus("https://new.example")));
+}
+
+#[test]
+fn a_membership_without_created_ts_ages_from_its_origin() {
+    let bare = |user: &str| {
+        let mut entry = legacy(user, "D", 0, 14_400_000, "https://lk.x.org");
+        entry.2.as_object_mut().unwrap().remove("created_ts");
+        entry
+    };
+    let states = [
+        CallState {
+            entry: bare("@gone:x.org"),
+            sent_ms: NOW - 20_000_000,
+        },
+        CallState {
+            entry: bare("@late:x.org"),
+            sent_ms: NOW - 10,
+        },
+        CallState {
+            entry: bare("@early:x.org"),
+            sent_ms: NOW - 5000,
+        },
+    ];
+    let got = members(&states, NOW, ("", ""));
+    let users: Vec<&str> = got.iter().map(|m| m.user.as_str()).collect();
+    assert_eq!(users, ["@early:x.org", "@late:x.org"]);
+}
+
+#[test]
+fn extending_pushes_the_expiry_out() {
+    let ours = focus("https://lk.example");
+    let mut entry = our_membership("@me:x.org", "DEV", &ours, NOW, false);
+    assert_eq!(expires_at(&entry), Some(NOW + 14_400_000));
+    extend(&mut entry);
+    assert_eq!(entry.2["expires"], 28_800_000);
+    assert_eq!(expires_at(&entry), Some(NOW + 28_800_000));
 }
