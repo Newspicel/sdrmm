@@ -8,6 +8,7 @@ import {
   BTN_SM,
   FACE_BTN,
   FACE_BTN_DANGER,
+  FACE_BTN_GO,
   ICON_BTN,
 } from "../../components/controls";
 import { inTuningRange, isTunable, tuningRange } from "../../components/dial";
@@ -451,18 +452,10 @@ function ClosedRadioFace({
         <p className="p-3 font-mono text-sm text-ink">{refLabel(reference)}</p>
       </FaceBody>
       <FaceFooter>
-        <Button
-          type="button"
-          className={FACE_BTN_DANGER}
-          title="Free this node so you can pick a different radio"
-          onClick={onForget}
-        >
-          Forget radio
-        </Button>
         {stopped ? (
           <Button
             type="button"
-            className={FACE_BTN}
+            className={FACE_BTN_GO}
             title="Open this radio again and start the decoders wired to it"
             onClick={onStart}
           >
@@ -479,6 +472,14 @@ function ClosedRadioFace({
             Open radio
           </Button>
         )}
+        <Button
+          type="button"
+          className={FACE_BTN_DANGER}
+          title="Free this node so you can pick a different radio"
+          onClick={onForget}
+        >
+          Forget radio
+        </Button>
       </FaceFooter>
     </NodeShell>
   );
