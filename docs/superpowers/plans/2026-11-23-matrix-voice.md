@@ -17,7 +17,7 @@
 - `matrix-sdk` and `matrix-sdk-sqlite` pinned by `git = "https://github.com/matrix-org/matrix-rust-sdk", rev = "<main HEAD sha>"`, with a `#` comment in `Cargo.toml` saying to return to crates.io once a release uses rusqlite 0.41. The workspace `rusqlite` 0.41 stays. `cargo deny check` must pass.
 - Every new secret (`password`, `recovery_key`, `session`, `store_key`) is a `Secret`; `Debug` of `Service` prints none of them.
 - A frame that cannot be decrypted or decoded increments `Link::drops`; a failed join or login is `LinkState::Failed(short text)`.
-- Do not commit: the operator commits. "Commit" means: leave the work ready and list the files.
+- Work happens on the `worktree-matrix-voice` branch in its worktree; commit each task there. Never touch `main`, never push.
 - Finish each task with `cargo fmt`, `cargo clippy -p <crate> --all-targets -- -D warnings`, and the tests of what changed.
 
 ## Review Focus
