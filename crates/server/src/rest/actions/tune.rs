@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    ARRAY_PORT, ArrayTuneRequest, Capabilities, ChannelSettings, DeviceSet, DeviceSettings,
-    IQ_PORT, NodeBody, ResolvedPatch, Role, StreamSettings, Tuning,
+    ARRAY_PORT, ArrayTuneRequest, Capabilities, ChannelBand, ChannelSettings, DeviceSet,
+    DeviceSettings, IQ_PORT, NodeBody, ResolvedPatch, Role, StateSnapshot, StreamSettings, Tuning,
 };
 
 use super::{node_of, takes_no_such_action};
@@ -190,17 +190,35 @@ fn pull_lane(
     let Some(held) = live.device_sets.iter().find(|held| held.id == set) else {
         return Ok(());
     };
-    let bandwidth_hz = state
-        .engine
-        .channel_types()
-        .iter()
-        .find(|descriptor| descriptor.type_id == channel_type)
-        .map_or(0.0, |descriptor| descriptor.bandwidth_hz);
+    let band = channel_band(state, &live, node, channel_type);
     let follows = matches!(lane, Lane::Radio { .. }) && auto_tuning(held, stream);
-    if follows || reaches(held, stream, bandwidth_hz, freq_hz) {
+    if follows || reaches(held, stream, band, freq_hz) {
         return Ok(());
     }
     tune_lane(state, &lane, freq_hz, author)
+}
+
+/// The band the node's running decoder lays out, else the one a fresh channel of its type has.
+fn channel_band(
+    state: &AppState,
+    live: &StateSnapshot,
+    node: &str,
+    channel_type: &str,
+) -> ChannelBand {
+    let running = live
+        .device_sets
+        .iter()
+        .flat_map(|set| &set.channels)
+        .find(|channel| channel.node.as_deref() == Some(node))
+        .and_then(|channel| channel.band);
+    running.unwrap_or_else(|| {
+        state
+            .engine
+            .channel_types()
+            .iter()
+            .find(|descriptor| descriptor.type_id == channel_type)
+            .map_or_default(|descriptor| descriptor.band)
+    })
 }
 
 fn auto_tuning(set: &DeviceSet, stream: u32) -> bool {
@@ -211,7 +229,7 @@ fn auto_tuning(set: &DeviceSet, stream: u32) -> bool {
         == Tuning::Auto
 }
 
-pub(super) fn reaches(set: &DeviceSet, stream: u32, bandwidth_hz: f64, freq_hz: f64) -> bool {
+pub(super) fn reaches(set: &DeviceSet, stream: u32, band: ChannelBand, freq_hz: f64) -> bool {
     let (center_hz, span_hz) = match set.virtual_lanes.iter().find(|lane| lane.stream == stream) {
         Some(lane) => (Some(lane.center_hz), Some(lane.sample_rate)),
         None => (
@@ -227,8 +245,7 @@ pub(super) fn reaches(set: &DeviceSet, stream: u32, bandwidth_hz: f64, freq_hz: 
     if !center_hz.is_finite() || !span_hz.is_finite() || span_hz <= 0.0 {
         return true;
     }
-    let limit_hz = ((span_hz - bandwidth_hz) / 2.0).max(0.0);
-    (freq_hz - center_hz).abs() <= limit_hz
+    band.fits(freq_hz, center_hz, span_hz)
 }
 
 fn retune_channel(

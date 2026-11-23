@@ -9,6 +9,7 @@ fn openapi_registers_paths_and_ws_schemas() {
         "/api/devices",
         "/api/devices/serial",
         "/api/channeltypes",
+        "/api/channeltypes/band",
         "/api/encodertypes",
         "/api/devices/network",
         "/api/workspaces/active/nodes/{node}/channel",

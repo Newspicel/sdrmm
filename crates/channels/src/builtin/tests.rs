@@ -76,6 +76,21 @@ fn only_protocols_the_identifier_recognizes_are_identifiable() {
 }
 
 #[test]
+fn every_descriptor_places_a_fresh_channel_where_its_decoder_does() {
+    for d in descriptors() {
+        let defaults = d.defaults.as_ref().expect("defaults");
+        assert_eq!(
+            d.band,
+            occupied_band(&defaults.params).into(),
+            "{}: descriptor band differs from its defaults' band",
+            d.type_id
+        );
+    }
+    let ssb = descriptor("ssb").expect("ssb");
+    assert!(ssb.band.low_hz > 0.0, "usb sits above the carrier");
+}
+
+#[test]
 fn every_descriptor_has_a_short_summary() {
     for d in descriptors() {
         assert!(!d.summary.is_empty(), "{} has no summary", d.type_id);

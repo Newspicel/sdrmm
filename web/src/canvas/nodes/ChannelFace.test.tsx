@@ -19,7 +19,7 @@ const PROBE = placed("ble", { kind: "channel", data: { channel_type: "ble" } });
 const DESCRIPTOR: ChannelDescriptor = {
   type_id: "ble",
   name: "Probe",
-  bandwidth_hz: 2_000_000,
+  band: { low_hz: -1_000_000, high_hz: 1_000_000 },
   input_rate_hz: 4_000_000,
   has_audio: false,
   settings: [

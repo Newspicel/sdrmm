@@ -59,7 +59,7 @@ const TYPES: ChannelDescriptor[] = [
   {
     type_id: "voice",
     name: "Voice",
-    bandwidth_hz: 12_500,
+    band: { low_hz: -6_250, high_hz: 6_250 },
     input_rate_hz: 48_000,
     has_audio: true,
     emits: ["tone", "scrambler"],
@@ -69,7 +69,7 @@ const TYPES: ChannelDescriptor[] = [
   {
     type_id: "plane",
     name: "ADS-B",
-    bandwidth_hz: 2_000_000,
+    band: { low_hz: -1_000_000, high_hz: 1_000_000 },
     input_rate_hz: 2_400_000,
     has_audio: false,
     emits: ["plane"],
@@ -79,7 +79,7 @@ const TYPES: ChannelDescriptor[] = [
   {
     type_id: "atv",
     name: "ATV",
-    bandwidth_hz: 6_000_000,
+    band: { low_hz: -3_000_000, high_hz: 3_000_000 },
     input_rate_hz: 16_000_000,
     has_audio: false,
     has_video: true,

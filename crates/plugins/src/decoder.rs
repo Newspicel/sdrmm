@@ -56,6 +56,11 @@ fn describe(module: &PluginModule, decoder: &DecoderManifest) -> ChannelDescript
                 )
             });
     }
+    if let Some(defaults) = &descriptor.defaults
+        && let Ok(layout) = module.call::<PluginLayout>(Op::Layout, &defaults.params.settings)
+    {
+        descriptor.band = layout.band.into();
+    }
     descriptor.ports = sdrmm_wire::patch::channel_ports(&descriptor);
     descriptor
 }

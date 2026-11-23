@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import type { IfFilter, IfNotch } from "../lib/types";
+import type { ChannelBand, IfFilter, IfNotch } from "../lib/types";
 import { Button } from "./BaseControls";
 import { Checkbox } from "./Checkbox";
 import {
@@ -23,17 +23,17 @@ const MHZ = 1_000_000;
 
 export function IfFilterChip({
   filter,
-  bandwidthHz,
+  own,
   channelHz,
   onFilter,
 }: {
   filter: IfFilter;
-  bandwidthHz: number;
+  own: ChannelBand;
   channelHz: number;
   onFilter: (filter: IfFilter) => void;
 }) {
   const enabled = filter.enabled ?? false;
-  const summary = ifFilterSummary(filter, bandwidthHz);
+  const summary = ifFilterSummary(filter, own);
   return (
     <SettingChip
       label="IF"
@@ -51,7 +51,7 @@ export function IfFilterChip({
               onChange={(next) => onFilter({ ...filter, enabled: next })}
             />
           </ChipField>
-          <EdgeFields filter={filter} bandwidthHz={bandwidthHz} onFilter={onFilter} />
+          <EdgeFields filter={filter} own={own} onFilter={onFilter} />
           <NotchRows filter={filter} onFilter={onFilter} />
           <Button
             type="button"
@@ -76,14 +76,14 @@ export function IfFilterChip({
 
 function EdgeFields({
   filter,
-  bandwidthHz,
+  own,
   onFilter,
 }: {
   filter: IfFilter;
-  bandwidthHz: number;
+  own: ChannelBand;
   onFilter: (filter: IfFilter) => void;
 }) {
-  const edge = (side: IfEdge) => ifEdgeHz(filter, side, bandwidthHz);
+  const edge = (side: IfEdge) => ifEdgeHz(filter, side, own);
   const invalid = edge("low_hz") >= edge("high_hz");
   const field = (side: IfEdge, label: string) => (
     <NumberField
@@ -95,7 +95,7 @@ function EdgeFields({
       step={0.5}
       invalid={invalid}
       className="w-20"
-      onCommit={(khz) => onFilter(withIfEdge(filter, side, khz * KHZ, bandwidthHz))}
+      onCommit={(khz) => onFilter(withIfEdge(filter, side, khz * KHZ, own))}
     />
   );
   return (

@@ -3,8 +3,8 @@ use std::{ops::Deref, sync::Arc};
 use sdrmm_decoder::{ChannelError, Decoder};
 use sdrmm_device::{DeviceError, check_stream_settings};
 use sdrmm_wire::{
-    BandMiss, Capabilities, ChannelDescriptor, ChannelInfo, ChannelParams, ChannelSettings,
-    DcArtifact, DeviceSettings, StreamSettings,
+    BandMiss, Capabilities, ChannelBand, ChannelDescriptor, ChannelInfo, ChannelParams,
+    ChannelSettings, DcArtifact, DeviceSettings, StreamSettings,
 };
 
 use crate::{DEFAULT_CENTER_HZ, EngineError, center_of, sample_rate_of};
@@ -133,8 +133,9 @@ const LO_ARTIFACT_MARGIN_HZ: f64 = 2_000.0;
 /// A centre stepped aside from a decoder lands on this grid, so the dial reads a round number.
 const CENTRE_GRID_HZ: f64 = 1_000.0;
 
-fn channel_half_width_hz(params: &ChannelParams) -> f64 {
-    descriptor_for(params).map_or(0.0, |d| d.bandwidth_hz / 2.0) + LO_ARTIFACT_MARGIN_HZ
+/// The offsets around a channel the DC term must stay out of: its band and a margin.
+fn keep_out(params: &ChannelParams) -> ChannelBand {
+    ChannelBand::from(sdrmm_decoder::occupied_band(params)).widened(LO_ARTIFACT_MARGIN_HZ)
 }
 
 /// Whether the centre, where a zero-IF front end lands its DC term, sits inside no channel.
@@ -144,13 +145,13 @@ pub(crate) fn centre_clears_channels(
     capabilities: &Capabilities,
     channels: &[ChannelInfo],
 ) -> bool {
-    centre_clears(settings, capabilities, channels, &half_widths(channels))
+    centre_clears(settings, capabilities, channels, &keep_outs(channels))
 }
 
-fn half_widths(channels: &[ChannelInfo]) -> Vec<f64> {
+fn keep_outs(channels: &[ChannelInfo]) -> Vec<ChannelBand> {
     channels
         .iter()
-        .map(|channel| channel_half_width_hz(&channel.settings.params))
+        .map(|channel| keep_out(&channel.settings.params))
         .collect()
 }
 
@@ -158,18 +159,16 @@ fn centre_clears(
     settings: &DeviceSettings,
     capabilities: &Capabilities,
     channels: &[ChannelInfo],
-    half_widths: &[f64],
+    keep_outs: &[ChannelBand],
 ) -> bool {
-    channels
-        .iter()
-        .zip(half_widths)
-        .all(|(channel, half_width)| {
-            let center_hz = settings
-                .for_stream(channel.stream, &capabilities.per_stream)
-                .center_hz
-                .unwrap_or(DEFAULT_CENTER_HZ);
-            (center_hz - channel.settings.frequency_hz).abs() > *half_width
-        })
+    channels.iter().zip(keep_outs).all(|(channel, keep_out)| {
+        let center_hz = settings
+            .for_stream(channel.stream, &capabilities.per_stream)
+            .center_hz
+            .unwrap_or(DEFAULT_CENTER_HZ);
+        let offset_hz = center_hz - channel.settings.frequency_hz;
+        offset_hz < keep_out.low_hz || offset_hz > keep_out.high_hz
+    })
 }
 
 /// Whether the front end removes its DC term: the operator's choice, starting on for hardware
@@ -302,16 +301,16 @@ fn artifact_is_clear(
     settings: &DeviceSettings,
     (stream, center_hz): (u32, f64),
     channels: &[ChannelInfo],
-    half_widths: &[f64],
+    keep_outs: &[ChannelBand],
 ) -> bool {
     let probe = with_center(settings, capabilities, stream, center_hz);
-    centre_clears(&probe, capabilities, channels, half_widths)
+    centre_clears(&probe, capabilities, channels, keep_outs)
 }
 
 fn candidate_centers(
     spans: &[Span],
     channels: &[ChannelInfo],
-    half_widths: &[f64],
+    keep_outs: &[ChannelBand],
     current_hz: f64,
 ) -> Vec<f64> {
     let mut candidates = vec![current_hz];
@@ -324,13 +323,13 @@ fn candidate_centers(
             continue;
         }
         candidates.push(f64::midpoint(low, high));
-        for ((channel, span), half_width) in channels.iter().zip(spans).zip(half_widths) {
-            let clear_of = half_width + 1.0;
+        for ((channel, span), keep_out) in channels.iter().zip(spans).zip(keep_outs) {
+            let clear_of = keep_out.widened(1.0);
             let frequency_hz = channel.settings.frequency_hz;
             candidates.extend(
                 [
-                    ((frequency_hz - clear_of) / CENTRE_GRID_HZ).floor() * CENTRE_GRID_HZ,
-                    ((frequency_hz + clear_of) / CENTRE_GRID_HZ).ceil() * CENTRE_GRID_HZ,
+                    ((frequency_hz + clear_of.low_hz) / CENTRE_GRID_HZ).floor() * CENTRE_GRID_HZ,
+                    ((frequency_hz + clear_of.high_hz) / CENTRE_GRID_HZ).ceil() * CENTRE_GRID_HZ,
                     f64::midpoint(span.0, frequency_hz),
                     f64::midpoint(frequency_hz, span.1),
                 ]
@@ -381,14 +380,14 @@ pub(crate) fn best_center_in(
     if spans.is_empty() {
         return None;
     }
-    let half_widths = half_widths(channels);
+    let keep_outs = keep_outs(channels);
     let rank = |center_hz: f64| {
         let clear = artifact_is_clear(
             capabilities,
             settings,
             (stream, center_hz),
             channels,
-            &half_widths,
+            &keep_outs,
         );
         let stays = (center_hz - current_hz).abs() <= SPAN_EPSILON_HZ;
         let margin = narrowest_margin_hz(&spans, center_hz);
@@ -405,7 +404,7 @@ pub(crate) fn best_center_in(
             margin,
         )
     };
-    candidate_centers(&spans, channels, &half_widths, current_hz)
+    candidate_centers(&spans, channels, &keep_outs, current_hz)
         .into_iter()
         .chain(
             capabilities

@@ -27,9 +27,10 @@ pub use filter::ChannelFilter;
 pub use front::ChannelFront;
 pub use registry::{
     ChannelLayout, Decoder, Follow, Native, Registry, TrunkGrant, TrunkPlacement, Trunking, Tuned,
-    announced_placements, audio_channels, channel_filter, check, create, default_settings,
-    descriptor, descriptors, input_rate, install_plugin_kinds, install_plugins, layout, normalize,
-    occupied_band, plugin_refusal, recipe, recipes, registry, signal_catalog, trunking, tune,
+    announced_placements, audio_channels, channel_band, channel_filter, check, create,
+    default_settings, descriptor, descriptors, input_rate, install_plugin_kinds, install_plugins,
+    layout, normalize, occupied_band, plugin_refusal, recipe, recipes, registry, signal_catalog,
+    trunking, tune,
 };
 pub use symbols::SymbolTap;
 

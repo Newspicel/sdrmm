@@ -6,7 +6,6 @@ import {
   type ChannelPassband,
   channelFrequencyHz,
   channelPassband,
-  channelWidthHz,
 } from "../../components/channelSettings";
 import { plotButton } from "../../components/controls";
 import { clampWindow } from "../../components/dbRange";
@@ -509,7 +508,6 @@ function Markers({
   labelTop: number;
   widthPx: number;
 }) {
-  const { channelTypes } = useWorkspaceContext().context;
   const held = (channel: number): boolean => owners.has(channel) || locked.has(channel);
   const visible = spanHz * viewWidth(view);
   const drawn = channels
@@ -541,17 +539,12 @@ function Markers({
             {members.map(({ channel, hz, at }) => {
               const active = channel.id === selected;
               const owner = owners.get(channel.id);
-              const params = channel.settings.params;
-              const bandwidth = channelWidthHz(
-                params,
-                channelTypes.find((type) => type.type_id === params.type),
-                channel.band,
-              );
+              const band = channel.band ?? null;
               return (
                 <Fragment key={channel.id}>
-                  {bandwidth !== null && visible > 0 && (
+                  {band !== null && visible > 0 && (
                     <ChannelBand
-                      passband={channelPassband(channel.settings.if_filter, bandwidth)}
+                      passband={channelPassband(channel.settings.if_filter, band)}
                       at={at}
                       visible={visible}
                       notchAt={(radioHz) =>

@@ -89,7 +89,13 @@ pub struct ChannelDescriptor {
     pub family: DecoderFamily,
     #[serde(default)]
     pub verification: Verification,
+    /// The widest signal the decoder takes, for sizing only. Where a channel sits around its
+    /// frequency is its `ChannelBand`, never this width centred.
     pub bandwidth_hz: f64,
+    /// Where a fresh channel of this type sits around its frequency, as the decoder lays it out.
+    #[serde(default)]
+    #[schema(required = true)]
+    pub band: ChannelBand,
     pub input_rate_hz: f64,
     #[serde(default = "default_has_audio")]
     pub has_audio: bool,
@@ -169,6 +175,7 @@ impl Default for ChannelDescriptor {
             family: DecoderFamily::default(),
             verification: Verification::default(),
             bandwidth_hz: 0.0,
+            band: ChannelBand::default(),
             input_rate_hz: 0.0,
             has_audio: default_has_audio(),
             emits: Vec::new(),
@@ -376,10 +383,42 @@ pub enum BandMiss {
 }
 
 /// Lowest and highest occupied offset from the channel frequency, as its decoder lays it out.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+/// The one way to place a channel: a sideband sits on its own side, never centred on a width.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ChannelBand {
     pub low_hz: f64,
     pub high_hz: f64,
+}
+
+impl ChannelBand {
+    #[must_use]
+    pub const fn new(low_hz: f64, high_hz: f64) -> Self {
+        Self { low_hz, high_hz }
+    }
+
+    #[must_use]
+    pub fn width_hz(self) -> f64 {
+        self.high_hz - self.low_hz
+    }
+
+    /// The band grown by `margin_hz` on both edges.
+    #[must_use]
+    pub fn widened(self, margin_hz: f64) -> Self {
+        Self::new(self.low_hz - margin_hz, self.high_hz + margin_hz)
+    }
+
+    /// Whether a channel on `frequency_hz` fits inside a radio span centred on `center_hz`.
+    #[must_use]
+    pub fn fits(self, frequency_hz: f64, center_hz: f64, span_hz: f64) -> bool {
+        let offset_hz = frequency_hz - center_hz;
+        offset_hz + self.low_hz >= -span_hz / 2.0 && offset_hz + self.high_hz <= span_hz / 2.0
+    }
+}
+
+impl From<(f64, f64)> for ChannelBand {
+    fn from((low_hz, high_hz): (f64, f64)) -> Self {
+        Self::new(low_hz, high_hz)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -817,12 +817,7 @@ impl DeviceSetState {
                 .channels
                 .iter()
                 .map(|channel| ChannelInfo {
-                    band: sdrmm_decoder::layout(&channel.settings.params)
-                        .ok()
-                        .map(|layout| sdrmm_wire::ChannelBand {
-                            low_hz: layout.band.0,
-                            high_hz: layout.band.1,
-                        }),
+                    band: sdrmm_decoder::channel_band(&channel.settings.params).ok(),
                     out_of_band: self.band_miss(channel),
                     rejected: self.rejected(channel.id),
                     skipped: self.skipped(channel.id),

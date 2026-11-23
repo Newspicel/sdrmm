@@ -59,8 +59,9 @@ fn tuning_a_lane_leaves_auto_for_that_lane_only() {
 #[test]
 fn a_lane_reaches_what_fits_inside_its_span_minus_the_channel() {
     let mut live = running(100e6, 2e6);
-    assert!(reaches(&live, 0, 200e3, 100.8e6));
-    assert!(!reaches(&live, 0, 200e3, 100.95e6));
+    let wfm = ChannelBand::new(-100e3, 100e3);
+    assert!(reaches(&live, 0, wfm, 100.8e6));
+    assert!(!reaches(&live, 0, wfm, 100.95e6));
     live.virtual_lanes.push(sdrmm_wire::VirtualLane {
         stream: 3,
         node: "beam".to_owned(),
@@ -68,6 +69,17 @@ fn a_lane_reaches_what_fits_inside_its_span_minus_the_channel() {
         center_hz: 433e6,
         sample_rate: 1e6,
     });
-    assert!(reaches(&live, 3, 0.0, 433.4e6));
-    assert!(!reaches(&live, 3, 0.0, 100e6));
+    assert!(reaches(&live, 3, ChannelBand::default(), 433.4e6));
+    assert!(!reaches(&live, 3, ChannelBand::default(), 100e6));
+}
+
+#[test]
+fn a_sideband_reaches_the_edge_it_does_not_cover() {
+    let live = running(100e6, 2e6);
+    let usb = ChannelBand::new(100.0, 2_700.0);
+    let lsb = ChannelBand::new(-2_700.0, -100.0);
+    assert!(reaches(&live, 0, lsb, 100.9995e6));
+    assert!(!reaches(&live, 0, usb, 100.9995e6));
+    assert!(reaches(&live, 0, usb, 99.0005e6));
+    assert!(!reaches(&live, 0, lsb, 99.0005e6));
 }

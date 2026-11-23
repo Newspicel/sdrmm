@@ -58,9 +58,21 @@ const NXDN_TRUNKING: TrunkSpec = {
 
 describe("trunk decoders", () => {
   const types: ChannelDescriptor[] = [
-    { type_id: "dmr", name: "DMR", bandwidth_hz: 1, input_rate_hz: 1, trunking: DMR_TRUNKING },
-    { type_id: "plain", name: "Plain", bandwidth_hz: 1, input_rate_hz: 1 },
-    { type_id: "nxdn", name: "NXDN", bandwidth_hz: 1, input_rate_hz: 1, trunking: NXDN_TRUNKING },
+    {
+      type_id: "dmr",
+      name: "DMR",
+      band: { low_hz: -0.5, high_hz: 0.5 },
+      input_rate_hz: 1,
+      trunking: DMR_TRUNKING,
+    },
+    { type_id: "plain", name: "Plain", band: { low_hz: -0.5, high_hz: 0.5 }, input_rate_hz: 1 },
+    {
+      type_id: "nxdn",
+      name: "NXDN",
+      band: { low_hz: -0.5, high_hz: 0.5 },
+      input_rate_hz: 1,
+      trunking: NXDN_TRUNKING,
+    },
   ];
 
   it("offers only the descriptors that trunk, in registry order", () => {

@@ -1,3 +1,5 @@
+use sdrmm_wire::{ChannelBand, ChannelParams};
+
 use super::{
     ApiError, AppError, AppState, ChannelSettings, ChannelTypesResponse, CreatedRowId,
     DeviceSettings, DevicesResponse, EncoderTypesResponse, Json, Path, SaveRadioRequest,
@@ -126,6 +128,22 @@ pub(super) async fn get_channel_types(State(state): State<AppState>) -> Json<Cha
     Json(ChannelTypesResponse {
         types: state.engine.channel_types(),
     })
+}
+
+#[utoipa::path(
+    post, path = "/api/channeltypes/band",
+    request_body = ChannelParams,
+    responses(
+        (status = 200, description = "Where these settings put a channel around its frequency", body = ChannelBand),
+        (status = 400, description = "Settings the decoder refuses"),
+    ),
+)]
+pub(super) async fn post_channel_band(
+    Json(params): Json<ChannelParams>,
+) -> Result<Json<ChannelBand>, AppError> {
+    sdrmm_decoder::channel_band(&params)
+        .map(Json)
+        .map_err(|error| AppError::bad_request(error.to_string()))
 }
 
 #[utoipa::path(

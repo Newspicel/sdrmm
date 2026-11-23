@@ -90,9 +90,10 @@ pub(crate) use devices::patch_device_live;
 use devices::{
     __path_delete_saved_radio, __path_get_channel_types, __path_get_devices,
     __path_get_encoder_types, __path_get_nmea_devices, __path_get_serial_ports, __path_get_state,
-    __path_list_saved_radios, __path_save_radio, __path_write_serial, delete_saved_radio,
-    get_channel_types, get_devices, get_encoder_types, get_nmea_devices, get_serial_ports,
-    get_state, list_saved_radios, patch_channel_locked, save_radio, write_serial,
+    __path_list_saved_radios, __path_post_channel_band, __path_save_radio, __path_write_serial,
+    delete_saved_radio, get_channel_types, get_devices, get_encoder_types, get_nmea_devices,
+    get_serial_ports, get_state, list_saved_radios, patch_channel_locked, post_channel_band,
+    save_radio, write_serial,
 };
 use info::{
     __path_get_about, __path_get_auth, __path_get_band_plan, __path_get_clients,
@@ -480,6 +481,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(get_serial_ports))
         .routes(routes!(speakers::get_server_outputs))
         .routes(routes!(get_channel_types))
+        .routes(routes!(post_channel_band))
         .routes(routes!(get_encoder_types))
         .routes(routes!(call_audio))
         .routes(routes!(list_images))

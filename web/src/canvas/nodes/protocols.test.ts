@@ -16,7 +16,7 @@ function type(
   family: ChannelDescriptor["family"],
   identifiable = true,
 ): ChannelDescriptor {
-  return { type_id, name, family, identifiable, bandwidth_hz: 0, input_rate_hz: 0 };
+  return { type_id, name, family, identifiable, band: { low_hz: 0, high_hz: 0 }, input_rate_hz: 0 };
 }
 
 const TYPES = [

@@ -1,6 +1,7 @@
 import { AUDIO, CHANNEL_FREQUENCY_SEED_HZ, IF_FILTER_LIMITS } from "../lib/limits";
 import type {
   AudioProcessing,
+  ChannelBand,
   ChannelDescriptor,
   ChannelParams,
   ChannelSettings,
@@ -60,22 +61,17 @@ export const IF_LIMITS = {
 
 export type IfEdge = "low_hz" | "high_hz";
 
-export function ownIfEdgeHz(edge: IfEdge, bandwidthHz: number): number {
-  return edge === "low_hz" ? -bandwidthHz / 2 : bandwidthHz / 2;
+export function ownIfEdgeHz(edge: IfEdge, own: ChannelBand): number {
+  return own[edge];
 }
 
-export function ifEdgeHz(filter: IfFilter, edge: IfEdge, bandwidthHz: number): number {
-  return filter[edge] ?? ownIfEdgeHz(edge, bandwidthHz);
+export function ifEdgeHz(filter: IfFilter, edge: IfEdge, own: ChannelBand): number {
+  return filter[edge] ?? ownIfEdgeHz(edge, own);
 }
 
 /** An edge moved back onto the decoder's own is dropped, so the decoder keeps its filter. */
-export function withIfEdge(
-  filter: IfFilter,
-  edge: IfEdge,
-  hz: number,
-  bandwidthHz: number,
-): IfFilter {
-  return { ...filter, [edge]: hz === ownIfEdgeHz(edge, bandwidthHz) ? null : hz };
+export function withIfEdge(filter: IfFilter, edge: IfEdge, hz: number, own: ChannelBand): IfFilter {
+  return { ...filter, [edge]: hz === ownIfEdgeHz(edge, own) ? null : hz };
 }
 
 export function withIfNotchAdded(filter: IfFilter, atHz: number): IfFilter | null {
@@ -107,11 +103,8 @@ export interface ChannelPassband {
 }
 
 /** What a channel decodes around its frequency: IF edges only narrow the decoder's own band. */
-export function channelPassband(
-  filter: IfFilter | undefined,
-  bandwidthHz: number,
-): ChannelPassband {
-  const own = { lowHz: -bandwidthHz / 2, highHz: bandwidthHz / 2, notches: [] };
+export function channelPassband(filter: IfFilter | undefined, band: ChannelBand): ChannelPassband {
+  const own = { lowHz: band.low_hz, highHz: band.high_hz, notches: [] };
   if (!(filter?.enabled ?? false)) {
     return own;
   }
@@ -125,7 +118,7 @@ export function channelPassband(
   };
 }
 
-export function ifFilterSummary(filter: IfFilter, bandwidthHz: number): string {
+export function ifFilterSummary(filter: IfFilter, own: ChannelBand): string {
   const notches = filter.notches?.length ?? 0;
   const edged = (filter.low_hz ?? null) !== null || (filter.high_hz ?? null) !== null;
   if (!(filter.enabled ?? false)) {
@@ -135,7 +128,7 @@ export function ifFilterSummary(filter: IfFilter, bandwidthHz: number): string {
     return "on";
   }
   const edges = (["low_hz", "high_hz"] as const).map((edge) =>
-    formatSignedHz(ifEdgeHz(filter, edge, bandwidthHz)),
+    formatSignedHz(ifEdgeHz(filter, edge, own)),
   );
   const parts = edged ? [edges.join(" ")] : [];
   if (notches > 0) {
@@ -268,45 +261,29 @@ export interface RadioWindow {
   highHz: number;
 }
 
-/// What a radio can hear right now, edge to edge, with room for a channel of this width.
+/** The channel frequencies a radio can hear right now with the whole of `band` inside its span. */
 export function radioWindowHz(
   centerHz: number | null | undefined,
   spanHz: number | null | undefined,
-  descriptor: ChannelDescriptor | undefined,
+  band: ChannelBand | null,
 ): RadioWindow | null {
-  const limitHz = offsetLimitHz(spanHz, descriptor);
-  if (limitHz === null || centerHz == null || !Number.isFinite(centerHz)) {
+  if (spanHz == null || !Number.isFinite(spanHz) || spanHz <= 0) {
     return null;
   }
-  return { lowHz: centerHz - limitHz, highHz: centerHz + limitHz };
+  if (centerHz == null || !Number.isFinite(centerHz)) {
+    return null;
+  }
+  const lowHz = centerHz - spanHz / 2 - (band?.low_hz ?? 0);
+  const highHz = centerHz + spanHz / 2 - (band?.high_hz ?? 0);
+  return lowHz <= highHz ? { lowHz, highHz } : { lowHz: centerHz, highHz: centerHz };
 }
 
 export function reachesHz(frequencyHz: number, window: RadioWindow | null): boolean {
   return window === null || (frequencyHz >= window.lowHz && frequencyHz <= window.highHz);
 }
 
-/** The width a decoder's own settings choose, else the width its descriptor declares. */
-export function channelWidthHz(
-  params: ChannelParams | undefined,
-  descriptor: ChannelDescriptor | undefined,
-  band?: { low_hz: number; high_hz: number } | null,
-): number | null {
-  if (band != null && band.high_hz > band.low_hz) {
-    return band.high_hz - band.low_hz;
-  }
-  const own = params?.settings?.bandwidth_hz;
-  const width = typeof own === "number" ? own : descriptor?.bandwidth_hz;
-  return width !== undefined && Number.isFinite(width) && width > 0 ? width : null;
-}
-
-export function offsetLimitHz(
-  spanHz: number | null | undefined,
-  descriptor: ChannelDescriptor | undefined,
-): number | null {
-  if (spanHz == null || !Number.isFinite(spanHz) || spanHz <= 0) {
-    return null;
-  }
-  return Math.max(0, (spanHz - (descriptor?.bandwidth_hz ?? 0)) / 2);
+export function bandWidthHz(band: ChannelBand | null): number | null {
+  return band === null ? null : band.high_hz - band.low_hz;
 }
 
 export function clampOffsetHz(hz: number, limitHz: number | null): number {

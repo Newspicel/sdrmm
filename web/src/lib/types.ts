@@ -34,7 +34,9 @@ export type IonosondeStation = components["schemas"]["IonosondeStation"];
 export type PropagationNode = components["schemas"]["PropagationNode"];
 export type ChannelSettings = components["schemas"]["ChannelSettings"];
 export type ChannelParams = components["schemas"]["ChannelParams"];
-export type ChannelDescriptor = components["schemas"]["ChannelDescriptor"];
+/** A decoder as the UI sees it. No width: a channel is placed by its decoder's `ChannelBand`. */
+export type ChannelDescriptor = Omit<components["schemas"]["ChannelDescriptor"], "bandwidth_hz">;
+export type ChannelBand = components["schemas"]["ChannelBand"];
 export type DecoderFamily = components["schemas"]["DecoderFamily"];
 export type FamilyEntry = components["schemas"]["FamilyEntry"];
 export type ParamChoice = components["schemas"]["ParamChoice"];
@@ -80,7 +82,9 @@ export type IfFilter = components["schemas"]["IfFilter"];
 export type IfNotch = components["schemas"]["IfNotch"];
 export type NotchSettings = components["schemas"]["NotchSettings"];
 export type PeakSettings = components["schemas"]["PeakSettings"];
-export type ChannelTypesResponse = components["schemas"]["ChannelTypesResponse"];
+export type ChannelTypesResponse = Omit<components["schemas"]["ChannelTypesResponse"], "types"> & {
+  types: ChannelDescriptor[];
+};
 export type EncoderDescriptor = components["schemas"]["EncoderDescriptor"];
 export type EncoderTypesResponse = components["schemas"]["EncoderTypesResponse"];
 export type Picks = components["schemas"]["Picks"];

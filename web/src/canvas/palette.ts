@@ -123,7 +123,9 @@ export function decoderGroups(
 }
 
 function channelItems(channelTypes: readonly ChannelDescriptor[]): PaletteItem[] {
-  return channelTypes.map((type) => typeItem("channel", type, type.bandwidth_hz));
+  return channelTypes.map((type) =>
+    typeItem("channel", type, type.band.high_hz - type.band.low_hz),
+  );
 }
 
 export function channelPicker(

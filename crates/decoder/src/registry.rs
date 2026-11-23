@@ -7,8 +7,8 @@ use std::sync::{Arc, LazyLock, OnceLock, PoisonError, RwLock};
 
 use sdrmm_modem::synth::{BASIC, Catalog, EMPTY_CATALOG, Recipe, Signal};
 use sdrmm_wire::{
-    ChannelDescriptor, ChannelParams, ChannelSettings, DEFAULT_FREQUENCY_HZ, FeedSpec, FilterSpec,
-    IdentSignal, KindSpec, SettingField, SignalSignature, SignalTrial,
+    ChannelBand, ChannelDescriptor, ChannelParams, ChannelSettings, DEFAULT_FREQUENCY_HZ, FeedSpec,
+    FilterSpec, IdentSignal, KindSpec, SettingField, SignalSignature, SignalTrial,
 };
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -319,6 +319,7 @@ where
         let mut descriptor = (self.base)().clone();
         descriptor.trunking = self.trunking.map(|trunking| (trunking.spec)());
         descriptor.settings = (self.form)();
+        descriptor.band = (self.band)(&S::default()).into();
         descriptor.defaults = ChannelParams::new(&descriptor.type_id, &S::default())
             .ok()
             .map(|params| {
@@ -651,6 +652,11 @@ pub fn create(
     registry()
         .decoder(settings.params.type_id())?
         .open(ctx, settings)
+}
+
+/// Where `params` puts a channel around its frequency, as its decoder lays it out.
+pub fn channel_band(params: &ChannelParams) -> Result<ChannelBand, ChannelError> {
+    layout(params).map(|layout| layout.band.into())
 }
 
 /// The band `params` occupies around the channel frequency; an unknown decoder occupies none.

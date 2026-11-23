@@ -5,9 +5,9 @@ import {
   AUDIO_DEFAULTS,
   AUDIO_LIMITS,
   audioChainActive,
+  bandWidthHz,
   channelHasAudio,
   channelPassband,
-  channelWidthHz,
   clampOffsetHz,
   IF_LIMITS,
   ifEdgeHz,
@@ -16,7 +16,6 @@ import {
   mergeChannelSettings,
   nudgedSquelch,
   offsetForFrequencyHz,
-  offsetLimitHz,
   paramsWith,
   radioWindowHz,
   reachesHz,
@@ -42,7 +41,7 @@ function descriptor(over: Partial<ChannelDescriptor>): ChannelDescriptor {
   return {
     type_id: "probe",
     name: "Probe",
-    bandwidth_hz: 12_500,
+    band: { low_hz: -6_250, high_hz: 6_250 },
     input_rate_hz: 48_000,
     ...over,
   };
@@ -150,75 +149,45 @@ describe("channelHasAudio", () => {
   });
 });
 
-describe("offsetLimitHz", () => {
-  it("keeps the whole passband inside the span", () => {
-    expect(offsetLimitHz(2_400_000, descriptor({ bandwidth_hz: 12_500 }))).toBe(1_193_750);
-  });
-
-  it("collapses to zero rather than negative when the channel fills the span", () => {
-    expect(offsetLimitHz(100_000, descriptor({ bandwidth_hz: 150_000 }))).toBe(0);
-  });
-
-  it("leaves the field unbounded when the rate is unknown", () => {
-    expect(offsetLimitHz(null, descriptor({}))).toBeNull();
-    expect(offsetLimitHz(0, descriptor({}))).toBeNull();
-  });
-
-  it("falls back to a point channel when the type is unknown", () => {
-    expect(offsetLimitHz(2_000_000, undefined)).toBe(1_000_000);
-  });
-});
-
-describe("channelWidthHz", () => {
-  it("takes the band the running decoder reports first", () => {
-    expect(
-      channelWidthHz(
-        paramsWith("probe", { bandwidth_hz: 8_000 }),
-        descriptor({ bandwidth_hz: 10_000 }),
-        { low_hz: 100, high_hz: 2_800 },
-      ),
-    ).toBe(2_700);
-  });
-
-  it("prefers the decoder's own bandwidth setting", () => {
-    expect(
-      channelWidthHz(
-        paramsWith("probe", { bandwidth_hz: 8_000 }),
-        descriptor({ bandwidth_hz: 10_000 }),
-      ),
-    ).toBe(8_000);
-  });
-
-  it("ignores a bandwidth setting that is not a number", () => {
-    expect(
-      channelWidthHz(
-        paramsWith("probe", { bandwidth_hz: "wide" }),
-        descriptor({ bandwidth_hz: 10_000 }),
-      ),
-    ).toBe(10_000);
-  });
-
-  it("falls back to the channel type width", () => {
-    expect(channelWidthHz(undefined, descriptor({ bandwidth_hz: 12_500 }))).toBe(12_500);
-  });
-
-  it("hides a missing or zero width", () => {
-    expect(channelWidthHz(undefined, descriptor({ bandwidth_hz: 0 }))).toBeNull();
-    expect(channelWidthHz(undefined, undefined)).toBeNull();
-  });
-});
+const NFM = { low_hz: -6_250, high_hz: 6_250 };
 
 describe("radioWindowHz", () => {
-  it("names the edges a radio can hear a channel of this width between", () => {
-    expect(radioWindowHz(145_000_000, 2_400_000, descriptor({ bandwidth_hz: 12_500 }))).toEqual({
+  it("keeps the whole band inside the span", () => {
+    expect(radioWindowHz(145_000_000, 2_400_000, NFM)).toEqual({
       lowHz: 143_806_250,
       highHz: 146_193_750,
     });
   });
 
+  it("lets a sideband run up to the edge it does not cover", () => {
+    expect(radioWindowHz(145_000_000, 2_400_000, { low_hz: 100, high_hz: 2_700 })).toEqual({
+      lowHz: 143_799_900,
+      highHz: 146_197_300,
+    });
+    expect(radioWindowHz(145_000_000, 2_400_000, { low_hz: -2_700, high_hz: -100 })).toEqual({
+      lowHz: 143_802_700,
+      highHz: 146_200_100,
+    });
+  });
+
+  it("collapses to the centre when the band fills the span", () => {
+    expect(radioWindowHz(145_000_000, 100_000, { low_hz: -75_000, high_hz: 75_000 })).toEqual({
+      lowHz: 145_000_000,
+      highHz: 145_000_000,
+    });
+  });
+
   it("is unknown while the radio's centre or rate is", () => {
-    expect(radioWindowHz(null, 2_400_000, descriptor({}))).toBeNull();
-    expect(radioWindowHz(145_000_000, null, descriptor({}))).toBeNull();
+    expect(radioWindowHz(null, 2_400_000, NFM)).toBeNull();
+    expect(radioWindowHz(145_000_000, null, NFM)).toBeNull();
+    expect(radioWindowHz(145_000_000, 0, NFM)).toBeNull();
+  });
+});
+
+describe("bandWidthHz", () => {
+  it("measures the band edge to edge", () => {
+    expect(bandWidthHz({ low_hz: 100, high_hz: 2_800 })).toBe(2_700);
+    expect(bandWidthHz(null)).toBeNull();
   });
 });
 
@@ -408,12 +377,20 @@ describe("the audio seeds and bounds", () => {
 
 describe("IF filter", () => {
   const WFM_HZ = 200_000;
+  const WFM_EDGES = { low_hz: -WFM_HZ / 2, high_hz: WFM_HZ / 2 };
 
   it("shows the decoder's own edges until one is moved", () => {
-    expect(ifEdgeHz({}, "low_hz", WFM_HZ)).toBe(-100_000);
-    const cut = withIfEdge({}, "high_hz", 40_000, WFM_HZ);
-    expect(ifEdgeHz(cut, "high_hz", WFM_HZ)).toBe(40_000);
-    expect(withIfEdge(cut, "high_hz", 100_000, WFM_HZ).high_hz).toBeNull();
+    expect(ifEdgeHz({}, "low_hz", WFM_EDGES)).toBe(-100_000);
+    const cut = withIfEdge({}, "high_hz", 40_000, WFM_EDGES);
+    expect(ifEdgeHz(cut, "high_hz", WFM_EDGES)).toBe(40_000);
+    expect(withIfEdge(cut, "high_hz", 100_000, WFM_EDGES).high_hz).toBeNull();
+  });
+
+  it("starts a sideband's edges on its own side", () => {
+    const lsb = { low_hz: -2_700, high_hz: -100 };
+    expect(ifEdgeHz({}, "low_hz", lsb)).toBe(-2_700);
+    expect(ifEdgeHz({}, "high_hz", lsb)).toBe(-100);
+    expect(withIfEdge({}, "high_hz", -100, lsb).high_hz).toBeNull();
   });
 
   it("adds notches at the channel up to the wire limit", () => {
@@ -429,18 +406,18 @@ describe("IF filter", () => {
   });
 
   it("summarises what it does, on once enabled", () => {
-    expect(ifFilterSummary({ high_hz: 40_000 }, WFM_HZ)).toBe("off");
-    expect(ifFilterSummary({ enabled: true }, WFM_HZ)).toBe("on");
+    expect(ifFilterSummary({ high_hz: 40_000 }, WFM_EDGES)).toBe("off");
+    expect(ifFilterSummary({ enabled: true }, WFM_EDGES)).toBe("on");
     const notch = { frequency_hz: 99_930_000, width_hz: 2_000 };
-    expect(ifFilterSummary({ enabled: true, notches: [notch] }, WFM_HZ)).toBe("1 notch");
-    expect(ifFilterSummary({ enabled: true, high_hz: 40_000 }, WFM_HZ)).toMatch(
+    expect(ifFilterSummary({ enabled: true, notches: [notch] }, WFM_EDGES)).toBe("1 notch");
+    expect(ifFilterSummary({ enabled: true, high_hz: 40_000 }, WFM_EDGES)).toMatch(
       /^−100 kHz \+40 kHz$/,
     );
   });
 
   it("narrows the drawn passband and carries the notches", () => {
     const notch = { frequency_hz: 99_930_000, width_hz: 2_000 };
-    expect(channelPassband({ high_hz: 40_000, notches: [notch] }, WFM_HZ)).toEqual({
+    expect(channelPassband({ high_hz: 40_000, notches: [notch] }, WFM_EDGES)).toEqual({
       lowHz: -100_000,
       highHz: 100_000,
       notches: [],
@@ -448,11 +425,12 @@ describe("IF filter", () => {
     expect(
       channelPassband(
         { enabled: true, low_hz: -150_000, high_hz: 40_000, notches: [notch] },
-        WFM_HZ,
+        WFM_EDGES,
       ),
     ).toEqual({ lowHz: -100_000, highHz: 40_000, notches: [{ atHz: 99_930_000, widthHz: 2_000 }] });
     expect(
-      channelPassband({ enabled: true, notches: [{ frequency_hz: 99_930_000 }] }, WFM_HZ).notches,
+      channelPassband({ enabled: true, notches: [{ frequency_hz: 99_930_000 }] }, WFM_EDGES)
+        .notches,
     ).toEqual([{ atHz: 99_930_000, widthHz: IF_LIMITS.notchWidthSeedHz }]);
   });
 });

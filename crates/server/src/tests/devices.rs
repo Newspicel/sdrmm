@@ -97,6 +97,35 @@ async fn channeltypes_lists_every_demod_exactly_once() {
 }
 
 #[tokio::test]
+async fn channel_band_is_where_the_decoder_puts_the_settings() {
+    let band = |sideband: &'static str| async move {
+        let body = format!(
+            r#"{{"type":"ssb","settings":{{"sideband":"{sideband}","bandwidth_hz":2700}}}}"#
+        );
+        let (status, bytes) =
+            request(test_router(), "POST", "/api/channeltypes/band", Some(&body)).await;
+        assert_eq!(status, StatusCode::OK);
+        serde_json::from_slice::<sdrmm_wire::ChannelBand>(&bytes).expect("band")
+    };
+    assert_eq!(
+        band("usb").await,
+        sdrmm_wire::ChannelBand::new(100.0, 2_700.0)
+    );
+    assert_eq!(
+        band("lsb").await,
+        sdrmm_wire::ChannelBand::new(-2_700.0, -100.0)
+    );
+    let (status, _) = request(
+        test_router(),
+        "POST",
+        "/api/channeltypes/band",
+        Some(r#"{"type":"no-such-decoder","settings":{}}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn channel_settings_go_to_a_channel_node_and_open_only_where_it_is_wired() {
     let app = test_router();
     let ds = open_virtual_radio(&app).await;

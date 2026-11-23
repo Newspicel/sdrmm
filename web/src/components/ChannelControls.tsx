@@ -1,5 +1,5 @@
 import { statusChoices } from "../lib/channelStatus";
-import type { ChannelDescriptor, ChannelSettings, ChannelStatus } from "../lib/types";
+import type { ChannelBand, ChannelDescriptor, ChannelSettings, ChannelStatus } from "../lib/types";
 import type { ChannelEdit } from "../lib/useChannelPatch";
 import { BlankerChip } from "./BlankerControl";
 import {
@@ -24,7 +24,7 @@ import { Unused } from "./Unused";
 
 export function ChannelDial({
   hz,
-  descriptor,
+  band,
   spanHz,
   centerHz,
   range,
@@ -36,7 +36,7 @@ export function ChannelDial({
   onLock,
 }: {
   hz: number;
-  descriptor: ChannelDescriptor | undefined;
+  band: ChannelBand | null;
   spanHz: number | null;
   centerHz: number | null;
   range: Range;
@@ -47,7 +47,7 @@ export function ChannelDial({
   onTune: (hz: number) => void;
   onLock: (locked: boolean) => void;
 }) {
-  const heard = radioWindowHz(centerHz, spanHz, descriptor);
+  const heard = radioWindowHz(centerHz, spanHz, band);
   const locked = lockedByHand || heldBy !== null;
   return (
     <div className="flex min-w-0 items-center gap-1">
@@ -87,11 +87,13 @@ export function ChannelDial({
 export function ChannelControls({
   settings,
   descriptor,
+  band,
   onEdit,
   status,
 }: {
   settings: ChannelSettings;
   descriptor: ChannelDescriptor | undefined;
+  band: ChannelBand | null;
   onEdit: (edit: ChannelEdit) => void;
   status?: ChannelStatus;
 }) {
@@ -112,10 +114,10 @@ export function ChannelControls({
           onBlanker={(blanker) => onEdit({ blanker })}
         />
       )}
-      {descriptor !== undefined && descriptor.bandwidth_hz > 0 && (
+      {band !== null && (
         <IfFilterChip
           filter={settings.if_filter ?? {}}
-          bandwidthHz={descriptor.bandwidth_hz}
+          own={band}
           channelHz={channelFrequencyHz(settings)}
           onFilter={(if_filter) => onEdit({ if_filter })}
         />

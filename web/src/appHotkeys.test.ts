@@ -6,7 +6,7 @@ const VOICE: ChannelDescriptor[] = ["low", "high"].map((type_id) => ({
   type_id,
   name: type_id,
   analog_voice: true,
-  bandwidth_hz: 1,
+  band: { low_hz: -0.5, high_hz: 0.5 },
   input_rate_hz: 1,
 }));
 

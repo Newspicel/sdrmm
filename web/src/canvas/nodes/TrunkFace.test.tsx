@@ -7,7 +7,7 @@ import { TrunkFace } from "./TrunkFace";
 const DMR: ChannelDescriptor = {
   type_id: "dmr",
   name: "DMR",
-  bandwidth_hz: 12_500,
+  band: { low_hz: -6_250, high_hz: 6_250 },
   input_rate_hz: 48_000,
   trunking: {
     slots: 2,

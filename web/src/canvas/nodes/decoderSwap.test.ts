@@ -3,7 +3,13 @@ import type { ChannelDescriptor } from "../../lib/types";
 import { analogModes, nextAnalogMode, retypeNode } from "./decoderSwap";
 
 function type(type_id: string, analog_voice: boolean): ChannelDescriptor {
-  return { type_id, name: type_id, analog_voice, bandwidth_hz: 1, input_rate_hz: 1 };
+  return {
+    type_id,
+    name: type_id,
+    analog_voice,
+    band: { low_hz: -0.5, high_hz: 0.5 },
+    input_rate_hz: 1,
+  };
 }
 
 const TYPES = [type("one", true), type("data", false), type("two", true), type("three", true)];

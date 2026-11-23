@@ -898,6 +898,36 @@
         }
       }
     },
+    "/api/channeltypes/band": {
+      "post": {
+        "operationId": "post_channel_band",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Where these settings put a channel around its frequency",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelBand"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Settings the decoder refuses"
+          }
+        }
+      }
+    },
     "/api/chat-accounts": {
       "get": {
         "operationId": "list_chat_accounts",
@@ -9617,7 +9647,7 @@
       },
       "ChannelBand": {
         "type": "object",
-        "description": "Lowest and highest occupied offset from the channel frequency, as its decoder lays it out.",
+        "description": "Lowest and highest occupied offset from the channel frequency, as its decoder lays it out.\nThe one way to place a channel: a sideband sits on its own side, never centred on a width.",
         "required": [
           "low_hz",
           "high_hz"
@@ -9751,6 +9781,7 @@
           "type_id",
           "name",
           "bandwidth_hz",
+          "band",
           "input_rate_hz"
         ],
         "properties": {
@@ -9758,9 +9789,14 @@
             "type": "boolean",
             "description": "One of the plain analog voice modes a channel cycles through when retyped by hotkey."
           },
+          "band": {
+            "$ref": "#/components/schemas/ChannelBand",
+            "description": "Where a fresh channel of this type sits around its frequency, as the decoder lays it out."
+          },
           "bandwidth_hz": {
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "description": "The widest signal the decoder takes, for sizing only. Where a channel sits around its\nfrequency is its `ChannelBand`, never this width centred."
           },
           "calls": {
             "oneOf": [

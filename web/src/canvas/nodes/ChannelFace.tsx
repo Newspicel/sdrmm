@@ -3,9 +3,9 @@ import { Button } from "../../components/BaseControls";
 import { ChannelControls, ChannelDial, SquelchMargin } from "../../components/ChannelControls";
 import {
   audioChainActive,
+  bandWidthHz,
   channelFrequencyHz,
   channelHasAudio,
-  channelWidthHz,
   radioWindowHz,
   reachesHz,
 } from "../../components/channelSettings";
@@ -23,6 +23,7 @@ import {
   SKIPPED_HINT,
 } from "../../components/format";
 import { SignalRow } from "../../components/SignalRow";
+import { useChannelBand } from "../../lib/channelBand";
 import { statusChoices, useChannelStatus } from "../../lib/channelStatus";
 import { audioPassing, heardHz, useLevelStore } from "../../lib/levels";
 import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
@@ -53,6 +54,9 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const editChannel = useChannelEdit();
   const live = liveChannelOf(workspace, node.id);
   const channelStatus = useChannelStatus(node.id);
+  const channel = workspace.channels.get(node.id) ?? null;
+  const settings = channelSettingsOf(workspace, node.id);
+  const band = useChannelBand(settings, channel);
   if (node.kind !== "channel") {
     return null;
   }
@@ -60,17 +64,15 @@ export function ChannelFace({ node }: { node: PatchNode }) {
   const typeId = node.data.channel_type;
   const descriptor = workspace.context.channelTypes.find((type) => type.type_id === typeId);
   const name = descriptor?.name ?? typeId.toUpperCase();
-  const channel = workspace.channels.get(node.id) ?? null;
   const lanes = iqLanesOf(workspace.resolved, node.id);
   const source = laneOf(workspace, node.id);
   const unbound = unboundOf(runsOf(workspace.resolved, node.id));
   const centerHz = set === null ? null : laneCenterHz(set, source?.stream ?? 0);
-  const settings = channelSettingsOf(workspace, node.id);
   const onEdit = (edit: ChannelEdit): void => editChannel(node.id, edit);
   const level = live === null ? undefined : levels?.[live.id];
   const frequencyHz = settings === null ? null : heardHz(channelFrequencyHz(settings), level);
   const spanHz = set === null ? undefined : laneRateHz(set, source?.stream ?? 0);
-  const window = radioWindowHz(centerHz, spanHz, descriptor);
+  const window = radioWindowHz(centerHz, spanHz, band);
   const miss = bandMissOf({
     reported: channel === null ? undefined : (channel.out_of_band ?? null),
     reaches: set === null || frequencyHz === null || reachesHz(frequencyHz, window),
@@ -98,11 +100,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     driver: scanned ? "scanning" : controller,
     carrier,
   });
-  const widthHz = channelWidthHz(
-    settings?.params,
-    descriptor,
-    workspace.channels.get(node.id)?.band,
-  );
+  const widthHz = bandWidthHz(band);
   const action = live === null ? (unbound?.action ?? null) : null;
   const standing = unbound?.standing === true ? unbound.hint : null;
 
@@ -125,7 +123,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <div className="@container flex flex-col gap-1 p-2">
             <ChannelDial
               hz={heardHz(channelFrequencyHz(settings), level)}
-              descriptor={descriptor}
+              band={band}
               spanHz={spanHz ?? null}
               centerHz={centerHz}
               range={set === null ? ANY_FREQUENCY : tuningRange(set.capabilities)}
@@ -159,6 +157,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
             <ChannelControls
               settings={settings}
               descriptor={descriptor}
+              band={band}
               status={channelStatus}
               onEdit={onEdit}
             />

@@ -213,6 +213,10 @@ fn a_plugin_layout_and_filter_come_from_its_settings() {
     };
     let layout = decoder.layout(&params).expect("layout");
     assert_eq!(layout.band, (-2_000.0, 2_000.0));
+    assert_eq!(
+        decoder.descriptor().band,
+        sdrmm_wire::ChannelBand::new(-5_000.0, 5_000.0)
+    );
     assert_eq!(layout.input_rate_hz, RATE_HZ);
     let normalized = decoder.normalize(&params).expect("normalize");
     assert_eq!(normalized.settings["threshold_db"], 20.0);

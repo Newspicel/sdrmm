@@ -7,7 +7,7 @@ function render(filter: IfFilter): string {
   return renderToStaticMarkup(
     <IfFilterChip
       filter={filter}
-      bandwidthHz={200_000}
+      own={{ low_hz: -100_000, high_hz: 100_000 }}
       channelHz={99_900_000}
       onFilter={() => undefined}
     />,

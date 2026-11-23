@@ -38,6 +38,37 @@ fn a_source_with_no_front_end_never_blocks_dc() {
 }
 
 #[test]
+fn the_dc_term_may_sit_beside_a_sideband_on_the_side_it_leaves_empty() {
+    let sideband_at = |sideband: Sideband| {
+        let mut channel = parked(1, 3_000.0);
+        channel.settings.params = ChannelParams::new(
+            "ssb",
+            &SsbParams {
+                sideband,
+                bandwidth_hz: 2_700.0,
+            },
+        )
+        .expect("ssb settings");
+        channel
+    };
+    let clears = |channel: &ChannelInfo| {
+        centre_clears_channels(
+            &untouched_settings(),
+            &tuner_caps(),
+            std::slice::from_ref(channel),
+        )
+    };
+    assert!(
+        clears(&sideband_at(Sideband::Usb)),
+        "usb runs away from the centre"
+    );
+    assert!(
+        !clears(&sideband_at(Sideband::Lsb)),
+        "lsb runs over the centre"
+    );
+}
+
+#[test]
 fn a_decoder_on_the_centre_is_not_clear_of_the_dc_term() {
     let on_the_centre = parked(1, 0.0);
     let beside_it = parked(2, 300_000.0);

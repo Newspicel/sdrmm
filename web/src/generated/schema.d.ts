@@ -356,6 +356,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channeltypes/band": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_channel_band"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat-accounts": {
         parameters: {
             query?: never;
@@ -2852,7 +2868,10 @@ export interface components {
             /** Format: int32 */
             device_set: number;
         };
-        /** @description Lowest and highest occupied offset from the channel frequency, as its decoder lays it out. */
+        /**
+         * @description Lowest and highest occupied offset from the channel frequency, as its decoder lays it out.
+         *     The one way to place a channel: a sideband sits on its own side, never centred on a width.
+         */
         ChannelBand: {
             /** Format: double */
             high_hz: number;
@@ -2885,7 +2904,13 @@ export interface components {
         ChannelDescriptor: {
             /** @description One of the plain analog voice modes a channel cycles through when retyped by hotkey. */
             analog_voice?: boolean;
-            /** Format: double */
+            /** @description Where a fresh channel of this type sits around its frequency, as the decoder lays it out. */
+            band: components["schemas"]["ChannelBand"];
+            /**
+             * Format: double
+             * @description The widest signal the decoder takes, for sizing only. Where a channel sits around its
+             *     frequency is its `ChannelBand`, never this width centred.
+             */
             bandwidth_hz: number;
             calls?: components["schemas"]["CallGate"] | null;
             click?: components["schemas"]["ClickProfile"];
@@ -8956,6 +8981,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChannelTypesResponse"];
                 };
+            };
+        };
+    };
+    post_channel_band: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelParams"];
+            };
+        };
+        responses: {
+            /** @description Where these settings put a channel around its frequency */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelBand"];
+                };
+            };
+            /** @description Settings the decoder refuses */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
