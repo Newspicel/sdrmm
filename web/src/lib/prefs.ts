@@ -71,8 +71,10 @@ export function useUiScale(): number {
   return usePrefs().textSize / TEXT_SIZE.base;
 }
 
-/// Node faces keep their registry geometry in pixels at the design size. As rem it grows with the
-/// font size, so a face keeps its proportions at any size.
+/**
+ * Node faces keep their registry geometry in pixels at the design size. As rem it grows with the
+ * font size, so a face keeps its proportions at any size.
+ */
 export function rem(px: number): string {
   return `${px / 16}rem`;
 }

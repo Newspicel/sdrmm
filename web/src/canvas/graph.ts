@@ -182,6 +182,14 @@ function fixedWidth(face: Face): number {
   return Math.max(face.dial === true ? DIAL_MIN_W : FIT_MIN_W, face.width);
 }
 
+/** A face's size on screen while nobody resized it: its design size grown with the font size. */
+export function naturalSize(of: Faced, scale: number): NodeSize {
+  const { w, h } = nodeSize(of);
+  return h === undefined
+    ? { w: Math.round(w * scale) }
+    : { w: Math.round(w * scale), h: Math.round(h * scale) };
+}
+
 export function isResizable(of: Faced): boolean {
   return faceOf(of).height != null;
 }

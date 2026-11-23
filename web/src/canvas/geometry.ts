@@ -1,5 +1,5 @@
 import type { PatchGraph, PatchNode, Position, Size } from "../lib/types";
-import { isResizable, nodeOf, nodeSize } from "./graph";
+import { isResizable, naturalSize, nodeOf } from "./graph";
 
 export interface Geometry {
   position: Position;
@@ -13,8 +13,8 @@ export interface Placed {
   height?: number | null;
 }
 
-function geometryOf(placed: Placed, node: PatchNode): Geometry {
-  const natural = nodeSize(node);
+function geometryOf(placed: Placed, node: PatchNode, scale: number): Geometry {
+  const natural = naturalSize(node, scale);
   const { width: w, height: h } = placed;
   const resized =
     isResizable(node) && w != null && h != null && (w !== natural.w || h !== natural.h);
@@ -34,9 +34,11 @@ function sameGeometry(node: PatchNode, geometry: Geometry): boolean {
   );
 }
 
+/** Nodes whose place or size changed. A size equal to the face's own at `scale` is no resize. */
 export function movedGeometry(
   placed: readonly Placed[],
   graph: PatchGraph,
+  scale: number,
 ): ReadonlyMap<string, Geometry> {
   const moved = new Map<string, Geometry>();
   for (const held of placed) {
@@ -44,7 +46,7 @@ export function movedGeometry(
     if (node === undefined) {
       continue;
     }
-    const geometry = geometryOf(held, node);
+    const geometry = geometryOf(held, node, scale);
     if (!sameGeometry(node, geometry)) {
       moved.set(held.id, geometry);
     }

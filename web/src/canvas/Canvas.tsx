@@ -22,6 +22,7 @@ import { Button } from "../components/BaseControls";
 import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
 import { zoomSettled } from "../gl/drawLoop";
+import { useUiScale } from "../lib/prefs";
 import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
 import {
   isFiniteNumber,
@@ -42,8 +43,8 @@ import { movedGeometry, withGeometry } from "./geometry";
 import {
   isPinned,
   isResizable,
+  naturalSize,
   nodeOf,
-  nodeSize,
   patchNode,
   pin,
   removeEdge,
@@ -80,8 +81,9 @@ const DELETE_KEYS = ["Backspace", "Delete"];
 export function Canvas() {
   const workspace = useWorkspaceContext();
   const grid = useGridStep();
+  const scale = useUiScale();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<FlowData>>(
-    toFlowNodes(workspace.graph),
+    toFlowNodes(workspace.graph, scale),
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState(
     toFlowEdges(workspace.graph, workspace.context),
@@ -98,20 +100,22 @@ export function Canvas() {
   );
 
   const held = useRef<PatchGraph>(workspace.graph);
+  const heldScale = useRef(scale);
   const context = workspace.context;
   useEffect(() => {
-    if (sameGraph(held.current, workspace.graph)) {
+    if (sameGraph(held.current, workspace.graph) && heldScale.current === scale) {
       setEdges(toFlowEdges(workspace.graph, context));
       return;
     }
     held.current = workspace.graph;
+    heldScale.current = scale;
     const fresh = pasted.current;
     const arrived = workspace.graph.nodes.some((node) => fresh.has(node.id));
     if (arrived) {
       pasted.current = new Set();
     }
     setNodes((previous) =>
-      toFlowNodes(workspace.graph).map((node) => {
+      toFlowNodes(workspace.graph, scale).map((node) => {
         const mounted = previous.find((candidate) => candidate.id === node.id);
         const selected = arrived ? fresh.has(node.id) : (mounted?.selected ?? false);
         if (mounted === undefined) {
@@ -122,7 +126,7 @@ export function Canvas() {
       }),
     );
     setEdges(toFlowEdges(workspace.graph, context));
-  }, [workspace.graph, context, setNodes, setEdges]);
+  }, [workspace.graph, context, scale, setNodes, setEdges]);
 
   const focus = workspace.selected;
   useEffect(() => {
@@ -137,7 +141,7 @@ export function Canvas() {
 
   const edit = workspace.edit;
   const commitGeometry = useCallback(() => {
-    const moved = movedGeometry(flowRef.current, held.current);
+    const moved = movedGeometry(flowRef.current, held.current, heldScale.current);
     if (moved.size === 0) {
       return;
     }
@@ -502,9 +506,9 @@ function ContextMenu({
   );
 }
 
-function toFlowNodes(graph: PatchGraph): Node<FlowData>[] {
+function toFlowNodes(graph: PatchGraph, scale: number): Node<FlowData>[] {
   return graph.nodes.map((node) => {
-    const size = (isResizable(node) ? node.size : null) ?? nodeSize(node);
+    const size = (isResizable(node) ? node.size : null) ?? naturalSize(node, scale);
     return {
       id: node.id,
       type: flowTypeOf(node.kind),
