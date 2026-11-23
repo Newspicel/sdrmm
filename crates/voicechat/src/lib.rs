@@ -3,6 +3,7 @@
 
 mod discord;
 mod link;
+mod matrix;
 mod opus;
 mod teamspeak;
 
