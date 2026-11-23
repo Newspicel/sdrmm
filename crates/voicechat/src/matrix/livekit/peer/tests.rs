@@ -102,6 +102,27 @@ async fn two_peers_trade_opus_on_loopback() {
 }
 
 #[tokio::test]
+async fn a_peer_is_up_once_media_can_flow() {
+    let (publisher, mut subscriber) = connected_pair().await;
+    let mut up = publisher.up();
+    assert!(!*up.borrow());
+    let (unheard, _unheard_rx) = mpsc::channel(64);
+    let (_silence, mut idle) = mpsc::channel(1);
+    let (heard, _incoming) = mpsc::channel(64);
+    let (sending, talking) = talk(publisher, unheard);
+    let hearing = tokio::spawn(async move { subscriber.run(&mut idle, &heard).await });
+
+    timeout(PATIENCE, up.wait_for(|up| *up))
+        .await
+        .unwrap()
+        .unwrap();
+
+    talking.abort();
+    sending.abort();
+    hearing.abort();
+}
+
+#[tokio::test]
 async fn subscriber_answers_an_offer_with_audio() {
     let (_, offer) = sfu_offer("PA_alice|TR_alice", "TR_alice");
 
@@ -164,7 +185,7 @@ async fn the_publisher_offers_a_send_only_mic_and_data() {
 }
 
 #[tokio::test]
-async fn an_answering_peer_starts_its_own_checks() {
+async fn an_answering_peer_sends_checks() {
     let sfu = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .unwrap();
