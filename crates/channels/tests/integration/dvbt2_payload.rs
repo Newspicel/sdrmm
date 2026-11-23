@@ -157,6 +157,58 @@ fn independent_rf_reaches_transport_packets_without_allocations() {
 }
 
 #[test]
+fn a_radio_clock_far_off_the_transmitter_is_caught_at_the_first_p2() {
+    let original = reference(include_bytes!("../../../../fixtures/dvbt2/rf_32k_qpsk.f32"));
+    let expected = include_bytes!("../../../../fixtures/dvbt2/rf_32k_qpsk.ts");
+    let mut radio = sdrmm_dsp::FracResampler::trimmable(0.9);
+    radio.set_ratio(1.0 + 80e-6).unwrap();
+    let mut iq = Vec::with_capacity(original.len() + 1024);
+    radio.process(&original, &mut iq);
+    let mut receiver = sdrmm_channels::dvbt2::receiver::Receiver::new(None).unwrap();
+    let mut packets = Vec::with_capacity(4096);
+    for chunk in iq.chunks(1009) {
+        receiver.push(chunk, &mut packets);
+    }
+    assert!(
+        (receiver.clock_error() - 80e-6).abs() < 10e-6,
+        "{} ppm",
+        receiver.clock_error() * 1e6
+    );
+    assert!(!packets.is_empty(), "{:?}", receiver.last_error);
+    assert!(expected.ends_with(&packets.concat()));
+}
+
+#[test]
+fn a_strong_echo_inside_the_guard_loses_no_frame() {
+    for (bytes, expected, delay) in [
+        (
+            include_bytes!("../../../../fixtures/dvbt2/rf_2k_qpsk.f32").as_slice(),
+            include_bytes!("../../../../fixtures/dvbt2/rf_2k_qpsk.ts").as_slice(),
+            358,
+        ),
+        (
+            include_bytes!("../../../../fixtures/dvbt2/rf_32k_media.f32").as_slice(),
+            include_bytes!("../../../../fixtures/dvbt2/rf_32k_media.ts").as_slice(),
+            179,
+        ),
+    ] {
+        let original = reference(bytes);
+        let echo = |i: usize| {
+            i.checked_sub(delay)
+                .map_or(Complex::default(), |j| original[j] * 0.8)
+        };
+        let iq: Vec<_> = (0..original.len()).map(|i| original[i] + echo(i)).collect();
+        let mut receiver = sdrmm_channels::dvbt2::receiver::Receiver::new(None).unwrap();
+        let mut packets = Vec::with_capacity(4096);
+        for chunk in iq.chunks(1013) {
+            receiver.push(chunk, &mut packets);
+        }
+        assert_eq!(receiver.errors, 0, "{delay}: {:?}", receiver.last_error);
+        assert_eq!(packets.concat(), expected, "{delay}");
+    }
+}
+
+#[test]
 fn rf_acquisition_survives_noise_echoes_frequency_error_and_reacquisition() {
     let original = reference(include_bytes!("../../../../fixtures/dvbt2/rf_2k_qpsk.f32"));
     let expected = include_bytes!("../../../../fixtures/dvbt2/rf_2k_qpsk.ts");

@@ -10,7 +10,8 @@ use super::{
 };
 use sdrmm_modem::dvb::PACKET;
 
-const TIME_CAPACITY: usize = 1 << 19;
+/// The time interleaving memory EN 302 755 clause 6.5 allows a PLP: 2^19 + 2^15 cells.
+const TIME_CAPACITY: usize = (1 << 19) + (1 << 15);
 const TAP_CELLS: usize = 4096;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -314,13 +315,8 @@ impl Scheduler {
             self.deinterleaved[..count].copy_from_slice(&self.buffered);
             self.deinterleaved_gains[..count].copy_from_slice(&self.buffered_gains);
         }
-        for index in 0..blocks {
-            let first = index * plp.coding.cells();
-            let block = if plp.time_length == 0 {
-                self.time_block
-            } else {
-                index
-            };
+        for block in 0..blocks {
+            let first = block * plp.coding.cells();
             self.keep_tap(plp, first, block);
             let result = self.decoders[self.decoder].2.decode_weighted(
                 &self.deinterleaved[first..first + plp.coding.cells()],

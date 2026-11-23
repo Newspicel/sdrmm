@@ -70,7 +70,8 @@ fn transmitted(plp: Plp) -> (Vec<Complex<f32>>, Vec<[u8; PACKET]>) {
         let mut source = Vec::new();
         for block in 0..blocks {
             let (message, packet) = payload(plp.coding, counter);
-            source.extend(encode(plp.coding, &message, block));
+            let shift_index = if plp.time_length == 0 { 0 } else { block };
+            source.extend(encode(plp.coding, &message, shift_index));
             expected.push(packet);
             counter += 1;
         }
@@ -148,4 +149,27 @@ fn missing_slices_and_missing_interleaving_frames_are_reported() {
     scheduler.begin(pre, &post, None).unwrap();
     assert_eq!(scheduler.end(), Err(DecodeError::Discontinuity));
     assert_eq!(scheduler.begin(pre, &post, Some(99)), Err(DecodeError::Plp));
+}
+
+#[test]
+fn time_blocks_fill_the_whole_interleaving_memory() {
+    let mut scheduler = Scheduler::new().unwrap();
+    let (pre, mut post, mut plp) = configuration(1, false, 1);
+    plp.coding = Coding {
+        frame: Frame::Normal,
+        rate: Rate::R2_3,
+        constellation: Constellation::Qam256,
+        rotated: true,
+        lite: false,
+    };
+    for (blocks, outcome) in [(68, Ok(())), (69, Err(DecodeError::Capacity))] {
+        plp.blocks = blocks;
+        plp.max_blocks = blocks;
+        post.plps[0] = Some(plp);
+        assert_eq!(
+            scheduler.begin(pre, &post, None),
+            outcome,
+            "{blocks} blocks"
+        );
+    }
 }

@@ -106,6 +106,50 @@ fn p1_acquires_all_preamble_codes_with_fractional_and_integer_offsets() {
 }
 
 #[test]
+fn a_p1_whose_copies_drown_still_acquires_on_its_signalling() {
+    let preamble = Preamble { s1: 0, s2: 10 };
+    let mut samples = p1(preamble);
+    let level = (samples.iter().map(Complex::norm_sqr).sum::<f32>() / 2048.0).sqrt();
+    let mut state = 0x2545_f491_u32;
+    let mut noise = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state as f32 / u32::MAX as f32
+    };
+    let (copy_c, rest) = samples.split_at_mut(542);
+    for sample in copy_c.iter_mut().chain(&mut rest[1024..]) {
+        *sample += Complex::from_polar(3.0 * level * noise().sqrt(), TAU * noise());
+    }
+    let detection = Acquisition::default().find(&samples).unwrap();
+    assert_eq!(detection.preamble, preamble);
+}
+
+#[test]
+fn a_symbol_tail_slipped_by_the_radio_clock_shows_as_the_prefix_lag() {
+    let (fft, guard) = (32768, 256);
+    let mut state = 0x9e37_79b9_u32;
+    let mut noise = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state as f32 / u32::MAX as f32 - 0.5
+    };
+    for slip in [-4_isize, 0, 3] {
+        let mut symbol: Vec<_> = (0..fft + guard + 16)
+            .map(|_| Complex::new(noise(), noise()))
+            .collect();
+        for i in 0..guard {
+            symbol[(fft as isize + slip) as usize + i] = symbol[i];
+        }
+        let (quality, residual, lag) = super::receiver::lagged_prefix(&symbol, fft, guard, 0.0);
+        assert!(quality > 0.9, "{slip}: quality {quality}");
+        assert!(residual.abs() < 1e-6, "{slip}: residual {residual}");
+        assert!((lag - slip as f64).abs() < 0.05, "{slip}: lag {lag}");
+    }
+}
+
+#[test]
 fn p1_ignores_silence_and_nonfinite_samples() {
     let mut acquisition = Acquisition::default();
     assert!(acquisition.find(&vec![Complex::default(); 4096]).is_none());

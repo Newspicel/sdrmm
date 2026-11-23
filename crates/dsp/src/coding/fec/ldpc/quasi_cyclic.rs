@@ -3,7 +3,6 @@ use super::{Kernel, ParityCheck};
 const TARGET: f32 = 1_024.0;
 const CEILING: f32 = i16::MAX as f32;
 const LANES: usize = 16;
-
 /// One `size`-square circulant of a quasi-cyclic parity-check matrix: row `lane` of its layer
 /// checks variable `base + (lane + shift) % size`. An `open` circulant leaves out the rows
 /// that wrap around, as the first column of an accumulator staircase does.
@@ -199,8 +198,12 @@ impl QuasiCyclic {
     }
 
     /// Sweeps every layer until a sweep finds every check holding and flips no total, at most
-    /// `limit + 1` sweeps. Returns the sweeps that changed something.
+    /// `limit + 1` sweeps. Returns the sweeps that changed something; a word whose hard
+    /// decisions already check takes none.
     pub fn run(&mut self, limit: usize) -> Option<usize> {
+        if self.hard_decisions_check() {
+            return Some(0);
+        }
         (0..=limit).find(|_| {
             let sweep = self.sweep();
             sweep.unsatisfied == 0 && !sweep.flipped
@@ -212,6 +215,25 @@ impl QuasiCyclic {
         for (bit, &total) in hard.iter_mut().zip(&self.totals) {
             *bit = total < 0;
         }
+    }
+
+    /// Whether every check holds on the signs of the totals, at a fraction of a sweep's cost.
+    fn hard_decisions_check(&mut self) -> bool {
+        let size = self.layout.size;
+        let (row, parity) = (
+            &mut self.gathered[..self.stride],
+            &mut self.extrinsic[..self.stride],
+        );
+        (0..self.layout.layers()).all(|layer| {
+            parity.fill(0);
+            for &circulant in self.layout.layer(layer) {
+                gather(&self.totals, circulant, size, row);
+                for (check, &total) in parity.iter_mut().zip(row.iter()) {
+                    *check ^= total;
+                }
+            }
+            parity[..size].iter().all(|&check| check >= 0)
+        })
     }
 
     fn sweep(&mut self) -> Sweep {

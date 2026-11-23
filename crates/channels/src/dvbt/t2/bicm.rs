@@ -1,6 +1,6 @@
 use num_complex::Complex;
 
-use super::{Coding, Constellation, DecodeError, interleave};
+use super::{Coding, Constellation, DecodeError, demap::Demapper, interleave};
 use sdrmm_modem::dvb::{bb, bch::Bch, ldpc::Ldpc};
 
 const MIN_GAIN: f32 = 1e-3;
@@ -9,7 +9,7 @@ pub struct Decoder {
     coding: Coding,
     cell_map: Vec<usize>,
     bit_map: Vec<usize>,
-    points: Vec<Complex<f32>>,
+    demapper: Demapper,
     llrs: Vec<f32>,
     word: Vec<bool>,
     ldpc: Ldpc,
@@ -29,15 +29,11 @@ impl Decoder {
         let bch = Bch::new(coding.frame, coding.correct(), coding.message());
         let mut cell_map = interleave::cell_permutation(coding.cells())?;
         cell_map.reserve(coding.frame.length() / 2 - cell_map.len());
-        let mut points = Vec::with_capacity(256);
-        points.extend(
-            (0..1 << coding.constellation.bits()).map(|word| point(word, coding.constellation)),
-        );
         Ok(Self {
             coding,
             cell_map,
             bit_map: interleave::bit_permutation(coding)?,
-            points,
+            demapper: Demapper::new(coding.constellation)?,
             llrs: vec![0.0; coding.frame.length()],
             word: Vec::with_capacity(coding.information()),
             ldpc: Ldpc::with_addresses(coding.frame, coding.addresses()?)
@@ -57,10 +53,7 @@ impl Decoder {
         self.cell_map.resize(coding.cells(), 0);
         interleave::cell_permutation_into(&mut self.cell_map)?;
         interleave::bit_permutation_into(coding, &mut self.bit_map)?;
-        self.points.clear();
-        self.points.extend(
-            (0..1 << coding.constellation.bits()).map(|word| point(word, coding.constellation)),
-        );
+        self.demapper = Demapper::new(coding.constellation)?;
         self.coding = coding;
         Ok(())
     }
@@ -110,12 +103,18 @@ impl Decoder {
         let rotation = self.rotation();
         let bits = self.coding.constellation.bits();
         let gain = |index: usize| gains.map_or(1.0, |gains| gains[index].max(MIN_GAIN));
-        for i in 0..cells.len() {
+        let precision = noise_variance.recip();
+        for (i, targets) in self
+            .bit_map
+            .chunks_exact(bits)
+            .take(cells.len())
+            .enumerate()
+        {
             let (p, here, there) = self.cell(cells, shift, rotation, i);
             let reliability = f32::midpoint(gain(here), gain(there));
-            let soft = soften(p, &self.points, bits, noise_variance / reliability);
-            for (bit, &llr) in soft[..bits].iter().enumerate() {
-                self.llrs[self.bit_map[i * bits + bit]] = llr;
+            let soft = self.demapper.soften(p, reliability * precision);
+            for (&target, &llr) in targets.iter().zip(&soft) {
+                self.llrs[target] = llr;
             }
         }
         self.word.clear();
@@ -165,16 +164,26 @@ impl Decoder {
         rotation: Complex<f32>,
         i: usize,
     ) -> (Complex<f32>, usize, usize) {
-        let here = (self.cell_map[i] + shift) % cells.len();
+        let length = cells.len();
+        let here = wrap(self.cell_map[i] + shift, length);
         if !self.coding.rotated {
             return (cells[here], here, here);
         }
-        let there = (self.cell_map[(i + 1) % cells.len()] + shift) % cells.len();
+        let there = wrap(self.cell_map[wrap(i + 1, length)] + shift, length);
         (
             Complex::new(cells[here].re, cells[there].im) * rotation,
             here,
             there,
         )
+    }
+}
+
+/// `index` back inside `0..length`, for an index under twice the length.
+const fn wrap(index: usize, length: usize) -> usize {
+    if index >= length {
+        index - length
+    } else {
+        index
     }
 }
 

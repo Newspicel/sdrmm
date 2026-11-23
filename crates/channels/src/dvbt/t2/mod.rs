@@ -1,6 +1,7 @@
 pub mod acquire;
 pub mod bicm;
 mod common;
+mod demap;
 mod en302755;
 pub mod equalize;
 pub mod interleave;

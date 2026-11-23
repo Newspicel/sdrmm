@@ -2,7 +2,7 @@ use std::f32::consts::TAU;
 
 use num_complex::Complex;
 use sdrmm_decoder::SymbolTap;
-use sdrmm_dsp::{FracResampler, math::fft::Transform};
+use sdrmm_dsp::{FracResampler, math::fft::Transform, tuning::nco::Nco};
 use sdrmm_modem::constellation::Constellation as Table;
 
 use super::{
@@ -19,11 +19,21 @@ use sdrmm_modem::dvb::PACKET;
 
 /// Share of the rate the clock trim keeps flat, past the widest T2 spectrum.
 const TRIM_KEEP: f64 = 0.9;
+/// A P2 prefix lag past this many samples is the radio's clock, not noise, and trims it at once.
+const PREFIX_LAG_FLOOR: f64 = 0.3;
+/// Half a P1 carrier in radians a sample: the furthest a P1 estimate may sit from the tracked
+/// frequency and still mean the same carrier.
+const P1_FREQUENCY_SLACK: f32 = TAU * 0.5 / 1024.0;
+/// Samples of a frame's last symbol left for the next P1 search, so a window that tracked a
+/// few samples late, as echoes pull it, cannot eat into the P1 it has to find.
+const P1_LEAD: usize = 64;
+/// A data symbol's prefix correlating below this was smeared by an echo or a fade. Its frame's
+/// L1 already fixes where it starts, so it keeps that timing and leaves the pilots to judge it.
+const SMEARED_PREFIX: f32 = 0.12;
 /// Share of each symbol's measured clock error the trim takes on.
 const TRIM_GAIN: f64 = 0.05;
 /// The furthest a receiver clock is trusted to run from the transmitter's.
 const MAX_CLOCK_ERROR: f64 = 300e-6;
-
 struct Mode {
     fft: Transform,
     map: Mapping,
@@ -58,6 +68,7 @@ pub struct Receiver {
     l1: Vec<Complex<f32>>,
     state: State,
     phase: f32,
+    derotation: Nco,
     selected: Option<u8>,
     pub parameters: Option<Pre>,
     pub frequency: f32,
@@ -103,6 +114,7 @@ impl Receiver {
             l1: vec![Complex::default(); 22432],
             state: State::Search,
             phase: 0.0,
+            derotation: Nco::new(0.0, 1.0),
             selected,
             parameters: None,
             frequency: 0.0,
@@ -132,10 +144,13 @@ impl Receiver {
         self.locked = false;
         self.lag = 0.0;
         self.last_frame = None;
-        self.clock = FracResampler::trimmable(TRIM_KEEP);
+        self.clock.reset();
         self.clock_error = 0.0;
         self.equalizer.reset();
         self.scheduler.reset();
+        if self.clock.set_ratio(1.0).is_err() {
+            self.fail(DecodeError::Parameters);
+        }
     }
 
     pub fn select(&mut self, selected: Option<u8>) {
@@ -238,8 +253,9 @@ impl Receiver {
                 }
                 if let Some(detection) = self.acquisition.find(&self.pending) {
                     self.origin = self.consumed + detection.start as u64;
+                    let followed = self.last_frame.is_some();
                     self.count_lost_frames();
-                    self.frequency = detection.frequency;
+                    self.frequency = self.next_frequency(detection.frequency, followed);
                     self.phase = 0.0;
                     self.consume(detection.start + 2048);
                     if detection.preamble.fft().is_ok() {
@@ -273,6 +289,7 @@ impl Receiver {
             return Ok(false);
         }
         let mut last = DecodeError::Acquisition;
+        let mut clock_measured = false;
         for code in [0, 1, 2, 3, 4, 5, 6] {
             let guard = match code {
                 0 => fft / 32,
@@ -286,9 +303,13 @@ impl Receiver {
             if !guard_allowed(preamble, code) {
                 continue;
             }
-            let (quality, residual) = prefix(&self.pending, 0, fft, guard, self.frequency);
+            let (quality, residual, lag) = lagged_prefix(&self.pending, fft, guard, self.frequency);
             if quality < 0.3 {
                 continue;
+            }
+            if !clock_measured {
+                clock_measured = true;
+                self.trim_clock_by_prefix(lag, fft)?;
             }
             let frequency = self.frequency;
             self.frequency += residual;
@@ -408,20 +429,13 @@ impl Receiver {
         if self.pending.len() < length + 16 {
             return Ok(false);
         }
-        let (mut quality, mut residual) = prefix(&self.pending, 0, fft, guard, self.frequency);
-        let mut adjustment = 0_isize;
-        let margin = (guard / 8).clamp(1, 8) as isize - 1;
-        for offset in -margin..=margin {
-            let (candidate, error) = prefix(&self.pending, offset, fft, guard, self.frequency);
-            if candidate > quality + 0.002 {
-                quality = candidate;
-                residual = error;
-                adjustment = offset;
-            }
-        }
-        if quality < 0.12 {
-            return Err(DecodeError::Acquisition);
-        }
+        let (quality, residual, adjustment) =
+            sliding_prefix(&self.pending, fft, guard, self.frequency);
+        let (residual, mut adjustment) = if quality < SMEARED_PREFIX {
+            (0.0, 0)
+        } else {
+            (residual, adjustment)
+        };
         adjustment += self.follow_drift(fft);
         self.trim_clock(fft, length)?;
         self.frequency += residual * 0.2;
@@ -464,16 +478,19 @@ impl Receiver {
         if self.scheduler.report().packets > previous {
             self.locked = true;
         }
-        self.consume((length as isize + adjustment) as usize);
+        let step = (length as isize + adjustment) as usize;
         if symbol + 1 == pre.preamble.p2_symbols()? + pre.data_symbols {
+            self.consume(step - P1_LEAD);
             self.scheduler.end()?;
-            self.last_frame = Some((self.consumed + self.fef as u64, self.consumed - self.origin));
+            let end = self.consumed + P1_LEAD as u64;
+            self.last_frame = Some((end + self.fef as u64, end - self.origin));
             self.state = if self.fef > 0 {
                 State::Skip(self.fef)
             } else {
                 State::Search
             };
         } else {
+            self.consume(step);
             self.state = State::Data {
                 pre,
                 symbol: symbol + 1,
@@ -492,6 +509,31 @@ impl Receiver {
         self.clock
             .set_ratio((1.0 + self.clock_error).recip())
             .map_err(|_| DecodeError::Parameters)
+    }
+
+    /// Trims the clock by how far the P2 symbol's tail sat from its prefix. A clock far enough
+    /// off to blur the 32K symbols the pilots track would never let them start.
+    fn trim_clock_by_prefix(&mut self, lag: f64, fft: usize) -> Result<(), DecodeError> {
+        if lag.abs() < PREFIX_LAG_FLOOR {
+            return Ok(());
+        }
+        let error = lag / fft as f64;
+        self.clock_error = (self.clock_error + error * (1.0 + self.clock_error))
+            .clamp(-MAX_CLOCK_ERROR, MAX_CLOCK_ERROR);
+        self.clock
+            .set_ratio((1.0 + self.clock_error).recip())
+            .map_err(|_| DecodeError::Parameters)
+    }
+
+    /// The frequency to open a frame on. A frame that follows a decoded one keeps the offset its
+    /// pilots tracked to a fraction of a carrier, unless the P1 says it moved; the P1 alone can
+    /// miss by half a 32K carrier in noise and echoes, enough to slip the P2 a whole carrier.
+    fn next_frequency(&self, detected: f32, followed: bool) -> f32 {
+        if followed && (detected - self.frequency).abs() < P1_FREQUENCY_SLACK {
+            self.frequency
+        } else {
+            detected
+        }
     }
 
     /// Counts the frames that passed between the last one decoded and this P1 as bad, so a frame
@@ -520,10 +562,12 @@ impl Receiver {
 
     fn transform(&mut self, mode: usize, start: usize) {
         let fft = self.modes[mode].map.fft;
-        for (i, p) in self.spectrum[..fft].iter_mut().enumerate() {
-            *p = self.pending[start + i]
-                * Complex::from_polar(1.0, -self.phase - self.frequency * (start + i) as f32);
-        }
+        let turns = -f64::from(self.frequency) / std::f64::consts::TAU;
+        self.derotation.set_turns(turns);
+        self.derotation
+            .set_phase(turns * start as f64 - f64::from(self.phase) / std::f64::consts::TAU);
+        self.derotation
+            .mix_into(&self.pending[start..start + fft], &mut self.spectrum[..fft]);
         self.modes[mode].fft.process(&mut self.spectrum[..fft]);
     }
 
@@ -553,25 +597,104 @@ fn guard_allowed(preamble: Preamble, code: u8) -> bool {
     }
 }
 
-fn prefix(
+/// The normalized cyclic prefix correlation at every start a few samples either side of the
+/// guard, its sums slid one sample at a time. A start replaces the nominal one only by beating it clearly. Returns the quality,
+/// frequency residual and the start's offset.
+fn sliding_prefix(
     iq: &[Complex<f32>],
-    start: isize,
     fft: usize,
     guard: usize,
     frequency: f32,
-) -> (f32, f32) {
-    let mut correlation = Complex::<f32>::default();
-    let mut power = [0.0_f32; 2];
+) -> (f32, f32, isize) {
     let edge = (guard / 8).max(1);
-    for i in (start + edge as isize) as usize..(start + (guard - edge) as isize) as usize {
-        correlation += iq[i + fft] * iq[i].conj();
-        power[0] += iq[i].norm_sqr();
-        power[1] += iq[i + fft].norm_sqr();
+    let margin = (guard / 8).clamp(1, 8) - 1;
+    let width = guard - 2 * edge;
+    let first = edge - margin;
+    let pair = |at: usize| (iq[at], iq[at + fft]);
+    let (mut correlation, mut head, mut tail) = (Complex::<f32>::default(), 0.0_f32, 0.0_f32);
+    for (a, b) in (first..first + width).map(pair) {
+        correlation += b * a.conj();
+        head += a.norm_sqr();
+        tail += b.norm_sqr();
     }
-    let quality = correlation.norm_sqr() / (power[0] * power[1]).max(1e-20);
+    let score = |correlation: Complex<f32>, head: f32, tail: f32| {
+        correlation.norm_sqr() / (head * tail).max(1e-20)
+    };
+    let mut scores = [(0.0_f32, Complex::<f32>::default()); 15];
+    for (index, slot) in scores[..=2 * margin].iter_mut().enumerate() {
+        *slot = (score(correlation, head, tail), correlation);
+        if index < 2 * margin {
+            let ((a, b), (c, d)) = (pair(first + index), pair(first + index + width));
+            correlation += d * c.conj() - b * a.conj();
+            head += c.norm_sqr() - a.norm_sqr();
+            tail += d.norm_sqr() - b.norm_sqr();
+        }
+    }
+    let mut best = margin;
+    for (index, &(quality, _)) in scores[..=2 * margin].iter().enumerate() {
+        if quality > scores[best].0 + 0.002 {
+            best = index;
+        }
+    }
+    let (quality, correlation) = scores[best];
     let residual =
         (correlation * Complex::from_polar(1.0, -frequency * fft as f32)).arg() / fft as f32;
-    (quality, residual)
+    (quality, residual, best as isize - margin as isize)
+}
+
+/// Lags [`lagged_prefix`] can try: the 32K tail moved as far as [`MAX_CLOCK_ERROR`] allows.
+const MAX_LAGS: usize = 21;
+
+/// The normalized cyclic prefix correlation with the symbol's tail searched a few samples either side of `fft`, as far as
+/// [`MAX_CLOCK_ERROR`] can move it. Returns the quality and frequency residual at the best lag,
+/// and that lag to a fraction of a sample.
+pub(super) fn lagged_prefix(
+    iq: &[Complex<f32>],
+    fft: usize,
+    guard: usize,
+    frequency: f32,
+) -> (f32, f32, f64) {
+    let reach = ((fft as f64 * MAX_CLOCK_ERROR).ceil() as usize).min(MAX_LAGS / 2);
+    let edge = (guard / 8).max(1);
+    let window = &iq[edge..guard - edge];
+    let head: f32 = window.iter().map(Complex::norm_sqr).sum();
+    let mut scores = [(0.0_f32, Complex::<f32>::default()); MAX_LAGS];
+    for (offset, score) in scores[..=2 * reach].iter_mut().enumerate() {
+        let (mut correlation, mut power) = (Complex::default(), 0.0_f32);
+        for (a, b) in window.iter().zip(&iq[edge + fft + offset - reach..]) {
+            correlation += b * a.conj();
+            power += b.norm_sqr();
+        }
+        *score = (
+            correlation.norm_sqr() / (head * power).max(1e-20),
+            correlation,
+        );
+    }
+    let mut best = reach;
+    for (offset, score) in scores[..=2 * reach].iter().enumerate() {
+        if score.0 > scores[best].0 {
+            best = offset;
+        }
+    }
+    let fraction = if best > 0 && best < 2 * reach {
+        let (before, here, after) = (scores[best - 1].0, scores[best].0, scores[best + 1].0);
+        let curve = before - 2.0 * here + after;
+        if curve < 0.0 {
+            (0.5 * (before - after) / curve).clamp(-0.5, 0.5)
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+    let (quality, correlation) = scores[best];
+    let span = (fft + best - reach) as f32;
+    let residual = (correlation * Complex::from_polar(1.0, -frequency * span)).arg() / span;
+    (
+        quality,
+        residual,
+        best as f64 - reach as f64 + f64::from(fraction),
+    )
 }
 
 /// The four PLP grids, indexed by bits per cell over two, less one.

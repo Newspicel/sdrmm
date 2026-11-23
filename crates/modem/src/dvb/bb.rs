@@ -1,4 +1,4 @@
-use sdrmm_dsp::{Prbs, crc8_msb, pack_msb};
+use sdrmm_dsp::{Prbs, crc8_msb_table, crc8_msb_tabled, pack_msb};
 
 use super::{DISPERSAL, PACKET, SYNC};
 
@@ -6,6 +6,7 @@ pub const HEADER_BYTES: usize = 10;
 pub const HEADER_BITS: usize = HEADER_BYTES * 8;
 pub const USER_PACKET_BITS: usize = PACKET * 8;
 const CRC_POLY: u8 = 0xD5;
+const CRC_TABLE: [u8; 256] = crc8_msb_table(CRC_POLY);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum StreamKind {
@@ -55,7 +56,7 @@ impl StreamKind {
 
 #[must_use]
 pub fn crc8(data: &[u8]) -> u8 {
-    crc8_msb(CRC_POLY, 0, data)
+    crc8_msb_tabled(&CRC_TABLE, 0, data)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,8 +126,42 @@ impl BaseBandHeader {
     }
 }
 
+/// Bits in the longest frame any DVB code carries.
+const LONGEST_FRAME: usize = 64_800;
+
+/// The dispersal sequence over the longest frame, worked out at compile time so descrambling
+/// costs one XOR a bit.
+static DISPERSAL_BITS: [bool; LONGEST_FRAME] = {
+    let mut prbs = Prbs::new(DISPERSAL);
+    let mut bits = [false; LONGEST_FRAME];
+    let mut index = 0;
+    while index < LONGEST_FRAME {
+        bits[index] = prbs.next_bit();
+        index += 1;
+    }
+    bits
+};
+
+/// The dispersal generator once it has run past [`DISPERSAL_BITS`].
+const DISPERSAL_PAST_TABLE: Prbs = {
+    let mut prbs = Prbs::new(DISPERSAL);
+    let mut index = 0;
+    while index < LONGEST_FRAME {
+        prbs.next_bit();
+        index += 1;
+    }
+    prbs
+};
+
 pub fn scramble(bits: &mut [bool]) {
-    Prbs::new(DISPERSAL).apply_bits(bits);
+    let (tabled, rest) = bits.split_at_mut(bits.len().min(LONGEST_FRAME));
+    for (bit, &flip) in tabled.iter_mut().zip(&DISPERSAL_BITS) {
+        *bit ^= flip;
+    }
+    if !rest.is_empty() {
+        let mut generator = DISPERSAL_PAST_TABLE;
+        generator.apply_bits(rest);
+    }
 }
 
 pub fn unpack(bytes: &[u8], out: &mut Vec<bool>) {
@@ -262,6 +297,17 @@ impl BaseBandFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_dispersal_table_matches_the_running_generator() {
+        for length in [0, 1, 53_840, LONGEST_FRAME, LONGEST_FRAME + 333] {
+            let mut tabled = vec![true; length];
+            let mut running = tabled.clone();
+            scramble(&mut tabled);
+            Prbs::new(DISPERSAL).apply_bits(&mut running);
+            assert_eq!(tabled, running, "{length} bits");
+        }
+    }
 
     fn transport(count: usize, seed: u32) -> Vec<[u8; PACKET]> {
         let mut state = seed | 1;

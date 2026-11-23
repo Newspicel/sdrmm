@@ -29,8 +29,9 @@ pub use bch::{Bch, BchScratch, ShortBch};
 pub use burst::BurstCode;
 pub use chase::chase;
 pub use crc::{
-    crc_msb_bits, crc4_msb, crc8_msb, crc16_ccitt, crc16_genibus, crc16_genibus_ok, crc16_msb,
-    crc16_msb_bits, crc16_x25, crc24_reflected, crc32_ieee, crc32_mpeg, push_crc16_genibus,
+    crc_msb_bits, crc4_msb, crc8_msb, crc8_msb_table, crc8_msb_tabled, crc16_ccitt, crc16_genibus,
+    crc16_genibus_ok, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected, crc32_ieee,
+    crc32_mpeg, push_crc16_genibus,
 };
 pub use crc_parity::CrcParity;
 pub use digest::{lfsr_digest8, lfsr_digest8_reflect, lfsr_digest16};

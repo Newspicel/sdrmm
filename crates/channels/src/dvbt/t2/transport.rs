@@ -184,35 +184,85 @@ impl Transport {
         } else {
             return Ok(report);
         };
-        for (offset, &bit) in bits[80 + start..80 + header.data_bits].iter().enumerate() {
-            if header.high_efficiency && header.sync_distance == Some(start + offset) {
-                self.packet_clock = header
-                    .issy
-                    .and_then(|bytes| Clock::parse(&bytes, self.origin));
+        let field = &bits[80 + start..80 + header.data_bits];
+        let lead = ((8 - self.byte_bits) % 8).min(field.len());
+        let (head, body) = field.split_at(lead);
+        let (bytes, tail) = body.as_chunks::<8>();
+        let mut position = start;
+        for &bit in head {
+            self.take_bit(bit, position, header, output, &mut report)?;
+            position += 1;
+        }
+        for byte in bytes {
+            if header.high_efficiency
+                && header
+                    .sync_distance
+                    .is_some_and(|sync| (position..position + 8).contains(&sync))
+            {
+                self.mark_packet_start(header);
             }
-            self.byte = self.byte << 1 | u8::from(bit);
-            self.byte_bits += 1;
-            if self.byte_bits != 8 {
-                continue;
-            }
-            self.byte_bits = 0;
-            if self.filled == header.packet_bytes {
-                if crc8(&self.packet[1..self.filled]) == self.byte {
-                    self.emit(header, output, &mut report)?;
-                } else {
-                    report.crc_errors += 1;
-                }
-                self.filled = 0;
-            }
-            self.packet[self.filled] = self.byte;
-            self.filled += 1;
-            if header.high_efficiency && self.filled == header.packet_bytes {
-                self.emit(header, output, &mut report)?;
-                self.filled = 0;
-                self.packet_clock = None;
-            }
+            self.byte = byte
+                .iter()
+                .fold(0, |value, &bit| value << 1 | u8::from(bit));
+            self.take_byte(header, output, &mut report)?;
+            position += 8;
+        }
+        for &bit in tail {
+            self.take_bit(bit, position, header, output, &mut report)?;
+            position += 1;
         }
         Ok(report)
+    }
+
+    fn mark_packet_start(&mut self, header: Header) {
+        self.packet_clock = header
+            .issy
+            .and_then(|bytes| Clock::parse(&bytes, self.origin));
+    }
+
+    fn take_bit<S: Sink>(
+        &mut self,
+        bit: bool,
+        position: usize,
+        header: Header,
+        output: &mut S,
+        report: &mut Report,
+    ) -> Result<(), DecodeError> {
+        if header.high_efficiency && header.sync_distance == Some(position) {
+            self.mark_packet_start(header);
+        }
+        self.byte = self.byte << 1 | u8::from(bit);
+        self.byte_bits += 1;
+        if self.byte_bits != 8 {
+            return Ok(());
+        }
+        self.byte_bits = 0;
+        self.take_byte(header, output, report)
+    }
+
+    /// Files the assembled byte, emitting the packet it completes.
+    fn take_byte<S: Sink>(
+        &mut self,
+        header: Header,
+        output: &mut S,
+        report: &mut Report,
+    ) -> Result<(), DecodeError> {
+        if self.filled == header.packet_bytes {
+            if crc8(&self.packet[1..self.filled]) == self.byte {
+                self.emit(header, output, report)?;
+            } else {
+                report.crc_errors += 1;
+            }
+            self.filled = 0;
+        }
+        self.packet[self.filled] = self.byte;
+        self.filled += 1;
+        if header.high_efficiency && self.filled == header.packet_bytes {
+            self.emit(header, output, report)?;
+            self.filled = 0;
+            self.packet_clock = None;
+        }
+        Ok(())
     }
 
     fn emit<S: Sink>(

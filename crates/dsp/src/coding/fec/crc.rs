@@ -91,7 +91,40 @@ pub fn crc32_mpeg(data: &[u8]) -> u32 {
 
 #[must_use]
 pub fn crc8_msb(poly: u8, init: u8, data: &[u8]) -> u8 {
-    crc_msb_bits(poly.into(), 8, init.into(), msb_first(data)) as u8
+    data.iter()
+        .fold(init, |crc, &byte| shift_byte_msb(crc ^ byte, poly))
+}
+
+/// Every byte step of an MSB-first CRC-8, for a code checked often enough to want a table.
+#[must_use]
+pub const fn crc8_msb_table(poly: u8) -> [u8; 256] {
+    let mut table = [0u8; 256];
+    let mut n = 0;
+    while n < table.len() {
+        table[n] = shift_byte_msb(n as u8, poly);
+        n += 1;
+    }
+    table
+}
+
+/// [`crc8_msb`] through a table from [`crc8_msb_table`].
+#[must_use]
+pub fn crc8_msb_tabled(table: &[u8; 256], init: u8, data: &[u8]) -> u8 {
+    data.iter()
+        .fold(init, |crc, &byte| table[usize::from(crc ^ byte)])
+}
+
+const fn shift_byte_msb(mut crc: u8, poly: u8) -> u8 {
+    let mut bit = 0;
+    while bit < 8 {
+        crc = if crc & 0x80 != 0 {
+            (crc << 1) ^ poly
+        } else {
+            crc << 1
+        };
+        bit += 1;
+    }
+    crc
 }
 
 /// A four-bit CRC run as an eight-bit one with everything moved into the top nibble.
@@ -157,6 +190,19 @@ mod tests {
         );
         assert_eq!(crc16_msb(0x1021, 0xFFFF, CHECK), 0x29B1);
         assert_eq!(crc32_mpeg(CHECK), 0x0376_E6E7);
+    }
+
+    #[test]
+    fn a_tabled_crc8_agrees_with_the_bit_serial_one() {
+        let data: Vec<u8> = (0..=255u8).chain([0x47, 0x00, 0xff]).collect();
+        for poly in [0x07, 0x31, 0x1D, 0xD5] {
+            let table = crc8_msb_table(poly);
+            for init in [0x00, 0x5A, 0xFF] {
+                let serial = crc_msb_bits(poly.into(), 8, init.into(), msb_first(&data)) as u8;
+                assert_eq!(crc8_msb(poly, init, &data), serial);
+                assert_eq!(crc8_msb_tabled(&table, init, &data), serial);
+            }
+        }
     }
 
     #[test]

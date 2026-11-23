@@ -1,12 +1,17 @@
 use num_complex::Complex;
 
-use crate::filter::iir::one_pole_coeff;
+use crate::{filter::iir::one_pole_coeff, math::complex::sum_norm_sqr};
 
 const DETECT_TAU_S: f64 = 3e-3;
 const ATTACK_TAU_S: f64 = 5e-3;
 const RELEASE_TAU_S: f64 = 150e-3;
 const PEAK_HOLD_S: f64 = 1.0;
 const PEAK_FALL_DB_PER_S: f32 = 20.0;
+/// Samples a wide meter averages before each detector step: far shorter than its detector, so
+/// it reads the same while the serial filters run a hundredth as often.
+const WIDE_BLOCK: usize = 128;
+/// Rates from which the meter steps once a block.
+const WIDE_RATE: f64 = 2_000_000.0;
 
 pub const LEVEL_FLOOR_DB: f32 = -140.0;
 
@@ -20,13 +25,30 @@ pub fn power_db(power: f32, floor_db: f32) -> f32 {
     }
 }
 
+/// The one-pole coefficients of the detector and the attack and release smoothing.
+#[derive(Clone, Copy, Debug)]
+struct Smoothing {
+    detect: f32,
+    attack: f32,
+    release: f32,
+}
+
+impl Smoothing {
+    fn at(rate: f64) -> Self {
+        Self {
+            detect: one_pole_coeff(rate, DETECT_TAU_S),
+            attack: one_pole_coeff(rate, ATTACK_TAU_S),
+            release: one_pole_coeff(rate, RELEASE_TAU_S),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LevelMeter {
     mean: f32,
     power: f32,
-    detect: f32,
-    attack: f32,
-    release: f32,
+    sample: Smoothing,
+    block: Option<Smoothing>,
     peak_db: f32,
     held: u64,
     hold_samples: u64,
@@ -40,9 +62,8 @@ impl LevelMeter {
         Self {
             mean: 0.0,
             power: 0.0,
-            detect: one_pole_coeff(rate, DETECT_TAU_S),
-            attack: one_pole_coeff(rate, ATTACK_TAU_S),
-            release: one_pole_coeff(rate, RELEASE_TAU_S),
+            sample: Smoothing::at(rate),
+            block: (rate >= WIDE_RATE).then(|| Smoothing::at(rate / WIDE_BLOCK as f64)),
             peak_db: LEVEL_FLOOR_DB,
             held: 0,
             hold_samples: (PEAK_HOLD_S * rate).round() as u64,
@@ -55,14 +76,16 @@ impl LevelMeter {
             self.mean = 0.0;
             self.power = 0.0;
         }
-        for &x in iq {
-            self.mean += self.detect * (x.norm_sqr() - self.mean);
-            let coeff = if self.mean > self.power {
-                self.attack
-            } else {
-                self.release
-            };
-            self.power += coeff * (self.mean - self.power);
+        let mut rest = iq;
+        if let Some(block) = self.block {
+            let (blocks, tail) = iq.as_chunks::<WIDE_BLOCK>();
+            for chunk in blocks {
+                self.step(sum_norm_sqr(chunk) / WIDE_BLOCK as f32, block);
+            }
+            rest = tail;
+        }
+        for x in rest {
+            self.step(x.norm_sqr(), self.sample);
         }
         let now = self.level_db();
         if now >= self.peak_db {
@@ -75,6 +98,16 @@ impl LevelMeter {
                     (self.peak_db - self.peak_fall_per_sample * iq.len() as f32).max(now);
             }
         }
+    }
+
+    fn step(&mut self, power: f32, smoothing: Smoothing) {
+        self.mean += smoothing.detect * (power - self.mean);
+        let coeff = if self.mean > self.power {
+            smoothing.attack
+        } else {
+            smoothing.release
+        };
+        self.power += coeff * (self.mean - self.power);
     }
 
     #[must_use]
@@ -107,6 +140,25 @@ mod tests {
     }
 
     const RATE: f64 = 48_000.0;
+
+    #[test]
+    fn a_wide_meter_stepping_by_blocks_reads_as_one_stepping_by_samples() {
+        let rate = 64_000_000.0 / 7.0;
+        let mut blocked = LevelMeter::new(rate);
+        let mut sampled = blocked.clone();
+        sampled.block = None;
+        for round in 0..800 {
+            let tone = tone_at_db(if round < 300 { -30.0 } else { -9.0 }, 1_000);
+            blocked.process(&tone);
+            sampled.process(&tone);
+            if round > 5 {
+                assert!(
+                    (blocked.level_db() - sampled.level_db()).abs() < 0.2,
+                    "round {round}"
+                );
+            }
+        }
+    }
 
     fn tone_at_db(db: f32, len: usize) -> Vec<Complex<f32>> {
         let amp = 10f32.powf(db / 20.0);
