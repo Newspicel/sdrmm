@@ -556,7 +556,8 @@ nodes! {
             (Rotator(RotatorNode), "rotator", Output, "Rotator",
                 "Points an antenna", Role::Plain, Face::fit(340), [
                 input(CONTROL_PORT, Payload::control(POINT))
-                    .noted("A satellite, an aim or a sky scan"),
+                    .many()
+                    .noted("Satellites, aims or sky scans. The best pass in view wins"),
             ]),
             (Aim(AimNode), "aim", Tool, "Aim", "Points a rotator at a decoded position",
                 Role::Plain, Face::fit(340), [

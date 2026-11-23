@@ -372,14 +372,14 @@ fn drive(
         return;
     };
     let sky = SkyTrack {
+        name: status.name.clone(),
         look: steering.look,
         visible: status.visible,
         next_pass: status.next_pass,
         pass_track: status.pass_track.clone(),
     };
-    let on = runs(status, unix_now());
-    let mut acks = control.deliver(engine, patch, node, &ControlCommand::Run { on });
-    acks.extend(control.deliver(engine, patch, node, &ControlCommand::Point(sky)));
+    let due = runs(status, unix_now());
+    let (mut acks, on) = point_and_run(control, engine, patch, node, sky, due);
     let doppler =
         if let (Some(freq_hz), Some(doppler)) = (wiring.settings.downlink_hz, steering.doppler) {
             acks.extend(control.deliver(engine, patch, node, &ControlCommand::Tune { freq_hz }));
@@ -397,6 +397,29 @@ fn drive(
     take_acks(status, acks);
 }
 
+/// Points its rotators first: their acks say whether one follows it, and only then may its
+/// radios run. Gives the acks and whether it ran them.
+fn point_and_run(
+    control: &ControlBus,
+    rig: &dyn control::Rig,
+    patch: &ResolvedPatch,
+    node: &str,
+    sky: SkyTrack,
+    due: bool,
+) -> (Vec<ControlAck>, bool) {
+    let pointed = control.deliver(rig, patch, node, &ControlCommand::Point(sky));
+    let on = due && holds_a_rotator(&pointed);
+    let mut acks = control.deliver(rig, patch, node, &ControlCommand::Run { on });
+    acks.extend(pointed);
+    (acks, on)
+}
+
+/// A satellite wired to rotators runs its radios only while one of them follows it, so a
+/// recorder never takes a pass the antenna points away from.
+fn holds_a_rotator(pointed: &[ControlAck]) -> bool {
+    pointed.is_empty() || pointed.iter().any(|ack| !ack.outranked)
+}
+
 /// Between passes the radios it runs rest, and the decoders on them with it.
 fn runs(status: &SatelliteStatus, now: f64) -> bool {
     status.visible
@@ -410,6 +433,7 @@ fn take_acks(status: &mut SatelliteStatus, acks: Vec<ControlAck>) {
     for ack in acks {
         match ack.error {
             Some(error) => status.error = Some(format!("{}: {error}", ack.target)),
+            None if ack.outranked => {}
             None if !status.driving.contains(&ack.target) => status.driving.push(ack.target),
             None => {}
         }
@@ -491,6 +515,96 @@ mod tests {
                 port: to.1.to_owned(),
             },
         }
+    }
+
+    struct NoRig;
+
+    impl control::Rig for NoRig {
+        fn tune(&self, _: sdrmm_wire::ChannelAddr, _: f64) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn steer(&self, _: sdrmm_wire::ChannelAddr, _: DopplerSteer) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn sweep(
+            &self,
+            _: sdrmm_wire::ChannelAddr,
+            _: &control::Sweep<'_>,
+        ) -> Result<Option<sdrmm_wire::SweepStatus>, String> {
+            Ok(None)
+        }
+
+        fn halt(&self, _: sdrmm_wire::ChannelAddr, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn up(name: &str, peak_deg: f64) -> SkyTrack {
+        SkyTrack {
+            name: Some(name.to_owned()),
+            look: sdrmm_wire::SatelliteLook {
+                azimuth_deg: 90.0,
+                elevation_deg: 30.0,
+                range_km: 900.0,
+                range_rate_km_s: 1.0,
+            },
+            visible: true,
+            next_pass: Some(SatellitePass {
+                aos: Some(0),
+                los: Some(600),
+                max_elevation_deg: peak_deg,
+                max_at: 300,
+            }),
+            pass_track: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_satellite_the_rotator_does_not_follow_lets_its_recorder_rest() {
+        let graph = PatchGraph {
+            nodes: vec![
+                node("top", NodeBody::Satellite(SatelliteNode::default())),
+                node("low", NodeBody::Satellite(SatelliteNode::default())),
+                node(
+                    "dish",
+                    NodeBody::Rotator(sdrmm_wire::RotatorNode::default()),
+                ),
+                node("dev", NodeBody::Device(sdrmm_wire::DeviceNode::default())),
+            ],
+            edges: vec![
+                edge(("top", "control"), ("dish", "control")),
+                edge(("low", "control"), ("dish", "control")),
+                edge(("low", "control"), ("dev", "control")),
+            ],
+        };
+        let patch =
+            sdrmm_wire::patch::resolve::compile(&graph, &Default::default()).expect("compiles");
+        let runs = Arc::new(crate::run_gate::RunGate::default());
+        let bus = ControlBus::gated_by(runs.clone());
+        let resting = || {
+            runs.gated(&graph)
+                .node("dev")
+                .is_some_and(|node| matches!(&node.body, NodeBody::Device(dev) if dev.waiting))
+        };
+        point_and_run(&bus, &NoRig, &patch, "top", up("top", 70.0), true);
+        let (acks, on) = point_and_run(&bus, &NoRig, &patch, "low", up("low", 20.0), true);
+        assert!(!on);
+        assert!(
+            resting(),
+            "the dish follows the other pass, so the recorder rests"
+        );
+        assert!(acks.iter().any(|ack| ack.target == "dish" && ack.outranked));
+        bus.deliver(&NoRig, &patch, "top", &ControlCommand::Release);
+        let (_, on) = point_and_run(&bus, &NoRig, &patch, "low", up("low", 20.0), true);
+        assert!(on);
+        assert!(!resting(), "the dish came back, and so does the recording");
+    }
+
+    #[test]
+    fn a_satellite_without_a_rotator_runs_on_its_pass_alone() {
+        assert!(holds_a_rotator(&[]));
     }
 
     #[test]

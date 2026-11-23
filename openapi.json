@@ -11419,6 +11419,10 @@
             "type": "string"
           }
         }
+          "outranked": {
+            "type": "boolean",
+            "description": "The target follows another controller with a better pass, so this command waits its turn."
+          },
       },
       "CpsCodeplugDetail": {
         "allOf": [
@@ -23223,6 +23227,34 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/RotatorLink"
+      "RotatorLead": {
+        "type": "object",
+        "description": "The controller a rotator follows: the best pass in view, or else the first to rise.",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_pass": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SatellitePass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node": {
+            "type": "string"
+          }
+        }
+      },
               },
               {
                 "type": "null"
@@ -23378,6 +23410,16 @@
                   {
                     "$ref": "#/components/schemas/ChannelAddr"
                   },
+          "following": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RotatorLead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
                   {
                     "type": "null"
                   }

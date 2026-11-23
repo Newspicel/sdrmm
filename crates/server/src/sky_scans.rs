@@ -275,13 +275,18 @@ async fn reach(
     point: SkyPoint,
     close_deg: f64,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + SETTLE;
+    let mut deadline = Instant::now() + SETTLE;
     let command = ControlCommand::Point(sky(point));
     loop {
         let resolved = state.resolved.current();
         let acks = state
             .control
             .deliver(&state.engine, &resolved.patch, node, &command);
+        if acks.iter().any(|ack| ack.outranked) {
+            deadline = Instant::now() + SETTLE;
+            tokio::time::sleep(POLL).await;
+            continue;
+        }
         if let Some(error) = acks
             .into_iter()
             .find_map(|ack| Some(format!("{}: {}", ack.target, ack.error?)))
@@ -345,6 +350,7 @@ fn level(snapshot: &SpectrumSnapshot, settings: &SkyScanParams) -> Option<(f32, 
 
 fn sky(point: SkyPoint) -> SkyTrack {
     SkyTrack {
+        name: None,
         look: SatelliteLook {
             azimuth_deg: point.azimuth_deg,
             elevation_deg: point.elevation_deg,
@@ -394,11 +400,11 @@ fn emit(state: &AppState, status: SkyScanStatus) {
 fn rotator_of(resolved: &Resolved, node: &str) -> Option<Rotator> {
     control::targets(&resolved.patch, node)
         .into_iter()
-        .find_map(|(target, _)| match &resolved.graph.node(&target)?.body {
+        .find_map(|target| match &resolved.graph.node(&target.node)?.body {
             NodeBody::Rotator(rotator) => Some(Rotator {
                 tolerance_deg: rotator.tolerance_deg,
                 tracks: rotator.mode == RotatorMode::Track,
-                node: target,
+                node: target.node,
             }),
             _ => None,
         })

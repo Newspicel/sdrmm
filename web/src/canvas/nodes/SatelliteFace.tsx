@@ -40,6 +40,7 @@ import {
   shownSignals,
   sourceLabel,
   transmitterLabel,
+  useSecondsNow,
 } from "./satellite";
 
 const SEARCH_DELAY_MS = 350;
@@ -294,15 +295,6 @@ function SignalChip({
       </SettingChip>
     </Chips>
   );
-}
-
-function useSecondsNow(): number {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1_000));
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1_000)), 1_000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
 }
 
 /**

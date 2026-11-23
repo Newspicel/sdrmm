@@ -227,3 +227,28 @@ fn the_catalog_lists_built_in_groups_then_a_plugins_own() {
     assert_eq!(titles[0], "Analog voice");
     assert_eq!(titles.last(), Some(&"Space weather"));
 }
+
+#[test]
+fn a_rotator_takes_every_controller_on_its_one_control_input() {
+    let mut nodes = vec![node(
+        "dish",
+        NodeBody::Rotator(crate::RotatorNode::default()),
+    )];
+    let mut edges = Vec::new();
+    for sat in ["noaa", "meteor", "iss"] {
+        nodes.push(node(
+            sat,
+            NodeBody::Satellite(crate::SatelliteNode::default()),
+        ));
+        edges.push(edge((sat, CONTROL_PORT), ("dish", CONTROL_PORT)));
+    }
+    let patch =
+        resolve::compile(&PatchGraph { nodes, edges }, &ResolveCtx::default()).expect("compiles");
+    let mut sources = patch
+        .feeds("dish", CONTROL_PORT)
+        .iter()
+        .map(|feed| feed.source.clone())
+        .collect::<Vec<_>>();
+    sources.sort();
+    assert_eq!(sources, ["iss", "meteor", "noaa"]);
+}

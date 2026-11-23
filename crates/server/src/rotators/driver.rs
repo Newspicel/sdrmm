@@ -8,7 +8,7 @@ use std::{
 };
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{ControlCommand, RotatorMode, RotatorStatus, ServerEvent, SkyPoint, SkyTrack};
+use sdrmm_wire::{RotatorLead, RotatorMode, RotatorStatus, ServerEvent, SkyPoint, SkyTrack};
 use tokio::sync::watch;
 
 use super::{
@@ -17,7 +17,7 @@ use super::{
     locked,
     plan::{self, Mount, Plan},
 };
-use crate::{AppState, satellites::unix_now};
+use crate::{AppState, control::Lead, satellites::unix_now};
 
 const POLL: Duration = Duration::from_secs(1);
 const RETRY: Duration = Duration::from_secs(5);
@@ -46,7 +46,7 @@ pub(super) struct Driver {
     follow: Arc<Mutex<Follow>>,
     statuses: Arc<Mutex<HashMap<String, RotatorStatus>>>,
     engine: Weak<Engine>,
-    commands: watch::Receiver<Option<ControlCommand>>,
+    commands: watch::Receiver<Option<Lead>>,
     sent: Option<SkyPoint>,
     stopped: bool,
     plan: Option<Plan>,
@@ -106,6 +106,9 @@ impl Driver {
             let follow = locked(&self.follow).clone();
             let mount = Mount::of(&follow.settings);
             let aim = self.steer(link, &follow, mount, position)?;
+            let following = (follow.settings.mode == RotatorMode::Track)
+                .then(|| self.commands.borrow().as_ref().map(lead))
+                .flatten();
             self.publish(RotatorStatus {
                 node: self.node.clone(),
                 position: Some(mount.bearing(position)),
@@ -115,6 +118,7 @@ impl Driver {
                 error: None,
                 waiting: (follow.settings.mode == RotatorMode::Track && !follow.wired)
                     .then(|| UNWIRED.to_owned()),
+                following,
             });
             if !wait(woken, POLL) {
                 return Ok(());
@@ -158,10 +162,7 @@ impl Driver {
         if !follow.wired {
             return None;
         }
-        let sky = match &*self.commands.borrow() {
-            Some(ControlCommand::Point(sky)) => sky.clone(),
-            _ => return None,
-        };
+        let sky = self.commands.borrow().as_ref()?.sky.clone();
         self.replan(&sky, mount, position.azimuth_deg);
         aim(&sky, self.plan.as_ref(), mount, position, unix_now() as i64)
     }
@@ -215,6 +216,14 @@ pub(super) fn aim(
         awaiting_pass,
         flipped,
     })
+}
+
+fn lead(lead: &Lead) -> RotatorLead {
+    RotatorLead {
+        node: lead.from.clone(),
+        name: lead.sky.name.clone(),
+        next_pass: lead.sky.next_pass,
+    }
 }
 
 pub(super) fn needs_move(sent: Option<SkyPoint>, target: SkyPoint, tolerance_deg: f64) -> bool {

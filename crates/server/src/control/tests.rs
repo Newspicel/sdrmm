@@ -100,6 +100,7 @@ fn resolve(nodes: Vec<PatchNode>, edges: Vec<PatchEdge>) -> ResolvedPatch {
 
 fn sky() -> ControlCommand {
     ControlCommand::Point(SkyTrack {
+        name: None,
         look: SatelliteLook {
             azimuth_deg: 90.0,
             elevation_deg: 20.0,
@@ -134,7 +135,12 @@ fn a_rotator_follows_only_its_wired_satellite() {
     assert_eq!(acks.len(), 1);
     assert_eq!(acks[0].target, "dish");
     assert_eq!(acks[0].verb, Some(ControlVerb::Point));
-    assert_eq!(*dish.borrow(), Some(sky()));
+    assert_eq!(
+        dish.borrow()
+            .as_ref()
+            .map(|lead| (lead.from.as_str(), ControlCommand::Point(lead.sky.clone()))),
+        Some(("wired", sky()))
+    );
     let unwired = resolve(nodes(), Vec::new());
     assert!(bus.deliver(&rig, &unwired, "wired", &sky()).is_empty());
     assert_eq!(*dish.borrow(), None, "unwiring releases the rotator");
@@ -423,4 +429,46 @@ fn a_radio_runs_while_its_satellite_says_on_and_rests_on_release() {
     assert!(!resting(&graph));
     bus.deliver(&rig, &patch, "sat", &ControlCommand::Release);
     assert!(resting(&graph));
+}
+
+#[test]
+fn a_rotator_follows_the_best_pass_and_tells_the_others() {
+    let patch = resolve(
+        vec![
+            node("high", NodeBody::Satellite(SatelliteNode::default())),
+            node("low", NodeBody::Satellite(SatelliteNode::default())),
+            node("dish", NodeBody::Rotator(RotatorNode::default())),
+        ],
+        vec![
+            wire(("high", "control"), ("dish", "control")),
+            wire(("low", "control"), ("dish", "control")),
+        ],
+    );
+    let pass = |peak_deg: f64| {
+        let ControlCommand::Point(mut track) = sky() else {
+            unreachable!("sky points");
+        };
+        track.next_pass = Some(sdrmm_wire::SatellitePass {
+            aos: Some(0),
+            los: Some(600),
+            max_elevation_deg: peak_deg,
+            max_at: 300,
+        });
+        ControlCommand::Point(track)
+    };
+    let bus = ControlBus::default();
+    let rig = FakeRig::default();
+    let dish = bus.follow("dish");
+    let leader = || dish.borrow().as_ref().map(|lead| lead.from.clone());
+    assert!(!bus.deliver(&rig, &patch, "low", &pass(20.0))[0].outranked);
+    let high = bus.deliver(&rig, &patch, "high", &pass(70.0));
+    assert!(high[0].outranked, "the pass already up keeps the dish");
+    bus.deliver(&rig, &patch, "low", &ControlCommand::Release);
+    assert_eq!(
+        leader().as_deref(),
+        Some("high"),
+        "releasing hands the dish on"
+    );
+    assert!(bus.deliver(&rig, &patch, "low", &pass(20.0))[0].outranked);
+    assert!(!bus.deliver(&rig, &patch, "high", &pass(70.0))[0].outranked);
 }

@@ -137,6 +137,7 @@ fn take_acks(status: &mut AimStatus, acks: Vec<ControlAck>) {
     for ack in acks {
         match ack.error {
             Some(error) => status.error = Some(format!("{}: {error}", ack.target)),
+            None if ack.outranked => {}
             None => status.driving.push(ack.target),
         }
     }
@@ -173,6 +174,7 @@ fn aim(
             let look = look_at(station, target);
             status.look = Some(look);
             let sky = SkyTrack {
+                name: target.entity.clone(),
                 look,
                 visible: true,
                 next_pass: None,

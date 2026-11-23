@@ -13,8 +13,20 @@ use tokio::sync::watch;
 
 use crate::run_gate::RunGate;
 
+mod pointing;
+
+pub(crate) use pointing::Lead;
+use pointing::Pointing;
+
 pub(crate) const NOT_RUNNING: &str = "Not running";
 const NO_LANE: &str = "Wire the lane it watches";
+
+/// A node a controller's wire reaches and the verbs its input takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Target {
+    pub(crate) node: String,
+    pub(crate) verbs: Vec<ControlVerb>,
+}
 
 pub(crate) struct Sweep<'a> {
     pub(crate) job: &'a SweepJob,
@@ -55,7 +67,8 @@ impl Held {
 
 #[derive(Default)]
 pub(crate) struct ControlBus {
-    latest: Mutex<HashMap<String, watch::Sender<Option<ControlCommand>>>>,
+    latest: Mutex<HashMap<String, watch::Sender<Option<Lead>>>>,
+    pointing: Mutex<Pointing>,
     driven: Mutex<HashMap<String, Held>>,
     runs: Arc<RunGate>,
 }
@@ -72,7 +85,7 @@ impl ControlBus {
         }
     }
 
-    pub(crate) fn follow(&self, target: &str) -> watch::Receiver<Option<ControlCommand>> {
+    pub(crate) fn follow(&self, target: &str) -> watch::Receiver<Option<Lead>> {
         locked(&self.latest)
             .entry(target.to_owned())
             .or_insert_with(|| watch::channel(None).0)
@@ -90,8 +103,12 @@ impl ControlBus {
         self.release_unwired(rig, patch, from, &targets);
         let acks: Vec<ControlAck> = targets
             .iter()
-            .filter(|(_, verbs)| command.verb().is_none_or(|verb| verbs.contains(&verb)))
-            .map(|(target, _)| self.apply(rig, patch, from, target, command))
+            .filter(|target| {
+                command
+                    .verb()
+                    .is_none_or(|verb| target.verbs.contains(&verb))
+            })
+            .map(|target| self.apply(rig, patch, from, target, command))
             .collect();
         self.remember(patch, from, command, &acks);
         acks
@@ -116,6 +133,7 @@ impl ControlBus {
     pub(crate) fn settle(&self, rig: &dyn Rig, patch: &ResolvedPatch) {
         self.release_all_but(rig, patch, &|from: &str| patch.node(from).is_some());
         self.runs.retain(|node| patch.node(node).is_some());
+        locked(&self.pointing).retain(|node| patch.node(node).is_some());
         let controllers: Vec<String> = locked(&self.driven).keys().cloned().collect();
         for from in controllers {
             self.release_unwired(rig, patch, &from, &targets(patch, &from));
@@ -127,14 +145,14 @@ impl ControlBus {
         rig: &dyn Rig,
         patch: &ResolvedPatch,
         from: &str,
-        targets: &[(String, Vec<ControlVerb>)],
+        targets: &[Target],
     ) {
         let unwired = {
             let mut driven = locked(&self.driven);
             let Some(held) = driven.get_mut(from) else {
                 return;
             };
-            let unwired = held.split_off(|held| targets.iter().any(|(target, _)| target == held));
+            let unwired = held.split_off(|held| targets.iter().any(|target| target.node == held));
             if held.is_empty() {
                 driven.remove(from);
             }
@@ -145,7 +163,7 @@ impl ControlBus {
 
     fn let_go(&self, rig: &dyn Rig, patch: &ResolvedPatch, from: &str, held: Held) {
         for (target, at) in held.steered {
-            self.release(rig, patch, &target, at);
+            self.release(rig, patch, from, &target, at);
         }
         for (target, at) in held.swept {
             let at = patch.channel(&target).unwrap_or(at);
@@ -199,22 +217,26 @@ impl ControlBus {
         rig: &dyn Rig,
         patch: &ResolvedPatch,
         from: &str,
-        target: &str,
+        wired: &Target,
         command: &ControlCommand,
     ) -> ControlAck {
+        let target = wired.node.as_str();
         let applied = if retunes(command) {
             patch.may_tune(target, Some(from))
         } else {
             Ok(())
         };
+        let mut outranked = false;
         let applied = applied.and_then(|()| match command {
-            ControlCommand::Point(_) => {
-                self.publish(target, Some(command.clone()));
+            ControlCommand::Point(sky) => {
+                let lead = locked(&self.pointing).bid(target, from, sky);
+                outranked = lead.as_ref().is_some_and(|lead| lead.from != from);
+                self.publish(target, lead);
                 Ok(None)
             }
             ControlCommand::Release => {
                 self.runs.hold(from, target, false);
-                self.release(rig, patch, target, None);
+                self.release(rig, patch, from, target, None);
                 Ok(None)
             }
             ControlCommand::Run { on } => {
@@ -241,6 +263,7 @@ impl ControlBus {
             verb: command.verb(),
             error,
             sweep,
+            outranked,
         }
     }
 
@@ -248,10 +271,12 @@ impl ControlBus {
         &self,
         rig: &dyn Rig,
         patch: &ResolvedPatch,
+        from: &str,
         target: &str,
         held_at: Option<ChannelAddr>,
     ) {
-        self.publish(target, None);
+        let lead = locked(&self.pointing).withdraw(target, from);
+        self.publish(target, lead);
         if let Some(at) = patch.channel(target).or(held_at)
             && let Err(error) = rig.steer(at, DopplerSteer::default())
         {
@@ -259,11 +284,11 @@ impl ControlBus {
         }
     }
 
-    fn publish(&self, target: &str, command: Option<ControlCommand>) {
+    fn publish(&self, target: &str, lead: Option<Lead>) {
         locked(&self.latest)
             .entry(target.to_owned())
             .or_insert_with(|| watch::channel(None).0)
-            .send_replace(command);
+            .send_replace(lead);
     }
 }
 
@@ -312,22 +337,22 @@ pub(crate) fn waiting(error: &str) -> bool {
 pub(crate) fn takes(patch: &ResolvedPatch, from: &str, verb: ControlVerb) -> bool {
     targets(patch, from)
         .iter()
-        .any(|(_, verbs)| verbs.contains(&verb))
+        .any(|target| target.verbs.contains(&verb))
 }
 
-pub(crate) fn targets(patch: &ResolvedPatch, from: &str) -> Vec<(String, Vec<ControlVerb>)> {
+pub(crate) fn targets(patch: &ResolvedPatch, from: &str) -> Vec<Target> {
     patch
         .reaches(from, CONTROL_PORT)
         .iter()
-        .map(|reach| {
-            let verbs = patch
+        .map(|reach| Target {
+            node: reach.sink.clone(),
+            verbs: patch
                 .node(&reach.sink)
                 .and_then(|node| node.input(&reach.port))
                 .map_or_default(|port| match &port.spec.payload {
                     Payload::Control { verbs } => verbs.clone(),
                     _ => Vec::new(),
-                });
-            (reach.sink.clone(), verbs)
+                }),
         })
         .collect()
 }

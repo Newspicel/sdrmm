@@ -3,7 +3,7 @@ title: Rotators
 description: Control GS-232, Winegard, rotctld, or virtual mounts for satellites, radiosondes, and passive sky scans.
 ---
 
-Set **Rotator** to **Track** mode and wire one controller to its `control` input:
+Set **Rotator** to **Track** mode and wire a controller to its `control` input:
 
 ```patch
 [channel] Radiosonde : 403 MHz
@@ -15,6 +15,21 @@ Radiosonde --events--> Aim
 GPS position --position--> Aim
 Aim --control--> Rotator
 ```
+
+## Several controllers
+
+Wire as many as you like into `control`. The pass that climbs highest leads, since it has the shortest path and the strongest signal, and keeps the dish until it sets. A pass beats an aim or a sky scan. With none in view, the first to rise leads, so the dish waits at its rise. **Following** and **Pass** on the face show which one.
+
+```patch
+[tool] Satellite : NOAA 19
+[tool] Satellite : METEOR-M2 3
+[output] Rotator : Track mode
+
+NOAA 19 --control--> Rotator
+METEOR-M2 3 --control--> Rotator
+```
+
+A satellite runs its radios and recorders only while its rotator follows it, so a recorder never takes a pass the dish points away from. A **Sky scan** sweeps between passes and pauses while one is up.
 
 ## Hardware links and settings
 

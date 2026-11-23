@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { PatchNode } from "../../lib/types";
 import {
   aimLabel,
   elevationMax,
   flipped,
+  leadLabel,
   parsedBaud,
   rotctldLink,
   serialLink,
@@ -83,5 +85,16 @@ describe("links", () => {
     expect(parsedBaud("9600")).toBe(9_600);
     expect(parsedBaud("96.5")).toBeNull();
     expect(parsedBaud("12")).toBeNull();
+  });
+});
+
+describe("leadLabel", () => {
+  const nodes = [{ id: "scan", label: "Roof sweep" }] as unknown as PatchNode[];
+
+  it("names the target, then the node, then its id", () => {
+    expect(leadLabel({ node: "sat", name: "NOAA 19" }, nodes)).toBe("NOAA 19");
+    expect(leadLabel({ node: "scan" }, nodes)).toBe("Roof sweep");
+    expect(leadLabel({ node: "aim" }, nodes)).toBe("aim");
+    expect(leadLabel(null, nodes)).toBeNull();
   });
 });

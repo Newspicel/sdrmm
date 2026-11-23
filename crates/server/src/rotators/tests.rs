@@ -91,6 +91,7 @@ fn only_linked_rotators_run_and_each_follows_its_wired_satellite() {
 #[test]
 fn a_visible_satellite_is_tracked_and_a_set_one_waits_at_its_rise() {
     let mut status = SkyTrack {
+        name: None,
         look: SatelliteLook {
             azimuth_deg: 120.0,
             elevation_deg: 35.0,
@@ -235,4 +236,58 @@ fn an_unwired_tracking_rotator_waits_instead_of_failing() {
     };
     assert_eq!(status.waiting.as_deref(), Some("Wire what to point at"));
     assert_eq!(status.error, None);
+}
+
+#[test]
+fn a_tracking_rotator_names_what_it_follows() {
+    let state = AppState::new(
+        sdrmm_engine::Engine::new(None),
+        Arc::new(crate::Store::open(None).expect("store")),
+    );
+    let graph = PatchGraph {
+        nodes: vec![
+            node("sat", NodeBody::Satellite(SatelliteNode::default())),
+            node(
+                "dish",
+                NodeBody::Rotator(RotatorNode {
+                    link: Some(RotatorLink::Virtual),
+                    ..RotatorNode::default()
+                }),
+            ),
+        ],
+        edges: vec![control("sat", "dish")],
+    };
+    let resolved = resolved(graph);
+    let want = wanted(&resolved).remove(0);
+    let hub = RotatorHub::default();
+    let worker = hub.spawn(&state, want).expect("spawns");
+    locked(&hub.workers).insert("dish".to_owned(), worker);
+    let sky = SkyTrack {
+        name: Some("NOAA 19".to_owned()),
+        look: SatelliteLook {
+            azimuth_deg: 90.0,
+            elevation_deg: 30.0,
+            range_km: 900.0,
+            range_rate_km_s: 1.0,
+        },
+        visible: true,
+        next_pass: None,
+        pass_track: Vec::new(),
+    };
+    state.control.deliver(
+        &state.engine,
+        &resolved.patch,
+        "sat",
+        &sdrmm_wire::ControlCommand::Point(sky),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let lead = loop {
+        if let Some(lead) = hub.status("dish").and_then(|status| status.following) {
+            break lead;
+        }
+        assert!(std::time::Instant::now() < deadline, "follows nothing");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    assert_eq!(lead.node, "sat");
+    assert_eq!(lead.name.as_deref(), Some("NOAA 19"));
 }

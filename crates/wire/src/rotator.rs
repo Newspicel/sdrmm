@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
-    MAX_NMEA_BAUD, MAX_POSITION_ENDPOINT_LEN, MIN_NMEA_BAUD, patch::valid_host_port,
-    satellite::SkyPoint,
+    MAX_NMEA_BAUD, MAX_POSITION_ENDPOINT_LEN, MIN_NMEA_BAUD,
+    patch::valid_host_port,
+    satellite::{SatellitePass, SkyPoint},
 };
 
 pub const DEFAULT_ROTCTLD_ADDRESS: &str = "127.0.0.1:4533";
@@ -206,6 +207,18 @@ pub struct RotatorStatus {
     /// What the node waits for, never a fault: a wire, a setting or data still to come.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiting: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub following: Option<RotatorLead>,
+}
+
+/// The controller a rotator follows: the best pass in view, or else the first to rise.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct RotatorLead {
+    pub node: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_pass: Option<SatellitePass>,
 }
 
 #[cfg(test)]

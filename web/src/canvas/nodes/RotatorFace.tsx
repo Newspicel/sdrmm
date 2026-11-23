@@ -38,6 +38,7 @@ import {
   elevationMax,
   flipped,
   flipsOver,
+  leadLabel,
   parsedBaud,
   ROTATOR_AXES,
   ROTATOR_BAUDS,
@@ -48,6 +49,7 @@ import {
   winegardLink,
   withRange,
 } from "./rotator";
+import { passWhen, useSecondsNow } from "./satellite";
 
 type Pick = (link: RotatorLink) => void;
 type LinkTab = RotatorLink["type"];
@@ -146,6 +148,7 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
       </Inspect>
       <FaceBody>
         <Readouts>
+          <FollowReadouts status={status} />
           <Readout label="Pointing">{aimLabel(status?.position, axes)}</Readout>
           <Readout label="Target" title="Where the satellite is, or where it rises next">
             {aimLabel(status?.target, axes)}
@@ -158,6 +161,22 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
 }
 
 const WANTS_TARGET: readonly Want[] = [{ port: "control" }];
+
+function FollowReadouts({ status }: { status: RotatorStatus | null }) {
+  const nodes = useWorkspaceContext().graph.nodes;
+  const now = useSecondsNow();
+  const lead = status?.following;
+  return (
+    <>
+      <Readout label="Following" title="The best pass in view, or the first to rise">
+        {leadLabel(lead, nodes) ?? "-"}
+      </Readout>
+      <Readout label="Pass">
+        {lead?.next_pass == null ? "-" : passWhen(lead.next_pass, now)}
+      </Readout>
+    </>
+  );
+}
 
 function trackLine(status: RotatorStatus | null): string | undefined {
   if (status?.awaiting_pass === true) {

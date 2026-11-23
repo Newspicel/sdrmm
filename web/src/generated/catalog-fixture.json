@@ -2040,9 +2040,9 @@
               "point"
             ]
           },
-          "multi": "one",
+          "multi": "many",
           "takes": "pointing",
-          "note": "A satellite, an aim or a sky scan"
+          "note": "Satellites, aims or sky scans. The best pass in view wins"
         }
       ],
       "default_body": {

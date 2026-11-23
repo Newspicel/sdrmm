@@ -50,6 +50,9 @@ pub enum SweepJob {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SkyTrack {
+    /// What it points at, as the operator knows it: a satellite or a decoded target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub look: SatelliteLook,
     pub visible: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -104,6 +107,9 @@ pub struct ControlAck {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sweep: Option<Box<SweepStatus>>,
+    /// The target follows another controller with a better pass, so this command waits its turn.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub outranked: bool,
 }
 
 #[cfg(test)]

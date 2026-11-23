@@ -433,7 +433,7 @@ Points an antenna
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `control` | in | Control | point | one. A satellite, an aim or a sky scan |
+| `control` | in | Control | point | many. Satellites, aims or sky scans. The best pass in view wins |
 
 ### Transmitter
 

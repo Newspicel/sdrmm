@@ -8,6 +8,7 @@ fn ack(error: Option<&str>) -> ControlAck {
         verb: Some(ControlVerb::Sweep),
         error: error.map(str::to_owned),
         sweep: None,
+        outranked: false,
     }
 }
 

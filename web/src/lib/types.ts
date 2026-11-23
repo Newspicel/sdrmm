@@ -182,6 +182,7 @@ export type SkyScanParams = components["schemas"]["SkyScanParams"];
 export type SkyScanStatus = components["schemas"]["SkyScanStatus"];
 export type SkyCell = components["schemas"]["SkyCell"];
 export type ScheduleNode = components["schemas"]["ScheduleNode"];
+export type RotatorLead = components["schemas"]["RotatorLead"];
 export type ScheduleStatus = components["schemas"]["ScheduleStatus"];
 export type ScheduleWindow = components["schemas"]["ScheduleWindow"];
 export type Weekday = components["schemas"]["Weekday"];

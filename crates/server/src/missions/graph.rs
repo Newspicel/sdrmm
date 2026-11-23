@@ -59,8 +59,8 @@ pub(crate) fn link(
 pub(crate) fn controlled_channel(resolved: &Resolved, hunt: &str) -> Option<String> {
     control::targets(&resolved.patch, hunt)
         .into_iter()
-        .find(|(_, verbs)| verbs.contains(&ControlVerb::Sweep))
-        .map(|(target, _)| target)
+        .find(|target| target.verbs.contains(&ControlVerb::Sweep))
+        .map(|target| target.node)
 }
 
 fn phone_of(graph: &PatchGraph, gps: &str) -> Option<String> {

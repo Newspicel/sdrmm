@@ -3352,6 +3352,8 @@ export interface components {
             id: number;
             model_id: string;
             name: string;
+            /** @description The target follows another controller with a better pass, so this command waits its turn. */
+            outranked?: boolean;
             updated_at: string;
             /** Format: int64 */
             user_id?: number | null;
@@ -6383,6 +6385,12 @@ export interface components {
             manual?: components["schemas"]["SkyPoint"];
             mode?: components["schemas"]["RotatorMode"];
             park?: components["schemas"]["SkyPoint"];
+        /** @description The controller a rotator follows: the best pass in view, or else the first to rise. */
+        RotatorLead: {
+            name?: string | null;
+            next_pass?: components["schemas"]["SatellitePass"] | null;
+            node: string;
+        };
             /** Format: double */
             tolerance_deg?: number;
         };
@@ -6426,6 +6434,7 @@ export interface components {
             /** @enum {string} */
             runs: "server";
         };
+            following?: components["schemas"]["RotatorLead"] | null;
         SatelliteCatalogResponse: {
             /** Format: int64 */
             fetched?: number;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ageLabel } from "../../lib/phones";
 import type { SatellitePass, Transmitter } from "../../lib/types";
 
@@ -85,4 +86,13 @@ export function shownSignals(
     (transmitter) =>
       transmitter.downlink_hz != null && (transmitter.alive || transmitter.id === chosen),
   );
+}
+
+export function useSecondsNow(): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1_000));
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Math.floor(Date.now() / 1_000)), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
