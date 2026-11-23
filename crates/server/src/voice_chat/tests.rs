@@ -211,6 +211,63 @@ async fn unwired_node_stays_in_its_channel() {
     }
 }
 
+fn in_channel(channel: &str) -> NodeBody {
+    let NodeBody::VoiceChat(chat) = voice_chat(&[]) else {
+        unreachable!("voice_chat builds a voice chat node");
+    };
+    NodeBody::VoiceChat(VoiceChatNode {
+        channel: channel.to_owned(),
+        ..chat
+    })
+}
+
+fn teamspeak() -> ChatAccount {
+    ChatAccount {
+        service: ChatService::Teamspeak {
+            address: "ts.example".to_owned(),
+            password: Secret::default(),
+            nickname: "sdrmm".to_owned(),
+            identity: Secret::default(),
+        },
+        ..account()
+    }
+}
+
+#[tokio::test]
+async fn empty_channel_on_teamspeak_joins_the_default_channel() {
+    let engine = Engine::new(None);
+    let links = Arc::new(FakeLinks::default());
+    let mut chats = VoiceChats::new(links.clone());
+    chats.set_accounts(vec![teamspeak()]);
+    let (air, _) = on_air();
+    let problems = settle(
+        &mut chats,
+        &engine,
+        graph(vec![("chat", in_channel("  "))], false),
+        false,
+        &air,
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(links.joined(), [(ACCOUNT.to_owned(), String::new())]);
+}
+
+#[tokio::test]
+async fn empty_channel_on_discord_stays_idle() {
+    let engine = Engine::new(None);
+    let links = Arc::new(FakeLinks::default());
+    let mut chats = chats(&links);
+    let (air, _) = on_air();
+    let problems = settle(
+        &mut chats,
+        &engine,
+        graph(vec![("chat", in_channel(""))], true),
+        false,
+        &air,
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    assert!(links.joined().is_empty());
+}
+
 #[tokio::test]
 async fn an_unknown_account_is_idle_without_a_fault() {
     let engine = Engine::new(None);

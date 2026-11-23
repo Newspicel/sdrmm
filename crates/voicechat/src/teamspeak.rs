@@ -23,6 +23,8 @@ const HANDSHAKE: Duration = Duration::from_secs(20);
 /// How long a released connection stays up for the session's next link, so a channel change
 /// moves the client instead of leaving the server and connecting again.
 const HANDOVER: Duration = Duration::from_secs(1);
+/// What a clash calls a link that sits in the server's default channel.
+const DEFAULT_CHANNEL: &str = "default channel";
 
 pub(crate) struct Account {
     pub(crate) address: String,
@@ -55,15 +57,17 @@ impl TeamSpeak {
 
     pub(crate) fn join(&self, channel: &str) -> Result<Link, VoiceChatError> {
         let channel = channel.trim();
-        if channel.is_empty() {
-            return Err(VoiceChatError::NoChannel);
-        }
         let mut seat = lock(&self.seat);
         if let Some(taken) = seat.as_ref().filter(|seat| seat.held()) {
             return Err(VoiceChatError::Clash(taken.place.clone()));
         }
         let (link, ends) = link::link();
-        let taken = ends.inbox.seat(channel.to_owned());
+        let shown = if channel.is_empty() {
+            DEFAULT_CHANNEL
+        } else {
+            channel
+        };
+        let taken = ends.inbox.seat(shown.to_owned());
         let place = Place {
             channel: channel.to_owned(),
             ends,
@@ -97,7 +101,7 @@ impl TeamSpeak {
     }
 }
 
-/// The channel a link wants and the connection's ends of it.
+/// The channel a link wants, empty for the server's default, and the connection's ends of it.
 struct Place {
     channel: String,
     ends: Ends,
@@ -135,6 +139,8 @@ fn run_on_own_thread(
 
 enum Ended {
     Released,
+    /// The next link wants the server's default channel, which only a fresh connection finds.
+    Redial,
     Failed(String),
 }
 
@@ -149,6 +155,7 @@ async fn run(
         let released =
             match connected(account, &mut place, &mut takeovers, &mut backoff, alive).await {
                 Ended::Released => true,
+                Ended::Redial => false,
                 Ended::Failed(reason) => {
                     place.ends.inbox.set(LinkState::Failed(reason));
                     tokio::select! {
@@ -180,16 +187,11 @@ async fn connected(
     let Ok(identity) = tsclient_rs::identityFromString(&account.identity) else {
         return Ended::Failed("bad identity".into());
     };
-    let options = ClientOptions {
-        server_password: account.password.clone(),
-        default_channel: Some(channel.to_owned()),
-        ..ClientOptions::default()
-    };
     let mut client = Client::new(
         identity,
         account.address.clone(),
         account.nickname.clone(),
-        options,
+        options(account, channel),
     );
     let mut events = forward_events(&client);
     let shaken = tokio::select! {
@@ -199,6 +201,7 @@ async fn connected(
         never = ends.outbox.discard() => match never {},
     };
     let live = matches!(shaken, Some(Ok(())));
+    let lobby = (live && channel.is_empty()).then(|| client.channel_id());
     let mut ended = match shaken {
         Some(Ok(())) => {
             backoff.reset();
@@ -212,9 +215,13 @@ async fn connected(
         && let Some(next) = handed_over(takeovers).await
     {
         *place = next;
-        ended = match move_to(&client, &place.channel).await {
-            Ok(()) => joined(&client, &mut events, &mut place.ends, alive).await,
-            Err(reason) => Ended::Failed(reason),
+        ended = if place.channel.is_empty() && lobby.is_none() {
+            Ended::Redial
+        } else {
+            match move_to(&client, &place.channel, lobby).await {
+                Ok(()) => joined(&client, &mut events, &mut place.ends, alive).await,
+                Err(reason) => Ended::Failed(reason),
+            }
         };
     }
     if let Err(error) = client.disconnect().await {
@@ -234,18 +241,35 @@ async fn joined(
     talk(client, events, ends, alive).await
 }
 
-async fn move_to(client: &Client, channel: &str) -> Result<(), String> {
-    let directory = client
-        .directory_snapshot()
-        .ok_or_else(|| "no channel list".to_owned())?;
-    let id =
-        channel_at(&directory.channels, channel).ok_or_else(|| format!("no channel {channel}"))?;
+/// Without a channel the client asks for none, and the server seats it in its default.
+fn options(account: &Account, channel: &str) -> ClientOptions {
+    ClientOptions {
+        server_password: account.password.clone(),
+        default_channel: (!channel.is_empty()).then(|| channel.to_owned()),
+        ..ClientOptions::default()
+    }
+}
+
+/// Moves to `channel`, or to `lobby`, the default channel this connection landed in, when
+/// `channel` is empty.
+async fn move_to(client: &Client, channel: &str, lobby: Option<u64>) -> Result<(), String> {
+    let id = match lobby.filter(|_| channel.is_empty()) {
+        Some(lobby) => lobby,
+        None => named(client, channel)?,
+    };
     if client.channel_id() == id {
         return Ok(());
     }
     tsclient_rs::clientMove(client, client.client_id(), id, "")
         .await
         .map_err(|error| format!("move: {error}"))
+}
+
+fn named(client: &Client, channel: &str) -> Result<u64, String> {
+    let directory = client
+        .directory_snapshot()
+        .ok_or_else(|| "no channel list".to_owned())?;
+    channel_at(&directory.channels, channel).ok_or_else(|| format!("no channel {channel}"))
 }
 
 /// The channel a name or a `/` path names, walking down from the top. A bare name the top
@@ -308,6 +332,9 @@ async fn handshake(client: &mut Client, channel: &str) -> Result<(), String> {
 
 /// The server drops a client whose default channel is missing into its default channel instead.
 fn landed_in(client: &Client, channel: &str) -> bool {
+    if channel.is_empty() {
+        return true;
+    }
     let wanted = channel.rsplit('/').next().unwrap_or(channel).trim();
     let here = client.channel_id();
     client.directory_snapshot().is_none_or(|directory| {
@@ -502,6 +529,31 @@ mod tests {
         assert_eq!(channel_at(&channels, "Radio"), Some(3));
         assert_eq!(channel_at(&channels, "Deep"), Some(4));
         assert_eq!(channel_at(&channels, "Ops/Lobby"), None);
+    }
+
+    #[test]
+    fn an_empty_channel_asks_for_the_server_default() {
+        let account = Account {
+            address: "127.0.0.1:9".into(),
+            password: None,
+            nickname: "sdrmm".into(),
+            identity: String::new(),
+        };
+        assert_eq!(options(&account, "").default_channel, None);
+        assert_eq!(
+            options(&account, "Ops").default_channel.as_deref(),
+            Some("Ops")
+        );
+    }
+
+    #[test]
+    fn an_empty_channel_clashes_as_the_default_channel() {
+        let session = session();
+        let _lobby = session.join("  ").unwrap();
+        assert_eq!(
+            session.join("Ops").unwrap_err(),
+            VoiceChatError::Clash(DEFAULT_CHANNEL.into())
+        );
     }
 
     #[test]

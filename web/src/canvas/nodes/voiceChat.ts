@@ -83,7 +83,7 @@ export function accountOptions(accounts: readonly ChatAccount[]): Options<string
 
 export function channelTitle(account: ChatAccount | undefined): string {
   if (account?.service === "teamspeak") {
-    return "TeamSpeak channel name or path";
+    return "TeamSpeak channel name or path, empty for the default channel";
   }
   return account?.service === "discord" ? "Discord voice channel id" : "Voice channel";
 }

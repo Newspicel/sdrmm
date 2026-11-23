@@ -117,7 +117,8 @@ impl Session {
         Self { backend }
     }
 
-    /// Joins `channel`: a Discord voice channel id, or a `TeamSpeak` channel name or path.
+    /// Joins `channel`: a Discord voice channel id, or a `TeamSpeak` channel name or path,
+    /// empty for the server's default channel.
     pub fn join(&self, channel: &str) -> Result<Link, VoiceChatError> {
         match &self.backend {
             Backend::Discord(discord) => {
@@ -206,14 +207,6 @@ mod tests {
         Session::open(Service::Discord {
             token: "token".into(),
         })
-    }
-
-    #[test]
-    fn empty_teamspeak_channel_is_no_channel() {
-        assert_eq!(
-            teamspeak().join("  ").unwrap_err(),
-            VoiceChatError::NoChannel
-        );
     }
 
     #[test]

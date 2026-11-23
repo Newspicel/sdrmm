@@ -13,8 +13,8 @@ use sdrmm_dsp::audio::mix::lane_of;
 use sdrmm_engine::Engine;
 use sdrmm_voicechat::{FRAME, Hold, Link, LinkState, RATE_HZ};
 use sdrmm_wire::{
-    AUDIO_PORT, AudioRoute, ChatAccount, NodeBody, NodeProblem, PatchGraph, ProblemSource,
-    ResolvedPatch, ServerEvent, VoiceChatNode, audio::AUDIO_RATE_HZ,
+    AUDIO_PORT, AudioRoute, ChatAccount, ChatService, NodeBody, NodeProblem, PatchGraph,
+    ProblemSource, ResolvedPatch, ServerEvent, VoiceChatNode, audio::AUDIO_RATE_HZ,
 };
 use tokio::{
     runtime::Handle,
@@ -272,7 +272,8 @@ impl VoiceChats {
         (wanted, problems)
     }
 
-    /// None while the node has no known account or no channel: it stays idle. A node with no
+    /// None while the node has no known account, or no channel on a service without a
+    /// default one: it stays idle. A node with no
     /// wire stays in its channel, so wiring it later does not rejoin.
     fn want(
         &self,
@@ -287,7 +288,7 @@ impl VoiceChats {
             .iter()
             .find(|account| account.id == chat.account)?;
         let channel = chat.channel.trim();
-        if channel.is_empty() {
+        if channel.is_empty() && !has_default_channel(&account.service) {
             return None;
         }
         let sends_out = !patch.reaches(id, AUDIO_PORT).is_empty();
@@ -511,6 +512,12 @@ fn subscribe(
         Err(error) if error.is_not_found() => Ok(None),
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// A `TeamSpeak` server seats a client that names no channel in its default one; Discord has
+/// no such channel.
+fn has_default_channel(service: &ChatService) -> bool {
+    matches!(service, ChatService::Teamspeak { .. })
 }
 
 fn routes(graph: &PatchGraph, patch: &ResolvedPatch, node: &str) -> HashSet<AudioRoute> {

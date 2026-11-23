@@ -30,7 +30,7 @@ Add accounts in **Library > Accounts**. They are server-wide, and every workspac
 | Setting | Meaning |
 |---|---|
 | **Account** | Which chat account to use |
-| **Channel** | Discord: voice channel id. TeamSpeak: channel name or path |
+| **Channel** | Discord: voice channel id. TeamSpeak: channel name or path, empty for the default channel |
 | **Allowed** | Discord: user ids. TeamSpeak: unique ids. Empty means anyone. A talker not yet known by id never matches |
 | **To air** | What chat sends to the radio |
 | **To chat** | What the radio sends to chat |
