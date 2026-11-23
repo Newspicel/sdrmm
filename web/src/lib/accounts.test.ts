@@ -39,8 +39,8 @@ const MATRIX: Account = {
 };
 const ACCOUNTS: Account[] = [DISCORD, TEAMSPEAK, MATRIX];
 
-function shown = (login: string): string[] {
-  return   ACCOUNT_SPECS.matrix.fields
+function shown(login: string): string[] {
+  return ACCOUNT_SPECS.matrix.fields
     .filter((field) => fieldShown({ ...MATRIX, login } as Account, field))
     .map((field) => field.key);
 }
