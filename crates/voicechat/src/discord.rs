@@ -554,7 +554,7 @@ fn lookup_failed(error: &twilight_http::Error) -> String {
 
 /// twilight builds its TLS configs from the process default provider, which rustls cannot pick
 /// by itself once more than one provider is compiled in.
-fn install_tls_provider() {
+pub(crate) fn install_tls_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     }

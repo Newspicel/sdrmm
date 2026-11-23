@@ -33,7 +33,7 @@ str0m.workspace = true
 songbird.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-tungstenite.workspace = true
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
 tracing.workspace = true
 tsclient-rs.workspace = true
 twilight-gateway.workspace = true
