@@ -3,7 +3,10 @@ use std::f32::consts::{FRAC_1_PI, FRAC_PI_2, PI, TAU};
 use num_complex::Complex;
 use sdrmm_dsp::{design_lowpass_blackman_harris, fast_arg};
 
-use super::{acquisition::CoarseAcquisition, taps::Fir};
+use super::{
+    acquisition::{CoarseAcquisition, Lock},
+    taps::Fir,
+};
 
 const MAG_ALPHA: f32 = 0.01;
 const LOCK_ALPHA: f32 = 0.01;
@@ -14,8 +17,8 @@ const PHASE_GAIN: f32 = 0.08;
 const FREQ_GAIN: f32 = 0.001;
 const TIMING_GAIN: f32 = 0.1;
 const SOFT_LIMIT: f32 = 1.0;
-const ACQUISITION_FFT: usize = 4_096;
-const ACQUISITION_RANGE_HZ: f64 = 800.0;
+const ACQUISITION_FFT: usize = 16_384;
+const CLEAN_ERROR: f32 = 0.1;
 
 pub(super) struct CoherentMsk {
     samples_per_bit: f64,
@@ -62,8 +65,7 @@ impl CoherentMsk {
                 ACQUISITION_FFT,
                 channel_rate,
                 bit_rate / 2.0,
-                ACQUISITION_RANGE_HZ,
-                None,
+                CLEAN_ERROR,
             ),
             history: vec![Complex::new(0.0, 0.0); weights.len() + 2 * early_late],
             weights,
@@ -104,8 +106,8 @@ impl CoherentMsk {
     }
 
     fn step(&mut self, sample: Complex<f32>) -> Option<(f32, u8)> {
-        if let Some(offset_hz) = self.acquisition.push(sample, self.lock > LOCK_THRESHOLD) {
-            self.nco_freq = (f64::from(TAU) * offset_hz / self.fs) as f32;
+        if self.acquisition.push(sample) {
+            self.acquire();
         }
         let mixed = sample * Complex::from_polar(1.0, -self.nco_phase);
         self.nco_phase = wrap(self.nco_phase + self.nco_freq);
@@ -131,6 +133,17 @@ impl CoherentMsk {
             }
         }
         output
+    }
+
+    fn acquire(&mut self) {
+        let lock = Lock {
+            locked: self.locked(),
+            error: 1.0 - self.lock,
+        };
+        if let Some(carrier_hz) = self.acquisition.decide(self.frequency_error_hz(), lock) {
+            self.nco_freq = (f64::from(TAU) * carrier_hz / self.fs) as f32;
+            self.lock = 0.0;
+        }
     }
 
     fn correlate(&self, shift: usize) -> Complex<f32> {
@@ -225,6 +238,37 @@ mod tests {
     fn clean_signal_has_no_errors() {
         for (rate, cfo) in [(600.0, 0.0), (600.0, -250.0), (1200.0, 300.0)] {
             assert_eq!(rates(rate, cfo, 40.0).0, 0.0, "{rate} bit/s at {cfo} Hz");
+        }
+    }
+
+    fn settled_errors(bits: &[u8], rate: f64, cfo: f64) -> (f64, f64) {
+        let iq = modulate(bits, rate, CHANNEL_RATE, cfo, 1.0);
+        let mut demod = CoherentMsk::new(CHANNEL_RATE, rate);
+        let mut out = Vec::new();
+        demod.process(&iq, &mut out);
+        (demod.frequency_error_hz() - cfo, bit_errors(bits, &out))
+    }
+
+    #[test]
+    fn periodic_data_and_far_carriers_lock_true() {
+        let mut noise = Gauss(5);
+        let random: Vec<u8> = (0..9_000).map(|_| u8::from(noise.sample() > 0.0)).collect();
+        let period_12: Vec<u8> = random[..12].iter().copied().cycle().take(9_000).collect();
+        let eights: Vec<u8> = [[1u8; 8], [0u8; 8]]
+            .concat()
+            .into_iter()
+            .cycle()
+            .take(9_000)
+            .collect();
+        for rate in [600.0, 1200.0] {
+            for (name, bits) in [("random", &random), ("12", &period_12), ("eights", &eights)] {
+                for cfo in [-2_500.0, 2_950.0] {
+                    let (error, ber) = settled_errors(bits, rate, cfo);
+                    let case = format!("{rate} bit/s, {name}, {cfo} Hz");
+                    assert!(error.abs() < 5.0, "{case}: off by {error} Hz");
+                    assert_eq!(ber, 0.0, "{case}");
+                }
+            }
         }
     }
 

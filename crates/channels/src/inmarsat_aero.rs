@@ -99,7 +99,7 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily
 use serde::Serialize;
 use serde_json::{Value, json};
 
-const HALF_BANDWIDTH: f64 = 6_500.0;
+const FILTER_ROLL_OFF_HZ: f64 = 750.0;
 const P_CHANNEL: &str = "p-channel";
 const C_CHANNEL_VOICE: &str = "c-channel-voice";
 
@@ -109,7 +109,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     summary: "Aircraft datalink over Inmarsat".to_owned(),
     family: DecoderFamily::AVIATION,
     verification: sdrmm_wire::Verification::OnAir,
-    bandwidth_hz: HALF_BANDWIDTH * 2.0,
+    bandwidth_hz: half_bandwidth() * 2.0,
     input_rate_hz: INPUT_RATE,
     has_audio: false,
     emits: vec![EventKind::named("inmarsat_aero")],
@@ -188,12 +188,17 @@ fn params(settings: &ChannelSettings) -> Result<InmarsatAeroParams, ChannelError
     sdrmm_decoder::settings_of::<InmarsatAeroParams>(settings)
 }
 
+/// The 10.5 kbit/s carrier's half width at the acquisition's pull-in, plus the filter roll-off.
+fn half_bandwidth() -> f64 {
+    f64::from(oqpsk::BIT_RATE) / 2.0 + acquisition::PULL_IN_HZ + FILTER_ROLL_OFF_HZ
+}
+
 pub(crate) fn occupied_band() -> (f64, f64) {
-    (-HALF_BANDWIDTH, HALF_BANDWIDTH)
+    (-half_bandwidth(), half_bandwidth())
 }
 
 pub(crate) fn channel_filter() -> FilterSpec {
-    FilterSpec::channel(HALF_BANDWIDTH)
+    FilterSpec::channel(half_bandwidth())
 }
 
 /// Where an Aero message keeps its envelope: the aircraft an ACARS block names.

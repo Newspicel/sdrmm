@@ -7,7 +7,7 @@ use num_complex::Complex;
 use sdrmm_dsp::{Biquad, FracDelay, MovingAverage, design_rrc_unit_energy, fast_arg};
 
 use super::{
-    acquisition::CoarseAcquisition,
+    acquisition::{CoarseAcquisition, Lock},
     frame::{FrameDecoder, FrameHeader, HEADER_BITS, HIGH_RATE_BPS, UW},
     framer::DecodedFrame,
     taps::Fir,
@@ -21,8 +21,8 @@ const STROBE_POINT: f64 = 0.85;
 const LOCK_MSE: f32 = 0.5;
 const LOCK_QUAD: f32 = 0.4;
 const ACQ_FFT: usize = 16_384;
-const ACQ_RANGE_HZ: f64 = 3_000.0;
-const ACQ_MIN_SHIFT_HZ: f64 = 1.0;
+const UNLOCKED_MSE: f32 = 1.0;
+const CLEAN_MSE: f32 = 0.1;
 const RRC_TAPS: usize = 55;
 const AGC_CLIP: f32 = 2.84;
 const BIAS_WINDOW: usize = 800;
@@ -166,15 +166,9 @@ impl OqpskDemod {
             recent: [Complex::new(0.0, 0.0); 2],
             carrier_loop: biquad(CARRIER_LOOP),
             bias: MovingAverage::new(BIAS_WINDOW),
-            mse: 100.0,
+            mse: UNLOCKED_MSE,
             quad: Complex::new(0.0, 0.0),
-            acquisition: CoarseAcquisition::new(
-                ACQ_FFT,
-                channel_rate,
-                bit_rate / 2.0,
-                ACQ_RANGE_HZ,
-                Some(ACQ_MIN_SHIFT_HZ),
-            ),
+            acquisition: CoarseAcquisition::new(ACQ_FFT, channel_rate, bit_rate / 2.0, CLEAN_MSE),
             points: Vec::new(),
         }
     }
@@ -210,10 +204,14 @@ impl OqpskDemod {
             self.nco_phase -= TAU;
         }
         let filtered = self.rrc.filter(raw * rotation);
-        let mixed = raw * Complex::from_polar(1.0, -self.nco_phase as f32);
-        let locked = self.locked();
-        if let Some(shift) = self.acquisition.push(mixed, locked) {
-            self.retune(shift);
+        if self.acquisition.push(raw) {
+            let lock = Lock {
+                locked: self.locked(),
+                error: self.mse,
+            };
+            if let Some(carrier_hz) = self.acquisition.decide(self.nco_freq_hz, lock) {
+                self.retune(carrier_hz);
+            }
         }
         self.agc += 0.001 * (filtered.norm() - self.agc);
         let mut sample = filtered / self.agc.max(1e-9);
@@ -228,11 +226,13 @@ impl OqpskDemod {
         self.last_sample = sample;
     }
 
-    fn retune(&mut self, shift_hz: f64) {
-        self.nco_freq_hz += shift_hz;
+    fn retune(&mut self, carrier_hz: f64) {
+        self.nco_freq_hz = carrier_hz;
         self.carrier_loop.reset();
         self.bias.reset();
         self.phase_trim = 0.0;
+        self.mse = UNLOCKED_MSE;
+        self.quad = Complex::new(0.0, 0.0);
     }
 
     fn strobe(&mut self, point: Complex<f32>, out: &mut Vec<(f32, u8)>) {
@@ -492,6 +492,68 @@ mod tests {
         (0..count)
             .map(|index| u8::from(index.wrapping_mul(2_654_435_761).rotate_left(7) & 4 != 0))
             .collect()
+    }
+
+    fn demod_for(bit_rate: f64) -> (OqpskDemod, f64) {
+        if bit_rate == 8_400.0 {
+            (OqpskDemod::new_c_channel(CHANNEL_RATE_HR), 0.6)
+        } else {
+            (OqpskDemod::new(CHANNEL_RATE_HR), 1.0)
+        }
+    }
+
+    /// Frequency error once settled, and the bit error rate over the second half.
+    fn settle(bits: &[u8], bit_rate: f64, cfo: f64) -> (bool, f64, f64) {
+        let (mut demod, beta) = demod_for(bit_rate);
+        let iq = modulate_oqpsk_rate(bits, bit_rate, beta, CHANNEL_RATE_HR, cfo, 0.5);
+        let mut out = Vec::new();
+        demod.process(&iq, &mut out);
+        let soft: Vec<f32> = out.iter().map(|&(soft, _)| soft).collect();
+        (
+            demod.locked(),
+            demod.frequency_error_hz() - cfo,
+            rail_ber(bits, &soft),
+        )
+    }
+
+    fn repeated(pattern: &[u8], seconds: f64, bit_rate: f64) -> Vec<u8> {
+        let count = (seconds * bit_rate) as usize;
+        pattern.iter().copied().cycle().take(count).collect()
+    }
+
+    #[test]
+    fn pulls_in_a_carrier_at_the_edge_of_the_range() {
+        for bit_rate in [8_400.0, f64::from(BIT_RATE)] {
+            let mut rng = Lcg(7);
+            let bits: Vec<u8> = (0..(4.0 * bit_rate) as usize).map(|_| rng.bit()).collect();
+            for cfo in [-2_950.0, 2_500.0] {
+                let (locked, error, ber) = settle(&bits, bit_rate, cfo);
+                let case = format!("{bit_rate} bps, cfo {cfo}");
+                assert!(locked, "{case}");
+                assert!(error.abs() < 5.0, "{case}: off by {error} Hz");
+                assert!(ber < 0.001, "{case}: BER {ber}");
+            }
+        }
+    }
+
+    /// Periodic data puts a comb of line pairs one pattern spacing apart.
+    #[test]
+    fn periodic_data_settles_on_the_true_carrier() {
+        let mut rng = Lcg(4);
+        let period_12: Vec<u8> = (0..12).map(|_| rng.bit()).collect();
+        let period_20: Vec<u8> = (0..20).map(|_| rng.bit()).collect();
+        for bit_rate in [8_400.0, f64::from(BIT_RATE)] {
+            for (name, pattern) in [("12", &period_12), ("20", &period_20)] {
+                let bits = repeated(pattern, 8.0, bit_rate);
+                for cfo in [700.0, -1_400.0, -2_500.0, 2_950.0] {
+                    let (locked, error, ber) = settle(&bits, bit_rate, cfo);
+                    let case = format!("{bit_rate} bps, pattern {name}, cfo {cfo}");
+                    assert!(locked, "{case}");
+                    assert!(error.abs() < 5.0, "{case}: off by {error} Hz");
+                    assert!(ber < 0.001, "{case}: BER {ber}");
+                }
+            }
+        }
     }
 
     #[test]

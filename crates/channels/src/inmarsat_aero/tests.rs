@@ -591,10 +591,45 @@ fn coherent_detection_decodes_below_the_discriminator_threshold() {
 
 #[test]
 fn acquires_a_wide_frequency_offset() {
-    for cfo in [-380.0, 380.0] {
-        let iq = noisy_msk(600, cfo, 12.0, 5);
-        assert!(has_adsc(&ours(&iq)), "{cfo} Hz");
-        assert!(!has_adsc(&reference(&iq)), "{cfo} Hz");
+    for (rate, cfo) in [
+        (600, -380.0),
+        (600, 380.0),
+        (600, 2_500.0),
+        (1200, -2_900.0),
+    ] {
+        let iq = noisy_msk(rate, cfo, 12.0, 5);
+        assert!(has_adsc(&ours(&iq)), "{rate} bit/s, {cfo} Hz");
+        assert!(!has_adsc(&reference(&iq)), "{rate} bit/s, {cfo} Hz");
+    }
+}
+
+fn through_channel_filter(iq: &[Complex<f32>]) -> Vec<Complex<f32>> {
+    let mut filter = sdrmm_decoder::ChannelFilter::new(&super::channel_filter(), INPUT_RATE)
+        .expect("channel filter");
+    let mut out = Vec::new();
+    filter.process(iq, &mut out);
+    out
+}
+
+fn energy(iq: &[Complex<f32>]) -> f64 {
+    iq.iter().map(|sample| f64::from(sample.norm_sqr())).sum()
+}
+
+#[test]
+fn high_rate_acars_decodes_through_the_filter_at_the_pull_in_edge() {
+    for cfo in [-2_950.0, 2_950.0] {
+        let iq = modulate_oqpsk(&high_rate_bits(), oqpsk::CHANNEL_RATE_HR, cfo, 0.5);
+        let mut filtered = through_channel_filter(&iq);
+        let kept = energy(&filtered) / energy(&iq);
+        assert!(kept > 0.99, "{cfo} Hz keeps {kept}");
+        Noise(0x5eed_0bad_cafe_0001).add(&mut filtered, 0.02);
+        let messages = ours(&filtered);
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.message_type == "acars" && message.crc_ok),
+            "{cfo} Hz"
+        );
     }
 }
 
