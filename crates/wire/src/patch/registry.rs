@@ -614,7 +614,7 @@ nodes! {
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
             (VoiceChat(VoiceChatNode), "voice_chat", Output, "Voice chat",
-                "Discord or TeamSpeak, both ways", Role::Plain, Face::fit(340), [
+                "Discord, TeamSpeak or Matrix, both ways", Role::Plain, Face::fit(340), [
                 audio_in(ANY_AUDIO),
                 audio_out(VOICE),
             ]),

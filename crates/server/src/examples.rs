@@ -133,7 +133,7 @@ static EXAMPLES: &[Example] = &[
     Example {
         id: "voice-chat-gateway",
         name: "Voice chat gateway",
-        description: "A 2 m FM channel linked to Discord or TeamSpeak.",
+        description: "A 2 m FM channel linked to Discord, TeamSpeak or Matrix.",
         body: packed_data!("examples/voice-chat-gateway.json"),
     },
     Example {

@@ -2949,7 +2949,7 @@
       "kind": "voice_chat",
       "name": "Voice chat",
       "category": "output",
-      "summary": "Discord or TeamSpeak, both ways",
+      "summary": "Discord, TeamSpeak or Matrix, both ways",
       "role": {
         "role": "plain"
       },
