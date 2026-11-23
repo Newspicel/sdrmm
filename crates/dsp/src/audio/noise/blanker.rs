@@ -50,6 +50,20 @@ impl NoiseBlanker {
         self.remaining = 0;
     }
 
+    fn track(&mut self, magnitude: f32) {
+        if self.average <= 0.0 {
+            self.average = magnitude;
+        } else {
+            self.average += self.coeff * (magnitude - self.average);
+        }
+    }
+
+    fn is_impulse(&self, magnitude: f32) -> bool {
+        magnitude > self.threshold * self.average.max(f32::MIN_POSITIVE)
+    }
+
+    /// A burst still loud at the end of its window is a level step (a retune, a stronger
+    /// station), not an impulse, so the average jumps to it instead of blanking on.
     pub fn process(&mut self, iq: &mut [Complex<f32>]) {
         if !self.average.is_finite() {
             self.reset();
@@ -69,14 +83,12 @@ impl NoiseBlanker {
 
             let magnitude = input.norm();
             if self.remaining == 0 {
-                if self.average <= 0.0 {
-                    self.average = magnitude;
-                } else {
-                    self.average += self.coeff * (magnitude - self.average);
-                }
-                if magnitude > self.threshold * self.average.max(f32::MIN_POSITIVE) {
+                self.track(magnitude);
+                if self.is_impulse(magnitude) {
                     self.remaining = self.window;
                 }
+            } else if self.remaining == 1 && self.is_impulse(magnitude) {
+                self.average = magnitude;
             }
             if self.remaining > 0 {
                 self.remaining -= 1;
@@ -164,6 +176,22 @@ mod tests {
             })
             .collect();
         assert!(counts[0] > counts[1], "{counts:?}");
+    }
+
+    #[test]
+    fn a_level_step_is_followed_not_blanked() {
+        let mut iq = carrier(48_000);
+        for sample in &mut iq[..4_000] {
+            *sample *= 0.01;
+        }
+        let mut blanker = NoiseBlanker::new(RATE, 5.0);
+        blanker.process(&mut iq);
+        assert!(
+            blanker.blanked_samples() < 200,
+            "blanked {} samples after a level step",
+            blanker.blanked_samples()
+        );
+        assert!(rms_c(&iq[8_000..]) > 0.09, "the louder signal stayed muted");
     }
 
     #[test]
