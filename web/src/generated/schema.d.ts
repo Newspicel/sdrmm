@@ -782,7 +782,7 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["add_network_radio"];
-        delete?: never;
+        delete: operations["forget_network_radio"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3754,6 +3754,8 @@ export interface components {
             tuning?: components["schemas"]["Tuning"] | null;
         };
         DevicesResponse: {
+            /** @description Ids of the radios added by address, which `DELETE /api/devices/network` removes. */
+            adopted?: string[];
             /** @description Every backend this server drives, built-in or plugin, for labels, reach and address hints. */
             backends?: components["schemas"]["BackendSpec"][];
             claims?: components["schemas"]["DeviceClaim"][];
@@ -10314,6 +10316,55 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: never;
+                };
+            };
+        };
+    };
+    forget_network_radio: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NetworkRadioRequest"];
+            };
+        };
+        responses: {
+            /** @description The network radio is removed from the device list */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No radio was added at that device id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The radio is open */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
         };
         requestBody: {
             content: {

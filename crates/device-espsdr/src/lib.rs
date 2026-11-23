@@ -133,6 +133,14 @@ impl DeviceDriver for EspSdrDriver {
         }
         Some(net_info(&endpoint))
     }
+
+    fn adopted(&self) -> Vec<String> {
+        self.adopted.keys()
+    }
+
+    fn forget(&self, key: &str) -> bool {
+        self.adopted.forget(key)
+    }
 }
 
 pub struct EspSdrDevice {

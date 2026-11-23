@@ -2574,6 +2574,54 @@
             }
           }
         }
+      },
+      "delete": {
+        "operationId": "forget_network_radio",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkRadioRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The network radio is removed from the device list"
+          },
+          "404": {
+            "description": "No radio was added at that device id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The radio is open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/devices/serial": {
@@ -13077,6 +13125,13 @@
           "synthetic"
         ],
         "properties": {
+          "adopted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the radios added by address, which `DELETE /api/devices/network` removes."
+          },
           "backends": {
             "type": "array",
             "items": {

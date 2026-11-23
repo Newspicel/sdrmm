@@ -350,6 +350,16 @@ pub trait DeviceDriver: Send + Sync {
         None
     }
 
+    /// The keys [`Self::resolve`] adopted by address, which [`Self::forget`] can drop again.
+    fn adopted(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Drops an adopted key so its radio leaves the listing. False for a key never adopted.
+    fn forget(&self, _key: &str) -> bool {
+        false
+    }
+
     fn health(&self) -> Option<DoctorCheck> {
         None
     }

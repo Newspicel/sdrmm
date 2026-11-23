@@ -110,6 +110,9 @@ pub struct DevicesResponse {
     pub backends: Vec<crate::BackendSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claims: Vec<DeviceClaim>,
+    /// Ids of the radios added by address, which `DELETE /api/devices/network` removes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adopted: Vec<String>,
     pub synthetic: bool,
 }
 

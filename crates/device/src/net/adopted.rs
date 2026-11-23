@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeSet,
+    fmt::Display,
     sync::{Mutex, MutexGuard, PoisonError},
 };
 
@@ -39,6 +40,21 @@ impl<K: Clone + Ord> Adopted<K> {
     }
 }
 
+impl<K: Clone + Ord + Display> Adopted<K> {
+    /// Each adopted key as the device listing spells it.
+    pub fn keys(&self) -> Vec<String> {
+        self.lock().iter().map(ToString::to_string).collect()
+    }
+
+    /// Drops the key the device listing spells as `key`. False when none was adopted.
+    pub fn forget(&self, key: &str) -> bool {
+        let mut keys = self.lock();
+        let held = keys.len();
+        keys.retain(|adopted| adopted.to_string() != key);
+        keys.len() < held
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,6 +88,16 @@ mod tests {
         assert!(!adopted.adopt(endpoint("one.too.many")));
         assert!(adopted.adopt(endpoint("host0.local")), "already held");
         assert_eq!(adopted.list().len(), MAX_ENDPOINTS);
+    }
+
+    #[test]
+    fn a_forgotten_endpoint_leaves_the_list() {
+        let adopted = Adopted::default();
+        assert!(adopted.adopt(endpoint("a.local")));
+        assert!(adopted.adopt(endpoint("b.local")));
+        assert!(adopted.forget("a.local:1234"));
+        assert!(!adopted.forget("a.local:1234"), "already gone");
+        assert_eq!(adopted.keys(), vec!["b.local:1234".to_string()]);
     }
 
     #[test]

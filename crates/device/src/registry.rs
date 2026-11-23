@@ -156,6 +156,36 @@ impl DeviceRegistry {
             .find_map(|(_, driver)| driver.resolve(key))
     }
 
+    /// Every radio adopted by address, by device id.
+    #[must_use]
+    pub fn adopted(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .drivers
+            .iter()
+            .flat_map(|(_, driver)| {
+                let backend = driver.id();
+                driver
+                    .adopted()
+                    .into_iter()
+                    .map(move |key| format!("{backend}:{key}"))
+            })
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    /// Drops a radio adopted by address. False when no driver adopted that id.
+    pub fn forget(&self, device_id: &str) -> bool {
+        let Some((driver_id, key)) = split_device_id(device_id) else {
+            return false;
+        };
+        self.drivers
+            .iter()
+            .filter(|(_, driver)| driver.id() == driver_id)
+            .fold(false, |forgot, (_, driver)| driver.forget(key) || forgot)
+    }
+
     pub fn write_serial(
         &self,
         device_id: &str,

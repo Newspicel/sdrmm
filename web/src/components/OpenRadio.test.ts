@@ -93,6 +93,14 @@ describe("groupDevices", () => {
     expect(grouped.radios.map(deviceId)).toEqual(["rtlsdr:00000001"]);
     expect(grouped.virtual.map(deviceId)).toEqual(["virtual:band", "virtual:array4"]);
   });
+
+  it("files a radio added by address under network, not the attached radios", () => {
+    const kiwi = device("kiwisdr", "kiwi.local:8073", "KiwiSDR kiwi.local:8073");
+    const grouped = groupDevices([...devices, kiwi], BACKENDS, ["kiwisdr:kiwi.local:8073"]);
+
+    expect(grouped.radios.map(deviceId)).toEqual(["rtlsdr:00000001"]);
+    expect(grouped.network.map(deviceId)).toEqual(["kiwisdr:kiwi.local:8073"]);
+  });
 });
 
 describe("sourceTabs", () => {

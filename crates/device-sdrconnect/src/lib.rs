@@ -74,6 +74,14 @@ impl DeviceDriver for SdrConnectDriver {
         }
         Some(device_info(&address))
     }
+
+    fn adopted(&self) -> Vec<String> {
+        self.adopted.keys()
+    }
+
+    fn forget(&self, key: &str) -> bool {
+        self.adopted.forget(key)
+    }
 }
 
 #[derive(Debug)]

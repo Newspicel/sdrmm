@@ -58,15 +58,21 @@ export function unclaimedDevices(
   );
 }
 
+export type DeviceGroups = {
+  radios: readonly DeviceInfo[];
+  network: readonly DeviceInfo[];
+  virtual: readonly DeviceInfo[];
+};
+
 export function groupDevices(
   devices: readonly DeviceInfo[],
   backends: Backends,
-): {
-  radios: readonly DeviceInfo[];
-  virtual: readonly DeviceInfo[];
-} {
+  adopted: readonly string[] = [],
+): DeviceGroups {
+  const added = (device: DeviceInfo) => adopted.includes(deviceId(device));
   return {
-    radios: devices.filter((device) => !isVirtualDevice(device, backends)),
+    radios: devices.filter((device) => !isVirtualDevice(device, backends) && !added(device)),
+    network: devices.filter(added),
     virtual: devices.filter((device) => isVirtualDevice(device, backends)),
   };
 }
@@ -77,15 +83,12 @@ function counted(label: string, count: number): string {
   return count > 0 ? `${label} (${count})` : label;
 }
 
-export function sourceTabs(groups: {
-  radios: readonly DeviceInfo[];
-  virtual: readonly DeviceInfo[];
-}): Options<SourceTab> {
+export function sourceTabs(groups: DeviceGroups): Options<SourceTab> {
   const tabs: { value: SourceTab; label: string; title: string }[] = [
     { value: "radios", label: "Radios", title: "Radios attached to this machine" },
     {
       value: "network",
-      label: "Network",
+      label: counted("Network", groups.network.length),
       title: "rtl_tcp, SpyServer, SDRconnect, KiwiSDR, AntSDR or Pluto",
     },
     { value: "recording", label: "Recording", title: "Play a recorded IQ file back" },

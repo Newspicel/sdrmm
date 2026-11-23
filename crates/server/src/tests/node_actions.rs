@@ -1,4 +1,4 @@
-use sdrmm_device::{DeviceDriver, DeviceError, SdrDevice};
+use sdrmm_device::{DeviceDriver, DeviceError, SdrDevice, net::Adopted};
 use sdrmm_wire::{DeviceBackend, DeviceInfo, NodeActed, NodeBody, WorkspaceNoticeKind};
 
 use super::*;
@@ -370,5 +370,84 @@ async fn a_network_radio_is_adopted_without_opening() {
         Some(r#"{"address":"nobody:10.0.0.3"}"#),
     )
     .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[derive(Default)]
+struct Remembering(Adopted<String>);
+
+impl DeviceDriver for Remembering {
+    fn id(&self) -> DeviceBackend {
+        DeviceBackend::KIWISDR
+    }
+
+    fn probe(&self) -> Vec<DeviceInfo> {
+        self.0
+            .keys()
+            .into_iter()
+            .map(|key| DeviceInfo {
+                driver: DeviceBackend::KIWISDR,
+                label: key.clone(),
+                key,
+                serial: None,
+                profile: None,
+            })
+            .collect()
+    }
+
+    fn open(&self, _info: &DeviceInfo) -> Result<Box<dyn SdrDevice>, DeviceError> {
+        Err(DeviceError::Io("not in this test".to_owned()))
+    }
+
+    fn resolve(&self, key: &str) -> Option<DeviceInfo> {
+        self.0.adopt(key.to_owned());
+        self.probe().into_iter().find(|device| device.key == key)
+    }
+
+    fn adopted(&self) -> Vec<String> {
+        self.0.keys()
+    }
+
+    fn forget(&self, key: &str) -> bool {
+        self.0.forget(key)
+    }
+}
+
+async fn listed_devices(app: &Router) -> sdrmm_wire::DevicesResponse {
+    let (status, body) = request(app.clone(), "GET", "/api/devices", None).await;
+    assert_eq!(status, StatusCode::OK);
+    serde_json::from_slice(&body).expect("json")
+}
+
+#[tokio::test]
+async fn a_network_radio_can_be_removed_again() {
+    let mut registry = sdrmm_device::DeviceRegistry::new();
+    registry.register(1, Box::new(Remembering::default()));
+    let state = AppState::new(
+        Engine::with_registry(registry, None),
+        Arc::new(Store::open(None).expect("in-memory store")),
+    );
+    let (app, background) = router_with_state(state, &ServerOptions::default());
+    background.detach();
+    let radio = Some(r#"{"address":"kiwisdr:10.0.0.2:8073"}"#);
+
+    let (status, _) = request(app.clone(), "POST", "/api/devices/network", radio).await;
+    assert_eq!(status, StatusCode::OK);
+    let listed = listed_devices(&app).await;
+    assert_eq!(listed.adopted, vec!["kiwisdr:10.0.0.2:8073".to_owned()]);
+    assert_eq!(listed.devices.len(), 1);
+
+    let (status, body) = request(app.clone(), "DELETE", "/api/devices/network", radio).await;
+    assert_eq!(
+        status,
+        StatusCode::NO_CONTENT,
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+    let listed = listed_devices(&app).await;
+    assert!(listed.adopted.is_empty());
+    assert!(listed.devices.is_empty());
+
+    let (status, _) = request(app.clone(), "DELETE", "/api/devices/network", radio).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }

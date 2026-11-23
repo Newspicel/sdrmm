@@ -29,6 +29,7 @@ pub(super) async fn get_devices(
         devices,
         backends: state.engine.registry().specs(),
         claims,
+        adopted: state.engine.adopted_devices(),
         synthetic: sdrmm_engine::synthetic_devices_offered(),
     }))
 }

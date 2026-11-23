@@ -269,6 +269,10 @@ export async function addNetworkRadio(address: string): Promise<DeviceInfo> {
   return unwrap(await client.POST("/api/devices/network", { body: { address } }));
 }
 
+export async function removeNetworkRadio(address: string): Promise<void> {
+  unwrap(await client.DELETE("/api/devices/network", { body: { address } }));
+}
+
 export async function patchNodeDevice(node: string, settings: DeviceSettings): Promise<void> {
   unwrap(
     await client.PATCH("/api/workspaces/active/nodes/{node}/device", {

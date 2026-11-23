@@ -80,6 +80,14 @@ impl DeviceDriver for RtlTcpDriver {
         }
         Some(device_info(&endpoint))
     }
+
+    fn adopted(&self) -> Vec<String> {
+        self.adopted.keys()
+    }
+
+    fn forget(&self, key: &str) -> bool {
+        self.adopted.forget(key)
+    }
 }
 
 fn dial(endpoint: &Endpoint) -> Result<Connection, DeviceError> {

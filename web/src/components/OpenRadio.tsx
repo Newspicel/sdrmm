@@ -3,9 +3,11 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@ui-sdk/react
 import { BookmarkPlus, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import {
+  DEVICES_KEY,
   deleteSavedRadio,
   devicesQuery,
   doctorQuery,
+  removeNetworkRadio,
   SAVED_RADIOS_KEY,
   savedRadiosQuery,
   saveRadio,
@@ -70,6 +72,47 @@ function SavedRadios({ onAdd, busy }: { onAdd: (id: string) => void; busy: boole
               danger
               disabled={forget.isPending}
               onClick={() => forget.mutate(radio.id)}
+            />
+          }
+        />
+      ))}
+    </List>
+  );
+}
+
+function AddedRadios({
+  radios,
+  busy,
+  onChoose,
+}: {
+  radios: readonly DeviceInfo[];
+  busy: boolean;
+  onChoose: Choose;
+}) {
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: removeNetworkRadio,
+    onError: (error: Error) => pushToast(error.message),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: DEVICES_KEY }),
+  });
+  if (radios.length === 0) {
+    return null;
+  }
+  return (
+    <List title="Added">
+      {radios.map((device) => (
+        <ListRow
+          key={deviceId(device)}
+          primary={device.label}
+          disabled={busy}
+          onSelect={() => onChoose(device)}
+          actions={
+            <RowAction
+              label={`Remove ${device.label}`}
+              glyph={Trash2}
+              danger
+              disabled={remove.isPending}
+              onClick={() => remove.mutate(deviceId(device))}
             />
           }
         />
@@ -227,7 +270,7 @@ export function DeviceChoices({
     claimant === undefined
       ? visible
       : unclaimedDevices(visible, devices.data?.claims ?? [], claimant);
-  const groups = groupDevices(found, backends);
+  const groups = groupDevices(found, backends, devices.data?.adopted ?? []);
   const tabs = sourceTabs(groups);
   const shown = tabs.some((option) => option.value === tab) ? tab : "radios";
 
@@ -252,6 +295,7 @@ export function DeviceChoices({
       )}
       {shown === "network" && (
         <>
+          <AddedRadios radios={groups.network} busy={busy} onChoose={onChoose} />
           <SavedRadios onAdd={onAddNetwork} busy={busy} />
           <AddNetworkRadio onAdd={onAddNetwork} busy={busy} />
         </>

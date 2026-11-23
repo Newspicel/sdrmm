@@ -528,7 +528,10 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(actions::node_action))
         .routes(routes!(nodes::patch_node_channel))
         .routes(routes!(nodes::patch_node_device))
-        .routes(routes!(nodes::add_network_radio))
+        .routes(routes!(
+            nodes::add_network_radio,
+            nodes::forget_network_radio
+        ))
         .routes(routes!(undo_workspace))
         .routes(routes!(redo_workspace))
         .routes(routes!(get_patch_catalog))

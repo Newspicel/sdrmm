@@ -237,3 +237,23 @@ pub(super) async fn add_network_radio(
         .ok_or_else(|| AppError::not_found(format!("No radio answers at {}", req.address)))?;
     Ok(Json(device))
 }
+
+#[utoipa::path(
+    delete, path = "/api/devices/network",
+    request_body = NetworkRadioRequest,
+    responses(
+        (status = 204, description = "The network radio is removed from the device list"),
+        (status = 404, description = "No radio was added at that device id", body = ApiError),
+        (status = 409, description = "The radio is open", body = ApiError),
+        (status = 422, description = "Malformed request body", body = ApiError),
+    ),
+)]
+pub(super) async fn forget_network_radio(
+    State(state): State<AppState>,
+    Json(req): Json<NetworkRadioRequest>,
+) -> Result<StatusCode, AppError> {
+    let engine = state.engine.clone();
+    let device = req.address.trim().to_owned();
+    tokio::task::spawn_blocking(move || engine.forget_device(&device)).await??;
+    Ok(StatusCode::NO_CONTENT)
+}

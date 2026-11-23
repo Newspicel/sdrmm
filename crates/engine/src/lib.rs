@@ -1658,6 +1658,32 @@ impl Engine {
         self.registry.resolve(device_id)
     }
 
+    /// Every radio adopted by address, by device id: the ones [`Self::forget_device`] drops.
+    #[must_use]
+    pub fn adopted_devices(&self) -> Vec<String> {
+        self.registry.adopted()
+    }
+
+    /// Drops a radio adopted by address from the device list. An open radio stays.
+    pub fn forget_device(&self, device_id: &str) -> Result<(), EngineError> {
+        if let Some(set) = self
+            .snapshot()
+            .device_sets
+            .iter()
+            .find(|set| set.device.id() == device_id)
+        {
+            return Err(EngineError::DeviceAlreadyOpen(device_id.to_owned(), set.id));
+        }
+        if !self.registry.forget(device_id) {
+            return Err(DeviceError::NotFound(device_id.to_owned()).into());
+        }
+        self.lock_discovery().expire();
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::Devices,
+        });
+        Ok(())
+    }
+
     #[must_use]
     pub fn probe_devices(self: &Arc<Self>) -> Vec<DeviceInfo> {
         let attached = self.registry.probe_all();

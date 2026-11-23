@@ -213,6 +213,14 @@ impl DeviceDriver for Ad936xDriver {
             .unwrap_or_default();
         Some(net_info(&endpoint, identity))
     }
+
+    fn adopted(&self) -> Vec<String> {
+        self.adopted.keys()
+    }
+
+    fn forget(&self, key: &str) -> bool {
+        self.adopted.forget(key)
+    }
 }
 
 fn split_gains(delta: &DeviceSettings) -> (DeviceSettings, DeviceSettings) {
