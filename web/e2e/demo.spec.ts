@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { type Page, type Response, test } from "@playwright/test";
 import {
+  CATALOG_PATH,
   type DemoSession,
   type RecordedMessage,
   type RecordedResponse,
@@ -65,7 +66,11 @@ class Tape {
     });
     page.on("response", (response) => {
       const url = new URL(response.url());
-      if (url.pathname.startsWith("/api/") && url.pathname !== "/api/ws") {
+      if (
+        url.pathname.startsWith("/api/") &&
+        url.pathname !== "/api/ws" &&
+        url.pathname !== CATALOG_PATH
+      ) {
         const method = response.request().method();
         this.responses.set(`${method} ${url.pathname}${url.search}`, capture(response));
       }

@@ -34,6 +34,9 @@ interface Command {
   data?: Record<string, unknown>;
 }
 
+/** The demo serves the generated catalog, so a recording never carries a stale copy. */
+export const CATALOG_PATH = "/api/patch/catalog";
+
 const SUBSCRIPTION = /^(?:Un)?[Ss]ubscribe([A-Za-z]+)$/;
 const VOLATILE = new Set(["fps", "bins", "params"]);
 

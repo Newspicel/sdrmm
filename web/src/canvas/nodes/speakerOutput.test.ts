@@ -13,7 +13,12 @@ import {
   withSpeakerVolume,
 } from "./speakerOutput";
 
-const speaker: PatchNode = { id: "s", kind: "speaker", data: { output: null, volumes: {} }, position: { x: 0, y: 0 } };
+const speaker: PatchNode = {
+  id: "s",
+  kind: "speaker",
+  data: { output: null, volumes: {} },
+  position: { x: 0, y: 0 },
+};
 
 describe("speaker output", () => {
   it("keeps the picked output by name and clears it back to System", () => {

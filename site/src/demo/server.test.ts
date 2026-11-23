@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { DemoSession, RecordedResponse } from "../../../web/e2e/demoSession";
+import {
+  CATALOG_PATH,
+  type DemoSession,
+  type RecordedResponse,
+} from "../../../web/e2e/demoSession";
+import CATALOG from "../../../web/src/generated/catalog-fixture.json";
 import { DemoServer } from "./server";
 
 function recorded(path: string, body: unknown): RecordedResponse {
@@ -72,6 +77,10 @@ describe("DemoServer", () => {
     expect((await call(server(), "GET", "/api/decoderlog?limit=500")).body).toEqual({
       records: ["a"],
     });
+  });
+
+  it("serves the generated node catalog", async () => {
+    expect((await call(server(), "GET", CATALOG_PATH)).body).toEqual(CATALOG);
   });
 
   it("answers an unrecorded GET with an API error", async () => {

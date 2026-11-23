@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { layoutPatch, parsePatch, type Rect } from "./patch-diagram";
 
-const RAW_DOCS = import.meta.glob<string>("../../../docs/**/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-});
+const RAW_DOCS = import.meta.glob<string>(
+  ["../../../docs/**/*.md", "!../../../docs/superpowers/**"],
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+);
 
 function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;

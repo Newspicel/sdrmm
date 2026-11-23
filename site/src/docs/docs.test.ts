@@ -4,11 +4,14 @@ import { postprocessHtml, preprocessMarkdown, rewriteDocLink } from "./markdown"
 import { FLAT_DOCS, normalizeDocId } from "./nav";
 import { parsePatch, renderPatchSvg } from "./patch-diagram";
 
-const rawDocs = import.meta.glob<string>("../../../docs/**/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-});
+const rawDocs = import.meta.glob<string>(
+  ["../../../docs/**/*.md", "!../../../docs/superpowers/**"],
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+);
 
 const docsByRel = new Map<string, string>(
   Object.entries(rawDocs).map(([key, content]) => [key.replace(/^.*?\/docs\//, ""), content]),

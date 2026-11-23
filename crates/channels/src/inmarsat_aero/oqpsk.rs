@@ -528,7 +528,7 @@ mod tests {
             let bits: Vec<u8> = (0..(4.0 * bit_rate) as usize).map(|_| rng.bit()).collect();
             for cfo in [-2_950.0, 2_500.0] {
                 let (locked, error, ber) = settle(&bits, bit_rate, cfo);
-                let case = format!("{bit_rate} bps, cfo {cfo}");
+                let case = format!("{bit_rate} bit/s, cfo {cfo}");
                 assert!(locked, "{case}");
                 assert!(error.abs() < 5.0, "{case}: off by {error} Hz");
                 assert!(ber < 0.001, "{case}: BER {ber}");
@@ -547,7 +547,7 @@ mod tests {
                 let bits = repeated(pattern, 8.0, bit_rate);
                 for cfo in [700.0, -1_400.0, -2_500.0, 2_950.0] {
                     let (locked, error, ber) = settle(&bits, bit_rate, cfo);
-                    let case = format!("{bit_rate} bps, pattern {name}, cfo {cfo}");
+                    let case = format!("{bit_rate} bit/s, pattern {name}, cfo {cfo}");
                     assert!(locked, "{case}");
                     assert!(error.abs() < 5.0, "{case}: off by {error} Hz");
                     assert!(ber < 0.001, "{case}: BER {ber}");
@@ -569,7 +569,7 @@ mod tests {
                 };
                 let mut out = Vec::new();
                 demod.process(&iq, &mut out);
-                let case = format!("{bit_rate} bps, cfo {cfo}");
+                let case = format!("{bit_rate} bit/s, cfo {cfo}");
                 assert!(demod.locked(), "{case}: mse {}", demod.mse);
                 let error = demod.frequency_error_hz() - cfo;
                 assert!(error.abs() < 5.0, "{case}: off by {error} Hz");

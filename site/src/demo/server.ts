@@ -1,4 +1,9 @@
-import type { DemoSession, RecordedResponse } from "../../../web/e2e/demoSession";
+import {
+  CATALOG_PATH,
+  type DemoSession,
+  type RecordedResponse,
+} from "../../../web/e2e/demoSession";
+import CATALOG from "../../../web/src/generated/catalog-fixture.json";
 import type {
   ChannelSettings,
   DeviceSettings,
@@ -54,6 +59,9 @@ export class DemoServer {
   }
 
   private dynamic(method: string, path: string, body: string | null): Response | null {
+    if (method === "GET" && path === CATALOG_PATH) {
+      return json(CATALOG);
+    }
     if (method === "GET" && path === "/api/state" && this.state !== null) {
       return json(this.state);
     }

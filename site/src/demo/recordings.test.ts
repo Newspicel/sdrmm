@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DemoSession } from "../../../web/e2e/demoSession";
-import CATALOG from "../../../web/src/generated/catalog-fixture.json";
+import { CATALOG_PATH, type DemoSession } from "../../../web/e2e/demoSession";
 import type { ResolvedState, StateSnapshot, WorkspaceDetail } from "../../../web/src/lib/types";
 import { SCENES } from "./scenes";
 
@@ -51,8 +50,8 @@ describe("demo recordings", () => {
     }
   });
 
-  it.each(SCENES.map((scene) => scene.id))("%s serves the current node catalog", (scene) => {
-    expect(bodyOf(sessionOf(scene), /^\/api\/patch\/catalog$/)).toEqual(CATALOG);
+  it.each(SCENES.map((scene) => scene.id))("%s carries no node catalog of its own", (scene) => {
+    expect(sessionOf(scene).responses.map((response) => response.path)).not.toContain(CATALOG_PATH);
   });
 
   it.each(SCENES.map((scene) => scene.id))(
