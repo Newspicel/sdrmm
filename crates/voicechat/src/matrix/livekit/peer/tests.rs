@@ -162,6 +162,44 @@ async fn the_publisher_offers_a_send_only_mic_and_data() {
 }
 
 #[tokio::test]
+async fn an_answering_peer_starts_its_own_checks() {
+    let sfu = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let (_, offer) = sfu_offer("PA_alice|TR_alice", "TR_alice");
+    let (mut peer, _) = Peer::subscriber(LOOPBACK, offer).await.unwrap();
+    peer.add_remote_candidate(Candidate::host(sfu.local_addr().unwrap(), "udp").unwrap());
+    let (_silence, mut idle) = mpsc::channel(1);
+    let (heard, _never_read) = mpsc::channel(1);
+    let running = tokio::spawn(async move { peer.run(&mut idle, &heard).await });
+
+    let mut buf = [0; DATAGRAM];
+    let (len, _) = timeout(PATIENCE, sfu.recv_from(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(len >= 20);
+    assert_eq!(buf[4..8], [0x21, 0x12, 0xa4, 0x42]);
+    running.abort();
+}
+
+#[tokio::test]
+async fn ice_down_past_its_grace_loses_the_call() {
+    let (_, offer) = sfu_offer("PA_alice|TR_alice", "TR_alice");
+    let (mut peer, _) = Peer::subscriber(LOOPBACK, offer).await.unwrap();
+    peer.down_since = Instant::now().checked_sub(ICE_GRACE);
+    let (_silence, mut idle) = mpsc::channel(1);
+    let (heard, _never_read) = mpsc::channel(1);
+
+    let ran = timeout(PATIENCE, peer.run(&mut idle, &heard))
+        .await
+        .unwrap();
+
+    assert_eq!(ran, Err(lost()));
+}
+
+#[tokio::test]
 async fn an_answer_with_no_offer_is_refused() {
     let (_, offer) = sfu_offer("PA_alice|TR_alice", "TR_alice");
     let (mut peer, answer) = Peer::subscriber(LOOPBACK, offer).await.unwrap();

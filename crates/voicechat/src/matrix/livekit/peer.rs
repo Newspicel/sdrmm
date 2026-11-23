@@ -2,7 +2,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Once;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use str0m::change::{SdpAnswer, SdpOffer, SdpPendingOffer};
 use str0m::channel::{ChannelConfig, Reliability};
@@ -19,6 +19,11 @@ use super::signal::MIC_CID;
 const RELIABLE: &str = "_reliable";
 const LOSSY: &str = "_lossy";
 const DATAGRAM: usize = 2000;
+/// How long ICE may stay unconnected before the call counts as lost. A disconnect may heal, and
+/// pairs form only as candidates trickle in.
+const ICE_GRACE: Duration = Duration::from_secs(15);
+/// How often a peer reports what it sent and heard to the log.
+const STATS_EVERY: Duration = Duration::from_secs(5);
 
 /// One Opus frame to publish, with its RTP timestamp in 48 kHz units.
 pub(crate) struct OpusOut {
@@ -51,6 +56,8 @@ pub(crate) struct Peer {
     bundle: Option<Mid>,
     buf: Vec<u8>,
     dropped: u64,
+    /// Since when ICE has not been connected; None while it is.
+    down_since: Option<Instant>,
 }
 
 enum Turn {
@@ -82,6 +89,7 @@ fn new_rtc() -> Rtc {
     Rtc::builder()
         .clear_codecs()
         .enable_opus(true, false)
+        .set_stats_interval(Some(STATS_EVERY))
         .build(Instant::now())
 }
 
@@ -99,6 +107,31 @@ fn route_to(sfu: SocketAddr) -> Result<IpAddr, String> {
         return Err(no_route());
     }
     Ok(local)
+}
+
+/// Logs how a peer comes up and what flows through it.
+fn report(event: &Event) {
+    match event {
+        Event::Connected => tracing::debug!("WebRTC connected"),
+        Event::ChannelOpen(_, label) => tracing::debug!(label, "data channel open"),
+        Event::MediaAdded(added) => {
+            tracing::debug!(mid = %added.mid, kind = ?added.kind, "media added");
+        }
+        Event::MediaEgressStats(stats) => tracing::debug!(
+            packets = stats.packets,
+            bytes = stats.bytes,
+            loss = ?stats.loss,
+            rtt = ?stats.rtt,
+            "sent"
+        ),
+        Event::MediaIngressStats(stats) => tracing::debug!(
+            packets = stats.packets,
+            bytes = stats.bytes,
+            loss = ?stats.loss,
+            "received"
+        ),
+        _ => {}
+    }
 }
 
 /// The first `a=mid` of a description: the bundle tag.
@@ -139,6 +172,7 @@ impl Peer {
             bundle: None,
             buf: vec![0; DATAGRAM],
             dropped: 0,
+            down_since: Some(Instant::now()),
         })
     }
 
@@ -237,6 +271,7 @@ impl Peer {
         outgoing: &mut mpsc::Receiver<OpusOut>,
         incoming: &mpsc::Sender<OpusIn>,
     ) -> Result<(), String> {
+        self.tick()?;
         loop {
             let wake = match self.drain(incoming).await? {
                 Turn::Wait(wake) => wake,
@@ -259,7 +294,7 @@ impl Peer {
     async fn drain(&mut self, incoming: &mpsc::Sender<OpusIn>) -> Result<Turn, String> {
         loop {
             match self.rtc.poll_output().map_err(|error| failed(&error))? {
-                Output::Timeout(wake) => return Ok(Turn::Wait(wake)),
+                Output::Timeout(wake) => return Ok(Turn::Wait(self.give_up_at().min(wake))),
                 Output::Transmit(transmit) => {
                     if let Err(error) = self
                         .socket
@@ -270,7 +305,7 @@ impl Peer {
                     }
                 }
                 Output::Event(event) => {
-                    if let Some(turn) = self.on_event(event, incoming)? {
+                    if let Some(turn) = self.on_event(event, incoming) {
                         return Ok(turn);
                     }
                 }
@@ -278,15 +313,21 @@ impl Peer {
         }
     }
 
-    fn on_event(
-        &mut self,
-        event: Event,
-        incoming: &mpsc::Sender<OpusIn>,
-    ) -> Result<Option<Turn>, String> {
+    fn on_event(&mut self, event: Event, incoming: &mpsc::Sender<OpusIn>) -> Option<Turn> {
         match event {
-            Event::MediaData(data) => Ok(self.hear(&data, incoming)),
-            Event::IceConnectionStateChange(IceConnectionState::Disconnected) => Err(lost()),
-            _ => Ok(None),
+            Event::MediaData(data) => self.hear(&data, incoming),
+            Event::IceConnectionStateChange(state) => {
+                tracing::debug!(?state, "ICE");
+                self.down_since = match state {
+                    IceConnectionState::Connected | IceConnectionState::Completed => None,
+                    _ => self.down_since.or(Some(Instant::now())),
+                };
+                None
+            }
+            other => {
+                report(&other);
+                None
+            }
         }
     }
 
@@ -328,7 +369,17 @@ impl Peer {
         self.rtc.handle_input(input).map_err(|error| failed(&error))
     }
 
+    /// When ICE has been down too long, or far off while it is up.
+    fn give_up_at(&self) -> Instant {
+        self.down_since
+            .map_or(Instant::now() + ICE_GRACE, |since| since + ICE_GRACE)
+    }
+
     fn tick(&mut self) -> Result<(), String> {
+        if self.down_since.is_some() && Instant::now() >= self.give_up_at() {
+            tracing::warn!("ICE did not connect");
+            return Err(lost());
+        }
         self.rtc
             .handle_input(Input::Timeout(Instant::now()))
             .map_err(|error| failed(&error))

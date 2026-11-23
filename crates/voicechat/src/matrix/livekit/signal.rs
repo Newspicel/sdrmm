@@ -145,6 +145,14 @@ impl Signal {
             pulse: Pulse::new(0, 0),
         };
         let join = signal.read_join().await?;
+        tracing::debug!(
+            server = join.server_info.as_ref().map(|info| info.version.as_str()),
+            protocol = join.server_info.as_ref().map(|info| info.protocol),
+            subscriber_primary = join.subscriber_primary,
+            others = join.other_participants.len(),
+            ice_servers = ?join.ice_servers.iter().map(|server| &server.urls).collect::<Vec<_>>(),
+            "LiveKit joined"
+        );
         signal.pulse = Pulse::new(join.ping_interval, join.ping_timeout);
         Ok((signal, join))
     }
