@@ -1,4 +1,4 @@
-//! LiveKit frame encryption of Opus frames, as livekit client-sdk-js `FrameCryptor` does it.
+//! `LiveKit` frame encryption of Opus frames, as livekit client-sdk-js `FrameCryptor` does it.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes128Gcm, Nonce};
@@ -29,7 +29,7 @@ pub(crate) enum CryptoError {
 pub(crate) struct FrameKey(Aes128Gcm);
 
 impl FrameKey {
-    /// HKDF-SHA256 over `material` of any length, as the LiveKit key provider does.
+    /// HKDF-SHA256 over `material` of any length, as the `LiveKit` key provider does.
     pub(crate) fn derive(material: &[u8]) -> Result<Self, CryptoError> {
         let mut key = [0u8; 16];
         Hkdf::<Sha256>::new(Some(SALT), material)
@@ -66,7 +66,7 @@ pub(crate) struct Sealer {
 }
 
 impl Sealer {
-    /// `start` is the first frame count; LiveKit starts it at a random number below 0xffff.
+    /// `start` is the first frame count; `LiveKit` starts it at a random number below 0xffff.
     pub(crate) fn new(ssrc: u32, start: u32) -> Self {
         Self { ssrc, sent: start }
     }
