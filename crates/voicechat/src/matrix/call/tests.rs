@@ -302,7 +302,10 @@ fn start_with(
         roles: Mutex::new(Vec::new()),
     };
     let hs = Arc::clone(&server);
-    let task = tokio::spawn(async move { run::run(&*hs, &dialer, me(), events, ends).await });
+    let task = tokio::spawn(async move {
+        let mut ends = ends;
+        run::run(&*hs, &dialer, me(), events, &mut ends).await
+    });
     (link, server, sync, task)
 }
 

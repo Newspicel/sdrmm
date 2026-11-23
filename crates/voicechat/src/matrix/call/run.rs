@@ -73,17 +73,17 @@ pub(super) async fn run<H: Homeserver, D: Dial>(
     dial: &D,
     me: Me,
     mut events: broadcast::Receiver<SyncEvent>,
-    mut ends: Ends,
+    ends: &mut Ends,
 ) -> Ended {
     let line = Line { hs, dial, me: &me };
     let mut backoff = Backoff::new();
     let mut call = None;
     loop {
-        let stop = attempt(&line, &mut call, &mut events, &mut ends, &mut backoff).await;
+        let stop = attempt(&line, &mut call, &mut events, ends, &mut backoff).await;
         if let Some(ended) = finish(stop, &ends.inbox) {
             return ended;
         }
-        let waited = wait_out(backoff.step(), call.as_mut(), &mut events, &mut ends).await;
+        let waited = wait_out(backoff.step(), call.as_mut(), &mut events, ends).await;
         if let Some(ended) = waited.and_then(|stop| finish(stop, &ends.inbox)) {
             return ended;
         }

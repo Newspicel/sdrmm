@@ -13,7 +13,6 @@ const APPLICATION: &str = "m.call";
 pub(crate) const EXPIRES_MS: u64 = 14_400_000;
 const LIVEKIT: &str = "livekit";
 const LIVEKIT_STABLE: &str = "m.livekit";
-const WELL_KNOWN_FOCI: &str = "org.matrix.msc4143.rtc_foci";
 
 /// The `LiveKit` JWT service that hands out tokens for a call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,10 +64,6 @@ pub(crate) fn foci_from_transports(json: &Value) -> Vec<Focus> {
         json.get("transports")
             .or_else(|| json.get("rtc_transports")),
     )
-}
-
-pub(crate) fn foci_from_well_known(json: &Value) -> Vec<Focus> {
-    foci_in(json.get(WELL_KNOWN_FOCI))
 }
 
 fn published_focus(transports: Option<&Value>) -> Option<Focus> {

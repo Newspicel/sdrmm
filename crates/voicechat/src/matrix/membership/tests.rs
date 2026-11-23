@@ -78,17 +78,6 @@ fn transports_list_livekit_foci() {
 }
 
 #[test]
-fn well_known_foci_parse() {
-    let wk = json!({"org.matrix.msc4143.rtc_foci": [
-        {"type": "livekit", "livekit_service_url": "https://lk.example"},
-        {"type": "jitsi", "url": "https://meet.example"},
-        {"type": "livekit"},
-    ]});
-    assert_eq!(foci_from_well_known(&wk), [focus("https://lk.example")]);
-    assert!(foci_from_well_known(&json!({"m.homeserver": {}})).is_empty());
-}
-
-#[test]
 fn legacy_and_new_members_both_read() {
     let states = [
         legacy(

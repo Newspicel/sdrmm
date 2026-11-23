@@ -9,9 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::frame::{CryptoError, FrameKey, KeyRing};
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in Task 9"))]
 pub(crate) const KEYS_EVENT: &str = "io.element.call.encryption_keys";
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in Task 9"))]
 pub(crate) const KEYS_EVENT_STABLE: &str = "m.rtc.encryption_key";
 const KEY_LEN: usize = 16;
 const USE_DELAY: Duration = Duration::from_secs(5);

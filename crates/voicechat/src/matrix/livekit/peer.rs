@@ -31,6 +31,13 @@ pub(crate) struct OpusIn {
     pub(crate) mid: Mid,
     pub(crate) track: Option<String>,
     pub(crate) payload: Vec<u8>,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "calls play frames in arrival order; tests check the clock"
+        )
+    )]
     pub(crate) timestamp: u32,
 }
 

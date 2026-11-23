@@ -26,7 +26,9 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::{ChannelMarker, GuildMarker};
 
 use crate::link::{self, Backoff, Ear, Ends, Inbox, Seat};
-use crate::{FRAME, Heard, Link, LinkState, RATE_HZ, Talker, VoiceChatError, lock};
+use crate::{
+    FRAME, Heard, Link, LinkState, RATE_HZ, Talker, VoiceChatError, install_tls_provider, lock,
+};
 
 const WANTED: EventTypeFlags = EventTypeFlags::READY
     .union(EventTypeFlags::GUILD_CREATE)
@@ -554,12 +556,6 @@ fn lookup_failed(error: &twilight_http::Error) -> String {
 
 /// twilight builds its TLS configs from the process default provider, which rustls cannot pick
 /// by itself once more than one provider is compiled in.
-pub(crate) fn install_tls_provider() {
-    if rustls::crypto::CryptoProvider::get_default().is_none() {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    }
-}
-
 fn songbird_config() -> Config {
     Config::default().decode_mode(DecodeMode::Decode(DecodeConfig::new(
         Channels::Mono,

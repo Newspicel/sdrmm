@@ -1,5 +1,5 @@
-//! Discord and `TeamSpeak` voice links: an account opens a [`Session`], a joined channel is a
-//! [`Link`] of plain channels carrying 20 ms mono frames at 48 kHz.
+//! Discord, `TeamSpeak` and Matrix voice links: an account opens a [`Session`], a joined
+//! channel is a [`Link`] of plain channels carrying 20 ms mono frames at 48 kHz.
 
 mod discord;
 mod link;
@@ -11,7 +11,9 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 pub use link::{Hold, Link};
+pub use matrix::{MatrixAccount, MatrixLogin, MatrixStore, SignIn, SignedIn, matrix_sign_in};
 use tokio::runtime::Handle;
+use tokio::sync::watch;
 
 /// Sample rate of every frame a link carries.
 pub const RATE_HZ: u32 = 48_000;
@@ -35,6 +37,7 @@ pub enum Service {
         nickname: String,
         identity: String,
     },
+    Matrix(MatrixAccount),
 }
 
 /// Leaves the token, password and identity out, so logging an account leaks no secret.
@@ -52,6 +55,7 @@ impl fmt::Debug for Service {
                 .field("address", address)
                 .field("nickname", nickname)
                 .finish_non_exhaustive(),
+            Self::Matrix(account) => account.fmt(f),
         }
     }
 }
@@ -61,6 +65,7 @@ impl Service {
     fn nickname(&self) -> &str {
         match self {
             Self::Discord { nickname, .. } | Self::TeamSpeak { nickname, .. } => nickname,
+            Self::Matrix(account) => &account.nickname,
         }
     }
 
@@ -83,6 +88,7 @@ impl Service {
                     ..
                 },
             ) => address == next_address && password == next_password && identity == next_identity,
+            (Self::Matrix(account), Self::Matrix(next)) => account.renamed_to(next),
             _ => false,
         }
     }
@@ -135,6 +141,7 @@ pub struct Session {
 enum Backend {
     Discord(discord::Discord),
     TeamSpeak(teamspeak::TeamSpeak),
+    Matrix(matrix::Matrix),
 }
 
 impl Session {
@@ -156,6 +163,7 @@ impl Session {
                 },
                 nickname,
             )),
+            Service::Matrix(account) => Backend::Matrix(matrix::Matrix::new(account)),
         };
         Self { service, backend }
     }
@@ -166,6 +174,10 @@ impl Session {
 
     /// Takes `service` in place when only its nickname changed, so every link stays joined.
     /// Any other change hands it back: the account must open a new session.
+    #[expect(
+        clippy::result_large_err,
+        reason = "the caller opens a session from the service handed back, so it moves once"
+    )]
     pub fn update(&mut self, service: Service) -> Result<(), Service> {
         if service == self.service {
             return Ok(());
@@ -177,27 +189,46 @@ impl Session {
         match &self.backend {
             Backend::Discord(discord) => discord.rename(nickname),
             Backend::TeamSpeak(teamspeak) => teamspeak.rename(nickname),
+            Backend::Matrix(matrix) => matrix.rename(nickname),
         }
         self.service = service;
         Ok(())
     }
 
-    /// Joins `channel`: a Discord voice channel id, or a `TeamSpeak` channel name or path,
-    /// empty for the server's default channel.
+    /// Joins `channel`: a Discord voice channel id, a `TeamSpeak` channel name or path (empty
+    /// for the server's default channel), or a Matrix room id or alias.
     pub fn join(&self, channel: &str) -> Result<Link, VoiceChatError> {
         match &self.backend {
-            Backend::Discord(discord) => {
-                let runtime = Handle::try_current().map_err(|_| VoiceChatError::NoRuntime)?;
-                discord.join(&runtime, channel)
-            }
+            Backend::Discord(discord) => discord.join(&runtime()?, channel),
             Backend::TeamSpeak(teamspeak) => teamspeak.join(channel),
+            Backend::Matrix(matrix) => matrix.join(&runtime()?, channel),
         }
     }
+
+    /// The latest Matrix session to keep, for restoring the same device later. None for the
+    /// other services.
+    pub fn saved(&self) -> Option<watch::Receiver<Option<String>>> {
+        match &self.backend {
+            Backend::Matrix(matrix) => Some(matrix.saved()),
+            Backend::Discord(_) | Backend::TeamSpeak(_) => None,
+        }
+    }
+}
+
+fn runtime() -> Result<Handle, VoiceChatError> {
+    Handle::try_current().map_err(|_| VoiceChatError::NoRuntime)
 }
 
 /// A fresh `TeamSpeak` identity in the text form [`Service::TeamSpeak`] takes.
 pub fn new_teamspeak_identity() -> String {
     tsclient_rs::generateIdentity(TEAMSPEAK_LEVEL).to_string()
+}
+
+/// Installs the process TLS provider once; rustls needs one before any connection.
+fn install_tls_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_none() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    }
 }
 
 /// Locks a control-plane map; a panic elsewhere must not take every link down with it.
@@ -282,6 +313,7 @@ mod tests {
             Service::Discord { nickname, .. } | Service::TeamSpeak { nickname, .. } => {
                 to.clone_into(nickname);
             }
+            Service::Matrix(account) => to.clone_into(&mut account.nickname),
         }
         next
     }
@@ -330,6 +362,87 @@ mod tests {
         assert_eq!(discord().join(" ").unwrap_err(), VoiceChatError::NoChannel);
         assert_eq!(
             discord().join("general").unwrap_err(),
+            VoiceChatError::BadChannel("general".into())
+        );
+    }
+
+    fn matrix_account(session: Option<&str>) -> MatrixAccount {
+        MatrixAccount {
+            homeserver: "http://127.0.0.1:9".into(),
+            user: "@bot:x.org".into(),
+            login: MatrixLogin::Password("hunter2".into()),
+            nickname: "Relay".into(),
+            recovery_key: Some("EsTc recovery".into()),
+            store: MatrixStore {
+                dir: None,
+                passphrase: "store-pass".into(),
+            },
+            session: session.map(str::to_owned),
+        }
+    }
+
+    fn matrix(session: Option<&str>) -> Session {
+        Session::open(Service::Matrix(matrix_account(session)))
+    }
+
+    fn with_session(service: &Service, session: &str) -> Service {
+        let mut next = service.clone();
+        if let Service::Matrix(account) = &mut next {
+            account.session = Some(session.to_owned());
+        }
+        next
+    }
+
+    #[test]
+    fn matrix_accounts_print_without_secrets() {
+        let printed = format!("{:?}", Service::Matrix(matrix_account(Some("tok-123"))));
+        assert!(printed.contains("@bot:x.org"), "{printed}");
+        for secret in ["hunter2", "EsTc recovery", "store-pass", "tok-123"] {
+            assert!(!printed.contains(secret), "{printed}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_refreshed_session_keeps_the_link() {
+        let mut session = matrix(Some("first"));
+        let _room = session.join("!room:x.org").unwrap();
+        let next = with_session(session.service(), "refreshed");
+        assert_eq!(session.update(next.clone()), Ok(()));
+        assert_eq!(session.service(), &next);
+        assert_eq!(
+            session.join("!room:x.org").unwrap_err(),
+            VoiceChatError::Clash("!room:x.org".into())
+        );
+        assert!(session.saved().is_some());
+    }
+
+    #[test]
+    fn a_first_session_reopens() {
+        let mut session = matrix(None);
+        let signed_in = with_session(session.service(), "first");
+        assert_eq!(session.update(signed_in.clone()), Err(signed_in));
+        assert!(teamspeak().saved().is_none());
+    }
+
+    #[tokio::test]
+    async fn second_link_in_a_room_clashes() {
+        let session = matrix(None);
+        let first = session.join("!room:x.org").unwrap();
+        assert_eq!(
+            session.join(" !room:x.org ").unwrap_err(),
+            VoiceChatError::Clash("!room:x.org".into())
+        );
+        assert!(session.join("#other:x.org").is_ok());
+        drop(first);
+        assert!(session.join("!room:x.org").is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_room_must_be_an_id_or_alias() {
+        let session = matrix(None);
+        assert_eq!(session.join(" ").unwrap_err(), VoiceChatError::NoChannel);
+        assert_eq!(
+            session.join("general").unwrap_err(),
             VoiceChatError::BadChannel("general".into())
         );
     }

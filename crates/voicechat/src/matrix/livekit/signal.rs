@@ -130,7 +130,7 @@ fn refused_or_missing(error: &tungstenite::Error) -> String {
 impl Signal {
     /// Opens the socket and waits for the join response.
     pub(crate) async fn connect(url: &Url) -> Result<(Self, JoinResponse), String> {
-        crate::discord::install_tls_provider();
+        crate::install_tls_provider();
         timeout(CONNECT_TIMEOUT, Self::open(url))
             .await
             .map_err(|_| "No call server".to_owned())?

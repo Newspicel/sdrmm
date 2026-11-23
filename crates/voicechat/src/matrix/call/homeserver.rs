@@ -11,8 +11,7 @@ use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedUserId};
 use matrix_sdk::{Client, Room};
 use reqwest::StatusCode;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::matrix::e2ee::keys::{EncryptionKeys, KEYS_EVENT};
 use crate::matrix::membership::{
@@ -92,26 +91,11 @@ fn gone(error: &matrix_sdk::Error) -> bool {
             .is_some_and(|error| error.status_code == StatusCode::NOT_FOUND)
 }
 
-#[derive(Deserialize)]
-struct StateJson {
-    #[serde(rename = "type")]
-    kind: String,
-    state_key: String,
-    #[serde(default)]
-    content: Value,
-    #[serde(default)]
-    origin_server_ts: u64,
-}
-
 fn call_state(raw: &RawAnySyncOrStrippedState) -> Option<CallState> {
     let RawAnySyncOrStrippedState::Sync(raw) = raw else {
         return None;
     };
-    let event: StateJson = raw.deserialize_as_unchecked().ok()?;
-    Some(CallState {
-        entry: (event.kind, event.state_key, event.content),
-        sent_ms: event.origin_server_ts,
-    })
+    super::call_state(raw)
 }
 
 impl Matrix {

@@ -1,29 +1,24 @@
 //! One `MatrixRTC` call joined to a link: membership, media keys and `LiveKit` audio.
 
-#[cfg_attr(
-    test,
-    expect(dead_code, reason = "the real homeserver needs a live one")
-)]
 mod homeserver;
 mod keep;
 mod live;
 mod media;
 mod people;
 mod run;
-#[cfg_attr(test, expect(dead_code, reason = "the real SFU needs a live one"))]
 mod sfu;
 mod wire;
 
+use matrix_sdk::ruma::serde::Raw;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::broadcast;
 
 use crate::link::Ends;
 use crate::matrix::e2ee::keys::{EncryptionKeys, KEYS_EVENT, KEYS_EVENT_STABLE};
-use crate::matrix::membership::CallState;
+use crate::matrix::membership::{CallState, LEGACY_TYPE, RTC_TYPE};
 
 /// What a session hands a call.
-#[cfg_attr(test, expect(dead_code, reason = "built by a live session"))]
 pub(crate) struct CallContext {
     pub(crate) client: matrix_sdk::Client,
     pub(crate) room: matrix_sdk::Room,
@@ -68,6 +63,36 @@ impl SyncEvent {
             content,
         })
     }
+
+    /// A state event of `room` as a call member, when it has either member event type.
+    pub(crate) fn member<T>(room: &str, raw: &Raw<T>) -> Option<Self> {
+        let state = call_state(raw)?;
+        let kind = state.entry.0.as_str();
+        (kind == LEGACY_TYPE || kind == RTC_TYPE).then(|| Self::Member {
+            room: room.to_owned(),
+            state,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct StateJson {
+    #[serde(rename = "type")]
+    kind: String,
+    state_key: String,
+    #[serde(default)]
+    content: Value,
+    #[serde(default)]
+    origin_server_ts: u64,
+}
+
+/// A state event as a call state, whatever its type; None when it is not a state event.
+fn call_state<T>(raw: &Raw<T>) -> Option<CallState> {
+    let event: StateJson = raw.deserialize_as_unchecked().ok()?;
+    Some(CallState {
+        entry: (event.kind, event.state_key, event.content),
+        sent_ms: event.origin_server_ts,
+    })
 }
 
 /// How a call ended.
@@ -80,8 +105,7 @@ pub(crate) enum Ended {
 }
 
 /// Runs the call until its link is released, retrying with backoff.
-#[cfg_attr(test, expect(dead_code, reason = "run by a live session"))]
-pub(crate) async fn run_call(ctx: CallContext, ends: Ends) -> Ended {
+pub(crate) async fn run_call(ctx: CallContext, ends: &mut Ends) -> Ended {
     let CallContext {
         client,
         room,
