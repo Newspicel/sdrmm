@@ -15,7 +15,7 @@ use super::media::Media;
 use super::people::{Change, People};
 use super::run::{Call, Presence, Stop, now_ms, take_key};
 use super::wire::{Dial, Role, Wire, WireEvent};
-use crate::link::{Ends, Inbox, Outgoing};
+use crate::link::{Backoff, Ends, Inbox, Outgoing};
 use crate::matrix::e2ee::keys::{EncryptionKeys, Outgoing as Key};
 use crate::matrix::livekit::peer::OpusOut;
 use crate::matrix::membership::{Focus, Member, StateEntry, active_focus, identities};
@@ -31,6 +31,14 @@ enum Done {
     Kept(Kept),
     Name(String, String),
     Wire(String, Result<Box<dyn Wire>, String>),
+    /// A focus to dial again once its backoff is over.
+    Redial(String),
+    /// Members a media key did not reach yet.
+    Missed {
+        to: Vec<(String, String)>,
+        content: Box<EncryptionKeys>,
+        backoff: Backoff,
+    },
 }
 
 /// RTP time of our frames: one frame per frame sent, and over silence as much as passed.
@@ -57,6 +65,8 @@ pub(super) struct Live<'a, H, D> {
     /// Listening wires to the foci other members publish on, by service URL.
     others: HashMap<String, Box<dyn Wire>>,
     dialing: HashSet<String>,
+    /// Backoffs of foci that failed, cleared once one is heard.
+    redials: HashMap<String, Backoff>,
     /// Homeserver and dialing work, run beside the audio so neither waits on it.
     chores: FuturesUnordered<BoxFuture<'a, Done>>,
     keeper: Keeper,
@@ -98,6 +108,7 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
             own,
             others: HashMap::new(),
             dialing: HashSet::new(),
+            redials: HashMap::new(),
             chores: FuturesUnordered::new(),
             keeper: Keeper::new(entry),
             clock: Clock {
@@ -184,11 +195,14 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
         from: Option<String>,
         event: Result<WireEvent, String>,
     ) -> Option<Stop> {
+        if let (Some(url), Ok(WireEvent::Heard { .. })) = (&from, &event) {
+            self.redials.remove(url);
+        }
         match (from, event) {
             (None, Err(reason)) => return Some(Stop::Lost(reason)),
             (Some(url), Err(reason)) => {
-                tracing::warn!(url, reason, "focus lost");
                 self.drop_other(&url);
+                self.redial(url, &reason);
             }
             (_, Ok(WireEvent::Heard { identity, payload })) => {
                 if let Some(pcm) = call.media.incoming(&identity, &payload) {
@@ -276,13 +290,61 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
             .iter()
             .map(|member| (member.user.clone(), member.device.clone()))
             .collect();
+        self.deliver(targets, Box::new(content), Backoff::new(), Duration::ZERO);
+    }
+
+    /// Sends a media key after `wait`, handing back the members it did not reach.
+    fn deliver(
+        &mut self,
+        to: Vec<(String, String)>,
+        content: Box<EncryptionKeys>,
+        backoff: Backoff,
+        wait: Duration,
+    ) {
         let hs = self.hs;
         self.chores.push(Box::pin(async move {
-            if let Err(reason) = hs.send_keys(&targets, &content).await {
-                tracing::warn!(reason, "media key not sent");
+            tokio::time::sleep(wait).await;
+            let missed = match hs.send_keys(&to, &content).await {
+                Ok(missed) => missed,
+                Err(reason) => {
+                    tracing::warn!(reason, "media key not sent");
+                    to
+                }
+            };
+            if missed.is_empty() {
+                Done::Nothing
+            } else {
+                Done::Missed {
+                    to: missed,
+                    content,
+                    backoff,
+                }
             }
-            Done::Nothing
         }));
+    }
+
+    /// Tries a missed key again for the members still in the call.
+    fn resend(
+        &mut self,
+        members: &[Member],
+        to: Vec<(String, String)>,
+        content: Box<EncryptionKeys>,
+        mut backoff: Backoff,
+    ) {
+        let left: Vec<(String, String)> = to
+            .into_iter()
+            .filter(|(user, device)| {
+                members
+                    .iter()
+                    .any(|member| member.user == *user && member.device == *device)
+            })
+            .collect();
+        if left.is_empty() {
+            return;
+        }
+        let wait = backoff.step();
+        tracing::warn!(members = left.len(), retry_in = ?wait, "media key not delivered");
+        self.deliver(left, content, backoff, wait);
     }
 
     /// The foci we listen on: each member's own, or the active one for members naming none.
@@ -306,6 +368,7 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
         for url in gone {
             self.drop_other(&url);
         }
+        self.redials.retain(|url, _| wanted.contains(url));
         for url in wanted {
             if self.others.contains_key(&url) || !self.dialing.insert(url.clone()) {
                 continue;
@@ -318,6 +381,22 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
                 Done::Wire(url, listen(dial, focus).await)
             }));
         }
+    }
+
+    /// Dials a failed focus again after its backoff, so one bad focus leaves only its members
+    /// unheard and only for a while.
+    fn redial(&mut self, url: String, reason: &str) {
+        self.dialing.insert(url.clone());
+        let wait = self
+            .redials
+            .entry(url.clone())
+            .or_insert_with(Backoff::new)
+            .step();
+        tracing::warn!(url, reason, retry_in = ?wait, "cannot listen on focus");
+        self.chores.push(Box::pin(async move {
+            tokio::time::sleep(wait).await;
+            Done::Redial(url)
+        }));
     }
 
     fn drop_other(&mut self, url: &str) {
@@ -344,10 +423,16 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
                 self.others.insert(url, wire);
                 self.follow_foci(call.people.members());
             }
-            Done::Wire(url, Err(reason)) => {
+            Done::Wire(url, Err(reason)) => self.redial(url, &reason),
+            Done::Redial(url) => {
                 self.dialing.remove(&url);
-                tracing::warn!(url, reason, "cannot listen on focus");
+                self.follow_foci(call.people.members());
             }
+            Done::Missed {
+                to,
+                content,
+                backoff,
+            } => self.resend(call.people.members(), to, content, backoff),
         }
         None
     }

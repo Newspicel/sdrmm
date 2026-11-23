@@ -86,6 +86,8 @@ struct Server {
     /// Answers to restarts, in turn; Ok once used up unless `restarts_fail`.
     restarts: Mutex<VecDeque<Restart>>,
     restarts_fail: bool,
+    /// Key sends that fail before one goes through.
+    keys_fail: Mutex<usize>,
 }
 
 impl Server {
@@ -184,9 +186,18 @@ impl Homeserver for Server {
         &self,
         to: &[(String, String)],
         content: &EncryptionKeys,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<(String, String)>, String> {
         self.log(Sent::Keys(to.to_vec(), content.clone()));
-        Ok(())
+        let mut fail = self.keys_fail.lock().unwrap();
+        if *fail == 0 {
+            return Ok(Vec::new());
+        }
+        *fail -= 1;
+        if fail.is_multiple_of(2) {
+            Err("busy".into())
+        } else {
+            Ok(to.to_vec())
+        }
     }
 
     async fn display_name(&self, user: &str) -> Option<String> {
@@ -196,6 +207,7 @@ impl Homeserver for Server {
 
 struct FakeWire {
     heard: mpsc::UnboundedReceiver<WireEvent>,
+    cut: mpsc::UnboundedReceiver<String>,
     said: mpsc::UnboundedSender<OpusOut>,
     left: Arc<AtomicBool>,
 }
@@ -207,9 +219,10 @@ impl Wire for FakeWire {
     }
 
     async fn next(&mut self) -> Result<WireEvent, String> {
-        match self.heard.recv().await {
-            Some(event) => Ok(event),
-            None => std::future::pending().await,
+        tokio::select! {
+            Some(event) = self.heard.recv() => Ok(event),
+            Some(reason) = self.cut.recv() => Err(reason),
+            else => std::future::pending().await,
         }
     }
 
@@ -225,6 +238,7 @@ impl Wire for FakeWire {
 /// The SFU end of a fake wire.
 struct Far {
     hear: mpsc::UnboundedSender<WireEvent>,
+    cut: mpsc::UnboundedSender<String>,
     said: mpsc::UnboundedReceiver<OpusOut>,
     left: Arc<AtomicBool>,
 }
@@ -251,13 +265,23 @@ fn wire() -> (FakeWire, Far) {
 fn wire_down() -> (FakeWire, Far) {
     let (hear, heard) = mpsc::unbounded_channel();
     let (said_tx, said) = mpsc::unbounded_channel();
+    let (cut, cut_rx) = mpsc::unbounded_channel();
     let left = Arc::new(AtomicBool::new(false));
     let fake = FakeWire {
         heard,
+        cut: cut_rx,
         said: said_tx,
         left: Arc::clone(&left),
     };
-    (fake, Far { hear, said, left })
+    (
+        fake,
+        Far {
+            hear,
+            cut,
+            said,
+            left,
+        },
+    )
 }
 
 struct Dialer {
@@ -302,19 +326,38 @@ fn start_with(
     broadcast::Sender<SyncEvent>,
     JoinHandle<Ended>,
 ) {
+    let (link, server, sync, task, _) = start_dialing(server, vec![dialed]);
+    (link, server, sync, task)
+}
+
+type Started = (
+    Link,
+    Arc<Server>,
+    broadcast::Sender<SyncEvent>,
+    JoinHandle<Ended>,
+    Arc<Dialer>,
+);
+
+fn start_dialing(server: Server, dials: Vec<Result<FakeWire, String>>) -> Started {
     let server = Arc::new(server);
     let (link, ends) = link::link();
     let (sync, events) = broadcast::channel(64);
-    let dialer = Dialer {
-        wires: Mutex::new(VecDeque::from([dialed])),
+    let dialer = Arc::new(Dialer {
+        wires: Mutex::new(dials.into()),
         roles: Mutex::new(Vec::new()),
-    };
-    let hs = Arc::clone(&server);
+    });
+    let (hs, dial) = (Arc::clone(&server), Arc::clone(&dialer));
     let task = tokio::spawn(async move {
         let mut ends = ends;
-        run::run(&*hs, &dialer, me(), events, &mut ends).await
+        run::run(&*hs, &*dial, me(), events, &mut ends).await
     });
-    (link, server, sync, task)
+    (link, server, sync, task, dialer)
+}
+
+impl Dialer {
+    fn dialed(&self) -> usize {
+        self.roles.lock().unwrap().len()
+    }
 }
 
 async fn start(server: Server) -> Call {
@@ -736,4 +779,93 @@ async fn the_membership_is_extended_before_it_lapses() {
     };
     assert_eq!(extended.1, first.1);
     assert_eq!(extended.2["created_ts"], first.2["created_ts"]);
+}
+
+const ELSEWHERE: &str = "https://lk.y.org";
+
+fn member_on(user: &str, device: &str, focus: &str) -> CallState {
+    let mut state = member_state(user, device);
+    state.entry.2["foci_preferred"] = json!([{"type": "livekit", "livekit_service_url": focus}]);
+    state
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_focus_that_cannot_be_dialled_is_dialled_again() {
+    let (own, _far) = wire();
+    let (theirs, _their_far) = wire_down();
+    let (mut link, _server, _sync, _task, dialer) = start_dialing(
+        Server {
+            states: vec![member_on(ALICE, "ALICE", ELSEWHERE)],
+            ..Server::default()
+        },
+        vec![Ok(own), Err("down".into()), Err("down".into()), Ok(theirs)],
+    );
+    joined(&mut link).await;
+    wait_within(Duration::from_secs(60), || dialer.dialed() == 4).await;
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    assert_eq!(dialer.dialed(), 4);
+    assert_eq!(*link.state.borrow(), LinkState::Joined);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lost_focus_is_dialled_again() {
+    let (own, _far) = wire();
+    let (first, first_far) = wire_down();
+    let (second, _second_far) = wire_down();
+    let (mut link, _server, _sync, _task, dialer) = start_dialing(
+        Server {
+            states: vec![member_on(ALICE, "ALICE", ELSEWHERE)],
+            ..Server::default()
+        },
+        vec![Ok(own), Ok(first), Ok(second)],
+    );
+    joined(&mut link).await;
+    wait_until(|| dialer.dialed() == 2).await;
+    first_far.cut.send("gone".into()).unwrap();
+    wait_within(Duration::from_secs(60), || dialer.dialed() == 3).await;
+    assert!(first_far.left.load(Ordering::SeqCst));
+    assert_eq!(*link.state.borrow(), LinkState::Joined);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_media_key_that_misses_is_sent_again() {
+    let call = start(Server {
+        encrypted: true,
+        states: vec![member_state(ALICE, "ALICE")],
+        keys_fail: Mutex::new(3),
+        ..Server::default()
+    })
+    .await;
+    wait_within(Duration::from_secs(60), || {
+        call.server.keys_sent().len() == 4
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    let sent = call.server.keys_sent();
+    assert_eq!(sent.len(), 4);
+    assert!(
+        sent.iter()
+            .all(|(to, _)| *to == [(ALICE.to_owned(), "ALICE".to_owned())])
+    );
+    assert!(sent.windows(2).all(|pair| pair[0].1 == pair[1].1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_media_key_stops_once_its_member_leaves() {
+    let call = start(Server {
+        encrypted: true,
+        states: vec![member_state(ALICE, "ALICE")],
+        keys_fail: Mutex::new(usize::MAX),
+        ..Server::default()
+    })
+    .await;
+    wait_until(|| call.server.keys_sent().len() == 1).await;
+    call.sync
+        .send(SyncEvent::Member {
+            room: ROOM.into(),
+            state: left_state(ALICE, "ALICE"),
+        })
+        .unwrap();
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert!(call.server.keys_sent().len() <= 2);
 }

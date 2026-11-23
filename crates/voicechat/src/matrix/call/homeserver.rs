@@ -56,12 +56,13 @@ pub(crate) trait Homeserver: Sync {
 
     async fn cancel_delayed(&self, id: &str) -> Result<(), String>;
 
-    /// Sends our key Olm-encrypted to each `(user, device)`.
+    /// Sends our key Olm-encrypted to each `(user, device)`, answering the ones it did not
+    /// reach: devices whose keys are not known yet, or that the send failed for.
     async fn send_keys(
         &self,
         to: &[(String, String)],
         content: &EncryptionKeys,
-    ) -> Result<(), String>;
+    ) -> Result<Vec<(String, String)>, String>;
 
     async fn display_name(&self, user: &str) -> Option<String>;
 }
@@ -223,23 +224,25 @@ impl Homeserver for Matrix {
         &self,
         to: &[(String, String)],
         content: &EncryptionKeys,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<(String, String)>, String> {
         let encryption = self.client.encryption();
         let mut devices = Vec::with_capacity(to.len());
+        let mut missed = Vec::new();
         for (user, device) in to {
             let Ok(user) = OwnedUserId::try_from(user.as_str()) else {
                 tracing::warn!(user, "call member with a bad user id skipped");
                 continue;
             };
-            let device = OwnedDeviceId::from(device.as_str());
-            if let Ok(Some(found)) = encryption.get_device(&user, &device).await {
+            let id = OwnedDeviceId::from(device.as_str());
+            if let Ok(Some(found)) = encryption.get_device(&user, &id).await {
                 devices.push(found);
             } else {
-                tracing::warn!(%user, %device, "no keys for call member");
+                tracing::debug!(%user, device, "no keys for call member yet");
+                missed.push((user.to_string(), device.clone()));
             }
         }
         if devices.is_empty() {
-            return Ok(());
+            return Ok(missed);
         }
         let raw = Raw::new(content)
             .map_err(refused("Media key"))?
@@ -253,10 +256,12 @@ impl Homeserver for Matrix {
             )
             .await
             .map_err(refused("Media key"))?;
-        if !failed.is_empty() {
-            tracing::warn!(count = failed.len(), "media key not delivered");
-        }
-        Ok(())
+        missed.extend(
+            failed
+                .into_iter()
+                .map(|(user, device)| (user.to_string(), device.to_string())),
+        );
+        Ok(missed)
     }
 
     async fn display_name(&self, user: &str) -> Option<String> {
