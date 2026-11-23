@@ -77,7 +77,6 @@ import type {
   SavedRadio,
   SaveNanoVnaMeasurementRequest,
   SaveRadioRequest,
-  ScannerStatus,
   Secret,
   SerialDevicesResponse,
   ServerOutputsResponse,
@@ -881,18 +880,6 @@ export async function nodeAction(node: string, action: NodeAction): Promise<Node
     throw new Error(failed.error);
   }
   return acted;
-}
-
-export function scanStatusOf(acted: NodeActed): ScannerStatus | null {
-  if (acted.result !== "controlled") {
-    return null;
-  }
-  for (const ack of acted.with) {
-    if (ack.sweep?.job === "scan") {
-      return ack.sweep.status;
-    }
-  }
-  return null;
 }
 
 export function decoderLogQuery(filter: DecoderLogFilter) {

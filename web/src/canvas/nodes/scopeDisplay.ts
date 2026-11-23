@@ -1,5 +1,5 @@
 import { type RefObject, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DbWindow, TraceMode } from "../../components/spectrumTraces";
+import { type DbWindow, TRACE_MODES, type TraceMode } from "../../components/spectrumTraces";
 import { FULL_VIEW, type SpectrumView } from "../../components/spectrumView";
 import {
   AVERAGE_CHOICES,
@@ -7,7 +7,17 @@ import {
   DEFAULT_AVERAGE,
 } from "../../components/videoAverage";
 import type { Palette, Rgb } from "../../gl/colormap";
+import {
+  isBoolean,
+  isFiniteNumber,
+  isRecord,
+  listOf,
+  oneOf,
+  orNull,
+  within,
+} from "../../lib/remembered";
 import { SPECTRUM_OVERLAPS, type SpectrumOverlap } from "../../lib/spectrum";
+import { useNodeRemembered } from "../useNodeRemembered";
 import {
   type PaletteChoice,
   paletteOf,
@@ -19,6 +29,24 @@ import {
 
 const AVERAGE_KEY = "sdrmm.scopeAverage";
 const OVERLAP_KEY = "sdrmm.scopeOverlap";
+const NO_TRACES: readonly TraceMode[] = [];
+const TRACE_FRACTION = 0.32;
+const IS_TRACES = listOf(oneOf(TRACE_MODES));
+const IS_RANGE = orNull(isDbWindow);
+const IS_UNIT = within(0, 1);
+
+export function isSpectrumView(value: unknown): value is SpectrumView {
+  return isRecord(value) && IS_UNIT(value.start) && IS_UNIT(value.end) && value.start < value.end;
+}
+
+export function isDbWindow(value: unknown): value is DbWindow {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.min) &&
+    isFiniteNumber(value.max) &&
+    value.min < value.max
+  );
+}
 
 export interface ScopeLive {
   view: SpectrumView;
@@ -80,16 +108,21 @@ function storeOverlap(overlap: SpectrumOverlap): void {
   } catch {}
 }
 
-export function useScopeDisplay(): ScopeDisplay {
-  const [view, setView] = useState<SpectrumView>(FULL_VIEW);
-  const [traceModes, setTraceModes] = useState<readonly TraceMode[]>([]);
-  const [phosphor, setPhosphor] = useState(false);
+export function useScopeDisplay(node: string): ScopeDisplay {
+  const [view, setView] = useNodeRemembered(node, "scopeView", FULL_VIEW, isSpectrumView);
+  const [traceModes, setTraceModes] = useNodeRemembered(node, "scopeTraces", NO_TRACES, IS_TRACES);
+  const [phosphor, setPhosphor] = useNodeRemembered(node, "scopePhosphor", false, isBoolean);
   const [average, setAverage] = useState<AverageFrames>(readAverage);
   const [overlap, setOverlap] = useState<SpectrumOverlap>(readOverlap);
-  const [range, setRange] = useState<DbWindow | null>(null);
+  const [range, setRange] = useNodeRemembered(node, "scopeRange", null, IS_RANGE);
   const [paletteChoice, setPaletteChoice] = useState<PaletteChoice>(readChoice);
   const [customStops, setCustomStops] = useState<readonly Rgb[]>(readCustom);
-  const [traceFraction, setTraceFraction] = useState(0.32);
+  const [traceFraction, setTraceFraction] = useNodeRemembered(
+    node,
+    "scopeTraceFraction",
+    TRACE_FRACTION,
+    IS_UNIT,
+  );
   const live = useRef<ScopeLive>({ view, modes: traceModes, range, average });
 
   useLayoutEffect(() => {

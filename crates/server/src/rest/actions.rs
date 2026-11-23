@@ -1,8 +1,8 @@
 use sdrmm_array::descriptor;
 use sdrmm_engine::EngineError;
-use sdrmm_wire::{ControlAck, ControlCommand, NodeActed, NodeAction, ProcessorAction, SweepJob};
+use sdrmm_wire::{ControlAck, NodeActed, NodeAction, ProcessorAction};
 
-use super::{ApiError, AppError, AppState, Author, Json, NodeBody, Path, State};
+use super::{ApiError, AppError, AppState, Author, Json, Path, State};
 
 mod capture;
 mod retype;
@@ -60,7 +60,7 @@ pub(crate) fn act(
             capture::network_export(state, node, action).map(NodeActed::NetworkExport)
         }
         NodeAction::Scan(_) | NodeAction::Hunt(_) => {
-            control(state, node, action).map(NodeActed::Controlled)
+            control(state, node, action, author).map(NodeActed::Controlled)
         }
         NodeAction::Transmit(sdrmm_wire::TransmitAction::Arm) => {
             node_of(&state.resolved.current(), node)?;
@@ -99,25 +99,20 @@ fn processor(state: &AppState, node: &str, action: ProcessorAction) -> Result<()
     Ok(())
 }
 
-fn control(state: &AppState, node: &str, action: NodeAction) -> Result<Vec<ControlAck>, AppError> {
+fn control(
+    state: &AppState,
+    node: &str,
+    action: NodeAction,
+    author: Option<&str>,
+) -> Result<Vec<ControlAck>, AppError> {
+    let _held = state.sweeps.hold();
     let resolved = state.resolved.current();
     let body = &node_of(&resolved, node)?.body;
-    let command = match (action, body) {
-        (NodeAction::Scan(action), NodeBody::Scanner(scanner)) => {
-            ControlCommand::Sweep(SweepJob::Scan {
-                settings: scanner.settings.clone(),
-                action,
-            })
-        }
-        (NodeAction::Hunt(action), NodeBody::Hunt(hunt)) => ControlCommand::Sweep(SweepJob::Hunt {
-            params: hunt.sweep,
-            action,
-        }),
-        _ => return Err(takes_no_such_action(node)),
-    };
+    let command = crate::sweeps::command(action, body).ok_or_else(|| takes_no_such_action(node))?;
     let acks = state
         .control
         .deliver(&state.engine, &resolved.patch, node, &command);
+    crate::sweeps::remember(state, node, &command, &acks, author)?;
     if acks.is_empty() {
         return Err(AppError::bad_request("Wire control to a decoder"));
     }

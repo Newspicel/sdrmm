@@ -1,6 +1,9 @@
 use std::{
-    collections::{HashMap, HashSet, hash_map::Entry},
-    sync::{Arc, Mutex, PoisonError},
+    collections::{HashMap, hash_map::Entry},
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicU32, Ordering},
+    },
     time::Duration,
 };
 
@@ -18,16 +21,23 @@ mod feed;
 /// How often a speaker picks up a channel that started late, or a card that came back.
 const RECHECK: Duration = Duration::from_secs(1);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Wanted {
     device: Option<String>,
-    routes: HashSet<AudioRoute>,
+    /// Each wire's linear gain.
+    routes: HashMap<AudioRoute, f32>,
+}
+
+/// One wire feeding the card, with a gain the fader turns while it plays.
+struct Wire {
+    task: JoinHandle<()>,
+    gain: Arc<AtomicU32>,
 }
 
 struct Playing {
     device: Option<String>,
     output: Output,
-    wires: HashMap<AudioRoute, JoinHandle<()>>,
+    wires: HashMap<AudioRoute, Wire>,
 }
 
 impl Playing {
@@ -41,10 +51,10 @@ impl Playing {
     }
 
     fn unplug(&mut self, keep: impl Fn(&AudioRoute) -> bool) {
-        self.wires.retain(|route, task| {
-            let kept = keep(route) && !task.is_finished();
+        self.wires.retain(|route, wire| {
+            let kept = keep(route) && !wire.task.is_finished();
             if !kept {
-                task.abort();
+                wire.task.abort();
             }
             kept
         });
@@ -144,17 +154,19 @@ impl Speakers {
             Entry::Occupied(held) => held.into_mut(),
             Entry::Vacant(free) => free.insert(Playing::open(want.device)?),
         };
-        playing.unplug(|route| want.routes.contains(route));
-        for route in want.routes {
-            if playing.wires.contains_key(&route) {
+        playing.unplug(|route| want.routes.contains_key(route));
+        for (route, gain) in want.routes {
+            if let Some(wire) = playing.wires.get(&route) {
+                wire.gain.store(gain.to_bits(), Ordering::Relaxed);
                 continue;
             }
             let Some(pcm) = subscribe(engine, &route, sync_fx)? else {
                 continue;
             };
             let voice = playing.output.voice().map_err(|error| error.to_string())?;
-            let task = runtime.spawn(feed::run(pcm, voice, playing.output.rate()));
-            playing.wires.insert(route, task);
+            let gain = Arc::new(AtomicU32::new(gain.to_bits()));
+            let task = runtime.spawn(feed::run(pcm, voice, playing.output.rate(), gain.clone()));
+            playing.wires.insert(route, Wire { task, gain });
         }
         Ok(())
     }
@@ -193,18 +205,22 @@ fn wanted(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<String, Wanted> 
                 return None;
             };
             let device = speaker.server_output()?.map(str::to_owned);
-            let routes: HashSet<AudioRoute> = patch
+            let routes: HashMap<AudioRoute, f32> = patch
                 .feeds(&node.id, AUDIO_PORT)
                 .iter()
                 .flat_map(|feed| {
                     let fx = graph.audio_fx(&feed.source);
+                    let gain = speaker.gain(&feed.source);
                     feed.tap
                         .iter()
                         .flat_map(sdrmm_wire::Tap::channels)
-                        .map(move |addr| AudioRoute {
-                            device_set: addr.device_set,
-                            channel: addr.channel,
-                            fx: fx.clone(),
+                        .map(move |addr| {
+                            let route = AudioRoute {
+                                device_set: addr.device_set,
+                                channel: addr.channel,
+                                fx: fx.clone(),
+                            };
+                            (route, gain)
                         })
                 })
                 .collect();

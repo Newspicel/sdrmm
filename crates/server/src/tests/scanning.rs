@@ -40,7 +40,10 @@ async fn sweep(app: &Router, node: &str, verb: &str, action: &str) -> ControlAck
 }
 
 fn scanner(settings: sdrmm_wire::ScanSettings) -> NodeBody {
-    NodeBody::Scanner(sdrmm_wire::ScannerNode { settings })
+    NodeBody::Scanner(sdrmm_wire::ScannerNode {
+        settings,
+        running: false,
+    })
 }
 
 #[tokio::test]
@@ -114,6 +117,7 @@ fn hunter(mount_offset_deg: f64) -> NodeBody {
             mount_offset_deg,
             ..sdrmm_wire::HuntSweepParams::default()
         },
+        running: false,
     })
 }
 
@@ -143,6 +147,35 @@ async fn a_hunt_node_starts_and_stops_its_decoder() {
     );
 
     assert_eq!(sweep(&app, "hunt", "hunt", "stop").await.error, None);
+    assert!(get_state(&app).await.device_sets[0].hunts.is_empty());
+}
+
+async fn hunt_running(app: &Router) -> bool {
+    let workspace = workspaces(app).await.active.expect("seeded workspace");
+    let snapshot = workspace_detail(app, workspace).await.snapshot;
+    matches!(
+        snapshot.graph.node("hunt").map(|node| &node.body),
+        Some(NodeBody::Hunt(hunt)) if hunt.running
+    )
+}
+
+#[tokio::test]
+async fn a_started_hunt_comes_back_until_it_is_stopped() {
+    let (app, state) = test_router_with_state();
+    let (ds, ch) = rig(&app, "hunt", hunter(0.0)).await;
+    assert_eq!(sweep(&app, "hunt", "hunt", "start").await.error, None);
+    assert!(hunt_running(&app).await, "the patch keeps the hunt on");
+
+    state
+        .engine
+        .stop_hunt(ds, ch)
+        .expect("lost, as on a restart");
+    crate::sweeps::settle(&state);
+    assert_eq!(get_state(&app).await.device_sets[0].hunts.len(), 1);
+
+    assert_eq!(sweep(&app, "hunt", "hunt", "stop").await.error, None);
+    assert!(!hunt_running(&app).await);
+    crate::sweeps::settle(&state);
     assert!(get_state(&app).await.device_sets[0].hunts.is_empty());
 }
 

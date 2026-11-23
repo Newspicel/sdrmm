@@ -2512,6 +2512,121 @@
       "revision": 0
     }
   },
+  "2ca397654af98873": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "phone",
+            "port": "position"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "walk",
+            "port": "position"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "phone",
+          "kind": "gps",
+          "label": "GPS position",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position",
+              "reaches": [
+                {
+                  "port": "position",
+                  "sink": "walk"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "walk",
+          "kind": "hunt",
+          "label": "Signal hunt",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "iq",
+              "note": "The lane it watches",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "control",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "sweep"
+                ]
+              },
+              "port_type": "control"
+            },
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "type": "position"
+                  },
+                  "port": "position",
+                  "source": "phone"
+                }
+              ],
+              "multi": "one",
+              "name": "position",
+              "note": "Where you stand and which way you point",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Sweep and mark bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "2e3ea74db65cf410": {
     "patch": {
       "edges": [],
@@ -5020,6 +5135,94 @@
       "revision": 0
     }
   },
+  "7825ae624f344ff7": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "phone",
+          "kind": "gps",
+          "label": "GPS position",
+          "ports": [
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "position",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "walk",
+          "kind": "hunt",
+          "label": "Signal hunt",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "iq",
+              "note": "The lane it watches",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "control",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "sweep"
+                ]
+              },
+              "port_type": "control"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Where you stand and which way you point",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Sweep and mark bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "7934997307611ce8": {
     "patch": {
       "edges": [],
@@ -6851,6 +7054,453 @@
       "revision": 0
     }
   },
+  "9575c513868923d5": {
+    "patch": {
+      "edges": [
+        {
+          "from": {
+            "node": "finder",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tri",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "walk",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tri",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "east",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "filter",
+            "port": "events"
+          }
+        },
+        {
+          "from": {
+            "node": "filter",
+            "port": "events"
+          },
+          "retunes_source": false,
+          "to": {
+            "node": "tri",
+            "port": "events"
+          }
+        }
+      ],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "finder",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri"
+                }
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "walk",
+          "kind": "hunt",
+          "label": "Signal hunt",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "iq",
+              "note": "The lane it watches",
+              "payload": {
+                "origins": [
+                  "radio",
+                  "synthetic",
+                  "derived"
+                ],
+                "type": "iq"
+              },
+              "port_type": "iq"
+            },
+            {
+              "direction": "out",
+              "multi": "one",
+              "name": "control",
+              "payload": {
+                "type": "control",
+                "verbs": [
+                  "sweep"
+                ]
+              },
+              "port_type": "control"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Where you stand and which way you point",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "Sweep and mark bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "filter",
+          "kind": "event_filter",
+          "label": "Event filter",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "east"
+                }
+              ],
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dtmf",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "fisb",
+                  "fleetsync",
+                  "flex",
+                  "fst4",
+                  "fst4w",
+                  "ft4",
+                  "ft8",
+                  "gk2a_lrit",
+                  "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
+                  "gsm",
+                  "hfdl",
+                  "horus",
+                  "hrpt",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "lora",
+                  "lrpt",
+                  "mdc1200",
+                  "morse",
+                  "msk144",
+                  "nav",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "q65",
+                  "radar",
+                  "radar_sites",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "satellite",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wenet",
+                  "wenet_image",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri"
+                }
+              ]
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        },
+        {
+          "id": "east",
+          "kind": "processor",
+          "label": "Direction finder",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "array",
+              "payload": {
+                "type": "array"
+              },
+              "port_type": "array"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "note": "True bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "reaches": [
+                {
+                  "kinds": [
+                    "df"
+                  ],
+                  "port": "events",
+                  "sink": "tri",
+                  "via": [
+                    "filter"
+                  ]
+                }
+              ]
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "bearing",
+              "note": "Live bearing to steer a beam",
+              "payload": {
+                "type": "bearing"
+              },
+              "port_type": "bearing"
+            }
+          ],
+          "runs": {
+            "runs": "engine"
+          }
+        },
+        {
+          "id": "tri",
+          "kind": "triangulation",
+          "label": "Triangulation",
+          "ports": [
+            {
+              "direction": "in",
+              "feeds": [
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "finder"
+                },
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "walk"
+                },
+                {
+                  "payload": {
+                    "kinds": [
+                      "df"
+                    ],
+                    "type": "events"
+                  },
+                  "port": "events",
+                  "source": "east",
+                  "via": [
+                    "filter"
+                  ]
+                }
+              ],
+              "multi": "many",
+              "name": "events",
+              "note": "Bearings",
+              "payload": {
+                "kinds": [
+                  "df"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "bearings"
+            },
+            {
+              "direction": "in",
+              "multi": "one",
+              "name": "position",
+              "note": "Vehicle to guide",
+              "payload": {
+                "type": "position"
+              },
+              "port_type": "position"
+            },
+            {
+              "direction": "out",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "df_fix",
+                  "nav"
+                ],
+                "type": "events"
+              },
+              "port_type": "events"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "969368e0bc426617": {
     "patch": {
       "edges": [],
@@ -7941,94 +8591,6 @@
       "revision": 0
     }
   },
-  "a809188b4251a807": {
-    "patch": {
-      "edges": [],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "phone",
-          "kind": "gps",
-          "label": "GPS position",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        },
-        {
-          "id": "walk",
-          "kind": "hunt",
-          "label": "Signal hunt",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "iq",
-              "note": "The lane it watches",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "out",
-              "multi": "one",
-              "name": "control",
-              "payload": {
-                "type": "control",
-                "verbs": [
-                  "sweep"
-                ]
-              },
-              "port_type": "control"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Where you stand and which way you point",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "Sweep and mark bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "aa6f162bd93c918a": {
     "patch": {
       "edges": [
@@ -8790,121 +9352,6 @@
       "revision": 0
     }
   },
-  "b88e999f77f1eac3": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "phone",
-            "port": "position"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "walk",
-            "port": "position"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "phone",
-          "kind": "gps",
-          "label": "GPS position",
-          "ports": [
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "position",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position",
-              "reaches": [
-                {
-                  "port": "position",
-                  "sink": "walk"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        },
-        {
-          "id": "walk",
-          "kind": "hunt",
-          "label": "Signal hunt",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "iq",
-              "note": "The lane it watches",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "out",
-              "multi": "one",
-              "name": "control",
-              "payload": {
-                "type": "control",
-                "verbs": [
-                  "sweep"
-                ]
-              },
-              "port_type": "control"
-            },
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "type": "position"
-                  },
-                  "port": "position",
-                  "source": "phone"
-                }
-              ],
-              "multi": "one",
-              "name": "position",
-              "note": "Where you stand and which way you point",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "Sweep and mark bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
   "bc543770e1c623b7": {
     "patch": {
       "edges": [
@@ -9332,453 +9779,6 @@
           "runs": {
             "device_set": 7,
             "runs": "radio"
-          }
-        }
-      ],
-      "revision": 0
-    }
-  },
-  "c3d95957eb8828d5": {
-    "patch": {
-      "edges": [
-        {
-          "from": {
-            "node": "finder",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "tri",
-            "port": "events"
-          }
-        },
-        {
-          "from": {
-            "node": "walk",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "tri",
-            "port": "events"
-          }
-        },
-        {
-          "from": {
-            "node": "east",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "filter",
-            "port": "events"
-          }
-        },
-        {
-          "from": {
-            "node": "filter",
-            "port": "events"
-          },
-          "retunes_source": false,
-          "to": {
-            "node": "tri",
-            "port": "events"
-          }
-        }
-      ],
-      "epoch": 0,
-      "nodes": [
-        {
-          "id": "finder",
-          "kind": "processor",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri"
-                }
-              ]
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "walk",
-          "kind": "hunt",
-          "label": "Signal hunt",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "iq",
-              "note": "The lane it watches",
-              "payload": {
-                "origins": [
-                  "radio",
-                  "synthetic",
-                  "derived"
-                ],
-                "type": "iq"
-              },
-              "port_type": "iq"
-            },
-            {
-              "direction": "out",
-              "multi": "one",
-              "name": "control",
-              "payload": {
-                "type": "control",
-                "verbs": [
-                  "sweep"
-                ]
-              },
-              "port_type": "control"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Where you stand and which way you point",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "Sweep and mark bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        },
-        {
-          "id": "filter",
-          "kind": "event_filter",
-          "label": "Event filter",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "east"
-                }
-              ],
-              "multi": "many",
-              "name": "events",
-              "payload": {
-                "kinds": [
-                  "acars",
-                  "adsb",
-                  "ais",
-                  "aprs",
-                  "apt",
-                  "bearing_fix",
-                  "ble",
-                  "broadcast",
-                  "broadcast_data",
-                  "bss",
-                  "call",
-                  "cw_skimmer",
-                  "dect",
-                  "df",
-                  "df_fix",
-                  "dsc",
-                  "dtmf",
-                  "dv",
-                  "eot",
-                  "ermes",
-                  "fisb",
-                  "fleetsync",
-                  "flex",
-                  "fst4",
-                  "fst4w",
-                  "ft4",
-                  "ft8",
-                  "gk2a_lrit",
-                  "gnss",
-                  "gnss_fix",
-                  "goes_hrit",
-                  "gsm",
-                  "hfdl",
-                  "horus",
-                  "hrpt",
-                  "ident",
-                  "ils",
-                  "inmarsat_aero",
-                  "inmarsat_stdc",
-                  "iridium",
-                  "ism",
-                  "ism_survey",
-                  "js8",
-                  "jt65",
-                  "jt9",
-                  "lora",
-                  "lrpt",
-                  "mdc1200",
-                  "morse",
-                  "msk144",
-                  "nav",
-                  "navtex",
-                  "noise_figure",
-                  "per",
-                  "pocsag",
-                  "psk",
-                  "q65",
-                  "radar",
-                  "radar_sites",
-                  "radio_clock",
-                  "radiosonde",
-                  "rds",
-                  "remote_id",
-                  "rtty",
-                  "same",
-                  "sarsat",
-                  "satellite",
-                  "scrambler",
-                  "selcall",
-                  "sid",
-                  "sstv",
-                  "stanag",
-                  "tetrapol",
-                  "tone",
-                  "transmission",
-                  "vdl2",
-                  "vor",
-                  "wefax",
-                  "wenet",
-                  "wenet_image",
-                  "wifi_occupancy",
-                  "wmbus",
-                  "wspr"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri"
-                }
-              ]
-            }
-          ],
-          "runs": {
-            "runs": "server"
-          }
-        },
-        {
-          "id": "east",
-          "kind": "processor",
-          "label": "Direction finder",
-          "ports": [
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "array",
-              "payload": {
-                "type": "array"
-              },
-              "port_type": "array"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "note": "True bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "reaches": [
-                {
-                  "kinds": [
-                    "df"
-                  ],
-                  "port": "events",
-                  "sink": "tri",
-                  "via": [
-                    "filter"
-                  ]
-                }
-              ]
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "bearing",
-              "note": "Live bearing to steer a beam",
-              "payload": {
-                "type": "bearing"
-              },
-              "port_type": "bearing"
-            }
-          ],
-          "runs": {
-            "runs": "engine"
-          }
-        },
-        {
-          "id": "tri",
-          "kind": "triangulation",
-          "label": "Triangulation",
-          "ports": [
-            {
-              "direction": "in",
-              "feeds": [
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "finder"
-                },
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "walk"
-                },
-                {
-                  "payload": {
-                    "kinds": [
-                      "df"
-                    ],
-                    "type": "events"
-                  },
-                  "port": "events",
-                  "source": "east",
-                  "via": [
-                    "filter"
-                  ]
-                }
-              ],
-              "multi": "many",
-              "name": "events",
-              "note": "Bearings",
-              "payload": {
-                "kinds": [
-                  "df"
-                ],
-                "type": "events"
-              },
-              "port_type": "events",
-              "takes": "bearings"
-            },
-            {
-              "direction": "in",
-              "multi": "one",
-              "name": "position",
-              "note": "Vehicle to guide",
-              "payload": {
-                "type": "position"
-              },
-              "port_type": "position"
-            },
-            {
-              "direction": "out",
-              "multi": "many",
-              "name": "events",
-              "payload": {
-                "kinds": [
-                  "df_fix",
-                  "nav"
-                ],
-                "type": "events"
-              },
-              "port_type": "events"
-            }
-          ],
-          "runs": {
-            "runs": "server"
           }
         }
       ],

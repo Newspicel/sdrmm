@@ -4,11 +4,12 @@ import { Button } from "../../components/BaseControls";
 import { FACE_BTN } from "../../components/controls";
 import { ChoiceChip } from "../../components/face/Chips";
 import { COLOUR_OPTIONS } from "../../components/plotFrame";
-import { type Colormap, DEFAULT_COLORMAP } from "../../gl/surface";
+import { COLORMAPS, type Colormap, DEFAULT_COLORMAP } from "../../gl/surface";
 import { nodeAction } from "../../lib/api";
 import { processorStatusOf, useArrayStore } from "../../lib/arrays";
 import { type ProcessorState, readoutsOf, useProcessorStore } from "../../lib/processors";
 import { clearAction, failAction } from "../../lib/refusals";
+import { oneOf } from "../../lib/remembered";
 import type {
   ArrayTuningMode,
   PatchNode,
@@ -19,6 +20,7 @@ import type {
 import { useNow } from "../../lib/useNow";
 import { useWorkspaceContext } from "../context";
 import { arrayOf } from "../lanes";
+import { useNodeRemembered } from "../useNodeRemembered";
 import { NodeForm, StatusGrid } from "./NodeForm";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { useUnwired, type Want } from "./needs";
@@ -44,6 +46,7 @@ import { ViewTable } from "./views/ViewTable";
 
 const AGE_TICK_MS = 1_000;
 const WANTS_ARRAY: readonly Want[] = [{ port: "array" }];
+const IS_COLORMAP = oneOf(COLORMAPS);
 
 type Action = ProcessorFacets["actions"][number];
 
@@ -55,7 +58,12 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
   const unwired = useUnwired(node.id, WANTS_ARRAY);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
-  const [colormap, setColormap] = useState<Colormap>(DEFAULT_COLORMAP);
+  const [colormap, setColormap] = useNodeRemembered(
+    node.id,
+    "colormap",
+    DEFAULT_COLORMAP,
+    IS_COLORMAP,
+  );
   const [picked, setPicked] = useState<number | null>(null);
   const kind = processorKindOf(workspace.context.catalog, node);
   const stale = processorStale(state, now);

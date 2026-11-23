@@ -43,6 +43,7 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
   const resolved =
     harness.resolved === undefined ? resolvedBy(harness.graph, devices) : harness.resolved;
   return {
+    id: 1,
     socket: new SdrSocket(),
     graph: harness.graph,
     rack: {},

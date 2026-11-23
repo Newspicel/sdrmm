@@ -74,6 +74,7 @@ mod store;
 mod surfaces;
 mod survey;
 mod templates;
+mod sweeps;
 pub mod tls;
 mod transmit;
 mod trunking;
@@ -131,6 +132,7 @@ pub(crate) struct AppState {
     pub(crate) aims: Arc<aims::AimHub>,
     pub(crate) sky_scans: Arc<sky_scans::SkyScanHub>,
     pub(crate) reference: Arc<reference::Reference>,
+    pub(crate) sweeps: Arc<sweeps::SweepGate>,
     pub(crate) cps: Arc<cps::CpsHub>,
     pub(crate) fusion: df_fusion::SharedFusion,
     pub(crate) shell: Option<Arc<dyn NativeShell>>,
@@ -189,6 +191,7 @@ impl AppState {
             sky_scans: Arc::default(),
             reference: Arc::default(),
             cps: Arc::new(cps::CpsHub::default()),
+            sweeps: Arc::default(),
             fusion: Arc::new(df_fusion::FusionHub::default()),
             shell: None,
             arrays: Arc::default(),
@@ -363,6 +366,7 @@ fn start_runtime(state: &AppState) -> Background {
     bearing_fix::start(state);
     sinks::start(state);
     survey::follow(state);
+    sweeps::follow(state);
     missions::watch::spawn(state);
     state.gps.spawn_watchdog(state);
     state.gps.spawn_replay(state);

@@ -949,6 +949,7 @@ fn a_scanner_keeps_its_settings() {
             lockouts: vec![227_360_000.0],
             ..crate::ScanSettings::default()
         },
+        running: true,
     });
     let json = serde_json::to_string(&kept).expect("serialize");
     assert_eq!(
@@ -2232,16 +2233,26 @@ pub(crate) mod processors;
 mod registry;
 
 #[test]
-fn a_speaker_saved_before_outputs_loads_on_the_system_output() {
-    let body: NodeBody = serde_json::from_str(r#"{"kind":"speaker"}"#).expect("old speaker");
+fn a_speaker_with_no_settings_loads_on_the_system_output() {
+    let body: NodeBody = serde_json::from_str(r#"{"kind":"speaker","data":{}}"#).expect("speaker");
     assert_eq!(body, NodeBody::Speaker(SpeakerNode::default()));
+}
+
+fn speaker(output: Option<SpeakerOutput>) -> SpeakerNode {
+    SpeakerNode {
+        output,
+        ..SpeakerNode::default()
+    }
 }
 
 #[test]
 fn a_speaker_keeps_its_output_by_name() {
-    let body = NodeBody::Speaker(SpeakerNode(Some(SpeakerOutput::Listener("js8".to_owned()))));
+    let body = NodeBody::Speaker(speaker(Some(SpeakerOutput::Listener("js8".to_owned()))));
     let json = serde_json::to_string(&body).expect("speaker json");
-    assert_eq!(json, r#"{"kind":"speaker","data":"js8"}"#);
+    assert_eq!(
+        json,
+        r#"{"kind":"speaker","data":{"output":"js8","volumes":{}}}"#
+    );
     assert_eq!(
         serde_json::from_str::<NodeBody>(&json).expect("speaker"),
         body
@@ -2251,13 +2262,16 @@ fn a_speaker_keeps_its_output_by_name() {
 #[test]
 fn a_speaker_on_the_server_round_trips() {
     for (server, json) in [
-        (None, r#"{"kind":"speaker","data":{"server":null}}"#),
+        (
+            None,
+            r#"{"kind":"speaker","data":{"output":{"server":null},"volumes":{}}}"#,
+        ),
         (
             Some("hw".to_owned()),
-            r#"{"kind":"speaker","data":{"server":"hw"}}"#,
+            r#"{"kind":"speaker","data":{"output":{"server":"hw"},"volumes":{}}}"#,
         ),
     ] {
-        let speaker = SpeakerNode(Some(SpeakerOutput::Server { server }));
+        let speaker = speaker(Some(SpeakerOutput::Server { server }));
         let body = NodeBody::Speaker(speaker.clone());
         assert_eq!(serde_json::to_string(&body).expect("speaker json"), json);
         assert_eq!(
@@ -2271,15 +2285,39 @@ fn a_speaker_on_the_server_round_trips() {
 
 #[test]
 fn a_speaker_output_name_is_bounded() {
-    let named = |name: String| SpeakerNode(Some(SpeakerOutput::Listener(name)));
-    let served = |name: String| SpeakerNode(Some(SpeakerOutput::Server { server: Some(name) }));
+    let named = |name: String| speaker(Some(SpeakerOutput::Listener(name)));
+    let served = |name: String| speaker(Some(SpeakerOutput::Server { server: Some(name) }));
     assert!(SpeakerNode::default().valid());
-    assert!(SpeakerNode(Some(SpeakerOutput::Server { server: None })).valid());
+    assert!(speaker(Some(SpeakerOutput::Server { server: None })).valid());
     assert!(named("ä".repeat(MAX_SPEAKER_OUTPUT_LEN)).valid());
     assert!(!named("x".repeat(MAX_SPEAKER_OUTPUT_LEN + 1)).valid());
     assert!(!named(String::new()).valid());
     assert!(!served(String::new()).valid());
     assert!(!served("x".repeat(MAX_SPEAKER_OUTPUT_LEN + 1)).valid());
+}
+
+#[test]
+fn a_speaker_keeps_each_wires_volume() {
+    let mut node = SpeakerNode::default();
+    node.volumes.insert("ch".to_owned(), 0.5);
+    let body = NodeBody::Speaker(node.clone());
+    let json = serde_json::to_string(&body).expect("speaker json");
+    assert_eq!(
+        json,
+        r#"{"kind":"speaker","data":{"output":null,"volumes":{"ch":0.5}}}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<NodeBody>(&json).expect("speaker"),
+        body
+    );
+    assert!(node.valid());
+    assert_eq!(node.volume("other"), 1.0);
+    assert_eq!(node.gain("other"), 1.0);
+    assert!((node.gain("ch") - 10f32.powf(-1.5)).abs() < 1e-6);
+    node.volumes.insert("muted".to_owned(), 0.0);
+    assert_eq!(node.gain("muted"), 0.0);
+    node.volumes.insert("loud".to_owned(), 1.5);
+    assert!(!node.valid());
 }
 
 fn repeater(edges: Vec<PatchEdge>) -> PatchGraph {

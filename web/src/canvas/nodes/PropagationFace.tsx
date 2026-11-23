@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ConfirmButton } from "../../components/ConfirmButton";
 import { TABLE_CELL, TABLE_HEAD } from "../../components/controls";
 import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
@@ -16,6 +16,7 @@ import {
   forecastAt,
 } from "../../lib/ionosonde";
 import { mufColor, type PropagationLayer } from "../../lib/map/propagation";
+import { oneOf } from "../../lib/remembered";
 import { useFeeds } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import { toastError } from "../../lib/toasts";
@@ -23,6 +24,7 @@ import type { PatchNode, PatchNodeOf, PropagationCell, PropagationView } from ".
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
+import { useNodeRemembered } from "../useNodeRemembered";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 
 const NO_POSITIONS: readonly string[] = [];
@@ -51,6 +53,7 @@ const LAYER_OPTIONS = [
   { value: "activity" as const, label: "Activity" },
   { value: "muf" as const, label: "MUF" },
 ];
+const IS_LAYER = oneOf(LAYER_OPTIONS.map((option) => option.value));
 
 const EMPTY_VIEW: PropagationView = {
   cells: [],
@@ -75,7 +78,12 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
   const active = useFaceActive();
   const positionNode = useFeeds(node.id, "position")[0]?.source ?? null;
   const view = useSinkFeed(node.id).propagation ?? EMPTY_VIEW;
-  const [layer, setLayer] = useState<PropagationLayer>("activity");
+  const [layer, setLayer] = useNodeRemembered<PropagationLayer>(
+    node.id,
+    "propagationLayer",
+    "activity",
+    IS_LAYER,
+  );
   const clear = useMutation({
     mutationFn: () => clearSink(node.id),
     onError: (error: Error) => toastError(error),

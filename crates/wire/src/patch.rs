@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -399,12 +401,19 @@ pub struct AudioRecorderNode {
 
 pub const MAX_SPEAKER_OUTPUT_LEN: usize = 256;
 
-/// Where a speaker plays, or None for the listener's system default. Devices are kept by name,
-/// since a browser salts device ids per origin and the app's port changes between runs.
-/// Transparent, so a speaker saved with no `data` at all still loads.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(transparent)]
-pub struct SpeakerNode(pub Option<SpeakerOutput>);
+/// Where a speaker plays and how loud each wire is.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct SpeakerNode {
+    /// None for the listener's system default. Devices are kept by name, since a browser salts
+    /// device ids per origin and the app's port changes between runs.
+    pub output: Option<SpeakerOutput>,
+    /// Fader position per wired source node, 0 silent to 1 full. A source not listed plays full.
+    pub volumes: BTreeMap<String, f32>,
+}
+
+/// Decibels a speaker's fader spans from full down to just above silence.
+pub const SPEAKER_VOLUME_RANGE_DB: f32 = 60.0;
 
 /// A bare name is a device of the listener's own machine, as a speaker always stored it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -420,7 +429,16 @@ pub enum SpeakerOutput {
 impl SpeakerNode {
     #[must_use]
     pub fn valid(&self) -> bool {
-        let name = match &self.0 {
+        self.output_valid()
+            && self.volumes.iter().all(|(source, volume)| {
+                !source.is_empty()
+                    && source.chars().count() <= MAX_SPEAKER_OUTPUT_LEN
+                    && (0.0..=1.0).contains(volume)
+            })
+    }
+
+    fn output_valid(&self) -> bool {
+        let name = match &self.output {
             None | Some(SpeakerOutput::Server { server: None }) => return true,
             Some(SpeakerOutput::Listener(name) | SpeakerOutput::Server { server: Some(name) }) => {
                 name
@@ -433,10 +451,26 @@ impl SpeakerNode {
     /// the listener's machine.
     #[must_use]
     pub fn server_output(&self) -> Option<Option<&str>> {
-        match &self.0 {
+        match &self.output {
             Some(SpeakerOutput::Server { server }) => Some(server.as_deref()),
             _ => None,
         }
+    }
+
+    /// Where the fader of the wire from `source` sits.
+    #[must_use]
+    pub fn volume(&self, source: &str) -> f32 {
+        self.volumes.get(source).copied().unwrap_or(1.0)
+    }
+
+    /// The linear gain of the wire from `source`, on the same curve as the browser's fader.
+    #[must_use]
+    pub fn gain(&self, source: &str) -> f32 {
+        let position = self.volume(source).clamp(0.0, 1.0);
+        if position <= 0.0 {
+            return 0.0;
+        }
+        10f32.powf((position - 1.0) * SPEAKER_VOLUME_RANGE_DB / 20.0)
     }
 }
 
@@ -479,6 +513,9 @@ pub struct HuntNode {
     pub clicks: bool,
     #[serde(default)]
     pub sweep: HuntSweepParams,
+    /// The operator started the hunt; the server keeps it going across restarts and switches.
+    #[serde(default)]
+    pub running: bool,
 }
 
 const fn default_clicks() -> bool {
@@ -490,6 +527,7 @@ impl Default for HuntNode {
         Self {
             clicks: default_clicks(),
             sweep: HuntSweepParams::default(),
+            running: false,
         }
     }
 }
@@ -506,6 +544,9 @@ pub struct DecoderLogNode {
 pub struct ScannerNode {
     #[serde(default)]
     pub settings: crate::ScanSettings,
+    /// The operator started the scan; the server keeps it going across restarts and switches.
+    #[serde(default)]
+    pub running: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]

@@ -421,7 +421,10 @@
       ],
       "default_body": {
         "kind": "speaker",
-        "data": null
+        "data": {
+          "output": null,
+          "volumes": {}
+        }
       }
     },
     {
@@ -1783,7 +1786,8 @@
             "hold_ms": 5000,
             "hardware_sweep": true,
             "margin_db": 12.0
-          }
+          },
+          "running": false
         }
       }
     },
@@ -1861,7 +1865,8 @@
             "min_span_deg": 180.0,
             "min_contrast_db": 6.0,
             "mount_offset_deg": 0.0
-          }
+          },
+          "running": false
         }
       }
     },

@@ -640,7 +640,7 @@ fn a_hunt_saved_before_the_sweep_loads_with_the_default_sweep() {
         body,
         NodeBody::Hunt(HuntNode {
             clicks: false,
-            sweep: crate::hunt::HuntSweepParams::default(),
+            ..HuntNode::default()
         })
     );
 }

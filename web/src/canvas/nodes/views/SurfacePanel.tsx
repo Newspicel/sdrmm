@@ -3,7 +3,9 @@ import { ChoiceChip } from "../../../components/face/Chips";
 import { Readout, Readouts } from "../../../components/face/Readouts";
 import { Segmented } from "../../../components/Segmented";
 import type { Colormap } from "../../../gl/surface";
+import { isIndex, oneOf } from "../../../lib/remembered";
 import type { StreamKind, SurfaceView, ViewLayer } from "../../../lib/types";
+import { useNodeRemembered } from "../../useNodeRemembered";
 import { type BearingFrame, frameOptions, shownFrame } from "./bearing";
 import { RangeDopplerPlot } from "./RangeDopplerPlot";
 import { SpatialPlot } from "./SpatialPlot";
@@ -20,6 +22,8 @@ export interface SurfaceProps {
   picked: number | null;
   receivedAt: number | undefined;
 }
+
+const IS_SPATIAL_VIEW = oneOf(VIEW_OPTIONS.map((option) => option.value));
 
 /** Surfaces drawn as a coloured grid, so the face offers a colour choice. */
 export const GRID_STREAMS: readonly StreamKind[] = ["range_doppler", "spatial_spectrum"];
@@ -48,7 +52,12 @@ export function SurfacePanel({ stream, ...props }: SurfaceProps & { stream: Stre
 
 function SpatialPanel({ node, known, view, dim, colormap }: SurfaceProps) {
   const [picked, setPicked] = useState<BearingFrame | null>(null);
-  const [shown, setShown] = useState<SpatialView>("map");
+  const [shown, setShown] = useNodeRemembered<SpatialView>(
+    node,
+    "spatialView",
+    "map",
+    IS_SPATIAL_VIEW,
+  );
   const trueKnown = view?.heading_deg != null;
   const frame = shownFrame(picked, trueKnown);
   return (
@@ -95,7 +104,7 @@ function useFringe(layer: ViewLayer | undefined, index: number, at: number | und
 }
 
 function VisibilityPanel({ node, known, view, dim, receivedAt }: SurfaceProps) {
-  const [chosen, setChosen] = useState(0);
+  const [chosen, setChosen] = useNodeRemembered(node, "baseline", 0, isIndex);
   const layers = view?.layers ?? [];
   const index = chosen < layers.length ? chosen : 0;
   const layer = layers[index];

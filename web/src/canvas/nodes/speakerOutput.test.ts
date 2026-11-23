@@ -8,16 +8,26 @@ import {
   outputOfChoice,
   serverOutputOf,
   speakerOutputOf,
+  speakerVolumeOf,
   withSpeakerOutput,
+  withSpeakerVolume,
 } from "./speakerOutput";
 
-const speaker: PatchNode = { id: "s", kind: "speaker", data: null, position: { x: 0, y: 0 } };
+const speaker: PatchNode = { id: "s", kind: "speaker", data: { output: null, volumes: {} }, position: { x: 0, y: 0 } };
 
 describe("speaker output", () => {
   it("keeps the picked output by name and clears it back to System", () => {
     const picked = withSpeakerOutput(speaker, "js8");
     expect(speakerOutputOf(picked)).toBe("js8");
     expect(speakerOutputOf(withSpeakerOutput(picked, null))).toBeNull();
+  });
+
+  it("keeps each wire's volume beside the output", () => {
+    const quiet = withSpeakerVolume(withSpeakerOutput(speaker, "js8"), "ch", 0.25);
+    expect(speakerVolumeOf(quiet, "ch")).toBe(0.25);
+    expect(speakerVolumeOf(quiet, "other")).toBe(1);
+    expect(speakerOutputOf(quiet)).toBe("js8");
+    expect(speakerVolumeOf(withSpeakerVolume(quiet, "ch", 3), "ch")).toBe(1);
   });
 
   it("flags a saved output only once the names are known and it is gone", () => {

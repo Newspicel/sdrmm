@@ -4358,6 +4358,8 @@ export interface components {
         };
         HuntNode: {
             clicks?: boolean;
+            /** @description The operator started the hunt; the server keeps it going across restarts and switches. */
+            running?: boolean;
             sweep?: components["schemas"]["HuntSweepParams"];
         };
         HuntSettings: {
@@ -5855,7 +5857,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker" | "voice_chat";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker" | "voice_chat" | "sweep";
         /**
          * @description Something an operator asks a running processor to do.
          * @enum {string}
@@ -6517,6 +6519,8 @@ export interface components {
          */
         ScanMode: "targets" | "close_call" | "all";
         ScannerNode: {
+            /** @description The operator started the scan; the server keeps it going across restarts and switches. */
+            running?: boolean;
             settings?: components["schemas"]["ScanSettings"];
         };
         ScannerStatus: {
@@ -7148,7 +7152,18 @@ export interface components {
             descending?: boolean;
             field: string;
         };
-        SpeakerNode: components["schemas"]["SpeakerOutput"] | null;
+        /** @description Where a speaker plays and how loud each wire is. */
+        SpeakerNode: {
+            /** @default null */
+            output: components["schemas"]["SpeakerOutput"] | null;
+            /**
+             * @description Fader position per wired source node, 0 silent to 1 full. A source not listed plays full.
+             * @default {}
+             */
+            volumes: {
+                [key: string]: number;
+            };
+        };
         /** @description A bare name is a device of the listener's own machine, as a speaker always stored it. */
         SpeakerOutput: string | {
             server?: string | null;

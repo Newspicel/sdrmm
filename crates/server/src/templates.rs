@@ -31,10 +31,10 @@ impl Sink {
         }
     }
 
-    const fn body(self) -> NodeBody {
+    fn body(self) -> NodeBody {
         match self {
             Self::Readout => NodeBody::Readout,
-            Self::Speaker => NodeBody::Speaker(sdrmm_wire::SpeakerNode(None)),
+            Self::Speaker => NodeBody::Speaker(sdrmm_wire::SpeakerNode::default()),
             Self::Video => NodeBody::Video,
             Self::Map => NodeBody::Map,
             Self::Log => NodeBody::DecoderLog(sdrmm_wire::DecoderLogNode {

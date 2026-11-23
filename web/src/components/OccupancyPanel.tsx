@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { TuneTarget } from "../canvas/libraryTarget";
 import { occupancyQuery } from "../lib/api";
+import { oneOf, rememberedKey, useRemembered } from "../lib/remembered";
 import { useTuner } from "../lib/useTuner";
 import type { Options } from "./controls";
 import { List, ListRow, Panel, PanelHint, PanelToolbar, SearchField } from "./ListPanel";
@@ -25,10 +26,12 @@ const SORTS: Options<OccupancySort> = [
 ];
 
 const MIN_SAMPLES = 30;
+const SORT_KEY = rememberedKey("occupancySort");
+const IS_SORT = oneOf(SORTS.map((option) => option.value));
 
 export function OccupancyPanel({ target }: { target: TuneTarget | null }) {
   const { tune, ready } = useTuner(target);
-  const [sort, setSort] = useState<OccupancySort>("busiest");
+  const [sort, setSort] = useRemembered<OccupancySort>(SORT_KEY, "busiest", IS_SORT);
   const [query, setQuery] = useState("");
   const report = useQuery(occupancyQuery(MIN_SAMPLES));
 

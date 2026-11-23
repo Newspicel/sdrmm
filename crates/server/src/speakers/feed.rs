@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+};
+
 use sdrmm_audio_out::{CHANNELS, Voice};
 use sdrmm_dsp::RealResampler;
 use sdrmm_engine::{PcmBlock, PcmPayload};
@@ -30,15 +35,15 @@ impl Shaper {
         }
     }
 
-    pub(super) fn shape(&mut self, block: &PcmBlock) -> &[f32] {
+    pub(super) fn shape(&mut self, block: &PcmBlock, gain: f32) -> &[f32] {
         self.split_sides(block);
         let Some(sides) = &mut self.sides else {
-            return interleave(&self.split, &mut self.stereo);
+            return interleave(&self.split, gain, &mut self.stereo);
         };
         for ((side, input), output) in sides.iter_mut().zip(&self.split).zip(&mut self.resampled) {
             side.process(input, output);
         }
-        interleave(&self.resampled, &mut self.stereo)
+        interleave(&self.resampled, gain, &mut self.stereo)
     }
 
     fn split_sides(&mut self, block: &PcmBlock) {
@@ -62,22 +67,28 @@ impl Shaper {
     }
 }
 
-fn interleave<'a>(sides: &[Vec<f32>; CHANNELS], stereo: &'a mut Vec<f32>) -> &'a [f32] {
+fn interleave<'a>(sides: &[Vec<f32>; CHANNELS], gain: f32, stereo: &'a mut Vec<f32>) -> &'a [f32] {
     stereo.clear();
     for (left, right) in sides[0].iter().zip(&sides[1]) {
-        stereo.extend([*left, *right]);
+        stereo.extend([left * gain, right * gain]);
     }
     stereo
 }
 
 /// Plays one wire into a voice until the channel stops or the speaker lets go.
-pub(super) async fn run(mut pcm: broadcast::Receiver<PcmBlock>, mut voice: Voice, rate: u32) {
+pub(super) async fn run(
+    mut pcm: broadcast::Receiver<PcmBlock>,
+    mut voice: Voice,
+    rate: u32,
+    gain: Arc<AtomicU32>,
+) {
     let mut shaper = Shaper::new(rate);
     let mut lost = 0u64;
     loop {
         match pcm.recv().await {
             Ok(block) => {
-                let dropped = voice.push(shaper.shape(&block));
+                let level = f32::from_bits(gain.load(Ordering::Relaxed));
+                let dropped = voice.push(shaper.shape(&block, level));
                 if dropped > 0 && voice.overflow() >= lost.saturating_mul(2).max(1) {
                     lost = voice.overflow();
                     tracing::warn!(
@@ -115,7 +126,7 @@ mod tests {
     fn mono_plays_on_both_sides() {
         let mut shaper = Shaper::new(AUDIO_RATE_HZ);
         assert_eq!(
-            shaper.shape(&block(1, &[0.5, -0.25])),
+            shaper.shape(&block(1, &[0.5, -0.25]), 1.0),
             [0.5, 0.5, -0.25, -0.25]
         );
     }
@@ -123,7 +134,13 @@ mod tests {
     #[test]
     fn stereo_passes_through() {
         let mut shaper = Shaper::new(AUDIO_RATE_HZ);
-        assert_eq!(shaper.shape(&block(2, &[0.5, -0.25])), [0.5, -0.25]);
+        assert_eq!(shaper.shape(&block(2, &[0.5, -0.25]), 1.0), [0.5, -0.25]);
+    }
+
+    #[test]
+    fn the_fader_scales_both_sides() {
+        let mut shaper = Shaper::new(AUDIO_RATE_HZ);
+        assert_eq!(shaper.shape(&block(2, &[0.5, -0.25]), 0.5), [0.25, -0.125]);
     }
 
     #[test]
@@ -134,14 +151,14 @@ mod tests {
             channels: 1,
             payload: PcmPayload::Silence(3),
         };
-        assert_eq!(shaper.shape(&silent), [0.0; 6]);
+        assert_eq!(shaper.shape(&silent, 1.0), [0.0; 6]);
     }
 
     #[test]
     fn another_card_rate_is_met() {
         let mut shaper = Shaper::new(44_100);
         let second = vec![0.1; AUDIO_RATE_HZ as usize];
-        let frames = shaper.shape(&block(1, &second)).len() / CHANNELS;
+        let frames = shaper.shape(&block(1, &second), 1.0).len() / CHANNELS;
         assert!(frames.abs_diff(44_100) < 100, "{frames}");
     }
 }

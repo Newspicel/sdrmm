@@ -25,7 +25,7 @@ export type View = "patch" | "rack";
 
 const Library = lazy(() => import("./Library").then((module) => ({ default: module.Library })));
 
-const VIEWS: Options<View> = [
+export const VIEWS: Options<View> = [
   { value: "patch", label: "Patch" },
   { value: "rack", label: "Rack" },
 ];

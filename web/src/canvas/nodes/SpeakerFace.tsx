@@ -10,13 +10,17 @@ import { FaceStats, Stat } from "../../components/face/Stats";
 import { Icon } from "../../components/Icon";
 import { SettingRow } from "../../components/Settings";
 import { Tip } from "../../components/Tip";
+import { useDebouncedCommit } from "../../components/useDebouncedCommit";
 import { tapKey } from "../../lib/audio/engine";
 import { resumeAudioOutput } from "../../lib/audio/sink";
 import { audioEngine, useChannelAudio } from "../../lib/audio/useChannelAudio";
+import { listOf } from "../../lib/remembered";
 import { type Input, useInputs } from "../../lib/resolved";
 import type { PatchNode } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
+import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
+import { useNodeRemembered } from "../useNodeRemembered";
 import { AudioSpectrogramView } from "./AudioSpectrogramView";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 import { SpeakerOutputChip } from "./SpeakerOutputChip";
@@ -27,7 +31,16 @@ import {
   useAudioPeakDb,
   useSpeakerHealth,
 } from "./speaker";
-import { listenerOutputOf, serverOutputOf, speakerOutputOf } from "./speakerOutput";
+import {
+  listenerOutputOf,
+  serverOutputOf,
+  speakerOutputOf,
+  speakerVolumeOf,
+  withSpeakerVolume,
+} from "./speakerOutput";
+
+const isSources = listOf((value: unknown): value is string => typeof value === "string");
+const NOTHING_HEARD: readonly string[] = [];
 
 export function SpeakerFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "audio");
@@ -52,7 +65,7 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
           inputs.map((input, index) => (
             <AudioInput
               key={inputKey(input)}
-              node={node.id}
+              speaker={node}
               input={input}
               port={index === 0 ? "audio" : undefined}
               onServer={onServer}
@@ -79,27 +92,63 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
   );
 }
 
+/** The sources this browser listens to on a speaker, kept across reloads and switches. */
+function useListening(node: string, source: string) {
+  const [heard, setHeard] = useNodeRemembered(node, "speakerListening", NOTHING_HEARD, isSources);
+  const listening = heard.includes(source);
+  const listen = (on: boolean): void =>
+    setHeard((held) =>
+      on ? [...held.filter((s) => s !== source), source] : held.filter((s) => s !== source),
+    );
+  return { listening, listen };
+}
+
+/** The wire's fader, kept in the patch so the server card and every listener share it. */
+function useVolume(speaker: PatchNode, input: Input, setLive: (volume: number) => void) {
+  const workspace = useWorkspaceContext();
+  const saved = speakerVolumeOf(speaker, input.node);
+  const commit = useDebouncedCommit((volume) =>
+    workspace.edit((snapshot) => ({
+      ...snapshot,
+      graph: patchNode(snapshot.graph, speaker.id, (current) =>
+        withSpeakerVolume(current, input.node, volume),
+      ),
+    })),
+  );
+  useEffect(() => setLive(saved), [saved, setLive]);
+  const change = (volume: number): void => {
+    setLive(volume);
+    commit.change(volume);
+  };
+  return { volume: commit.pending ?? saved, change };
+}
+
 function AudioInput({
-  node,
+  speaker,
   input,
   port,
   onServer,
 }: {
-  node: string;
+  speaker: PatchNode;
   input: Input;
   port?: string;
   onServer: boolean;
 }) {
   const workspace = useWorkspaceContext();
+  const node = speaker.id;
   const tap = { node, port: "audio", source: input.source };
   const audio = useChannelAudio(workspace.socket, tap);
   const active = audio.playing || audio.pending || audio.suspended;
-  const { stop } = audio;
+  const { listening, listen } = useListening(node, input.source);
+  const fader = useVolume(speaker, input, audio.setVolume);
+  const { start, stop } = audio;
   useEffect(() => {
     if (onServer) {
       stop();
+    } else if (listening) {
+      start();
     }
-  }, [onServer, stop]);
+  }, [onServer, listening, start, stop]);
   const source = tapKey(tap);
   const peakDb = useAudioPeakDb(source, audio.playing);
   const name =
@@ -122,13 +171,14 @@ function AudioInput({
             fill={TONE[meterTone(peakDb, false)]}
           />
         }
-        readout={onServer ? undefined : `${Math.round(audio.volume * 100)}%`}
+        readout={`${Math.round(fader.volume * 100)}%`}
         trailing={
           !onServer && (
             <PlayToggle
               active={active}
               onToggle={() => {
                 audio.resumeOutput();
+                listen(!active);
                 if (active) {
                   audio.stop();
                 } else {
@@ -139,27 +189,25 @@ function AudioInput({
           )
         }
       />
-      {!onServer && (
-        <Inspect node={node}>
-          <InspectSection label={name}>
-            <Chips inset="none">
-              <SettingRow label="Volume">
-                <GainMeter
-                  label={`${name} volume`}
-                  className="min-w-0 flex-1"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={audio.volume}
-                  peakDb={peakDb ?? null}
-                  tone={meterTone(peakDb, false)}
-                  onChange={audio.setVolume}
-                />
-              </SettingRow>
-            </Chips>
-          </InspectSection>
-        </Inspect>
-      )}
+      <Inspect node={node}>
+        <InspectSection label={name}>
+          <Chips inset="none">
+            <SettingRow label="Volume">
+              <GainMeter
+                label={`${name} volume`}
+                className="min-w-0 flex-1"
+                min={0}
+                max={1}
+                step={0.01}
+                value={fader.volume}
+                peakDb={peakDb ?? null}
+                tone={meterTone(peakDb, false)}
+                onChange={fader.change}
+              />
+            </SettingRow>
+          </Chips>
+        </InspectSection>
+      </Inspect>
       <AudioSpectrogramView
         node={node}
         port="audio"

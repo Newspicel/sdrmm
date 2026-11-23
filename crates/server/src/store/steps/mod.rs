@@ -20,6 +20,7 @@ mod radio_use;
 mod refused;
 mod silent_events;
 mod sources;
+mod speakers;
 mod steer;
 mod truth;
 mod tx;
@@ -29,6 +30,7 @@ mod wires;
 type Step = fn(&mut Value) -> Vec<WorkspaceNoticeKind>;
 
 const STEPS: &[Step] = &[
+    speakers::speakers_nest_their_output,
     encoders::modulators_become_encoders,
     baseband_scopes::drop_baseband_scopes,
     filter_kinds::drop_unknown_filter_kinds,

@@ -14,12 +14,13 @@ import { Rack } from "./canvas/Rack";
 import { useSwitchStore } from "./canvas/switches";
 import { useScopedState } from "./canvas/useScopedState";
 import { useWorkspace } from "./canvas/useWorkspace";
-import { type View, WorkspaceBar } from "./canvas/WorkspaceBar";
+import { VIEWS, type View, WorkspaceBar } from "./canvas/WorkspaceBar";
 import { WorkspaceNotices } from "./canvas/WorkspaceNotices";
 import { WorkspaceStart } from "./canvas/WorkspaceStart";
 import { AboutPanel } from "./components/AboutPanel";
 import { AccessGate } from "./components/AccessGate";
 import { AutoOffDialog } from "./components/AutoOffDialog";
+import { TUNE_STEPS_HZ } from "./components/dial";
 import { HelpPanel } from "./components/HelpPanel";
 import { ReportProblem } from "./components/ReportProblem";
 import { SerialDialog } from "./components/SerialDialog";
@@ -29,6 +30,7 @@ import { ViewOnly } from "./components/ViewOnly";
 import { channelTypesQuery, encoderTypesQuery, patchCatalogQuery, stateQuery } from "./lib/api";
 import { loadCatalog, useCatalogStore } from "./lib/catalog";
 import { useRefusalStore } from "./lib/refusals";
+import { oneOf, rememberedKey, useRemembered } from "./lib/remembered";
 import {
   activePatch,
   boundChannels,
@@ -51,6 +53,10 @@ import { useSdrSocket } from "./lib/useSdrSocket";
 import { ToolsDialog } from "./tools/ToolsDialog";
 
 const NO_PROBLEMS: readonly NodeProblem[] = [];
+const VIEW_KEY = rememberedKey("view");
+const STEP_KEY = rememberedKey("tuneStep");
+const IS_VIEW = oneOf(VIEWS.map((option) => option.value));
+const IS_STEP = oneOf<number>(TUNE_STEPS_HZ);
 
 function useCatalogLoader(catalog: PatchCatalog | undefined) {
   useEffect(() => {
@@ -85,8 +91,8 @@ function useConnectedRadios(devices: ReadonlyMap<string, unknown>, nodes: PatchG
 
 export function App() {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<View>("patch");
-  const [stepHz, setStepHz] = useState(100_000);
+  const [view, setView] = useRemembered<View>(VIEW_KEY, "patch", IS_VIEW);
+  const [stepHz, setStepHz] = useRemembered(STEP_KEY, 100_000, IS_STEP);
   const [showHelp, setShowHelp] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -181,9 +187,10 @@ export function App() {
   return (
     <AccessGate onToken={() => socket?.retryNow()}>
       <div className="flex h-full flex-col bg-bg text-ink">
-        {socket !== null && snapshot !== null && catalogReady && (
+        {socket !== null && workspace.active !== null && snapshot !== null && catalogReady && (
           <WorkspaceProvider
             value={{
+              id: workspace.active.id,
               socket,
               graph,
               rack,

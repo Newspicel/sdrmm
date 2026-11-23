@@ -179,7 +179,7 @@ export function DecoderLogPanel({
                 commit={commit}
               />
             ) : (
-              <DecoderLogGroups rows={groups} by={group} scroller={scroller} />
+              <DecoderLogGroups node={wires.sink} rows={groups} by={group} scroller={scroller} />
             )}
 
             {shown === 0 && <FaceEmpty hint={emptyHint(wires, filter, source.isPending)} />}

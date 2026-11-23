@@ -7,6 +7,7 @@ import {
   useNodesInitialized,
   useNodesState,
   useReactFlow,
+  type Viewport,
 } from "@xyflow/react";
 import {
   type ReactNode,
@@ -22,6 +23,15 @@ import { BTN_QUIET, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
 import { zoomSettled } from "../gl/drawLoop";
 import { createPointerSender, draggedByOthers, othersOf, usePresenceStore } from "../lib/presence";
+import {
+  isFiniteNumber,
+  isRecord,
+  orNull,
+  readRemembered,
+  rememberedKey,
+  storeRemembered,
+  within,
+} from "../lib/remembered";
 import { useCanEdit } from "../lib/role";
 import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
@@ -54,6 +64,16 @@ export interface FlowData extends Record<string, unknown> {
 }
 
 const FIT_VIEW = { padding: 0.12, maxZoom: 1 } as const;
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 2;
+const IS_ZOOM = within(MIN_ZOOM, MAX_ZOOM);
+const IS_SAVED_VIEWPORT = orNull(isViewport);
+
+export function isViewport(value: unknown): value is Viewport {
+  return (
+    isRecord(value) && isFiniteNumber(value.x) && isFiniteNumber(value.y) && IS_ZOOM(value.zoom)
+  );
+}
 
 const DELETE_KEYS = ["Backspace", "Delete"];
 
@@ -141,7 +161,9 @@ export function Canvas() {
   );
 
   const { isValidConnection, onConnect, onConnectStart, onConnectEnd } = useConnections(workspace);
-  useFitOnceMeasured();
+  const viewportKey = rememberedKey("viewport", workspace.id);
+  const [saved] = useState(() => readRemembered(viewportKey, null, IS_SAVED_VIEWPORT));
+  useFitOnceMeasured(saved === null);
   const { screenToFlowPosition } = useReactFlow();
 
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -212,7 +234,10 @@ export function Canvas() {
             window.dispatchEvent(new Event(CANVAS_MOVED));
           }
         }}
-        onMoveEnd={(_event, viewport) => zoomSettled(viewport.zoom)}
+        onMoveEnd={(_event, viewport) => {
+          zoomSettled(viewport.zoom);
+          storeRemembered(viewportKey, viewport);
+        }}
         onNodeContextMenu={
           canEdit ? (event, node) => openMenu(event, { kind: "node", id: node.id }) : undefined
         }
@@ -228,8 +253,9 @@ export function Canvas() {
         snapGrid={grid.snap}
         panOnScroll
         panOnScrollSpeed={1}
-        minZoom={0.15}
-        maxZoom={2}
+        defaultViewport={saved ?? undefined}
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
         proOptions={{ hideAttribution: true }}
         className="min-h-0 flex-1 bg-bg"
       >
@@ -323,10 +349,10 @@ function usePeerDrags(setNodes: ReturnType<typeof useNodesState<Node<FlowData>>>
   }, [dragged, setNodes]);
 }
 
-function useFitOnceMeasured() {
+function useFitOnceMeasured(wanted: boolean) {
   const { fitView } = useReactFlow();
   const measured = useNodesInitialized();
-  const fitted = useRef(false);
+  const fitted = useRef(!wanted);
   useEffect(() => {
     if (measured && !fitted.current) {
       fitted.current = true;

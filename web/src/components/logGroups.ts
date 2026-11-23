@@ -19,7 +19,8 @@ export function groupOf(view: LogView): LogGroupKey | null {
   return view === "list" ? null : view;
 }
 
-export type GroupSort = "key" | "count" | "last";
+export const GROUP_SORTS = ["key", "count", "last"] as const;
+export type GroupSort = (typeof GROUP_SORTS)[number];
 
 export interface GroupRow {
   key: string;

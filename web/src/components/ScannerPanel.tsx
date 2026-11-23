@@ -2,14 +2,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { Inspect, InspectSection } from "../canvas/inspector";
 import { FaceBody, FaceEmpty, FaceFooter } from "../canvas/nodes/NodeShell";
-import { nodeAction, STATE_KEY, scanStatusOf } from "../lib/api";
+import { nodeAction, STATE_KEY } from "../lib/api";
 import { useScannerStore } from "../lib/scanner";
 import { pushToast } from "../lib/toasts";
 import type {
   BandPlan,
   ChannelInfo,
   DeviceSet,
-  NodeActed,
   ScanAction,
   ScanMode,
   ScannerStatus,
@@ -72,12 +71,6 @@ export function ScannerPanel({
   const clearLive = useScannerStore((s) => s.clear);
   const status = liveStatus(active, node, pushed);
   const invalidate = (): void => void queryClient.invalidateQueries({ queryKey: STATE_KEY });
-  const keepLockouts = (acted: NodeActed): void => {
-    const finished = scanStatusOf(acted);
-    if (finished !== null) {
-      onSettings({ ...settings, lockouts: finished.settings.lockouts ?? [] });
-    }
-  };
   const scan = (action: ScanAction) => () => nodeAction(node, { action: "scan", with: action });
 
   const startMut = useMutation({
@@ -87,16 +80,12 @@ export function ScannerPanel({
   });
   const stopMut = useMutation({
     mutationFn: scan("stop"),
-    onSuccess: (acted) => {
-      keepLockouts(acted);
-      clearLive(node);
-    },
+    onSuccess: () => clearLive(node),
     onError: (e) => pushToast(e.message),
     onSettled: invalidate,
   });
   const skipMut = useMutation({
     mutationFn: scan("skip"),
-    onSuccess: keepLockouts,
     onError: (e) => pushToast(e.message),
     onSettled: invalidate,
   });

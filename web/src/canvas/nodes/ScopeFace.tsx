@@ -103,7 +103,7 @@ function Spectrum({
   const hoverRef = useRef<number | null>(null);
   const densityRef = useRef<DensityLayer | null>(null);
 
-  const display = useScopeDisplay();
+  const display = useScopeDisplay(node);
   const feed = useScopeFeed({
     node,
     set,

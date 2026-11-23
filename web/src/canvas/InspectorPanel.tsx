@@ -3,16 +3,25 @@ import { useEffect, useState } from "react";
 import { Button } from "../components/BaseControls";
 import { ICON_BTN_SM } from "../components/controls";
 import { Icon } from "../components/Icon";
+import { oneOf, orNull } from "../lib/remembered";
 import { useNodeProblems } from "../lib/resolved";
 import type { PatchNode } from "../lib/types";
 import { useWorkspaceContext } from "./context";
 import { isResizable, nodePorts } from "./graph";
 import { InspectSection, NoInspect, useSlotSetters } from "./inspector";
 import { NodeFace } from "./nodes";
-import { BasebandTabs, BasebandView, type BasebandView as View } from "./nodes/BasebandView";
+import {
+  BASEBAND_VIEWS,
+  BasebandTabs,
+  BasebandView,
+  type BasebandView as View,
+} from "./nodes/BasebandView";
 import { PanelSurface } from "./nodes/NodeShell";
 import { readPalette } from "./nodes/scopePalette";
 import { inPopup, isTyping } from "./useHotkeys";
+import { useNodeRemembered } from "./useNodeRemembered";
+
+const IS_CHART = orNull(oneOf(BASEBAND_VIEWS));
 
 export function InspectorPanel() {
   const workspace = useWorkspaceContext();
@@ -101,7 +110,7 @@ function FaceCopy({ node, foot }: { node: PatchNode; foot: HTMLElement | null })
 function Baseband({ node }: { node: PatchNode }) {
   const workspace = useWorkspaceContext();
   const [palette] = useState(readPalette);
-  const [view, setView] = useState<View | null>(null);
+  const [view, setView] = useNodeRemembered<View | null>(node.id, "basebandView", null, IS_CHART);
   const [big, setBig] = useState(false);
   useEscapeLeaves(big, () => setBig(false));
   const sends = nodePorts(workspace.context, node).some(
@@ -127,10 +136,11 @@ function Baseband({ node }: { node: PatchNode }) {
     >
       <NoInspect>
         <BasebandView
-          key={`${node.id}:${view}`}
+          key={node.id}
           node={node.id}
           colormap={palette}
-          initial={view}
+          view={view}
+          onView={setView}
           expanded={big}
           onExpand={() => setBig(!big)}
           onClose={() => {

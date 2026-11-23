@@ -1,12 +1,23 @@
 import { type RefObject, useState } from "react";
+import { useNodeRemembered } from "../canvas/useNodeRemembered";
 import { useKindLabel } from "../lib/eventKinds";
+import { oneOf } from "../lib/remembered";
 import type { LogGroupKey } from "../lib/types";
 import { Button } from "./BaseControls";
 import { TABLE_CELL, TABLE_HEAD, TABLE_TEXT, tableRow } from "./controls";
 import { formatClock } from "./decoderViews";
 import { RowDetail } from "./LogRowDetail";
-import { formatAirtime, type GroupRow, type GroupSort, hasAirtime, sortGroups } from "./logGroups";
+import {
+  formatAirtime,
+  GROUP_SORTS,
+  type GroupRow,
+  type GroupSort,
+  hasAirtime,
+  sortGroups,
+} from "./logGroups";
 import { useRowAnchor } from "./rowAnchor";
+
+const IS_SORT = oneOf(GROUP_SORTS);
 
 interface Column {
   key: string;
@@ -39,15 +50,17 @@ function columnsFor(by: LogGroupKey, airtime: boolean): Column[] {
 }
 
 export function DecoderLogGroups({
+  node,
   rows,
   by,
   scroller,
 }: {
+  node: string;
   rows: readonly GroupRow[];
   by: LogGroupKey;
   scroller: RefObject<HTMLDivElement | null>;
 }) {
-  const [sort, setSort] = useState<GroupSort>("last");
+  const [sort, setSort] = useNodeRemembered<GroupSort>(node, "logSort", "last", IS_SORT);
   const [opened, setOpened] = useState<string | null>(null);
   const anchor = useRowAnchor(scroller, opened);
   const airtime = hasAirtime(rows);

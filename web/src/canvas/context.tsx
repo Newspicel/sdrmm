@@ -15,6 +15,7 @@ import type { SdrSocket } from "../lib/ws";
 import type { GraphContext } from "./graph";
 
 export interface Workspace {
+  id: number;
   socket: SdrSocket;
   graph: PatchGraph;
   rack: RackLayout;

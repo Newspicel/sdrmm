@@ -275,7 +275,7 @@ const fn retunes(command: &ControlCommand) -> bool {
     }
 }
 
-const fn runs(job: &SweepJob) -> Option<bool> {
+pub(crate) const fn runs(job: &SweepJob) -> Option<bool> {
     match job {
         SweepJob::Scan {
             action: ScanAction::Start,
@@ -302,6 +302,11 @@ const fn runs(job: &SweepJob) -> Option<bool> {
             ..
         } => None,
     }
+}
+
+/// Whether a control error only says the target is not up yet.
+pub(crate) fn waiting(error: &str) -> bool {
+    error == NOT_RUNNING || error == NO_LANE
 }
 
 pub(crate) fn takes(patch: &ResolvedPatch, from: &str, verb: ControlVerb) -> bool {

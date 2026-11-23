@@ -8,6 +8,7 @@ import {
   clearBasebandGrid,
   createBasebandGrid,
   decayBasebandGrid,
+  EYE_COMPONENTS,
   type EyeComponent,
   eyeScale,
   foldRate,
@@ -32,9 +33,11 @@ import { createDrawLoop, type DrawLoop } from "../../gl/drawLoop";
 import type { IqFrame, SpectrumFrame, SymbolFrame } from "../../lib/frame";
 import { SPECTRUM_SIGNAL_MARGIN_DB } from "../../lib/limits";
 import { iqHub, symbolHub } from "../../lib/portTaps";
+import { isBoolean, oneOf, within } from "../../lib/remembered";
 import { spectrumHub } from "../../lib/spectrum";
 import { token } from "../../lib/tokens";
 import { Inspect, InspectSection } from "../inspector";
+import { useNodeRemembered } from "../useNodeRemembered";
 import { type Measurement, measurements } from "./basebandMeasure";
 import { drawPlot, GridBitmap, PLOT_FONT, prepareCanvas } from "./scopePlot";
 import {
@@ -74,20 +77,25 @@ const SYMBOL_VIEWS: readonly BasebandView[] = ["states", "quality", "drift"];
 const SCATTER_PAD = 12;
 const PLOT_INSET: PlotInset = { top: 10, bottom: 4 };
 
+const IS_EYE = oneOf(EYE_COMPONENTS);
+const IS_SYMBOL_RATE = within(MIN_SYMBOL_RATE, Number.MAX_SAFE_INTEGER);
+
 const PORT = "baseband";
 const NO_EYE = "Many carriers, no single eye";
 
 export function BasebandView({
   node,
   colormap,
-  initial = "spectrum",
+  view,
+  onView,
   onClose,
   expanded = false,
   onExpand,
 }: {
   node: string;
   colormap: Palette;
-  initial?: BasebandView;
+  view: BasebandView;
+  onView: (view: BasebandView) => void;
   onClose?: () => void;
   expanded?: boolean;
   onExpand?: () => void;
@@ -95,10 +103,9 @@ export function BasebandView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [frame, setFrame] = useState<IqFrame | null>(() => iqHub.latest(node, PORT));
   const frameRef = useRef<IqFrame | null>(frame);
-  const [view, setView] = useState<BasebandView>(initial);
-  const [eyeComponent, setEyeComponent] = useState<EyeComponent>("frequency");
-  const [symbolRate, setSymbolRate] = useState(4800);
-  const [decimate, setDecimate] = useState(true);
+  const [eyeComponent, setEyeComponent] = useNodeRemembered(node, "eye", "frequency", IS_EYE);
+  const [symbolRate, setSymbolRate] = useNodeRemembered(node, "symbolRate", 4800, IS_SYMBOL_RATE);
+  const [decimate, setDecimate] = useNodeRemembered(node, "decimate", true, isBoolean);
 
   const [symbols, setSymbols] = useState<SymbolFrame | null>(() => symbolHub.latest(node, PORT));
   const symbolsRef = useRef<SymbolFrame | null>(symbols);
@@ -246,7 +253,7 @@ export function BasebandView({
       onClose();
       return;
     }
-    setView(name);
+    onView(name);
   };
   const hint = waiting(shown, frame, symbols);
   const rows = measurements(shown, frame, symbols, period);

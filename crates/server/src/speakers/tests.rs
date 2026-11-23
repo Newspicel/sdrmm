@@ -27,7 +27,10 @@ fn wire(from: (&str, &str), to: (&str, &str)) -> PatchEdge {
 }
 
 fn speaker(output: Option<SpeakerOutput>) -> NodeBody {
-    NodeBody::Speaker(SpeakerNode(output))
+    NodeBody::Speaker(SpeakerNode {
+        output,
+        ..SpeakerNode::default()
+    })
 }
 
 fn on_server(device: Option<&str>) -> NodeBody {
@@ -105,7 +108,7 @@ fn only_speakers_on_the_server_are_played_here() {
         &engine,
     );
     let wanted = wanted(&current.graph, &current.patch);
-    let routes = HashSet::from([AudioRoute::channel(ds, ch)]);
+    let routes = HashMap::from([(AudioRoute::channel(ds, ch), 1.0)]);
     assert_eq!(
         wanted,
         HashMap::from([
@@ -125,6 +128,21 @@ fn only_speakers_on_the_server_are_played_here() {
             ),
         ])
     );
+    engine.remove_device_set(ds).expect("close");
+}
+
+#[test]
+fn a_wire_plays_at_its_fader() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let (engine, ds, ch) = radio(&dir);
+    let mut quiet = SpeakerNode {
+        output: Some(SpeakerOutput::Server { server: None }),
+        ..SpeakerNode::default()
+    };
+    quiet.volumes.insert("ch".to_owned(), 0.0);
+    let current = resolved(patch(vec![("quiet", NodeBody::Speaker(quiet))]), &engine);
+    let wanted = wanted(&current.graph, &current.patch);
+    assert_eq!(wanted["quiet"].routes[&AudioRoute::channel(ds, ch)], 0.0);
     engine.remove_device_set(ds).expect("close");
 }
 

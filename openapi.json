@@ -15324,6 +15324,10 @@
           "clicks": {
             "type": "boolean"
           },
+          "running": {
+            "type": "boolean",
+            "description": "The operator started the hunt; the server keeps it going across restarts and switches."
+          },
           "sweep": {
             "$ref": "#/components/schemas/HuntSweepParams"
           }
@@ -21275,7 +21279,8 @@
           "recorder",
           "transmit",
           "speaker",
-          "voice_chat"
+          "voice_chat",
+          "sweep"
         ]
       },
       "ProcessorAction": {
@@ -23887,6 +23892,10 @@
       "ScannerNode": {
         "type": "object",
         "properties": {
+          "running": {
+            "type": "boolean",
+            "description": "The operator started the scan; the server keeps it going across restarts and switches."
+          },
           "settings": {
             "$ref": "#/components/schemas/ScanSettings"
           }
@@ -26020,15 +26029,34 @@
         }
       },
       "SpeakerNode": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/SpeakerOutput",
-            "description": "Where a speaker plays, or None for the listener's system default. Devices are kept by name,\nsince a browser salts device ids per origin and the app's port changes between runs.\nTransparent, so a speaker saved with no `data` at all still loads."
+        "type": "object",
+        "description": "Where a speaker plays and how loud each wire is.",
+        "properties": {
+          "output": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerOutput",
+                "description": "None for the listener's system default. Devices are kept by name, since a browser salts\ndevice ids per origin and the app's port changes between runs."
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
-          {
-            "type": "null"
+          "volumes": {
+            "type": "object",
+            "description": "Fader position per wired source node, 0 silent to 1 full. A source not listed plays full.",
+            "default": {},
+            "additionalProperties": {
+              "type": "number",
+              "format": "float"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
-        ]
+        }
       },
       "SpeakerOutput": {
         "oneOf": [
