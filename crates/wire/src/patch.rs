@@ -479,6 +479,8 @@ impl SpeakerNode {
 pub struct SignalMapNode {
     pub offset_hz: i64,
     pub bandwidth_hz: u64,
+    /// The operator started the survey; the server records again after a restart or switch.
+    pub recording: bool,
 }
 
 impl Default for SignalMapNode {
@@ -486,6 +488,7 @@ impl Default for SignalMapNode {
         Self {
             offset_hz: DEFAULT_SIGNAL_MAP_OFFSET_HZ,
             bandwidth_hz: DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ,
+            recording: false,
         }
     }
 }

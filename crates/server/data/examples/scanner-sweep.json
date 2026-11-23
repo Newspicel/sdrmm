@@ -84,6 +84,10 @@
         {
           "id": "spk",
           "kind": "speaker",
+          "data": {
+            "output": null,
+            "volumes": {}
+          },
           "position": {
             "x": 1560.0,
             "y": 300.0

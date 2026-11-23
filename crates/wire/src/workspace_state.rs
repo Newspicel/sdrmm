@@ -22,6 +22,10 @@ pub struct WorkspaceState {
     pub trunks: Vec<WorkspaceTrunk>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arrays: Vec<WorkspaceArray>,
+    /// Array nodes the operator set recording, kept out of the patch so the flag never reshapes
+    /// the array itself.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recording_arrays: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for WorkspaceState {
@@ -37,6 +41,8 @@ impl<'de> Deserialize<'de> for WorkspaceState {
             trunks: Vec<WorkspaceTrunk>,
             #[serde(default)]
             arrays: Vec<WorkspaceArray>,
+            #[serde(default)]
+            recording_arrays: Vec<String>,
         }
         let mut document = Value::deserialize(deserializer)?;
         if !written_as_objects(&document) {
@@ -53,6 +59,7 @@ impl<'de> Deserialize<'de> for WorkspaceState {
             channels: stated.channels,
             trunks: stated.trunks,
             arrays: stated.arrays,
+            recording_arrays: stated.recording_arrays,
         })
     }
 }
@@ -91,6 +98,7 @@ impl WorkspaceState {
             channels: Vec::new(),
             trunks: Vec::new(),
             arrays: Vec::new(),
+            recording_arrays: Vec::new(),
         }
     }
 
@@ -153,6 +161,25 @@ impl WorkspaceState {
         self.channels.retain(|channel| present(&channel.node));
         self.trunks.retain(|trunk| present(&trunk.node));
         self.arrays.retain(|array| present(&array.node));
+        self.recording_arrays.retain(|node| present(node));
+    }
+
+    #[must_use]
+    pub fn records_array(&self, node: &str) -> bool {
+        self.recording_arrays.iter().any(|held| held == node)
+    }
+
+    /// Whether the flag moved.
+    pub fn set_array_recording(&mut self, node: &str, on: bool) -> bool {
+        if self.records_array(node) == on {
+            return false;
+        }
+        if on {
+            self.recording_arrays.push(node.to_owned());
+        } else {
+            self.recording_arrays.retain(|held| held != node);
+        }
+        true
     }
 
     #[must_use]
@@ -482,6 +509,18 @@ mod tests {
         assert_eq!(state.devices.len(), 1);
         assert_eq!(state.channels.len(), 1);
         assert!(state.channel("a2").is_none());
+    }
+
+    #[test]
+    fn an_array_set_recording_is_kept_until_its_node_goes() {
+        let mut state = WorkspaceState::new();
+        assert!(state.set_array_recording("north", true));
+        assert!(!state.set_array_recording("north", true));
+        let json = serde_json::to_string(&state).expect("json");
+        let back: WorkspaceState = serde_json::from_str(&json).expect("state");
+        assert!(back.records_array("north"));
+        state.retain_nodes(|node| node != "north");
+        assert!(!state.records_array("north"));
     }
 
     #[test]

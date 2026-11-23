@@ -544,7 +544,8 @@
         "kind": "signal_map",
         "data": {
           "offset_hz": 0,
-          "bandwidth_hz": 12500
+          "bandwidth_hz": 12500,
+          "recording": false
         }
       }
     },

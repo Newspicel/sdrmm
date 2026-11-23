@@ -66,6 +66,15 @@ pub enum SurveyStop {
     OutOfSpan,
 }
 
+impl SurveyStop {
+    /// Whether the survey stays stopped, rather than recording again once its wires or radio
+    /// are back.
+    #[must_use]
+    pub const fn ends_the_run(self) -> bool {
+        matches!(self, Self::Retuned | Self::OutOfSpan)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SurveyUpdate {
     #[serde(default, skip_serializing_if = "Option::is_none")]

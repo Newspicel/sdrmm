@@ -21388,7 +21388,8 @@
           "transmit",
           "speaker",
           "voice_chat",
-          "sweep"
+          "sweep",
+          "array_recorder"
         ]
       },
       "ProcessorAction": {
@@ -25693,6 +25694,11 @@
             "type": "integer",
             "format": "int64",
             "default": 0
+          },
+          "recording": {
+            "type": "boolean",
+            "description": "The operator started the survey; the server records again after a restart or switch.",
+            "default": false
           }
         }
       },
@@ -29552,6 +29558,13 @@
             "items": {
               "$ref": "#/components/schemas/WorkspaceDevice"
             }
+          },
+          "recording_arrays": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Array nodes the operator set recording, kept out of the patch so the flag never reshapes\nthe array itself."
           },
           "trunks": {
             "type": "array",

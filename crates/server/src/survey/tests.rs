@@ -52,6 +52,7 @@ fn recording() -> SurveySession {
             settings: SignalMapNode {
                 offset_hz: OFFSET_HZ,
                 bandwidth_hz: 12_500,
+                recording: false,
             },
             iq_wired: true,
             radio: Some(Radio {
@@ -415,6 +416,28 @@ async fn next_survey_update(
             return *update;
         }
     }
+}
+
+#[tokio::test]
+async fn a_survey_left_recording_records_again_once_wired() {
+    let state = state_over(Arc::new(Store::open(None).expect("store")));
+    let mut events = state.engine.subscribe_events();
+    let mut wanted = recording().wiring;
+    wanted.settings.recording = true;
+    state
+        .survey
+        .apply(&state, HashMap::from([("map".to_owned(), wanted)]));
+    let update = next_survey_update(&mut events).await;
+    assert!(update.recording);
+    assert!(state.survey.recording("map"));
+}
+
+#[test]
+fn only_a_retune_or_lost_target_ends_the_run() {
+    assert!(SurveyStop::Retuned.ends_the_run());
+    assert!(SurveyStop::OutOfSpan.ends_the_run());
+    assert!(!SurveyStop::Unwired.ends_the_run());
+    assert!(!SurveyStop::RadioGone.ends_the_run());
 }
 
 #[tokio::test]

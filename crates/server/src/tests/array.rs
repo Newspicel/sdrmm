@@ -855,6 +855,31 @@ async fn an_array_records_every_lane_until_stopped() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_array_left_recording_records_again_until_stopped() {
+    let dir = tempfile::tempdir().expect("recordings dir");
+    let state = recording_state(dir.path());
+    let (app, background) = router_with_state(state.clone(), &ServerOptions::default());
+    background.detach();
+    put_and_apply(&app, kraken_graph(ArrayNode::default())).await;
+    let (status, _) = request(app.clone(), "POST", "/api/arrays/arr/recording", Some("{}")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    state
+        .engine
+        .stop_array_recording(ARRAY)
+        .expect("lost, as on a restart");
+    array::settle_recordings(&state);
+    let taking = status_of(&state, ARRAY).and_then(|status| status.recording);
+    assert!(taking.is_some(), "the take starts again");
+
+    let (status, _) = request(app, "DELETE", "/api/arrays/arr/recording", None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    array::settle_recordings(&state);
+    let taking = status_of(&state, ARRAY).and_then(|status| status.recording);
+    assert!(taking.is_none(), "a stopped array stays stopped");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_recorded_collection_feeds_an_array_through_its_lane_outputs() {
     let dir = tempfile::tempdir().expect("recordings dir");
     super::recordings::planted_collection(dir.path(), "take");

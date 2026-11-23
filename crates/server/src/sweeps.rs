@@ -5,15 +5,11 @@ use std::{
 
 use sdrmm_wire::{
     ControlAck, ControlCommand, ControlVerb, HuntAction, NodeBody, NodeProblem, PatchNode,
-    ProblemSource, ScanAction, StateScope, StateSnapshot, SweepJob, SweepStatus,
-    UpdateWorkspaceRequest,
+    ProblemSource, ScanAction, StateSnapshot, SweepJob, SweepStatus,
 };
 use tokio::runtime::Handle;
 
-use crate::{
-    AppState, control,
-    rest::{AppError, active_workspace, lock_gate},
-};
+use crate::{AppState, control, rest::AppError};
 
 /// How often a sweep waiting for its decoder is tried again.
 const RECHECK: Duration = Duration::from_secs(2);
@@ -64,7 +60,7 @@ pub(crate) fn remember(
         _ => None,
     };
     let lockouts = lockouts(acks);
-    edit_node(state, node, author, |body| {
+    crate::remember::edit_node(state, node, author, |body| {
         kept(body, running, lockouts.as_deref())
     })
 }
@@ -95,36 +91,6 @@ fn kept(body: &mut NodeBody, running: Option<bool>, lockouts: Option<&[f64]>) ->
         _ => {}
     }
     *body != before
-}
-
-fn edit_node(
-    state: &AppState,
-    node: &str,
-    author: Option<&str>,
-    change: impl FnOnce(&mut NodeBody) -> bool,
-) -> Result<(), AppError> {
-    {
-        let _serialized = lock_gate(&state.apply_gate);
-        let mut active = active_workspace(&state.store)?;
-        let graph = &mut active.snapshot.graph;
-        let Some(held) = graph.nodes.iter_mut().find(|held| held.id == node) else {
-            return Ok(());
-        };
-        if !change(&mut held.body) {
-            return Ok(());
-        }
-        let request = UpdateWorkspaceRequest {
-            revision: active.info.revision,
-            name: None,
-            snapshot: Some(active.snapshot),
-        };
-        state
-            .store
-            .update_workspace(active.info.id, &request, author)?;
-    }
-    state.engine.emit_scope(StateScope::Workspaces);
-    state.resolve_now();
-    Ok(())
 }
 
 /// Starts every scan and hunt the patch says runs and stops the rest, whenever the patch moves

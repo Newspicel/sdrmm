@@ -71,7 +71,7 @@ export function editSurveyBand(
     ...snapshot,
     graph: patchNode(snapshot.graph, node, (current) =>
       current.kind === "signal_map"
-        ? { ...current, data: { offset_hz: offsetHz, bandwidth_hz: bandwidthHz } }
+        ? { ...current, data: { ...current.data, offset_hz: offsetHz, bandwidth_hz: bandwidthHz } }
         : current,
     ),
   }));

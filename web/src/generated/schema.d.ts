@@ -5879,7 +5879,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker" | "voice_chat" | "sweep";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker" | "voice_chat" | "sweep" | "array_recorder";
         /**
          * @description Something an operator asks a running processor to do.
          * @enum {string}
@@ -7033,6 +7033,11 @@ export interface components {
              * @default 0
              */
             offset_hz: number;
+            /**
+             * @description The operator started the survey; the server records again after a restart or switch.
+             * @default false
+             */
+            recording: boolean;
         };
         /** @description One way a decoder's signal shows on the air. */
         SignalSignature: {
@@ -8228,6 +8233,11 @@ export interface components {
             arrays?: components["schemas"]["WorkspaceArray"][];
             channels?: components["schemas"]["WorkspaceChannel"][];
             devices?: components["schemas"]["WorkspaceDevice"][];
+            /**
+             * @description Array nodes the operator set recording, kept out of the patch so the flag never reshapes
+             *     the array itself.
+             */
+            recording_arrays?: string[];
             trunks?: components["schemas"]["WorkspaceTrunk"][];
             /** Format: int32 */
             version: number;
@@ -10310,16 +10320,6 @@ export interface operations {
             };
         };
     };
-    write_serial: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-                };
-            };
-        };
-    };
     forget_network_radio: {
         parameters: {
             query?: never;
@@ -10365,6 +10365,16 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    write_serial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
         requestBody: {
             content: {

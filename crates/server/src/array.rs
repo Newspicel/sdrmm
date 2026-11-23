@@ -20,6 +20,11 @@ use sdrmm_wire::{
 use crate::{AppState, resolved::Resolved, rest::AppError};
 
 mod pump;
+mod recording;
+
+pub(crate) use recording::follow as follow_recordings;
+#[cfg(test)]
+pub(crate) use recording::settle as settle_recordings;
 
 #[cfg(test)]
 pub(crate) use pump::handle;
@@ -671,10 +676,12 @@ pub(crate) fn start_recording(
         .engine
         .start_array_recording(node, request)
         .map_err(|error| refusal(state, node, error))?;
+    recording::remember(state, node, true)?;
     Ok(ArrayRecordingStarted { stem })
 }
 
 pub(crate) fn stop_recording(state: &AppState, node: &str) -> Result<(), AppError> {
+    recording::remember(state, node, false)?;
     if !recording(state, node)? {
         return Err(ArrayRefusal::NotRecording.into());
     }

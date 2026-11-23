@@ -246,11 +246,14 @@ impl SurveyHub {
             (session.grid(node), session.update(None, None, None, None))
         };
         emit(state, node, update);
+        if action != SurveyAction::Clear {
+            remember(state, node, grid.recording)?;
+        }
         Ok(grid)
     }
 
     fn apply(&self, state: &AppState, wanted: HashMap<String, Wiring>) {
-        let mut stopped = Vec::new();
+        let mut changed = Vec::new();
         {
             let mut sessions = self.lock();
             sessions.retain(|node, session| {
@@ -270,19 +273,24 @@ impl SurveyHub {
                     None
                 };
                 let retuned = session.wiring.radio != wiring.radio;
+                let wanted = wiring.settings.recording;
                 session.wiring = wiring;
                 if let Some(reason) = reason
                     && session.recording
                 {
                     session.recording = false;
-                    stopped.push((node.clone(), session.update(None, None, None, Some(reason))));
+                    changed.push((node.clone(), session.update(None, None, None, Some(reason))));
+                }
+                if reason.is_none() && wanted && !session.recording {
+                    session.recording = true;
+                    changed.push((node.clone(), session.update(None, None, None, None)));
                 }
                 if retuned || !session.listening() {
                     session.listen(state, &node);
                 }
             }
         }
-        for (node, update) in stopped {
+        for (node, update) in changed {
             emit(state, &node, update);
         }
     }
@@ -350,7 +358,13 @@ async fn watch(state: AppState, node: String, radio: Radio, generation: u64) {
                     Instant::now(),
                 );
                 if let Some(update) = update {
+                    let gave_up = update
+                        .stopped
+                        .is_some_and(sdrmm_wire::SurveyStop::ends_the_run);
                     emit(&state, &node, update);
+                    if gave_up {
+                        forget(&state, &node).await;
+                    }
                 }
             }
             Err(RecvError::Lagged(_)) => {}
@@ -359,6 +373,28 @@ async fn watch(state: AppState, node: String, radio: Radio, generation: u64) {
                 return;
             }
         }
+    }
+}
+
+/// Keeps whether the survey records in its node, so it records again after a restart.
+fn remember(state: &AppState, node: &str, recording: bool) -> Result<(), AppError> {
+    crate::remember::edit_node(state, node, None, |body| match body {
+        NodeBody::SignalMap(settings) if settings.recording != recording => {
+            settings.recording = recording;
+            true
+        }
+        _ => false,
+    })
+}
+
+/// A retune or a target out of view ends the run for good, so a restart does not take it up.
+async fn forget(state: &AppState, node: &str) {
+    let (app, at) = (state.clone(), node.to_owned());
+    let kept = tokio::task::spawn_blocking(move || remember(&app, &at, false)).await;
+    match kept {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => tracing::warn!(?error, node, "could not keep a survey stopped"),
+        Err(error) => tracing::error!(%error, node, "keeping a survey stopped failed"),
     }
 }
 

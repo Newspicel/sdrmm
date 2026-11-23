@@ -240,6 +240,7 @@ pub enum ProblemSource {
     Speaker,
     VoiceChat,
     Sweep,
+    ArrayRecorder,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
