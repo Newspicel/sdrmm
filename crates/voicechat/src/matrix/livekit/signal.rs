@@ -196,7 +196,13 @@ impl Signal {
     }
 
     fn on_response(&mut self, bytes: &[u8]) -> Option<signal_response::Message> {
-        let message = SignalResponse::decode(bytes).ok()?.message?;
+        let message = match SignalResponse::decode(bytes) {
+            Ok(response) => response.message?,
+            Err(error) => {
+                tracing::warn!(%error, "undecodable signalling frame dropped");
+                return None;
+            }
+        };
         if matches!(
             message,
             signal_response::Message::Pong(_) | signal_response::Message::PongResp(_)
@@ -289,7 +295,8 @@ pub(crate) fn candidate_of(trickle: &TrickleRequest) -> Result<Option<Candidate>
         .map_err(|_| "Bad candidate".to_owned())
 }
 
-/// Who is in the room, and which track belongs to whom.
+/// Who is in the room, and which track belongs to whom. A device that reconnects
+/// holds a new participant sid under the same identity until the old one is dropped.
 #[derive(Default)]
 pub(crate) struct Roster {
     identities: HashMap<String, String>,
@@ -313,26 +320,30 @@ impl Roster {
         let Some(identity) = self.identities.remove(sid) else {
             return;
         };
-        self.tracks.retain(|_, owner| *owner != identity);
-        self.left.push(identity);
+        self.tracks.retain(|_, owner| owner != sid);
+        if !self.identities.values().any(|other| *other == identity) {
+            self.left.push(identity);
+        }
     }
 
     fn upsert(&mut self, participant: &livekit_protocol::ParticipantInfo) {
         let identity = &participant.identity;
-        let known = self
-            .identities
+        let present = self.identities.values().any(|other| other == identity);
+        self.identities
             .insert(participant.sid.clone(), identity.clone());
-        if known.is_none() {
+        if !present {
             self.joined.push(identity.clone());
         }
-        self.tracks.retain(|_, owner| owner != identity);
+        self.tracks.retain(|_, owner| *owner != participant.sid);
         for track in &participant.tracks {
-            self.tracks.insert(track.sid.clone(), identity.clone());
+            self.tracks
+                .insert(track.sid.clone(), participant.sid.clone());
         }
     }
 
     pub(crate) fn identity_of_track(&self, track_sid: &str) -> Option<&str> {
-        self.tracks.get(track_sid).map(String::as_str)
+        let owner = self.tracks.get(track_sid)?;
+        self.identities.get(owner).map(String::as_str)
     }
 
     /// Identities that left since the last call.

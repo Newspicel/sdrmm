@@ -298,3 +298,52 @@ fn trickle_without_a_candidate_is_the_end_marker() {
     };
     assert!(candidate_of(&broken).is_err());
 }
+
+#[test]
+fn an_old_sid_leaving_after_a_rejoin_keeps_the_identity() {
+    let mut roster = Roster::default();
+    roster.apply(&update(vec![participant(
+        "PA_1",
+        "@a:hs:DEV",
+        State::Active,
+        &["TR_1"],
+    )]));
+    roster.apply(&update(vec![participant(
+        "PA_2",
+        "@a:hs:DEV",
+        State::Active,
+        &["TR_2"],
+    )]));
+    roster.apply(&update(vec![participant(
+        "PA_1",
+        "@a:hs:DEV",
+        State::Disconnected,
+        &[],
+    )]));
+    assert_eq!(roster.joined(), vec!["@a:hs:DEV".to_owned()]);
+    assert!(roster.left().is_empty());
+    assert_eq!(roster.identity_of_track("TR_2"), Some("@a:hs:DEV"));
+    assert_eq!(roster.identity_of_track("TR_1"), None);
+}
+
+#[tokio::test]
+async fn an_undecodable_frame_is_skipped_and_the_call_goes_on() {
+    let (listener, url) = listen().await;
+    let server = tokio::spawn(async move {
+        let mut socket = accept(&listener).await;
+        socket.send(join_frame(5, 15)).await.expect("join");
+        socket
+            .send(Frame::Binary(vec![0xff, 0xff, 0xff].into()))
+            .await
+            .expect("junk");
+        socket
+            .send(frame(signal_response::Message::Update(update(vec![]))))
+            .await
+            .expect("update");
+        socket
+    });
+    let (mut signal, _) = Signal::connect(&url).await.expect("connect");
+    let message = signal.next().await.expect("next");
+    assert!(matches!(message, signal_response::Message::Update(_)));
+    server.await.expect("server");
+}
