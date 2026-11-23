@@ -57,5 +57,5 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # The nine `xng-*` decoders are vendored from one pinned revision, and `rustfft` is patched to one
 # pinned revision of our fork until its planner changes land upstream. Nothing else is fetched
-# from a git host. A new entry here is a supply-chain decision, not a dependency bump.
-allow-git = ["https://github.com/airframesio/xng", "https://github.com/Newspicel/RustFFT"]
+# from a git host, except matrix-sdk and its ruma until a release uses rusqlite 0.41. A new entry here is a supply-chain decision, not a dependency bump.
+allow-git = ["https://github.com/airframesio/xng", "https://github.com/Newspicel/RustFFT", "https://github.com/matrix-org/matrix-rust-sdk", "https://github.com/ruma/ruma"]
