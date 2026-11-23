@@ -60,6 +60,7 @@ mod problems;
 mod rebind;
 mod recorders;
 mod reference;
+mod remember;
 mod reports;
 mod resolved;
 mod rest;
@@ -71,6 +72,7 @@ mod sinks;
 mod sky_scans;
 mod speakers;
 mod store;
+mod stream_out;
 mod surfaces;
 mod survey;
 mod templates;
@@ -148,6 +150,7 @@ pub(crate) struct AppState {
     pub(crate) dev_cors: bool,
     pub(crate) data_dir: Option<PathBuf>,
     pub(crate) denoise: Arc<denoise_models::Downloads>,
+    pub(crate) streams: Arc<stream_out::StreamHub>,
     started: std::time::Instant,
 }
 
@@ -206,6 +209,7 @@ impl AppState {
             dev_cors: false,
             data_dir: None,
             denoise: Arc::default(),
+            streams: Arc::default(),
             started: std::time::Instant::now(),
         }
     }
@@ -328,7 +332,8 @@ fn app(state: &AppState, role: auth::ListenerRole, tls: bool) -> Router {
         tower_http::compression::CompressionLayer::new().compress_when(
             tower_http::compression::predicate::DefaultPredicate::new()
                 .and(NotForContentType::const_new("application/x-tar"))
-                .and(NotForContentType::const_new("audio/wav")),
+                .and(NotForContentType::const_new("audio/wav"))
+                .and(NotForContentType::const_new("video/mp2t")),
         ),
     );
     if state.dev_cors && role == auth::ListenerRole::Main {
@@ -356,6 +361,7 @@ fn start_runtime(state: &AppState) -> Background {
     schedules::follow(state);
     audio_fx::follow(state);
     speakers::follow(state);
+    stream_out::follow(state);
     voice_chat::follow(state);
     array::start_pump(state);
     reports::start(state);
@@ -367,6 +373,7 @@ fn start_runtime(state: &AppState) -> Background {
     sinks::start(state);
     survey::follow(state);
     sweeps::follow(state);
+    array::follow_recordings(state);
     missions::watch::spawn(state);
     state.gps.spawn_watchdog(state);
     state.gps.spawn_replay(state);

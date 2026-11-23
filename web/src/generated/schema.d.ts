@@ -1588,6 +1588,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/streams/{node}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["serve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/survey/{node}": {
         parameters: {
             query?: never;
@@ -5231,6 +5247,10 @@ export interface components {
             /** @enum {string} */
             kind: "network_export";
         } | {
+            data: components["schemas"]["StreamOutNode"];
+            /** @enum {string} */
+            kind: "stream_out";
+        } | {
             /** @enum {string} */
             kind: "export";
         } | {
@@ -5296,7 +5316,7 @@ export interface components {
         /** @enum {string} */
         NodeCategory: "source" | "channel" | "encoder" | "tool" | "output";
         /** @enum {string} */
-        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note" | "voice_chat";
+        NodeKind: "device" | "gps" | "array" | "channel" | "scope" | "speaker" | "map" | "signal_map" | "propagation" | "readout" | "decoder_log" | "spectrum_monitor" | "trunk" | "event_filter" | "event_output" | "video" | "recorder" | "audio_recorder" | "baseband_recorder" | "network_export" | "stream_out" | "export" | "scanner" | "hunt" | "schedule" | "satellite" | "rotator" | "aim" | "sky_scan" | "processor" | "triangulation" | "bearing_fix" | "microphone" | "encoder" | "transmit" | "note" | "voice_chat";
         NodeProblem: {
             node: string;
             source: components["schemas"]["ProblemSource"];
@@ -6668,6 +6688,10 @@ export interface components {
             /** @enum {string} */
             type: "EventOutputStatus";
         } | {
+            data: components["schemas"]["StreamOutStatus"];
+            /** @enum {string} */
+            type: "StreamOutStatus";
+        } | {
             data: {
                 link?: components["schemas"]["LinkHealth"] | null;
                 queues: components["schemas"]["PipelineQueue"][];
@@ -7271,6 +7295,36 @@ export interface components {
         };
         /** @enum {string} */
         StreamKind: "spectrum" | "audio" | "video" | "iq" | "symbols" | "range_doppler" | "spatial_spectrum" | "visibility" | "fusion_grid";
+        StreamOutNode: {
+            /**
+             * @description Where UDP and RTP go, as `host:port`.
+             * @default 127.0.0.1:5004
+             */
+            address: string;
+            /** @default http */
+            transport: components["schemas"]["StreamTransport"];
+        };
+        StreamOutStatus: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: int32 */
+            clients: number;
+            /**
+             * Format: int64
+             * @description Pictures and sound the encoder fell too far behind to take.
+             */
+            dropped: number;
+            error?: string | null;
+            /** Format: int32 */
+            height: number;
+            node: string;
+            /** @description The path players open, while the node serves over HTTP. */
+            path?: string | null;
+            /** Format: int64 */
+            pictures: number;
+            /** Format: int32 */
+            width: number;
+        };
         StreamParams: {
             /** Format: int32 */
             bins?: number;
@@ -7299,6 +7353,11 @@ export interface components {
             stream: number;
             tuning?: components["schemas"]["Tuning"] | null;
         };
+        /**
+         * @description How the stream leaves: served to players that ask, or sent to one address.
+         * @enum {string}
+         */
+        StreamTransport: "http" | "udp" | "rtp";
         SurfaceFit: {
             /** Format: int32 */
             cols: number;
@@ -12465,6 +12524,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServerStatus"];
+                };
+            };
+        };
+    };
+    serve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Stream out node id */
+                node: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The node's live MPEG transport stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "video/mp2t": unknown;
+                };
+            };
+            /** @description The node serves no stream over HTTP */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };

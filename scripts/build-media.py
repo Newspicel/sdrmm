@@ -168,6 +168,7 @@ def configure(source, prefix, fdk, target, env):
         "--enable-avcodec", "--enable-avformat", "--enable-swresample", "--enable-swscale",
         "--enable-decoder=aac,aac_latm,ac3,eac3,mp2,mpeg2video,h264,hevc,libfdk_aac",
         "--enable-parser=aac,aac_latm,ac3,mpegaudio,mpegvideo,h264,hevc",
+        "--enable-encoder=mpeg2video,mp2",
         "--enable-libfdk-aac", f"--extra-cflags=-I{(fdk / 'include').as_posix()}",
         f"--extra-ldflags={library_path_flag(target)}{(fdk / 'lib').as_posix()}",
     ]

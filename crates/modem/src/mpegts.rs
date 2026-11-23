@@ -8,8 +8,8 @@ pub const PROGRAM: u16 = 1;
 pub const PMT_PID: u16 = 0x0100;
 pub const VIDEO_PID: u16 = 0x0101;
 pub const AUDIO_PID: u16 = 0x0102;
+pub const PAT_PID: u16 = 0x0000;
 
-const PAT_PID: u16 = 0x0000;
 const SDT_PID: u16 = 0x0011;
 const NULL_PID: u16 = 0x1FFF;
 const PAT_TABLE: u8 = 0x00;
@@ -24,6 +24,7 @@ const LAST_SECTION_NUMBER: usize = 7;
 const MAP_HEADER: usize = 12;
 const DVB_PRIVATE: u8 = 0x40;
 const MAX_PES: usize = 8 << 20;
+const PCR_FLAG: u8 = 0x10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StreamKind {
@@ -670,6 +671,29 @@ impl TsWriter {
         self.payload(pid, &unit, out);
     }
 
+    /// An adaptation-only packet carrying the programme clock, `base` on the 90 kHz clock.
+    /// It carries no payload, so the continuity counter stays where it is.
+    pub fn pcr(&mut self, pid: u16, base: u64, out: &mut Vec<[u8; PACKET]>) {
+        let mut packet = [0xFFu8; PACKET];
+        packet[0] = SYNC;
+        packet[1] = (pid >> 8) as u8 & 0x1F;
+        packet[2] = pid as u8;
+        let previous = self
+            .counters
+            .get(&pid)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(1);
+        packet[3] = 0x20 | previous & 0x0F;
+        packet[4] = (PACKET - 5) as u8;
+        packet[5] = PCR_FLAG;
+        let base = base & ((1 << 33) - 1);
+        packet[6..10].copy_from_slice(&((base >> 1) as u32).to_be_bytes());
+        packet[10] = ((base & 1) as u8) << 7 | 0x7E;
+        packet[11] = 0;
+        out.push(packet);
+    }
+
     fn payload(&mut self, pid: u16, body: &[u8], out: &mut Vec<[u8; PACKET]>) {
         let mut at = 0usize;
         let mut start = true;
@@ -742,16 +766,28 @@ pub fn pat() -> Vec<u8> {
 
 #[must_use]
 pub fn pmt() -> Vec<u8> {
+    pmt_of(
+        VIDEO_PID,
+        &[
+            (0x02, VIDEO_PID, &[]),
+            (0x03, AUDIO_PID, &[0x0A, 0x04, b'e', b'n', b'g', 0x00]),
+        ],
+    )
+}
+
+/// The map of programme [`PROGRAM`]: its clock on `pcr_pid`, then each stream as its type,
+/// PID and descriptors.
+#[must_use]
+pub fn pmt_of(pcr_pid: u16, streams: &[(u8, u16, &[u8])]) -> Vec<u8> {
     let mut body = Vec::new();
-    body.extend_from_slice(&(0xE000 | VIDEO_PID).to_be_bytes());
+    body.extend_from_slice(&(0xE000 | pcr_pid).to_be_bytes());
     body.extend_from_slice(&0xF000u16.to_be_bytes());
-    body.extend_from_slice(&[0x02]);
-    body.extend_from_slice(&(0xE000 | VIDEO_PID).to_be_bytes());
-    body.extend_from_slice(&0xF000u16.to_be_bytes());
-    body.extend_from_slice(&[0x03]);
-    body.extend_from_slice(&(0xE000 | AUDIO_PID).to_be_bytes());
-    body.extend_from_slice(&0xF006u16.to_be_bytes());
-    body.extend_from_slice(&[0x0A, 0x04, b'e', b'n', b'g', 0x00]);
+    for (stream_type, pid, descriptors) in streams {
+        body.push(*stream_type);
+        body.extend_from_slice(&(0xE000 | pid).to_be_bytes());
+        body.extend_from_slice(&(0xF000 | descriptors.len() as u16).to_be_bytes());
+        body.extend_from_slice(descriptors);
+    }
     build_section(PMT_TABLE, PROGRAM, 0, &body)
 }
 
@@ -1148,6 +1184,38 @@ mod tests {
             demux.push(&packet, &mut units);
         }
         assert_eq!(demux.discontinuities, 1);
+    }
+
+    #[test]
+    fn clock_packets_carry_the_pcr_and_keep_the_stream_continuous() {
+        let mut writer = TsWriter::new();
+        let mut packets = Vec::new();
+        writer.pcr(VIDEO_PID, 0x1_2345_6789, &mut packets);
+        writer.section(PAT_PID, &pat(), &mut packets);
+        writer.section(
+            PMT_PID,
+            &pmt_of(VIDEO_PID, &[(0x1B, VIDEO_PID, &[])]),
+            &mut packets,
+        );
+        writer.pes(VIDEO_PID, 0xE0, 90_000, &[7; 400], &mut packets);
+        writer.pcr(VIDEO_PID, 90_000, &mut packets);
+        writer.pes(VIDEO_PID, 0xE0, 93_600, &[8; 400], &mut packets);
+        let clock = packets[0];
+        assert_eq!(clock[3] & 0x30, 0x20);
+        let base = u64::from(u32::from_be_bytes([clock[6], clock[7], clock[8], clock[9]])) << 1
+            | u64::from(clock[10] >> 7);
+        assert_eq!(base, 0x1_2345_6789);
+        let mut demux = TsDemux::new();
+        let mut units = Vec::new();
+        for packet in &packets {
+            demux.push(packet, &mut units);
+        }
+        assert_eq!(demux.discontinuities, 0);
+        let program = demux.program().expect("a program");
+        assert_eq!(program.streams[0].kind, StreamKind::H264Video);
+        assert_eq!(units.len(), 2);
+        assert_eq!(units[0].payload, [7; 400]);
+        assert_eq!(units[1].payload, [8; 400]);
     }
 
     #[test]

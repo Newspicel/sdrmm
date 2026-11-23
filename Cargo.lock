@@ -8043,6 +8043,7 @@ dependencies = [
  "sdrmm-dsp",
  "sdrmm-dvsi",
  "sdrmm-engine",
+ "sdrmm-media",
  "sdrmm-modem",
  "sdrmm-orbit",
  "sdrmm-recorder",

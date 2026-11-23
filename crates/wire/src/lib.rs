@@ -49,6 +49,7 @@ pub mod schedule;
 pub mod sink;
 pub mod sky_scan;
 pub mod state;
+pub mod stream_out;
 pub mod survey;
 pub mod tools;
 pub mod transmit;
@@ -276,6 +277,9 @@ pub use state::{
     AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
     PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,
     TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem, TrunkSystemStatus,
+};
+pub use stream_out::{
+    MAX_STREAM_ADDRESS_LEN, StreamOutNode, StreamOutStatus, StreamTransport, stream_out_path,
 };
 pub use survey::{SurveyAction, SurveyCell, SurveyGrid, SurveyRequest, SurveyStop, SurveyUpdate};
 pub use tools::{

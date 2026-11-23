@@ -52,6 +52,7 @@ const FACES: Partial<Record<NodeKind, Face>> = {
   audio_recorder: lazyFace(() => import("./RecorderFaces"), "AudioRecorderFace"),
   baseband_recorder: lazyFace(() => import("./RecorderFaces"), "BasebandRecorderFace"),
   network_export: lazyFace(() => import("./NetworkExportFace"), "NetworkExportFace"),
+  stream_out: lazyFace(() => import("./StreamOutFace"), "StreamOutFace"),
   export: lazyFace(() => import("./ExportFace"), "ExportFace"),
   scanner: lazyFace(() => import("./ScannerFace"), "ScannerFace"),
   hunt: lazyFace(() => import("./HuntFace"), "HuntFace"),

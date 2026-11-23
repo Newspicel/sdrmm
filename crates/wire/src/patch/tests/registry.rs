@@ -21,6 +21,7 @@ const OLD_FACES: &[(&str, Face)] = &[
     ("audio_recorder", Face::fit(340)),
     ("baseband_recorder", Face::fit(340)),
     ("network_export", Face::fit(380)),
+    ("stream_out", Face::fit(340)),
     ("export", Face::fit(320)),
     ("scanner", Face::fit(400)),
     ("hunt", Face::fit(360)),

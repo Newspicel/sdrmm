@@ -1,5 +1,6 @@
 //! Plays a broadcast decoder's audio and video off the DSP thread: elementary streams through
 //! `FFmpeg` or pure-Rust MP2, framed AAC and USAC through FDK, paced by presentation time.
+//! [`TsEncoder`] turns pictures and sound back into a transport stream other programs play.
 //! A decoder hands it units and the codec they are in; nothing here knows which decoder.
 //! Native only, as it links `FFmpeg`.
 
@@ -20,6 +21,9 @@ use sdrmm_modem::mpegts::StreamKind;
 
 mod clock;
 mod decoder;
+mod stream;
+
+pub use stream::{CLOCK_HZ, TsEncoder};
 
 #[cfg(test)]
 mod tests;

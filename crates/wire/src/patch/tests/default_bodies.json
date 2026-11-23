@@ -147,6 +147,13 @@
     }
   },
   {
+    "kind": "stream_out",
+    "data": {
+      "transport": "http",
+      "address": "127.0.0.1:5004"
+    }
+  },
+  {
     "kind": "export"
   },
   {

@@ -25,6 +25,7 @@ use crate::{
     satellite::SatelliteNode,
     schedule::ScheduleNode,
     sky_scan::SkyScanNode,
+    stream_out::StreamOutNode,
     transmit::{EncoderNode, MicrophoneNode, TransmitNode},
     voice_chat::VoiceChatNode,
 };
@@ -513,6 +514,11 @@ nodes! {
                 "Streams IQ to other programs", Role::Plain, Face::fit(380), [
                 iq_in().group(NETWORK_SOURCE),
                 input(BASEBAND_PORT, Payload::Baseband).group(NETWORK_SOURCE),
+            ]),
+            (StreamOut(StreamOutNode), "stream_out", Output, "Stream out",
+                "Video for VLC, OBS and other players", Role::Plain, Face::fit(340), [
+                input(VIDEO_PORT, Payload::Video),
+                input(AUDIO_PORT, Payload::audio(CHANNEL_AUDIO)),
             ]),
             (Export, "export", Output, "Export", "Saves logged rows as CSV or JSON", Role::Plain,
                 Face::fit(320), [

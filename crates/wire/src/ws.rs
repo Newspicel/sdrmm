@@ -167,6 +167,7 @@ pub enum ServerEvent {
     FeedStatus(crate::event_output::FeedStatus),
     VoiceChatStatus(crate::voice_chat::VoiceChatStatus),
     EventOutputStatus(crate::event_output::EventOutputStatus),
+    StreamOutStatus(crate::stream_out::StreamOutStatus),
     PipelineHealth {
         queues: Vec<crate::PipelineQueue>,
         websocket: crate::QueueHealth,

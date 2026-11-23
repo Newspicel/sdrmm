@@ -1,6 +1,6 @@
 ---
 title: Network export
-description: Stream raw IQ or rtl_tcp, serve ADS-B Beast feeds, and forward events to webhooks, Matrix, MQTT, databases, files, or TUN.
+description: Stream raw IQ, rtl_tcp or video, serve ADS-B Beast feeds, and forward events to webhooks, Matrix, MQTT, databases, files, or TUN.
 ---
 
 > [!WARNING]
@@ -27,6 +27,16 @@ Wire `Device iq` or channel `baseband` → **Network IQ** (sample rate locks; in
 | **UDP datagrams** | Max 1,400 B payload, header `None` in GNU Radio UDP Source (no sequence numbers) |
 | **TCP stream** | Connects out to your listener; slow readers stop with an error |
 | **`rtl_tcp` server** | Default `127.0.0.1:1234`, max 8 clients (cannot retune remotely). Example: `rtl_433 -d rtl_tcp:127.0.0.1:1234 -s 1024000 -f 433920000 -F json` |
+
+## Video
+
+Wire channel `video` (and optionally `audio`) → **Stream out**. It sends MPEG-TS with MPEG-2 video (25 fps, up to 1920×1080) and MP2 audio:
+
+| Transport | Details |
+|---|---|
+| **HTTP** | Open the URL on the face in VLC, mpv, ffmpeg or OBS. Encodes only while someone watches. |
+| **UDP** | 7 TS packets a datagram to `host:port`, unicast or multicast. Open `udp://@:5004`. |
+| **RTP** | Same, with an RTP header (payload type 33). Open `rtp://@:5004`. |
 
 ## Feeds
 

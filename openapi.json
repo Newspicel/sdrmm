@@ -4995,6 +4995,40 @@
         }
       }
     },
+    "/api/streams/{node}": {
+      "get": {
+        "operationId": "serve",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "description": "Stream out node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The node's live MPEG transport stream",
+            "content": {
+              "video/mp2t": {}
+            }
+          },
+          "404": {
+            "description": "The node serves no stream over HTTP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/survey/{node}": {
       "get": {
         "operationId": "get_survey",
@@ -18731,6 +18765,24 @@
           {
             "type": "object",
             "required": [
+              "data",
+              "kind"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/StreamOutNode"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stream_out"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
               "kind"
             ],
             "properties": {
@@ -19043,6 +19095,7 @@
           "audio_recorder",
           "baseband_recorder",
           "network_export",
+          "stream_out",
           "export",
           "scanner",
           "hunt",
@@ -24213,6 +24266,24 @@
             ],
             "properties": {
               "data": {
+                "$ref": "#/components/schemas/StreamOutStatus"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "StreamOutStatus"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
                 "type": "object",
                 "required": [
                   "queues",
@@ -26488,6 +26559,81 @@
           "fusion_grid"
         ]
       },
+      "StreamOutNode": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Where UDP and RTP go, as `host:port`.",
+            "default": "127.0.0.1:5004"
+          },
+          "transport": {
+            "$ref": "#/components/schemas/StreamTransport",
+            "default": "http"
+          }
+        }
+      },
+      "StreamOutStatus": {
+        "type": "object",
+        "required": [
+          "node",
+          "clients",
+          "pictures",
+          "width",
+          "height",
+          "bytes",
+          "dropped"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "clients": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "dropped": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Pictures and sound the encoder fell too far behind to take.",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "node": {
+            "type": "string"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The path players open, while the node serves over HTTP."
+          },
+          "pictures": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "StreamParams": {
         "type": "object",
         "properties": {
@@ -26578,6 +26724,15 @@
             ]
           }
         }
+      },
+      "StreamTransport": {
+        "type": "string",
+        "description": "How the stream leaves: served to players that ask, or sent to one address.",
+        "enum": [
+          "http",
+          "udp",
+          "rtp"
+        ]
       },
       "SurfaceFit": {
         "type": "object",

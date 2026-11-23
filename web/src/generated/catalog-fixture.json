@@ -1616,6 +1616,50 @@
       }
     },
     {
+      "kind": "stream_out",
+      "name": "Stream out",
+      "category": "output",
+      "summary": "Video for VLC, OBS and other players",
+      "role": {
+        "role": "plain"
+      },
+      "face": {
+        "width": 340,
+        "dial": false
+      },
+      "ports": [
+        {
+          "name": "video",
+          "port_type": "video",
+          "direction": "in",
+          "payload": {
+            "type": "video"
+          },
+          "multi": "one"
+        },
+        {
+          "name": "audio",
+          "port_type": "audio",
+          "direction": "in",
+          "payload": {
+            "type": "audio",
+            "origins": [
+              "channel"
+            ]
+          },
+          "multi": "one",
+          "takes": "channel audio"
+        }
+      ],
+      "default_body": {
+        "kind": "stream_out",
+        "data": {
+          "transport": "http",
+          "address": "127.0.0.1:5004"
+        }
+      }
+    },
+    {
       "kind": "export",
       "name": "Export",
       "category": "output",

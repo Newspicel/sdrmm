@@ -410,6 +410,15 @@ Streams IQ to other programs
 | `iq` | in | IQ | radio, synthetic, derived | one |
 | `baseband` | in | Baseband | One channel, filtered and decimated | one |
 
+### Stream out
+
+Video for VLC, OBS and other players
+
+| Port | Way | Type | Carries | Wires |
+|---|---|---|---|---|
+| `video` | in | Video | Decoded video frames and pictures | one |
+| `audio` | in | Audio | channel | one |
+
 ### Export
 
 Saves logged rows as CSV or JSON

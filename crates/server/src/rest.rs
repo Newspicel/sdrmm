@@ -484,6 +484,7 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(post_channel_band))
         .routes(routes!(get_encoder_types))
         .routes(routes!(call_audio))
+        .routes(routes!(crate::stream_out::serve))
         .routes(routes!(list_images))
         .routes(routes!(captured_image))
         .routes(routes!(list_presets, create_preset))

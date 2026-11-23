@@ -101,6 +101,7 @@ export type ClickRemovalSettings = components["schemas"]["ClickRemovalSettings"]
 export type NetworkExportAction = components["schemas"]["NetworkExportAction"];
 export type NetworkExportSettings = components["schemas"]["NetworkExportSettings"];
 export type NetworkExportStatus = components["schemas"]["NetworkExportStatus"];
+export type StreamOutStatus = components["schemas"]["StreamOutStatus"];
 export type PreRollStatus = components["schemas"]["PreRollStatus"];
 export type TransmitStatus = components["schemas"]["TransmitStatus"];
 export type TransmitSettings = components["schemas"]["TransmitSettings"];
