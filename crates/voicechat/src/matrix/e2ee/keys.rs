@@ -148,7 +148,7 @@ impl MediaKeys {
         let index = latest.outgoing.index.wrapping_add(1);
         let fresh = OwnKey::new(index, now + USE_DELAY)?;
         let out = fresh.outgoing.clone();
-        if let Some(due) = self.next.take() {
+        if let Some(due) = self.next.take().filter(|pending| pending.from <= now) {
             self.current = due;
         }
         self.next = Some(fresh);
@@ -248,6 +248,18 @@ mod tests {
         assert_eq!(keys.ours(t0 + Duration::from_secs(4)).0, 0);
         assert_eq!(keys.ours(t0 + Duration::from_secs(5)).0, 1);
         assert_eq!(keys.on_joined(), out);
+    }
+
+    #[test]
+    fn a_second_leave_inside_the_delay_keeps_the_old_key() {
+        let t0 = Instant::now();
+        let mut keys = MediaKeys::new(t0).unwrap();
+        keys.on_left(t0).unwrap();
+        let second = keys.on_left(t0 + Duration::from_secs(1)).unwrap();
+        assert_eq!(second.index, 2);
+        assert_eq!(keys.ours(t0 + Duration::from_secs(2)).0, 0);
+        assert_eq!(keys.ours(t0 + Duration::from_secs(5)).0, 0);
+        assert_eq!(keys.ours(t0 + Duration::from_secs(6)).0, 2);
     }
 
     #[test]
