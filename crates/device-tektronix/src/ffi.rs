@@ -90,7 +90,7 @@ pub fn text(buffer: &[c_char]) -> String {
     let bytes: Vec<u8> = buffer
         .iter()
         .take_while(|&&c| c != 0)
-        .map(|&c| c.cast_unsigned())
+        .map(|&c| u8::from_ne_bytes(c.to_ne_bytes()))
         .collect();
     String::from_utf8_lossy(&bytes).trim().to_string()
 }
@@ -100,7 +100,7 @@ mod tests {
     use super::*;
 
     fn buffer(text: &[u8]) -> Vec<c_char> {
-        text.iter().map(|&b| b.cast_signed()).collect()
+        text.iter().map(|&b| c_char::from_ne_bytes([b])).collect()
     }
 
     #[test]

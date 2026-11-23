@@ -157,22 +157,10 @@ export function BasebandView({
         decimate: sparse,
       } = settingsRef.current;
       if (SCATTER_VIEWS.includes(mode)) {
-        const grid = gridRef.current ?? createBasebandGrid(GRID, GRID);
-        gridRef.current = grid;
-        decayBasebandGrid(grid);
-        bitmapRef.current?.invalidate();
-        const period = samplesPerSymbol(burst.sampleRate, rate);
+        const grid = decayedGrid(gridRef, bitmapRef);
         if (mode === "constellation") {
           if (symbolsRef.current === null) {
-            const step = sparse ? Math.round(period) : 1;
-            scaleRef.current = iqScale(burst.samples);
-            addConstellation(
-              grid,
-              burst.samples,
-              scaleRef.current,
-              step,
-              sparse ? symbolPhase(burst.samples, period) : 0,
-            );
+            scaleRef.current = addIqConstellation(grid, burst, rate, sparse);
           }
         } else if (eyeRate !== null) {
           const eyePeriod = samplesPerSymbol(burst.sampleRate, eyeRate);
@@ -195,10 +183,7 @@ export function BasebandView({
       recordTrends(trends, block);
       const { view: mode } = settingsRef.current;
       if (mode === "constellation") {
-        const grid = gridRef.current ?? createBasebandGrid(GRID, GRID);
-        gridRef.current = grid;
-        decayBasebandGrid(grid);
-        bitmapRef.current?.invalidate();
+        const grid = decayedGrid(gridRef, bitmapRef);
         scaleRef.current = referenceScale(block);
         addConstellation(grid, paired(block), scaleRef.current);
       }
@@ -288,6 +273,32 @@ export function BasebandView({
       />
     </div>
   );
+}
+
+function decayedGrid(
+  gridRef: RefObject<BasebandGrid | null>,
+  bitmapRef: RefObject<GridBitmap | null>,
+): BasebandGrid {
+  const grid = gridRef.current ?? createBasebandGrid(GRID, GRID);
+  gridRef.current = grid;
+  decayBasebandGrid(grid);
+  bitmapRef.current?.invalidate();
+  return grid;
+}
+
+/** Plots raw IQ, one point per symbol when `sparse`, and returns the scale it used. */
+function addIqConstellation(
+  grid: BasebandGrid,
+  burst: IqFrame,
+  symbolRate: number,
+  sparse: boolean,
+): number {
+  const period = samplesPerSymbol(burst.sampleRate, symbolRate);
+  const scale = iqScale(burst.samples);
+  const step = sparse ? Math.round(period) : 1;
+  const phase = sparse ? symbolPhase(burst.samples, period) : 0;
+  addConstellation(grid, burst.samples, scale, step, phase);
+  return scale;
 }
 
 function ChartHeader({

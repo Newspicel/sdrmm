@@ -796,13 +796,13 @@ fn check_baked_in_fixtures(root: &Path) -> Result<()> {
     for source in sources {
         let text = std::fs::read_to_string(&source)
             .with_context(|| format!("read {}", source.display()))?;
-        for stem in text
+        for included in text
             .split("include_bytes!(\"")
             .skip(1)
             .filter_map(|rest| rest.split_once('"').map(|(path, _)| path))
-            .filter_map(|path| path.rsplit_once("fixtures/").map(|(_, stem)| stem))
+            .filter(|path| path.contains("fixtures/"))
         {
-            let rel = format!("fixtures/{stem}");
+            let rel = baked_path(root, &source, included);
             let tracked = Command::new("git")
                 .args(["ls-files", "--error-unmatch", "--", &rel])
                 .current_dir(root)
@@ -820,6 +820,48 @@ fn check_baked_in_fixtures(root: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Where an `include_bytes!` path from `source` lands, relative to `root`, so a fixture
+/// beside its test is checked where it lives and not under the root `fixtures/`.
+fn baked_path(root: &Path, source: &Path, included: &str) -> String {
+    let mut parts: Vec<String> = source
+        .parent()
+        .and_then(|dir| dir.strip_prefix(root).ok())
+        .map_or_default(|dir| {
+            dir.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect()
+        });
+    for part in included.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            name => parts.push(name.to_owned()),
+        }
+    }
+    parts.join("/")
+}
+
+#[cfg(test)]
+mod baked_tests {
+    use super::*;
+
+    #[test]
+    fn baked_path_resolves_from_the_source() {
+        let root = Path::new("/repo");
+        let source = root.join("crates/dsp/src/audio/speech/tests.rs");
+        assert_eq!(
+            baked_path(root, &source, "fixtures/tiny.bin"),
+            "crates/dsp/src/audio/speech/fixtures/tiny.bin"
+        );
+        assert_eq!(
+            baked_path(root, &source, "../../../../../fixtures/dab/a.bin"),
+            "fixtures/dab/a.bin"
+        );
+    }
 }
 
 fn slice_between<'a>(haystack: &'a str, open: &str, close: &str) -> Option<&'a str> {
