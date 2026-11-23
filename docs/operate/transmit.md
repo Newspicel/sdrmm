@@ -32,7 +32,7 @@ Set Device **Use** to **Send** or **Both** (**Receive** never keys TX). TX gain 
 ## Ways to feed a Transmitter
 
 - **Message (e.g. APRS):** `Encoder baseband → Transmitter → Device transmit`. Set frequency (empty = Device centre), **Arm**, press **Send**.
-- **Voice (NFM / AM / SSB):** `Microphone audio → Encoder → Transmitter → Device`. Set **Send** to **Push to talk** (hold key or `Space`), **Voice activity**, or **Continuous**. The mic only opens while it reaches an armed transmitter. See [Voice chat](voice-chat.md) for Discord and TeamSpeak. Wiring another channel's `audio` builds a squelch-keyed relay. Voice encoders include the [Audio FX](channels.md#audio) chain plus a hard modulation limiter.
+- **Voice (NFM / AM / SSB):** `Microphone audio → Encoder → Transmitter → Device`. Set **Send** to **Push to talk** (hold key or `Space`), **Voice activity**, or **Continuous**. The mic only opens while it reaches an armed transmitter. See [Voice chat](voice-chat.md) for Discord, TeamSpeak and Matrix. Wiring another channel's `audio` builds a squelch-keyed relay. Voice encoders include the [Audio FX](channels.md#audio) chain plus a hard modulation limiter.
 - **Channel / lane relay:** wire channel `baseband` or `Device iq` directly into Transmitter (always set an offset frequency unless antennas are isolated).
 
 ## Level, timeout, and width

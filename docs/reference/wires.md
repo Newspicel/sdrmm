@@ -456,7 +456,7 @@ Puts an encoder or a lane on the air
 
 ### Voice chat
 
-Discord or TeamSpeak, both ways
+Discord, TeamSpeak or Matrix, both ways
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
