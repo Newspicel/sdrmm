@@ -2,3 +2,4 @@
 
 pub(crate) mod peer;
 pub(crate) mod signal;
+pub(crate) mod tcp;

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use str0m::change::{SdpAnswer, SdpOffer};
 use str0m::media::{Direction, MediaKind, Mid};
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, timeout};
@@ -111,8 +112,9 @@ async fn subscriber_answers_an_offer_with_audio() {
     assert!(sdp.contains("a=recvonly"), "{sdp}");
     assert!(sdp.contains("opus/48000/2"), "{sdp}");
     let candidates = peer.local_candidates();
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].addr().ip(), LOOPBACK.ip());
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().all(|c| c.addr().ip() == LOOPBACK.ip()));
+    assert!(sdp.contains("tcptype active"), "{sdp}");
     assert_eq!(peer.bundle(), first_mid(&sdp));
 }
 
@@ -181,6 +183,33 @@ async fn an_answering_peer_starts_its_own_checks() {
 
     assert!(len >= 20);
     assert_eq!(buf[4..8], [0x21, 0x12, 0xa4, 0x42]);
+    running.abort();
+}
+
+#[tokio::test]
+async fn a_passive_tcp_candidate_is_dialled_for_checks() {
+    let sfu = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let passive = Candidate::builder()
+        .tcp()
+        .host(sfu.local_addr().unwrap())
+        .tcptype(TcpType::Passive)
+        .build()
+        .unwrap();
+    let (_, offer) = sfu_offer("PA_alice|TR_alice", "TR_alice");
+    let (mut peer, _) = Peer::subscriber(LOOPBACK, offer).await.unwrap();
+    peer.add_remote_candidate(passive);
+    let (_silence, mut idle) = mpsc::channel(1);
+    let (heard, _never_read) = mpsc::channel(1);
+    let running = tokio::spawn(async move { peer.run(&mut idle, &heard).await });
+
+    let (mut stream, _) = timeout(PATIENCE, sfu.accept()).await.unwrap().unwrap();
+    let mut head = [0; 10];
+    stream.read_exact(&mut head).await.unwrap();
+
+    assert!(u16::from_be_bytes([head[0], head[1]]) >= 20);
+    assert_eq!(head[6..10], [0x21, 0x12, 0xa4, 0x42]);
     running.abort();
 }
 

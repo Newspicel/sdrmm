@@ -1,4 +1,5 @@
-//! One WebRTC peer connection to the `LiveKit` SFU, driven by str0m over one UDP socket.
+//! One WebRTC peer connection to the `LiveKit` SFU, driven by str0m over UDP, or TCP where
+//! UDP is shut.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Once;
@@ -8,13 +9,14 @@ use str0m::change::{SdpAnswer, SdpOffer, SdpPendingOffer};
 use str0m::channel::{ChannelConfig, Reliability};
 use str0m::format::{Codec, PayloadParams};
 use str0m::media::{Direction, Frequency, MediaData, MediaKind, MediaTime, Mid};
-use str0m::net::{Protocol, Receive};
+use str0m::net::{Protocol, Receive, TcpType};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc, RtcError};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio::time::sleep_until;
 
 use super::signal::MIC_CID;
+use super::tcp::TcpLinks;
 
 const RELIABLE: &str = "_reliable";
 const LOSSY: &str = "_lossy";
@@ -46,10 +48,16 @@ pub(crate) struct OpusIn {
     pub(crate) timestamp: u32,
 }
 
-/// A str0m connection and the socket it owns.
+/// The port an active TCP candidate names: it dials out, so it has none of its own.
+const ACTIVE_TCP_PORT: u16 = 9;
+
+/// A str0m connection and the sockets it owns.
 pub(crate) struct Peer {
     rtc: Rtc,
     socket: UdpSocket,
+    udp_local: SocketAddr,
+    tcp: TcpLinks,
+    tcp_local: SocketAddr,
     local: Vec<Candidate>,
     mic: Option<Mid>,
     pending: Option<SdpPendingOffer>,
@@ -134,6 +142,30 @@ fn report(event: &Event) {
     }
 }
 
+/// Hands one received packet to str0m.
+fn feed(
+    rtc: &mut Rtc,
+    proto: Protocol,
+    source: SocketAddr,
+    destination: SocketAddr,
+    packet: &[u8],
+) -> Result<(), String> {
+    let Ok(contents) = packet.try_into() else {
+        tracing::debug!(%source, "unknown packet ignored");
+        return Ok(());
+    };
+    let input = Input::Receive(
+        Instant::now(),
+        Receive {
+            proto,
+            source,
+            destination,
+            contents,
+        },
+    );
+    rtc.handle_input(input).map_err(|error| failed(&error))
+}
+
 /// The first `a=mid` of a description: the bundle tag.
 fn first_mid(sdp: &str) -> Option<Mid> {
     sdp.lines()
@@ -156,17 +188,28 @@ impl Peer {
         let socket = UdpSocket::bind((route_to(sfu)?, 0))
             .await
             .map_err(|_| no_route())?;
-        let addr = socket.local_addr().map_err(|_| no_route())?;
-        let candidate = Candidate::host(addr, "udp").map_err(|_| no_route())?;
+        let udp_local = socket.local_addr().map_err(|_| no_route())?;
+        let tcp_local = SocketAddr::new(udp_local.ip(), ACTIVE_TCP_PORT);
+        let udp = Candidate::host(udp_local, "udp").map_err(|_| no_route())?;
+        let tcp = Candidate::builder()
+            .tcp()
+            .host(tcp_local)
+            .tcptype(TcpType::Active)
+            .build()
+            .map_err(|_| no_route())?;
         let mut rtc = new_rtc();
-        let local = rtc
-            .add_local_candidate(candidate)
-            .cloned()
+        let local = [udp, tcp]
+            .into_iter()
+            .map(|candidate| rtc.add_local_candidate(candidate).cloned())
+            .collect::<Option<Vec<_>>>()
             .ok_or_else(no_route)?;
         Ok(Self {
             rtc,
             socket,
-            local: vec![local],
+            udp_local,
+            tcp: TcpLinks::new(),
+            tcp_local,
+            local,
             mic: None,
             pending: None,
             bundle: None,
@@ -242,9 +285,14 @@ impl Peer {
             .map_err(|error| failed(&error))
     }
 
-    /// Takes a trickled SFU candidate. Only UDP ones can reach our socket.
+    /// Takes a trickled SFU candidate: UDP, or a passive TCP one we can dial.
     pub(crate) fn add_remote_candidate(&mut self, candidate: Candidate) {
-        if candidate.proto() == Protocol::Udp {
+        let reachable = match candidate.proto() {
+            Protocol::Udp => true,
+            Protocol::Tcp => candidate.tcptype() == Some(TcpType::Passive),
+            _ => false,
+        };
+        if reachable {
             self.rtc.add_remote_candidate(candidate);
         }
     }
@@ -282,6 +330,9 @@ impl Peer {
                     let (len, source) = received.map_err(|_| lost())?;
                     self.receive(len, source)?;
                 }
+                Some((source, packet)) = self.tcp.recv() => {
+                    feed(&mut self.rtc, Protocol::Tcp, source, self.tcp_local, &packet)?;
+                }
                 frame = outgoing.recv() => match frame {
                     Some(frame) => self.send(&frame)?,
                     None => return Ok(()),
@@ -295,6 +346,9 @@ impl Peer {
         loop {
             match self.rtc.poll_output().map_err(|error| failed(&error))? {
                 Output::Timeout(wake) => return Ok(Turn::Wait(self.give_up_at().min(wake))),
+                Output::Transmit(transmit) if transmit.proto == Protocol::Tcp => {
+                    self.tcp.send(transmit.destination, &transmit.contents);
+                }
                 Output::Transmit(transmit) => {
                     if let Err(error) = self
                         .socket
@@ -349,24 +403,16 @@ impl Peer {
     }
 
     fn receive(&mut self, len: usize, source: SocketAddr) -> Result<(), String> {
-        let destination = self.socket.local_addr().map_err(|_| lost())?;
         let Some(datagram) = self.buf.get(..len) else {
             return Ok(());
         };
-        let Ok(contents) = datagram.try_into() else {
-            tracing::debug!(%source, "unknown datagram ignored");
-            return Ok(());
-        };
-        let input = Input::Receive(
-            Instant::now(),
-            Receive {
-                proto: Protocol::Udp,
-                source,
-                destination,
-                contents,
-            },
-        );
-        self.rtc.handle_input(input).map_err(|error| failed(&error))
+        feed(
+            &mut self.rtc,
+            Protocol::Udp,
+            source,
+            self.udp_local,
+            datagram,
+        )
     }
 
     /// When ICE has been down too long, or far off while it is up.
