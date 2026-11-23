@@ -35,7 +35,7 @@ Fallback: run the [portable server](../start/install.md#portable-server) on `127
 1. Verify OS detection (`lsusb` / System Information / Device Manager) and close other SDR apps.
 2. Run `sdrmm --doctor` for missing libraries or Linux udev/`plugdev` permissions (Docker: [`group_add`](../server/deployment.md#usb-devices)).
 3. **SoapySDR:** run `SoapySDRUtil --find` and match core 0.8/0.9.
-4. **SDRplay:** install API 3.15+ and run `sdrplay_apiService`. **Aaronia:** close RTSA-Suite PRO; run `setup_udev.sh` on Linux.
+4. **SDRplay:** install API 3.15+ and run `sdrplay_apiService`. **Aaronia:** close RTSA-Suite PRO; run `setup_udev.sh` on Linux. **Tektronix:** install the RSA API; close SignalVu-PC.
 5. **Stays disconnected:** press **Open radio**, **Start** (if stopped), or **Forget radio** to bind a different unit.
 
 ## Spectrum works, but audio is silent

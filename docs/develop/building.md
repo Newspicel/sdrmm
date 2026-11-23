@@ -27,7 +27,7 @@ Hot reload (`http://localhost:5173` proxying `:8080`): `cargo xtask dev --watch`
 <summary>Windows build notes &amp; feature flags</summary>
 
 - **Windows:** run from Visual Studio Developer Shell with LLVM + MSYS2 Make (`.github/actions/rust`); set `MEDIA_SHELL_BIN` (`bash`/`make`/`clang-cl`) and `LIBCLANG_PATH`. ARM64 builds codecs without asm.
-- **Features:** default enables `soapy`, `sdrplay`, `aaronia`, `cr8`, `rtlsdr`, `hackrf`, `airspy`, `airspyhf`, `funcube`, `espsdr`, `ad936x`, `net-client`, `gpu-fft`. Releases omit `cr8`; `dvsi` is opt-in.
+- **Features:** default enables `soapy`, `sdrplay`, `aaronia`, `tektronix`, `cr8`, `rtlsdr`, `hackrf`, `airspy`, `airspyhf`, `funcube`, `espsdr`, `ad936x`, `net-client`, `gpu-fft`. Releases omit `cr8`; `dvsi` is opt-in.
   - `cargo run -p sdrmm --no-default-features` (no radio drivers; recordings & signal generator still work)
   - `cargo run -p sdrmm --no-default-features --features net-client` (network radios only)
 

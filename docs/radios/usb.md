@@ -107,6 +107,14 @@ Supports **SPECTRAN V6 PLUS** and **SPECTRAN V6 ECO** via [RTSA-Suite PRO](https
 - **V6 ECO:** fixed 61.44 MS/s clock (40 MHz RTBW), single RX input.
 - **GAIN** is inverted reference level (`20 dB` = `-20 dBm` full scale). Sample rate is `1.5 × span` (two-thirds clean); TX is half-duplex (0 dBm full scale before TX gain).
 
+## Tektronix RSA
+
+Supports **RSA306**, **RSA500** and **RSA600** via the [RSA API](https://www.tek.com/en/support/software/application/rsa-application-programming-interface-api-for-64bit-windows-v560295) (Windows/Linux only; close SignalVu-PC before opening in SDRmm; on Linux put `libRSA_API.so` on the library path). Set `SDRMM_TEKTRONIX_DIR` if it is not in `C:\Tektronix\RSA_API`. One analyser per process.
+
+- **GAIN** is inverted reference level (`20 dB` = `-20 dBm` full scale). **Preamp**, **ATT** and **Auto attenuation** appear only on analysers that have them. **Frequency ref:** internal, external 10 MHz, or GNSS.
+- Rates: 56 MS/s and each half down to 13.67 kS/s, 71% clean. A retune pauses the stream a few ms; a rate or gain change restarts it.
+- Tested on an RSA306 only.
+
 ## Dragon Labs CR-8
 
 8 phase-coherent lanes (`iq1`–`iq8`), 24 MHz–1.766 GHz, fixed 12.5 MS/s, internal/external clock. Excluded from packaged builds: compile with `--features cr8`, install the vendor SDK (override path with `SDRMM_DLCR_LIBRARY`), and verify via `sdrmm --doctor`.
