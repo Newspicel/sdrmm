@@ -46,7 +46,11 @@ async fn post(http: &Client, url: &str, body: &Value) -> Result<Response, String
 }
 
 async fn grant_of(response: Response) -> Result<LiveKitGrant, String> {
-    match response.status() {
+    let status = response.status();
+    if !status.is_success() {
+        tracing::debug!(%status, "call server said no");
+    }
+    match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err("Call server refused".to_owned()),
         status if status.is_success() => response
             .json()

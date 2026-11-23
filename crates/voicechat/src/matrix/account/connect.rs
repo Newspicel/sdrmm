@@ -4,6 +4,7 @@ use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::authentication::oauth::OAuthSession;
 use matrix_sdk::ruma::UserId;
 use matrix_sdk::ruma::api::client::uiaa;
+use matrix_sdk::ruma::api::error::ErrorKind;
 use matrix_sdk::{AuthSession, Client, ClientBuildError};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -178,13 +179,24 @@ pub(crate) async fn sign_in(
 /// not retry: each retry would log in again and leave another device behind.
 fn login_fault(error: &matrix_sdk::Error) -> Fault {
     tracing::warn!(%error, "Matrix login failed");
-    match error {
-        matrix_sdk::Error::Http(_) if error.as_client_api_error().is_some() => {
-            Fault::lasting("Login refused")
-        }
-        matrix_sdk::Error::Http(_) => Fault::passing(UNREACHABLE),
-        _ => Fault::lasting(STORE_UNREADABLE),
+    if refused(error) {
+        Fault::lasting("Login refused")
+    } else if matches!(error, matrix_sdk::Error::Http(_)) {
+        Fault::passing(UNREACHABLE)
+    } else {
+        Fault::lasting(STORE_UNREADABLE)
     }
+}
+
+/// A wrong password or a closed account: only the operator can fix it. Any other answer, a
+/// rate limit or a server error, may pass.
+fn refused(error: &matrix_sdk::Error) -> bool {
+    matches!(
+        error.client_api_error_kind(),
+        Some(ErrorKind::Forbidden | ErrorKind::UserDeactivated)
+    ) || error
+        .as_client_api_error()
+        .is_some_and(|error| matches!(error.status_code.as_u16(), 401 | 403))
 }
 
 /// Whether `error` comes from the account's own store, which no retry fixes.

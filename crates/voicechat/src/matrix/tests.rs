@@ -197,6 +197,58 @@ async fn sign_in_names_the_user_in_any_case() {
 }
 
 #[tokio::test]
+async fn sign_in_outlasts_a_failing_token_endpoint() {
+    let server = approving(false).await;
+    server
+        .oauth()
+        .mock_token()
+        .error500()
+        .up_to_n_times(1)
+        .expect(1)
+        .with_priority(1)
+        .mount()
+        .await;
+    let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm", Some("@bot:x.org"))
+        .await
+        .unwrap();
+    let signed_in = timeout(PATIENCE, shown.done).await.unwrap().unwrap();
+    assert_eq!(signed_in.unwrap().user, "@bot:x.org");
+}
+
+async fn login_answered(code: u16, errcode: &str) -> Fault {
+    let server = homeserver().await;
+    server
+        .mock_login()
+        .respond_with_code_and_json(code, json!({"errcode": errcode, "error": "no"}))
+        .mount()
+        .await;
+    let account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
+    let client = build_client(&account.homeserver, Some(&account.store))
+        .await
+        .unwrap();
+    let saved = watch::Sender::new(None);
+    sign_in(&client, &account, None, &saved, None)
+        .await
+        .unwrap_err()
+}
+
+#[tokio::test]
+async fn only_a_refused_login_lasts() {
+    assert_eq!(
+        login_answered(403, "M_FORBIDDEN").await,
+        Fault::lasting("Login refused")
+    );
+    assert_eq!(
+        login_answered(401, "M_USER_DEACTIVATED").await,
+        Fault::lasting("Login refused")
+    );
+    assert_eq!(
+        login_answered(400, "M_UNKNOWN").await,
+        Fault::passing("Homeserver unreachable")
+    );
+}
+
+#[tokio::test]
 async fn sign_in_ends_with_an_oauth_session() {
     let server = approving(false).await;
     let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm", Some("@bot:x.org"))

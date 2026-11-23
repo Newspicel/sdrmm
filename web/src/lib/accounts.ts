@@ -135,7 +135,7 @@ export const ACCOUNT_SPECS: Readonly<Record<AccountKind, AccountSpec>> = {
       {
         key: "recovery_key",
         label: "Recovery key",
-        title: "Unlocks room keys saved on the homeserver, so earlier messages decrypt",
+        title: "Unlocks this account's cross-signing",
         secret: true,
         optional: true,
         when: { key: "login", is: ["password", "oauth"] },

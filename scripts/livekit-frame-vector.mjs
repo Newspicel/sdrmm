@@ -1,7 +1,3 @@
-// Mirrors livekit client-sdk-js FrameCryptor for an Opus frame:
-// src/e2ee/constants.ts (SALT, IV_LENGTH, UNENCRYPTED_BYTES.audio),
-// src/e2ee/utils.ts (deriveKeys: HKDF SHA-256, info of 128 zero bytes),
-// src/e2ee/worker/FrameCryptor.ts (makeIV, encodeFunction, frame layout).
 const SALT = "LKFrameEncryptionKey";
 const IV_LENGTH = 12;
 const UNENCRYPTED_AUDIO = 1;

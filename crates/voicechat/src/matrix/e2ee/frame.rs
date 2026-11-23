@@ -213,6 +213,9 @@ mod tests {
         assert_eq!(open(&ring, &frame), Err(CryptoError::Auth));
     }
 
+    /// The vector comes from `scripts/livekit-frame-vector.mjs`, which mirrors livekit
+    /// client-sdk-js `src/e2ee/constants.ts`, `src/e2ee/utils.ts` and
+    /// `src/e2ee/worker/FrameCryptor.ts`.
     #[test]
     fn livekit_vector_opens() {
         let ring = ring(3, &unhex(MATERIAL));

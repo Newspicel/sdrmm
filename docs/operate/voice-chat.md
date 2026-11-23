@@ -34,7 +34,7 @@ A new name or nickname applies live. Other changes reconnect.
 |---|---|
 | **Account** | Which chat account to use |
 | **Channel** | Discord: voice channel id. TeamSpeak: channel name or path, empty for the default channel. Matrix: room id or alias |
-| **Allowed** | Discord: user ids. TeamSpeak: unique ids. Matrix: user ids. Empty means anyone. A talker not yet known by id never matches |
+| **Allowed** | Discord: user ids. TeamSpeak: unique ids. Matrix: `@user:server` ids. Empty means anyone. A talker not yet known by id never matches |
 | **To air** | What chat sends to the radio |
 | **To chat** | What the radio sends to chat |
 

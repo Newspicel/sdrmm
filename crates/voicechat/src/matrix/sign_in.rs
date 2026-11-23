@@ -172,6 +172,8 @@ enum Poll {
     Tokens(SessionTokens),
     Pending,
     SlowDown,
+    /// The token endpoint did not answer; the sign-in may still be approved.
+    Unreachable,
 }
 
 #[derive(Deserialize)]
@@ -232,14 +234,14 @@ impl Pending {
             }
             match self.ask().await? {
                 Poll::Tokens(tokens) => return Ok(tokens),
-                Poll::Pending => {}
+                Poll::Pending | Poll::Unreachable => {}
                 Poll::SlowDown => wait += POLL,
             }
         }
     }
 
     async fn ask(&self) -> Result<Poll, String> {
-        let answer: TokenAnswer = self
+        let sent = self
             .http
             .post(self.token_endpoint.clone())
             .form(&[
@@ -249,10 +251,22 @@ impl Pending {
             ])
             .send()
             .await
-            .map_err(|error| failed(&error))?
-            .json()
-            .await
-            .map_err(|error| failed(&error))?;
+            .and_then(|response| {
+                let status = response.status();
+                if status.is_server_error() {
+                    response.error_for_status()
+                } else {
+                    Ok(response)
+                }
+            });
+        let response = match sent {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::warn!(%error, "Matrix sign-in poll failed");
+                return Ok(Poll::Unreachable);
+            }
+        };
+        let answer: TokenAnswer = response.json().await.map_err(|error| failed(&error))?;
         match (answer.access_token, answer.error.as_deref()) {
             (Some(access_token), None) => Ok(Poll::Tokens(SessionTokens {
                 access_token,
