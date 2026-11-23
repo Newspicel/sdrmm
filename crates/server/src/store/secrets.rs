@@ -4,14 +4,7 @@ use super::{Store, StoreError, now_rfc3339};
 
 impl Store {
     pub fn secret(&self, id: &str) -> Result<Option<String>, StoreError> {
-        Ok(self
-            .lock()
-            .query_row(
-                "SELECT value FROM secrets WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            )
-            .optional()?)
+        get(&self.lock(), id)
     }
 
     pub(crate) fn subscribe_secrets(&self) -> tokio::sync::watch::Receiver<u64> {
@@ -42,6 +35,16 @@ pub(super) fn collect(conn: &Connection) -> Result<usize, StoreError> {
         tracing::info!(removed, "dropped secrets nothing names");
     }
     Ok(removed)
+}
+
+pub(super) fn get(conn: &Connection, id: &str) -> Result<Option<String>, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT value FROM secrets WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 pub(super) fn put(conn: &Connection, id: &str, value: &str) -> Result<(), StoreError> {

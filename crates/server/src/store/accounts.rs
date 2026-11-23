@@ -52,26 +52,33 @@ impl Store {
     }
 
     /// Keeps `session` as the Matrix account's saved sign-in. A session of another user than
-    /// the account's is refused: the account may have been edited while it was live.
+    /// the account's is refused: the account may have been edited while it was live. A
+    /// recovery key the session carries becomes the account's recovery key.
     pub fn set_account_session(&self, id: &str, session: &str) -> Result<(), StoreError> {
+        let (session, made) = match sdrmm_voicechat::take_recovery_key(session) {
+            Some((session, key)) => (session, Some(key)),
+            None => (session.to_owned(), None),
+        };
         let conn = self.lock();
         let tx = conn.unchecked_transaction()?;
         let mut account = read(&tx, id)?;
         let AccountService::Matrix {
             user,
             session: held,
+            recovery_key,
             ..
         } = &mut account.service
         else {
             return Err(StoreError::AccountField("service"));
         };
-        if sdrmm_voicechat::session_user(session).as_deref() != Some(user.as_str()) {
+        if sdrmm_voicechat::session_user(&session).as_deref() != Some(user.as_str()) {
             return Err(StoreError::AccountField("session"));
         }
-        if let Secret::Stored { secret } = held {
-            secrets::put(&tx, secret, session)?;
-        } else {
-            *held = Secret::stored(secrets::insert(&tx, session)?);
+        let mut named = keep_secret(&tx, held, &session)?;
+        if let Some(key) = made {
+            named |= keep_secret(&tx, recovery_key, &key)?;
+        }
+        if named {
             write(&tx, &account, false)?;
         }
         tx.commit()?;
@@ -104,6 +111,16 @@ impl Store {
         self.account_changes
             .send_modify(|count| *count = count.wrapping_add(1));
     }
+}
+
+/// Writes `value` into `slot`'s secret, answering whether the slot now names a new one.
+fn keep_secret(conn: &Connection, slot: &mut Secret, value: &str) -> Result<bool, StoreError> {
+    if let Secret::Stored { secret } = slot {
+        secrets::put(conn, secret, value)?;
+        return Ok(false);
+    }
+    *slot = Secret::stored(secrets::insert(conn, value)?);
+    Ok(true)
 }
 
 fn check(account: &Account) -> Result<(), StoreError> {
@@ -209,6 +226,7 @@ fn settle_service(
     mut incoming: AccountService,
     current: Option<&AccountService>,
 ) -> Result<AccountService, StoreError> {
+    let new_password = new_matrix_password(conn, &incoming, current)?;
     let held: Vec<Secret> = current
         .filter(|current| current.kind() == incoming.kind())
         .map_or_default(|current| current.credentials().into_iter().cloned().collect());
@@ -230,16 +248,40 @@ fn settle_service(
             *identity = Secret::stored(secrets::insert(conn, &fresh)?);
         }
     }
-    settle_matrix(conn, &mut incoming, current)?;
+    settle_matrix(conn, &mut incoming, current, new_password)?;
     Ok(incoming)
 }
 
-/// Keeps the account's own session while it still signs in as the same user the same way, and
-/// its store key for good. A login with a device of its own gets a fresh key.
+/// Whether the request sends a Matrix password other than the one the account holds.
+fn new_matrix_password(
+    conn: &Connection,
+    incoming: &AccountService,
+    current: Option<&AccountService>,
+) -> Result<bool, StoreError> {
+    let AccountService::Matrix { password, .. } = incoming else {
+        return Ok(false);
+    };
+    let Some(sent) = password.inline() else {
+        return Ok(false);
+    };
+    let held = match current {
+        Some(AccountService::Matrix {
+            password: Secret::Stored { secret },
+            ..
+        }) => secrets::get(conn, secret)?,
+        _ => None,
+    };
+    Ok(held.as_deref() != Some(sent))
+}
+
+/// Keeps the account's own session while it still signs in as the same user the same way with
+/// the same password, and its store key for good. A login with a device of its own gets a
+/// fresh key.
 fn settle_matrix(
     conn: &Connection,
     incoming: &mut AccountService,
     current: Option<&AccountService>,
+    new_password: bool,
 ) -> Result<(), StoreError> {
     let AccountService::Matrix {
         homeserver_url,
@@ -261,7 +303,7 @@ fn settle_matrix(
             store_key: held_key,
             ..
         }) => Some((
-            held_url == homeserver_url && held_user == user && held_login == login,
+            held_url == homeserver_url && held_user == user && held_login == login && !new_password,
             held_session,
             held_key,
         )),

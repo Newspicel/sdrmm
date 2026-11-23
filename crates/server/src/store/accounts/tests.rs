@@ -475,3 +475,60 @@ fn deleting_removes_every_matrix_secret() {
         assert!(held(&store, secret).is_none(), "{secret:?}");
     }
 }
+
+fn with_password(mut account: Account, value: Secret) -> Account {
+    if let AccountService::Matrix { password, .. } = &mut account.service {
+        *password = value;
+    }
+    account
+}
+
+#[test]
+fn a_new_password_forgets_the_session() {
+    let store = Store::open(None).expect("store");
+    let made = store
+        .create_account(with_password(
+            matrix(MatrixLogin::Password, BOT),
+            inline("pw"),
+        ))
+        .expect("created");
+    store
+        .set_account_session(&made.id, &session_of(BOT))
+        .expect("signed in");
+    let signed_in = store.account(&made.id).expect("read").expect("found");
+    let session = managed_of(&signed_in).0;
+
+    let same = with_password(signed_in.clone(), inline("pw"));
+    let kept = store.update_account(&made.id, same).expect("updated");
+    assert_eq!(managed_of(&kept).0, session);
+
+    let changed = with_password(signed_in, inline("new pw"));
+    let changed = store.update_account(&made.id, changed).expect("updated");
+    assert!(!managed_of(&changed).0.is_set());
+    assert!(held(&store, &session).is_none());
+}
+
+#[test]
+fn a_session_hands_its_recovery_key_to_the_account() {
+    let store = Store::open(None).expect("store");
+    let made = store
+        .create_account(matrix(MatrixLogin::Oauth, BOT))
+        .expect("created");
+    let carrying = session_of(BOT).replacen('{', r#"{"recovery_key":"EsTc made","#, 1);
+    store
+        .set_account_session(&made.id, &carrying)
+        .expect("signed in");
+    let signed_in = store.account(&made.id).expect("read").expect("found");
+    let AccountService::Matrix {
+        recovery_key,
+        session,
+        ..
+    } = &signed_in.service
+    else {
+        panic!("not matrix");
+    };
+    assert_eq!(held(&store, recovery_key).as_deref(), Some("EsTc made"));
+    let kept = held(&store, session).expect("session");
+    assert!(!kept.contains("recovery_key"));
+    assert_eq!(sdrmm_voicechat::session_user(&kept).as_deref(), Some(BOT));
+}
