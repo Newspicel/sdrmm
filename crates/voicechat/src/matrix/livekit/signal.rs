@@ -28,7 +28,8 @@ const PROTOCOL_VERSION: u32 = 18;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_PING_TIMEOUT: Duration = Duration::from_secs(15);
-const MIC_CID: &str = "mic";
+/// Our mic track id, both in `AddTrackRequest.cid` and the publisher's msid.
+pub(crate) const MIC_CID: &str = "mic";
 const MIC_NAME: &str = "microphone";
 const MEDIA_SECTION: &str = "0";
 
