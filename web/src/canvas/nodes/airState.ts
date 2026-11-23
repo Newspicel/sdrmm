@@ -27,6 +27,21 @@ export function transmitterOf(
 }
 
 /** A voice source's audio reaches, through an Encoder, a transmitter that is armed. */
+/** Whether anything hears `node`'s audio: an armed transmitter, or any other audio input. */
+export function reachesListener(
+  patch: ResolvedPatch | null,
+  nodes: readonly PatchNode[],
+  sets: readonly Pick<DeviceSet, "transmit">[],
+  node: string,
+): boolean {
+  const encoder = (id: string): boolean =>
+    nodes.some((candidate) => candidate.id === id && candidate.kind === "encoder");
+  return (
+    reachesOf(patch, node, "audio").some((reach) => !encoder(reach.sink)) ||
+    reachesArmedTransmitter(patch, nodes, sets, node)
+  );
+}
+
 export function reachesArmedTransmitter(
   patch: ResolvedPatch | null,
   nodes: readonly PatchNode[],

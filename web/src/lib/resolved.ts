@@ -300,8 +300,9 @@ export function channelOwners(patch: ResolvedPatch | null): Map<string, string> 
 export interface Input {
   node: string;
   source: string;
-  deviceSet: number;
-  channel: ChannelInfo;
+  /** Null for a stream the source node makes itself, such as a voice. */
+  deviceSet: number | null;
+  channel: ChannelInfo | null;
 }
 
 function feedSource(feed: Feed, index: number): string {
@@ -315,20 +316,26 @@ export function inputsOf(
   port: string,
 ): Input[] {
   return feedsOf(patch, node, port).flatMap((feed) =>
-    tapChannels(feed.tap).flatMap((addr, index) => {
-      const channel = channelAt(sets, addr);
-      return channel === undefined
-        ? []
-        : [
-            {
-              node: feed.source,
-              source: feedSource(feed, index),
-              deviceSet: addr.device_set,
-              channel,
-            },
-          ];
-    }),
+    feed.tap?.tap === "node"
+      ? [{ node: feed.source, source: feedSource(feed, 0), deviceSet: null, channel: null }]
+      : channelInputs(feed, sets),
   );
+}
+
+function channelInputs(feed: Feed, sets: readonly DeviceSet[]): Input[] {
+  return tapChannels(feed.tap).flatMap((addr, index) => {
+    const channel = channelAt(sets, addr);
+    return channel === undefined
+      ? []
+      : [
+          {
+            node: feed.source,
+            source: feedSource(feed, index),
+            deviceSet: addr.device_set,
+            channel,
+          },
+        ];
+  });
 }
 
 export function useInputs(node: string, port: string): Input[] {

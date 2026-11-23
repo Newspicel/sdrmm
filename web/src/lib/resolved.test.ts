@@ -84,6 +84,7 @@ function patch() {
                 ],
               },
             },
+            { source: "mic", port: "audio", tap: { tap: "node", node: "mic" } },
           ],
         },
       ),
@@ -201,10 +202,9 @@ describe("resolved lookups", () => {
   });
 
   it("names every audio stream a port plays as the server does", () => {
-    expect(inputsOf(patch(), live, "spk", "audio").map((input) => input.source)).toEqual([
-      "voice/fx",
-      "trunk",
-    ]);
+    const inputs = inputsOf(patch(), live, "spk", "audio");
+    expect(inputs.map((input) => input.source)).toEqual(["voice/fx", "trunk", "mic"]);
+    expect(inputs[2]).toMatchObject({ node: "mic", deviceSet: null, channel: null });
   });
 
   it("reads where a node runs from what the server served", () => {

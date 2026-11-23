@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PatchNode, ResolvedPatch, TransmitStatus } from "../../lib/types";
-import { airOf, reachesArmedTransmitter, transmitterOf } from "./airState";
+import { airOf, reachesArmedTransmitter, reachesListener, transmitterOf } from "./airState";
 
 const status = (phase: TransmitStatus["phase"]): TransmitStatus => ({
   node: "tx",
@@ -87,5 +87,23 @@ describe("reachesArmedTransmitter", () => {
     expect(reachesArmedTransmitter(reaching(["tx"]), nodes, armed, "mic")).toBe(false);
     expect(reachesArmedTransmitter(reaching([]), nodes, armed, "mic")).toBe(false);
     expect(reachesArmedTransmitter(null, nodes, armed, "mic")).toBe(false);
+  });
+});
+
+describe("reachesListener", () => {
+  const nodes = [
+    { id: "mic", kind: "microphone", position: { x: 0, y: 0 }, data: {} },
+    { id: "spk", kind: "speaker", position: { x: 0, y: 0 }, data: {} },
+    ...NODES,
+  ] as unknown as PatchNode[];
+  const idle = [{ transmit: null }];
+
+  it("holds for a speaker, or an encoder only while its transmitter is armed", () => {
+    expect(reachesListener(reaching(["spk"]), nodes, idle, "mic")).toBe(true);
+    expect(reachesListener(reaching(["enc"]), nodes, idle, "mic")).toBe(false);
+    expect(reachesListener(reaching(["enc"]), nodes, [{ transmit: status("idle") }], "mic")).toBe(
+      true,
+    );
+    expect(reachesListener(reaching([]), nodes, idle, "mic")).toBe(false);
   });
 });

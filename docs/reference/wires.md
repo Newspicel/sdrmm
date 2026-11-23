@@ -149,7 +149,7 @@ Ports follow the decoder the node runs.
 | `iq` | in | IQ | radio, synthetic, derived | many lanes. every radio that may carry this decoder; it runs on the one that hears it |
 | `control` | in | Control | tune, doppler, sweep | one. a scanner, signal hunt or satellite drives this decoder; its radio follows |
 | `position` | in | Position | A live fix and the heading it comes with | one |
-| `baseband` | out | Baseband | One channel, filtered and decimated | many |
+| `baseband` | out | Baseband | channel | many |
 | `audio` | out | Audio | channel | many |
 | `events` | out | Events | any kind | many. Decoded messages and calls. Analog calls need squelch |
 | `video` | out | Video | Decoded video frames and pictures | many |
@@ -163,7 +163,7 @@ Turns audio or a message into a signal
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `audio` | in | Audio | channel, voice | many. Voice for an analog mode |
-| `baseband` | out | Baseband | One channel, filtered and decimated | one |
+| `baseband` | out | Baseband | encoder | one |
 
 ## Tools
 
@@ -308,7 +308,7 @@ Spectrum and waterfall
 
 ### Speaker
 
-Plays channel audio
+Plays audio
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
@@ -389,7 +389,7 @@ Records channel audio to WAV
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | channel, voice | many |
+| `audio` | in | Audio | channel | many |
 | `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Baseband recorder
@@ -398,7 +398,7 @@ Records one channel's IQ
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `baseband` | in | Baseband | One channel, filtered and decimated | many |
+| `baseband` | in | Baseband | channel | many |
 | `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Network IQ
@@ -408,7 +408,7 @@ Streams IQ to other programs
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `baseband` | in | Baseband | One channel, filtered and decimated | one |
+| `baseband` | in | Baseband | channel | one |
 
 ### Stream out
 
@@ -417,7 +417,7 @@ Video for VLC, OBS and other players
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `video` | in | Video | Decoded video frames and pictures | one |
-| `audio` | in | Audio | channel | one |
+| `audio` | in | Audio | channel, voice | one |
 
 ### Export
 
@@ -442,7 +442,7 @@ Puts an encoder or a lane on the air
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one. A lane to send as it is |
-| `baseband` | in | Baseband | One channel, filtered and decimated | one |
+| `baseband` | in | Baseband | channel, encoder | one |
 | `transmit` | out | Transmit | What a radio puts on the air | one |
 
 ### Voice chat
@@ -451,7 +451,7 @@ Discord or TeamSpeak, both ways
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | channel | many |
+| `audio` | in | Audio | channel, voice | many |
 | `audio` | out | Audio | voice | many |
 
 ## Processors

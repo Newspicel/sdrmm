@@ -921,6 +921,7 @@ fn a_coherent_radio_offers_the_wires_of_a_new_array() {
 }
 
 mod contracts;
+mod delivery;
 mod radio_use;
 mod verdicts;
 

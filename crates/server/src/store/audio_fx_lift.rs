@@ -144,7 +144,7 @@ mod tests {
             "graph": {
                 "nodes": [
                     {"id": "ch", "kind": "channel", "data": {"channel_type": "nfm"}, "position": {"x": 10.0, "y": 20.0}},
-                    {"id": "spk", "kind": "speaker", "position": {"x": 900.0, "y": 20.0}},
+                    {"id": "spk", "kind": "speaker", "data": {}, "position": {"x": 900.0, "y": 20.0}},
                     {"id": "rec", "kind": "audio_recorder", "data": {}, "position": {"x": 900.0, "y": 300.0}}
                 ],
                 "edges": [

@@ -227,12 +227,10 @@ fn wanted(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<String, Wanted> 
                 return None;
             };
             let (pictured, video) = first_channel(patch, &node.id, VIDEO_PORT)?;
-            let audio = first_channel(patch, &node.id, AUDIO_PORT)
-                .map(|(source, at)| AudioRoute {
-                    device_set: at.device_set,
-                    channel: at.channel,
-                    fx: graph.audio_fx(&source),
-                })
+            let audio = patch
+                .feeds(&node.id, AUDIO_PORT)
+                .iter()
+                .find_map(|feed| feed.audio_routes(graph).into_iter().next())
                 .or_else(|| crate::audio_fx::video_sound(graph, &pictured, video));
             let want = Wanted {
                 settings: settings.clone(),

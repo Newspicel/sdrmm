@@ -10,8 +10,8 @@ use sdrmm_decoder::encoder::EncoderParams;
 use sdrmm_dsp::audio::{downmix::mono_mix, mix::lane_of, voice_gate::VoiceGate};
 use sdrmm_engine::{Engine, PcmBlock, PcmPayload, TransmitRequest, TransmitSource};
 use sdrmm_wire::{
-    AUDIO_PORT, AudioProcessing, AudioRoute, BASEBAND_PORT, IQ_PORT, MicrophoneNode, NodeBody,
-    NodeProblem, ProblemSource, SendMode, TRANSMIT_PORT, TransmitStatus,
+    AUDIO_PORT, AudioFrom, AudioProcessing, AudioRoute, BASEBAND_PORT, IQ_PORT, MicrophoneNode,
+    NodeBody, NodeProblem, ProblemSource, SendMode, TRANSMIT_PORT, Tap, TransmitStatus,
 };
 use tokio::sync::{broadcast::error::RecvError, watch};
 
@@ -70,20 +70,25 @@ fn source(resolved: &Resolved, node: &str) -> Result<TransmitSource, String> {
     if wired_into(resolved, node, IQ_PORT).is_some() {
         return Err("The wired lane is not running".to_owned());
     }
-    let Some(feeder) = wired_into(resolved, node, BASEBAND_PORT) else {
+    let Some(feed) = resolved.patch.first_feed(node, BASEBAND_PORT) else {
         return Err("Wire an encoder, a channel or a lane into it".to_owned());
     };
-    let tapped = resolved
-        .patch
-        .first_feed(node, BASEBAND_PORT)
-        .and_then(|feed| feed.tap.as_ref()?.channels().into_iter().next());
-    if let Some(addr) = tapped {
-        return Ok(TransmitSource::Channel {
-            device_set: addr.device_set,
-            channel: addr.channel,
-        });
-    }
-    match resolved.graph.node(feeder).map(|found| &found.body) {
+    let encoder = match &feed.tap {
+        Some(Tap::Node { node, .. }) => node,
+        Some(tap) => {
+            let addr = tap
+                .channels()
+                .into_iter()
+                .next()
+                .ok_or_else(|| "The wired channel is not running".to_owned())?;
+            return Ok(TransmitSource::Channel {
+                device_set: addr.device_set,
+                channel: addr.channel,
+            });
+        }
+        None => return Err("The wired channel is not running".to_owned()),
+    };
+    match resolved.graph.node(encoder).map(|found| &found.body) {
         Some(NodeBody::Encoder(encoder)) if encoder.encoder_type.is_empty() => {
             Err("Pick the encoder's mode".to_owned())
         }
@@ -212,6 +217,7 @@ pub(crate) fn speak(state: &AppState, microphone: &str, pcm: &[f32]) -> usize {
     if !state.transmit.passes(microphone, node, pcm) {
         return 0;
     }
+    state.engine.speak_voice(microphone, pcm);
     speak_as(state, microphone, lane_of(microphone), pcm)
 }
 
@@ -337,17 +343,18 @@ fn wanted_links(engine: &Engine, resolved: &Resolved) -> Vec<Link> {
         let Some(encoder) = wired_into(resolved, &armed.node, BASEBAND_PORT) else {
             continue;
         };
-        for feed in resolved.patch.feeds(encoder, AUDIO_PORT) {
-            for addr in feed.tap.iter().flat_map(sdrmm_wire::Tap::channels) {
-                links.push(Link {
-                    radio,
-                    transmitter: armed.node.clone(),
-                    route: AudioRoute {
-                        fx: resolved.graph.audio_fx(&feed.source),
-                        ..AudioRoute::channel(addr.device_set, addr.channel)
-                    },
-                });
-            }
+        let channels = resolved
+            .patch
+            .feeds(encoder, AUDIO_PORT)
+            .iter()
+            .flat_map(|feed| feed.audio_routes(&resolved.graph))
+            .filter(|route| route.channel_addr().is_some());
+        for route in channels {
+            links.push(Link {
+                radio,
+                transmitter: armed.node.clone(),
+                route,
+            });
         }
     }
     links
@@ -362,12 +369,14 @@ fn mono(block: &PcmBlock) -> Option<Vec<f32>> {
 
 /// The mixing lane of one channel's audio, the same for every node that carries it.
 pub(crate) fn route_lane(route: &AudioRoute) -> u64 {
-    lane_of(&format!(
-        "{}/{}/{}",
-        route.device_set,
-        route.channel,
-        route.fx.join(",")
-    ))
+    let from = match &route.from {
+        AudioFrom::Channel {
+            device_set,
+            channel,
+        } => format!("{device_set}/{channel}"),
+        AudioFrom::Voice { node, .. } => format!("voice/{node}"),
+    };
+    lane_of(&format!("{from}/{}", route.fx.join(",")))
 }
 
 fn forward(engine: &Arc<Engine>, link: &Link) -> Result<Arc<AtomicBool>, String> {

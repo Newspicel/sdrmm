@@ -29,9 +29,9 @@ describe("MicrophoneFace", () => {
     expect(html).not.toContain("VOX");
   });
 
-  it("holds the talk key back while no armed transmitter hears it", () => {
+  it("holds the talk key back while nothing hears it", () => {
     const html = render(microphone("push_to_talk"));
-    expect(html).toContain('title="No armed transmitter"');
+    expect(html).toContain('title="Nothing hears it"');
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Talk</);
   });
 });

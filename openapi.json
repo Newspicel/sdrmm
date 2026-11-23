@@ -8484,7 +8484,7 @@
       },
       "AudioOrigin": {
         "type": "string",
-        "description": "Where audio comes from: a channel the engine runs, or a voice the server carries straight\nto a transmitter (a microphone, a voice chat), which no channel audio input can tap.",
+        "description": "Where audio comes from: a channel the engine runs, or a voice the server carries into the\npatch (a microphone, a voice chat). Every audio input takes both.",
         "enum": [
           "channel",
           "voice"
@@ -9184,6 +9184,14 @@
               }
             }
           }
+        ]
+      },
+      "BasebandOrigin": {
+        "type": "string",
+        "description": "Where baseband comes from: a channel the engine runs, or an encoder, which runs only inside\nthe transmitter it feeds.",
+        "enum": [
+          "channel",
+          "encoder"
         ]
       },
       "BasebandRecorderNode": {
@@ -20000,9 +20008,16 @@
           {
             "type": "object",
             "required": [
+              "origins",
               "type"
             ],
             "properties": {
+              "origins": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BasebandOrigin"
+                }
+              },
               "type": {
                 "type": "string",
                 "enum": [
@@ -27377,8 +27392,28 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "A stream the source node makes itself, carried under its id: a voice, an encoder's\nbaseband.",
+            "required": [
+              "node",
+              "tap"
+            ],
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "tap": {
+                "type": "string",
+                "enum": [
+                  "node"
+                ]
+              }
+            }
           }
-        ]
+        ],
+        "description": "The stream a wire carries, as the resolver found it. Only the resolver makes one: every\nvariant is `non_exhaustive`, so no crate beside this one can name a stream no wire carries."
       },
       "TemplateInfo": {
         "type": "object",

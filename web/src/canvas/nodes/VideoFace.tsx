@@ -76,7 +76,8 @@ export function VideoFace({ node }: { node: PatchNode }) {
 function useCarriesSound(): (input: Input) => boolean {
   const types = useWorkspaceContext().context.channelTypes;
   return (input) =>
-    channelHasAudio(types.find((type) => type.type_id === input.channel.settings.params.type));
+    input.channel !== null &&
+    channelHasAudio(types.find((type) => type.type_id === input.channel?.settings.params.type));
 }
 
 function DroppedPictures({ scope }: { scope: VideoInput }) {

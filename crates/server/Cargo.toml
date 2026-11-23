@@ -104,6 +104,7 @@ libc.workspace = true
 
 [dev-dependencies]
 ctor.workspace = true
+sdrmm-wire = { workspace = true, features = ["pin", "testing"] }
 tower = { workspace = true, features = ["util"] }
 http-body-util = "0.1"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "test-util"] }

@@ -2543,8 +2543,8 @@ export interface components {
             low_hz?: number;
         };
         /**
-         * @description Where audio comes from: a channel the engine runs, or a voice the server carries straight
-         *     to a transmitter (a microphone, a voice chat), which no channel audio input can tap.
+         * @description Where audio comes from: a channel the engine runs, or a voice the server carries into the
+         *     patch (a microphone, a voice chat). Every audio input takes both.
          * @enum {string}
          */
         AudioOrigin: "channel" | "voice";
@@ -2736,6 +2736,12 @@ export interface components {
             /** @enum {string} */
             kind: "manual";
         };
+        /**
+         * @description Where baseband comes from: a channel the engine runs, or an encoder, which runs only inside
+         *     the transmitter it feeds.
+         * @enum {string}
+         */
+        BasebandOrigin: "channel" | "encoder";
         BasebandRecorderNode: {
             /** @default false */
             recording: boolean;
@@ -5530,6 +5536,7 @@ export interface components {
             /** @enum {string} */
             type: "iq";
         } | {
+            origins: components["schemas"]["BasebandOrigin"][];
             /** @enum {string} */
             type: "baseband";
         } | {
@@ -7502,6 +7509,10 @@ export interface components {
             id: number;
             name: string;
         };
+        /**
+         * @description The stream a wire carries, as the resolver found it. Only the resolver makes one: every
+         *     variant is `non_exhaustive`, so no crate beside this one can name a stream no wire carries.
+         */
         Tap: {
             /** Format: int32 */
             device_set: number;
@@ -7520,6 +7531,10 @@ export interface components {
             channels: components["schemas"]["ChannelAddr"][];
             /** @enum {string} */
             tap: "channels";
+        } | {
+            node: string;
+            /** @enum {string} */
+            tap: "node";
         };
         TemplateInfo: {
             /** Format: double */

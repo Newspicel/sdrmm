@@ -254,10 +254,7 @@ fn a_sweep_carries_the_lane_the_scanner_watches() {
         for node in &mut patch.nodes {
             for port in &mut node.ports {
                 for feed in &mut port.feeds {
-                    feed.tap = Some(Tap::Lane {
-                        device_set: 1,
-                        stream,
-                    });
+                    feed.tap = Some(Tap::test_lane(1, stream));
                 }
             }
         }
@@ -295,10 +292,7 @@ fn unwiring_a_scanner_stops_the_scan_it_started() {
     for node in &mut patch.nodes {
         for port in &mut node.ports {
             for feed in &mut port.feeds {
-                feed.tap = Some(Tap::Lane {
-                    device_set: 1,
-                    stream: 2,
-                });
+                feed.tap = Some(Tap::test_lane(1, 2));
             }
         }
     }
@@ -338,10 +332,7 @@ fn removing_a_scanned_channel_still_stops_its_scan() {
         .flat_map(|node| &mut node.ports)
         .flat_map(|port| &mut port.feeds)
     {
-        feed.tap = Some(Tap::Lane {
-            device_set: 1,
-            stream: 2,
-        });
+        feed.tap = Some(Tap::test_lane(1, 2));
     }
     let bus = ControlBus::default();
     let rig = FakeRig::default();
@@ -375,10 +366,7 @@ fn a_satellite_steering_leaves_a_running_scan_alone() {
     for node in &mut patch.nodes {
         for port in &mut node.ports {
             for feed in &mut port.feeds {
-                feed.tap = Some(Tap::Lane {
-                    device_set: 1,
-                    stream: 3,
-                });
+                feed.tap = Some(Tap::test_lane(1, 3));
             }
         }
     }

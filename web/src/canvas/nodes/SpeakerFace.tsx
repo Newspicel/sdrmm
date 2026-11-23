@@ -151,7 +151,8 @@ function AudioInput({
   const peakDb = useAudioPeakDb(source, audio.playing);
   const name =
     workspace.graph.nodes.find((n) => n.id === input.node)?.label ??
-    input.channel.settings.params.type.toUpperCase();
+    input.channel?.settings.params.type.toUpperCase() ??
+    input.node;
   return (
     <div className="flex flex-col gap-1 border-b border-line p-2 last:border-b-0">
       <MeterRow

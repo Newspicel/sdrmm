@@ -17,6 +17,8 @@ export function payloadOf(portType: PortType): Payload {
       return { type: "iq", origins: ["radio"] };
     case "audio":
       return { type: "audio", origins: ["channel"] };
+    case "baseband":
+      return { type: "baseband", origins: ["channel"] };
     case "events":
       return { type: "events", kinds: [] };
     case "control":

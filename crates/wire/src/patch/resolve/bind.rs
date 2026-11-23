@@ -341,10 +341,15 @@ fn tap_channels(node: &mut ResolvedNode, runs: &[(String, Runs)]) {
         .filter(|port| port.spec.port_type != PortType::Iq)
     {
         for feed in &mut port.feeds {
-            feed.tap = runs
-                .iter()
-                .find(|(id, _)| *id == feed.source)
-                .and_then(|(_, runs)| channel_tap(runs));
+            feed.tap = if feed.payload.self_made() {
+                Some(Tap::Node {
+                    node: feed.source.clone(),
+                })
+            } else {
+                runs.iter()
+                    .find(|(id, _)| *id == feed.source)
+                    .and_then(|(_, runs)| channel_tap(runs))
+            };
         }
     }
 }

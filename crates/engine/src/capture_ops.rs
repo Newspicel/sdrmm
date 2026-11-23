@@ -181,12 +181,17 @@ impl Engine {
         if !route.fx.is_empty() {
             route.validate().map_err(EngineError::Recording)?;
         }
+        let Some((device_set, channel)) = route.channel_addr() else {
+            return Err(EngineError::Recording(
+                "a voice records on the server, not in a radio".to_owned(),
+            ));
+        };
         let take = AudioTake {
             node: node.to_owned(),
-            channel: route.channel,
+            channel,
         };
         loop {
-            let source = self.audio_source(&take, route)?;
+            let source = self.audio_source(&take, (device_set, channel))?;
             let Some(dir) = self.audio_recordings_dir() else {
                 return Err(EngineError::Recording(
                     "no recordings directory configured".to_string(),
@@ -238,7 +243,7 @@ impl Engine {
             match self.commit_audio(take.clone(), recording) {
                 Ok(status) => {
                     self.emit(ServerEvent::StateChanged {
-                        scope: StateScope::DeviceSet(route.device_set),
+                        scope: StateScope::DeviceSet(device_set),
                     });
                     return Ok(status);
                 }
@@ -253,9 +258,8 @@ impl Engine {
     fn audio_source(
         &self,
         take: &AudioTake,
-        route: &AudioRoute,
+        (ds, ch): (u32, u32),
     ) -> Result<AudioSource, EngineError> {
-        let (ds, ch) = (route.device_set, route.channel);
         let inner = self.lock();
         let state = inner
             .device_sets
@@ -296,7 +300,9 @@ impl Engine {
         take: AudioTake,
         recording: ChannelAudioRecording,
     ) -> Result<AudioRecordingStatus, Box<ChannelAudioRecording>> {
-        let ds = recording.route.device_set;
+        let Some((ds, _)) = recording.route.channel_addr() else {
+            return Err(Box::new(recording));
+        };
         let mut inner = self.lock();
         let Some(state) = inner.device_sets.get_mut(&ds) else {
             return Err(Box::new(recording));

@@ -4,7 +4,7 @@ use std::{
 };
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{AudioRoute, ChannelAddr, NodeBody, PatchGraph};
+use sdrmm_wire::{AudioRoute, ChannelAddr, NodeBody, PatchGraph, PortType, ResolvedPatch, Tap};
 
 use crate::{
     AppState,
@@ -23,11 +23,28 @@ pub(crate) fn follow(state: &AppState) {
     resolved::follow(state, "audio FX and recorders", move |state| {
         let current = state.resolved.current();
         apply(&state.engine, &current.graph);
+        state.engine.retain_voices(&voices(&current.patch));
         recorders
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .reconcile(&state.engine, &current, &hooks);
     });
+}
+
+/// The nodes whose voice some wire listens to.
+fn voices(patch: &ResolvedPatch) -> HashSet<String> {
+    patch
+        .nodes
+        .iter()
+        .flat_map(|node| &node.ports)
+        .flat_map(|port| &port.feeds)
+        .filter_map(|feed| match &feed.tap {
+            Some(Tap::Node { node, .. }) if feed.payload.port_type() == PortType::Audio => {
+                Some(node.clone())
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 pub(crate) fn sync(engine: &Engine, resolved: &ResolvedHub) {
@@ -61,11 +78,7 @@ pub(crate) fn video_sound(graph: &PatchGraph, source: &str, at: ChannelAddr) -> 
     };
     sdrmm_decoder::registry::descriptor(&channel.channel_type)
         .is_some_and(|descriptor| descriptor.has_audio && descriptor.has_video)
-        .then(|| AudioRoute {
-            device_set: at.device_set,
-            channel: at.channel,
-            fx: graph.audio_fx(source),
-        })
+        .then(|| AudioRoute::channel(at.device_set, at.channel).through(graph.audio_fx(source)))
 }
 
 #[cfg(test)]

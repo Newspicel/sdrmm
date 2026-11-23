@@ -3,11 +3,11 @@ use utoipa::ToSchema;
 
 use super::{
     ARRAY_LANE_PORT, ARRAY_PORT, AUDIO_PORT, Accept, AudioOrigin, AudioRecorderNode, BASEBAND_PORT,
-    BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode, EVENTS_PORT,
-    EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory, POSITION_PORT,
-    Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RecorderNode, ScannerNode,
-    SignalMapNode, SpeakerNode, TRANSMIT_PORT, TriangulationNode, TrunkNode, VIDEO_PORT, input,
-    output,
+    BasebandOrigin, BasebandRecorderNode, CONTROL_PORT, ChannelNode, DecoderLogNode, DeviceNode,
+    EVENTS_PORT, EventOutputNode, GpsNode, HuntNode, IQ_PORT, IqOrigin, Keeps, NodeCategory,
+    POSITION_PORT, Payload, PortRepeat, PortSpec, PortType as P, PortTypeInfo, RecorderNode,
+    ScannerNode, SignalMapNode, SpeakerNode, TRANSMIT_PORT, TriangulationNode, TrunkNode,
+    VIDEO_PORT, input, output,
 };
 use crate::{
     aim::AimNode,
@@ -226,6 +226,9 @@ impl std::fmt::Display for NodeKind {
 
 const ANY_IQ: &[IqOrigin] = IqOrigin::ALL;
 const ANY_AUDIO: &[AudioOrigin] = AudioOrigin::ALL;
+const ANY_BASEBAND: &[BasebandOrigin] = BasebandOrigin::ALL;
+const CHANNEL_BASEBAND: &[BasebandOrigin] = &[BasebandOrigin::Channel];
+const ENCODED: &[BasebandOrigin] = &[BasebandOrigin::Encoder];
 const CHANNEL_AUDIO: &[AudioOrigin] = &[AudioOrigin::Channel];
 const VOICE: &[AudioOrigin] = &[AudioOrigin::Voice];
 const RADIO_IQ: &[IqOrigin] = &[IqOrigin::Radio];
@@ -425,7 +428,7 @@ nodes! {
                     "a scanner, signal hunt or satellite drives this decoder; its radio follows",
                 ),
                 position_in(),
-                output(BASEBAND_PORT, Payload::Baseband),
+                output(BASEBAND_PORT, Payload::baseband(CHANNEL_BASEBAND)),
                 audio_out(CHANNEL_AUDIO),
                 events_out(Accept::Any).noted("Decoded messages and calls. Analog calls need squelch"),
                 output(VIDEO_PORT, Payload::Video),
@@ -434,7 +437,7 @@ nodes! {
                 Face::sized(520, 360).min(320, 200), [
                 iq_in(),
             ]),
-            (Speaker(SpeakerNode), "speaker", Output, "Speaker", "Plays channel audio", Role::Plain,
+            (Speaker(SpeakerNode), "speaker", Output, "Speaker", "Plays audio", Role::Plain,
                 Face::fit(320), [
                 audio_in(ANY_AUDIO),
             ]),
@@ -501,24 +504,24 @@ nodes! {
             ]),
             (AudioRecorder(AudioRecorderNode), "audio_recorder", Output, "Audio recorder",
                 "Records channel audio to WAV", Role::Plain, Face::fit(340), [
-                audio_in(ANY_AUDIO),
+                audio_in(CHANNEL_AUDIO),
                 run_in(RUN_TAKE),
             ]),
             (BasebandRecorder(BasebandRecorderNode), "baseband_recorder", Output,
                 "Baseband recorder",
                 "Records one channel's IQ", Role::Plain, Face::fit(340), [
-                input(BASEBAND_PORT, Payload::Baseband).many(),
+                input(BASEBAND_PORT, Payload::baseband(CHANNEL_BASEBAND)).many(),
                 run_in(RUN_TAKE),
             ]),
             (NetworkExport(NetworkExportNode), "network_export", Output, "Network IQ",
                 "Streams IQ to other programs", Role::Plain, Face::fit(380), [
                 iq_in().group(NETWORK_SOURCE),
-                input(BASEBAND_PORT, Payload::Baseband).group(NETWORK_SOURCE),
+                input(BASEBAND_PORT, Payload::baseband(CHANNEL_BASEBAND)).group(NETWORK_SOURCE),
             ]),
             (StreamOut(StreamOutNode), "stream_out", Output, "Stream out",
                 "Video for VLC, OBS and other players", Role::Plain, Face::fit(340), [
                 input(VIDEO_PORT, Payload::Video),
-                input(AUDIO_PORT, Payload::audio(CHANNEL_AUDIO)),
+                input(AUDIO_PORT, Payload::audio(ANY_AUDIO)),
             ]),
             (Export, "export", Output, "Export", "Saves logged rows as CSV or JSON", Role::Plain,
                 Face::fit(320), [
@@ -591,19 +594,19 @@ nodes! {
             (Encoder(EncoderNode), "encoder", Encoder, "Encoder",
                 "Turns audio or a message into a signal", Role::Plain, Face::fit(320).dial(), [
                 audio_in(ANY_AUDIO).noted("Voice for an analog mode"),
-                output(BASEBAND_PORT, Payload::Baseband).one(),
+                output(BASEBAND_PORT, Payload::baseband(ENCODED)).one(),
             ]),
             (Transmit(TransmitNode), "transmit", Output, "Transmitter",
                 "Puts an encoder or a lane on the air", Role::Plain, Face::fit(320).dial(), [
                 iq_in().group(TRANSMIT_SOURCE).noted("A lane to send as it is"),
-                input(BASEBAND_PORT, Payload::Baseband).group(TRANSMIT_SOURCE),
+                input(BASEBAND_PORT, Payload::baseband(ANY_BASEBAND)).group(TRANSMIT_SOURCE),
                 output(TRANSMIT_PORT, Payload::Transmit).one(),
             ]),
             (Note(NoteNode), "note", Tool, "Note", "Markdown you leave on the canvas",
                 Role::Plain, Face::sized(320, 200).min(200, 120), []),
             (VoiceChat(VoiceChatNode), "voice_chat", Output, "Voice chat",
                 "Discord or TeamSpeak, both ways", Role::Plain, Face::fit(340), [
-                audio_in(CHANNEL_AUDIO),
+                audio_in(ANY_AUDIO),
                 audio_out(VOICE),
             ]),
 }

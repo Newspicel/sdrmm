@@ -636,6 +636,10 @@
               "multi": "one",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel",
+                  "encoder"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -838,6 +842,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -982,6 +989,9 @@
               "multi": "one",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "encoder"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband",
@@ -1023,16 +1033,27 @@
               "feeds": [
                 {
                   "payload": {
+                    "origins": [
+                      "encoder"
+                    ],
                     "type": "baseband"
                   },
                   "port": "baseband",
-                  "source": "mod"
+                  "source": "mod",
+                  "tap": {
+                    "node": "mod",
+                    "tap": "node"
+                  }
                 }
               ],
               "group": "source",
               "multi": "one",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel",
+                  "encoder"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -1968,6 +1989,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -2236,6 +2260,9 @@
               "multi": "one",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "encoder"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband",
@@ -2277,16 +2304,27 @@
               "feeds": [
                 {
                   "payload": {
+                    "origins": [
+                      "encoder"
+                    ],
                     "type": "baseband"
                   },
                   "port": "baseband",
-                  "source": "mod"
+                  "source": "mod",
+                  "tap": {
+                    "node": "mod",
+                    "tap": "node"
+                  }
                 }
               ],
               "group": "source",
               "multi": "one",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel",
+                  "encoder"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -4474,6 +4512,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -8147,6 +8188,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -8426,6 +8470,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -10173,6 +10220,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"
@@ -11459,6 +11509,9 @@
               "multi": "many",
               "name": "baseband",
               "payload": {
+                "origins": [
+                  "channel"
+                ],
                 "type": "baseband"
               },
               "port_type": "baseband"

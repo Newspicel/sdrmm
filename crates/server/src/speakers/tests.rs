@@ -1,6 +1,6 @@
 use sdrmm_wire::{
-    ChannelNode, DeviceBackend, DeviceNode, DeviceRef, PatchEdge, PatchNode, PortRef, Position,
-    SpeakerNode, SpeakerOutput,
+    AudioFrom, ChannelNode, DeviceBackend, DeviceNode, DeviceRef, PatchEdge, PatchNode, PortRef,
+    Position, SpeakerNode, SpeakerOutput,
 };
 
 use super::*;
@@ -170,4 +170,45 @@ async fn a_card_that_is_not_there_shows_on_its_speaker() {
     assert_eq!(problems[0].source, ProblemSource::Speaker);
     assert!(speakers.playing.is_empty());
     engine.remove_device_set(ds).expect("close");
+}
+
+fn voices(want: &Wanted) -> Vec<(&str, &AudioRoute)> {
+    let mut voices: Vec<(&str, &AudioRoute)> = want
+        .routes
+        .keys()
+        .filter_map(|route| match &route.from {
+            AudioFrom::Voice { node, .. } => Some((node.as_str(), route)),
+            AudioFrom::Channel { .. } => None,
+        })
+        .collect();
+    voices.sort_unstable_by_key(|(node, _)| *node);
+    voices
+}
+
+#[test]
+fn a_microphone_and_a_voice_chat_play_like_a_channel() {
+    let engine = Engine::new(None);
+    let graph = PatchGraph {
+        nodes: vec![
+            node("mic", NodeBody::Microphone(Default::default())),
+            node("chat", NodeBody::VoiceChat(Default::default())),
+            node("spk", on_server(None)),
+        ],
+        edges: vec![
+            wire(("mic", "audio"), ("spk", "audio")),
+            wire(("chat", "audio"), ("spk", "audio")),
+        ],
+    };
+    let current = resolved(graph, &engine);
+    let wanted = wanted(&current.graph, &current.patch);
+    let voices = voices(&wanted["spk"]);
+    assert_eq!(
+        voices.iter().map(|(node, _)| *node).collect::<Vec<_>>(),
+        ["chat", "mic"]
+    );
+    let mut heard = engine
+        .subscribe_route_pcm(voices[1].1)
+        .expect("a wired voice is always there");
+    engine.speak_voice("mic", &[0.5; 960]);
+    assert_eq!(heard.try_recv().expect("the frame").channels, 1);
 }

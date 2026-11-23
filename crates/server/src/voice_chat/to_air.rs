@@ -27,6 +27,9 @@ const QUIET_TICKS: u32 = 2;
 /// Delivers a frame to the transmitters the node keys; answers how many took it.
 pub(super) type Air = Arc<dyn Fn(&[f32]) -> usize + Send + Sync>;
 
+/// Delivers everything the chat says to the wires on the node's audio out.
+pub(super) type Said = Arc<dyn Fn(&[f32]) + Send + Sync>;
+
 struct Seen {
     name: String,
     verified: bool,
@@ -39,6 +42,9 @@ pub(super) struct ToAir {
     talkers_changed: bool,
     bus: MixBus,
     held: Vec<f32>,
+    /// Every talker, gated by nothing: what a wire from the audio out hears.
+    heard: MixBus,
+    heard_held: Vec<f32>,
     gate: VoiceGate,
     quiet: u32,
 }
@@ -56,6 +62,8 @@ impl ToAir {
             talkers_changed: false,
             bus: MixBus::new(MIX_LAG),
             held: Vec::with_capacity(2 * FRAME),
+            heard: MixBus::new(MIX_LAG),
+            heard_held: Vec::with_capacity(2 * FRAME),
             gate: gate(settings),
             quiet: 0,
         }
@@ -72,6 +80,8 @@ impl ToAir {
         let Heard { talker, pcm } = heard;
         let may_key = allowed(&tuning.node, &talker.id, talker.verified);
         self.note(&talker, now);
+        self.heard.push(lane_of(&talker.id), &pcm);
+        self.heard.drain(&mut self.heard_held);
         if !tuning.keying || !may_key {
             return;
         }
@@ -85,6 +95,9 @@ impl ToAir {
     /// the mix and then silence through the gate, so its hang and Continuous keep the key.
     pub(super) fn tick(&mut self, tuning: &Tuning, now: Instant, air: &Air, meters: &Meters) {
         self.forget_quiet_talkers(now);
+        if self.talkers.is_empty() {
+            self.heard.flush(&mut self.heard_held);
+        }
         if !tuning.keying {
             self.bus.flush(&mut self.held);
             self.held.clear();
@@ -149,16 +162,25 @@ impl ToAir {
     }
 
     fn forget_quiet_talkers(&mut self, now: Instant) {
-        let bus = &mut self.bus;
+        let (bus, heard) = (&mut self.bus, &mut self.heard);
         let before = self.talkers.len();
         self.talkers.retain(|id, seen| {
             let talking = now.duration_since(seen.last) < TALKING;
             if !talking {
                 bus.forget(lane_of(id));
+                heard.forget(lane_of(id));
             }
             talking
         });
         self.talkers_changed |= self.talkers.len() != before;
+    }
+
+    /// Hands what the chat said since the last call to `said`.
+    pub(super) fn pass_on(&mut self, said: &Said) {
+        if !self.heard_held.is_empty() {
+            said(&self.heard_held);
+            self.heard_held.clear();
+        }
     }
 
     fn release(&mut self, settings: &VoiceGateSettings, air: &Air, meters: &Meters) {
@@ -180,7 +202,7 @@ pub(super) async fn run(
     mut heard: mpsc::Receiver<Heard>,
     mut tuning: watch::Receiver<Tuning>,
     meters: Arc<Meters>,
-    air: Air,
+    (air, said): (Air, Said),
 ) {
     let mut tuned = tuning.borrow_and_update().clone();
     let mut to_air = ToAir::new(&tuned.node.to_air);
@@ -194,6 +216,7 @@ pub(super) async fn run(
             }
             now = tick.tick() => to_air.tick(&tuned, now, &air, &meters),
         }
+        to_air.pass_on(&said);
         let retuned = tuning.has_changed().unwrap_or(false);
         if retuned {
             tuned = tuning.borrow_and_update().clone();

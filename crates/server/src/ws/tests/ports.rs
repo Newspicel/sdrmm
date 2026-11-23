@@ -52,18 +52,8 @@ fn a_decoder_with_audio_on_routes_its_listeners_through_its_chain() {
         vec![voice, of("spk", NodeKind::Speaker)],
         vec![wire(("voice", "audio"), ("spk", "audio"))],
     );
-    tap_all(
-        &mut patch,
-        &Tap::Channel {
-            device_set: 1,
-            channel: 4,
-        },
-    );
-    let route = AudioRoute {
-        device_set: 1,
-        channel: 4,
-        fx: vec!["voice".to_owned()],
-    };
+    tap_all(&mut patch, &Tap::test_channel(1, 4));
+    let route = AudioRoute::channel(1, 4).through(vec!["voice".to_owned()]);
     let from = Upstream {
         source: "voice".to_owned(),
         via: Vec::new(),
@@ -90,12 +80,7 @@ fn a_trunk_feed_gives_one_stream_per_follower() {
         vec![of("trunk", NodeKind::Trunk), of("spk", NodeKind::Speaker)],
         vec![wire(("trunk", "audio"), ("spk", "audio"))],
     );
-    tap_all(
-        &mut patch,
-        &Tap::Channels {
-            channels: vec![addr(2), addr(3)],
-        },
-    );
+    tap_all(&mut patch, &Tap::test_channels(vec![addr(2), addr(3)]));
     let streams = wanted(&patch, &graph, "spk", "audio").expect("streams");
     let sources: Vec<(&str, u32)> = streams
         .iter()

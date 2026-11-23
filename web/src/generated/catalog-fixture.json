@@ -225,7 +225,10 @@
           "port_type": "baseband",
           "direction": "out",
           "payload": {
-            "type": "baseband"
+            "type": "baseband",
+            "origins": [
+              "channel"
+            ]
           },
           "multi": "many"
         },
@@ -396,7 +399,7 @@
       "kind": "speaker",
       "name": "Speaker",
       "category": "output",
-      "summary": "Plays channel audio",
+      "summary": "Plays audio",
       "role": {
         "role": "plain"
       },
@@ -1495,11 +1498,11 @@
           "payload": {
             "type": "audio",
             "origins": [
-              "channel",
-              "voice"
+              "channel"
             ]
           },
-          "multi": "many"
+          "multi": "many",
+          "takes": "channel audio"
         },
         {
           "name": "control",
@@ -1542,9 +1545,13 @@
           "port_type": "baseband",
           "direction": "in",
           "payload": {
-            "type": "baseband"
+            "type": "baseband",
+            "origins": [
+              "channel"
+            ]
           },
-          "multi": "many"
+          "multi": "many",
+          "takes": "channel baseband"
         },
         {
           "name": "control",
@@ -1601,10 +1608,14 @@
           "port_type": "baseband",
           "direction": "in",
           "payload": {
-            "type": "baseband"
+            "type": "baseband",
+            "origins": [
+              "channel"
+            ]
           },
           "multi": "one",
-          "group": "source"
+          "group": "source",
+          "takes": "channel baseband"
         }
       ],
       "default_body": {
@@ -1645,11 +1656,11 @@
           "payload": {
             "type": "audio",
             "origins": [
-              "channel"
+              "channel",
+              "voice"
             ]
           },
-          "multi": "one",
-          "takes": "channel audio"
+          "multi": "one"
         }
       ],
       "default_body": {
@@ -2755,7 +2766,10 @@
           "port_type": "baseband",
           "direction": "out",
           "payload": {
-            "type": "baseband"
+            "type": "baseband",
+            "origins": [
+              "encoder"
+            ]
           },
           "multi": "one"
         }
@@ -2802,7 +2816,11 @@
           "port_type": "baseband",
           "direction": "in",
           "payload": {
-            "type": "baseband"
+            "type": "baseband",
+            "origins": [
+              "channel",
+              "encoder"
+            ]
           },
           "multi": "one",
           "group": "source"
@@ -2870,11 +2888,11 @@
           "payload": {
             "type": "audio",
             "origins": [
-              "channel"
+              "channel",
+              "voice"
             ]
           },
-          "multi": "many",
-          "takes": "channel audio"
+          "multi": "many"
         },
         {
           "name": "audio",

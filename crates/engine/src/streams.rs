@@ -6,9 +6,9 @@ use std::{
 use sdrmm_decoder::ChannelError;
 use sdrmm_device::DeviceError;
 use sdrmm_wire::{
-    AudioProcessing, AudioRoute, ChannelDescriptor, ChannelInfo, ChannelLevel, DeviceSetStatus,
-    HuntSettings, HuntStatus, LaneLevel, PlaybackRequest, PlaybackStatus, ScanSettings,
-    ScannerStatus, ServerEvent, SpectrumOverlap, StateScope,
+    AudioFrom, AudioProcessing, AudioRoute, ChannelDescriptor, ChannelInfo, ChannelLevel,
+    DeviceSetStatus, HuntSettings, HuntStatus, LaneLevel, PlaybackRequest, PlaybackStatus,
+    ScanSettings, ScannerStatus, ServerEvent, SpectrumOverlap, StateScope,
 };
 use tokio::sync::broadcast;
 
@@ -104,23 +104,57 @@ impl Engine {
         &self,
         route: &AudioRoute,
     ) -> Result<broadcast::Receiver<AudioPacket>, EngineError> {
-        if route.fx.is_empty() {
-            return self.subscribe_audio(route.device_set, route.channel);
+        match (&route.from, route.fx.is_empty()) {
+            (AudioFrom::Voice { node, .. }, true) => self.voices().subscribe_audio(node),
+            (
+                AudioFrom::Channel {
+                    device_set,
+                    channel,
+                },
+                true,
+            ) => self.subscribe_audio(*device_set, *channel),
+            (_, false) => {
+                check_route(route)?;
+                self.fx_hub()
+                    .subscribe_audio(route, || self.fx_source(route))
+            }
         }
-        check_route(route)?;
-        self.fx_hub()
-            .subscribe_audio(route, || self.fx_source(route))
     }
 
     pub fn subscribe_route_pcm(
         &self,
         route: &AudioRoute,
     ) -> Result<broadcast::Receiver<PcmBlock>, EngineError> {
-        if route.fx.is_empty() {
-            return self.subscribe_pcm(route.device_set, route.channel);
+        match (&route.from, route.fx.is_empty()) {
+            (AudioFrom::Voice { node, .. }, true) => self.voices().subscribe_pcm(node),
+            (
+                AudioFrom::Channel {
+                    device_set,
+                    channel,
+                },
+                true,
+            ) => self.subscribe_pcm(*device_set, *channel),
+            (_, false) => {
+                check_route(route)?;
+                self.fx_hub().subscribe_pcm(route, || self.fx_source(route))
+            }
         }
-        check_route(route)?;
-        self.fx_hub().subscribe_pcm(route, || self.fx_source(route))
+    }
+
+    /// Carries one mono 48 kHz frame of the voice `node` speaks to every wire that listens.
+    pub fn speak_voice(&self, node: &str, pcm: &[f32]) {
+        self.voices().speak(node, pcm);
+    }
+
+    /// Closes every voice but those of `nodes`.
+    pub fn retain_voices(&self, nodes: &HashSet<String>) {
+        self.voices().retain(nodes);
+    }
+
+    fn voices(&self) -> std::sync::MutexGuard<'_, crate::voices::VoiceHub> {
+        self.voices
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub(crate) fn fx_hub(&self) -> std::sync::MutexGuard<'_, AudioFxHub> {
@@ -130,8 +164,12 @@ impl Engine {
     }
 
     pub(crate) fn fx_source(&self, route: &AudioRoute) -> Result<FxSource, EngineError> {
+        let Some((ds, ch)) = route.channel_addr() else {
+            return Err(EngineError::Audio(
+                "a voice runs through no audio FX".to_owned(),
+            ));
+        };
         let inner = self.lock();
-        let (ds, ch) = (route.device_set, route.channel);
         let state = inner
             .device_sets
             .get(&ds)

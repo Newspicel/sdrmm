@@ -32,7 +32,7 @@ mod to_chat;
 
 use hub::{Links, Sessions};
 use status::Meters;
-use to_air::Air;
+use to_air::{Air, Said};
 use to_chat::Feed;
 
 const _: () = assert!(
@@ -375,9 +375,12 @@ impl Joined {
             drops,
             hold,
         } = link;
-        let to_air = ctx
-            .runtime
-            .spawn(to_air::run(heard, tuned, meters.clone(), (ctx.air)(node)));
+        let to_air = ctx.runtime.spawn(to_air::run(
+            heard,
+            tuned,
+            meters.clone(),
+            ((ctx.air)(node), said(ctx.engine, node)),
+        ));
         let watcher = ctx.runtime.spawn(status::watch(
             node.to_owned(),
             ctx.engine.clone(),
@@ -499,7 +502,13 @@ impl Joined {
     }
 }
 
-/// The channel's audio, or None while the channel is not running yet.
+/// Speaks what the chat says as the node's voice, for the wires on its audio out.
+fn said(engine: &Arc<Engine>, node: &str) -> Said {
+    let (engine, node) = (engine.clone(), node.to_owned());
+    Arc::new(move |pcm: &[f32]| engine.speak_voice(&node, pcm))
+}
+
+/// The wired audio, or None while its channel is not running yet.
 fn subscribe(
     ctx: &Ctx<'_>,
     route: &AudioRoute,
@@ -524,17 +533,7 @@ fn routes(graph: &PatchGraph, patch: &ResolvedPatch, node: &str) -> HashSet<Audi
     patch
         .feeds(node, AUDIO_PORT)
         .iter()
-        .flat_map(|feed| {
-            let fx = graph.audio_fx(&feed.source);
-            feed.tap
-                .iter()
-                .flat_map(sdrmm_wire::Tap::channels)
-                .map(move |addr| AudioRoute {
-                    device_set: addr.device_set,
-                    channel: addr.channel,
-                    fx: fx.clone(),
-                })
-        })
+        .flat_map(|feed| feed.audio_routes(graph))
         .collect()
 }
 

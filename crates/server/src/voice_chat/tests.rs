@@ -552,3 +552,26 @@ fn an_edited_account_reopens_its_session() {
     sessions.join(&moved, CHANNEL).expect("join again");
     assert_eq!(sessions.settle(&[]), [club.id]);
 }
+
+#[test]
+fn the_audio_out_hears_every_talker_without_a_transmitter() {
+    let mut to_air = to_air::ToAir::new(&VoiceGateSettings::default());
+    let tuning = Tuning {
+        node: VoiceChatNode::default(),
+        keying: false,
+    };
+    let (air, mut aired) = on_air();
+    let meters = Meters::default();
+    let now = tokio::time::Instant::now();
+    to_air.hear(said("bob", 0.25), &tuning, now, &air, &meters);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let out: to_air::Said = Arc::new(move |pcm: &[f32]| {
+        tx.send(pcm.to_vec()).expect("listening");
+    });
+    to_air.pass_on(&out);
+    assert_eq!(rx.try_recv().expect("heard"), vec![0.25; FRAME]);
+    assert!(
+        aired.try_recv().is_err(),
+        "nothing keys without a transmitter"
+    );
+}

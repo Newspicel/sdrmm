@@ -133,10 +133,10 @@ fn carries(port: &PortSpec) -> String {
     match &port.payload {
         Payload::Iq { origins } => listed(origins.iter().map(snake)),
         Payload::Audio { origins } => listed(origins.iter().map(snake)),
+        Payload::Baseband { origins } => listed(origins.iter().map(snake)),
         Payload::Events { kinds } => kinds_of(kinds),
         Payload::Control { verbs } => listed(verbs.iter().map(snake)),
-        Payload::Baseband
-        | Payload::Video
+        Payload::Video
         | Payload::Position
         | Payload::Array
         | Payload::Bearing

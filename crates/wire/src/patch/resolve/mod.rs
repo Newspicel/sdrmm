@@ -6,6 +6,7 @@ use super::{
     PortRef, PortSpec, Role,
 };
 use crate::{
+    audio::AudioRoute,
     channel::ChannelDescriptor,
     control::ControlVerb,
     decode::{EventKind, KindSet},
@@ -104,18 +105,71 @@ pub struct Feed {
     pub drives: Option<ControlVerb>,
 }
 
+impl Feed {
+    /// The audio this feed carries: each channel it taps through the source's audio chain, or
+    /// the voice the source speaks. The one place a wire's audio is found.
+    #[must_use]
+    pub fn audio_routes(&self, graph: &PatchGraph) -> Vec<AudioRoute> {
+        if self.payload.port_type() != super::PortType::Audio {
+            return Vec::new();
+        }
+        match &self.tap {
+            Some(Tap::Node { node }) => vec![AudioRoute::voice(node)],
+            Some(tap) => tap
+                .channels()
+                .into_iter()
+                .map(|addr| {
+                    AudioRoute::channel(addr.device_set, addr.channel)
+                        .through(graph.audio_fx(&self.source))
+                })
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct ChannelAddr {
     pub device_set: u32,
     pub channel: u32,
 }
 
+/// The stream a wire carries, as the resolver found it. Only the resolver makes one: every
+/// variant is `non_exhaustive`, so no crate beside this one can name a stream no wire carries.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "tap", rename_all = "snake_case")]
 pub enum Tap {
+    #[non_exhaustive]
     Lane { device_set: u32, stream: u32 },
+    #[non_exhaustive]
     Channel { device_set: u32, channel: u32 },
+    #[non_exhaustive]
     Channels { channels: Vec<ChannelAddr> },
+    /// A stream the source node makes itself, carried under its id: a voice, an encoder's
+    /// baseband.
+    #[non_exhaustive]
+    Node { node: String },
+}
+
+#[cfg(any(test, feature = "testing"))]
+impl Tap {
+    #[must_use]
+    pub const fn test_lane(device_set: u32, stream: u32) -> Self {
+        Self::Lane { device_set, stream }
+    }
+
+    #[must_use]
+    pub const fn test_channel(device_set: u32, channel: u32) -> Self {
+        Self::Channel {
+            device_set,
+            channel,
+        }
+    }
+
+    #[must_use]
+    pub const fn test_channels(channels: Vec<ChannelAddr>) -> Self {
+        Self::Channels { channels }
+    }
 }
 
 impl Tap {
@@ -123,14 +177,14 @@ impl Tap {
     pub fn lane(&self) -> Option<(u32, u32)> {
         match self {
             Self::Lane { device_set, stream } => Some((*device_set, *stream)),
-            Self::Channel { .. } | Self::Channels { .. } => None,
+            Self::Channel { .. } | Self::Channels { .. } | Self::Node { .. } => None,
         }
     }
 
     #[must_use]
     pub fn channels(&self) -> Vec<ChannelAddr> {
         match self {
-            Self::Lane { .. } => Vec::new(),
+            Self::Lane { .. } | Self::Node { .. } => Vec::new(),
             Self::Channel {
                 device_set,
                 channel,

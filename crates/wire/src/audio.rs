@@ -413,10 +413,25 @@ impl AudioProcessing {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+/// Where a route's audio starts: a channel the engine runs, or a voice the server carries into
+/// the patch (a microphone, a voice chat), named by its node.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "from", rename_all = "snake_case")]
+pub enum AudioFrom {
+    Channel {
+        device_set: u32,
+        channel: u32,
+    },
+    /// Only a wire makes one, through `Feed::audio_routes`.
+    #[non_exhaustive]
+    Voice {
+        node: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct AudioRoute {
-    pub device_set: u32,
-    pub channel: u32,
+    pub from: AudioFrom,
     #[serde(default)]
     pub fx: Vec<String>,
 }
@@ -425,9 +440,38 @@ impl AudioRoute {
     #[must_use]
     pub const fn channel(device_set: u32, channel: u32) -> Self {
         Self {
-            device_set,
-            channel,
+            from: AudioFrom::Channel {
+                device_set,
+                channel,
+            },
             fx: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn voice(node: &str) -> Self {
+        Self {
+            from: AudioFrom::Voice {
+                node: node.to_owned(),
+            },
+            fx: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn through(self, fx: Vec<String>) -> Self {
+        Self { fx, ..self }
+    }
+
+    /// The channel this route taps, or None for a voice.
+    #[must_use]
+    pub const fn channel_addr(&self) -> Option<(u32, u32)> {
+        match &self.from {
+            AudioFrom::Channel {
+                device_set,
+                channel,
+            } => Some((*device_set, *channel)),
+            AudioFrom::Voice { .. } => None,
         }
     }
 
@@ -444,6 +488,11 @@ impl AudioRoute {
             .any(|node| node.is_empty() || node.len() > crate::patch::MAX_NODE_ID_LEN)
         {
             return Err("an audio FX node id is empty or too long".to_owned());
+        }
+        if let AudioFrom::Voice { node } = &self.from
+            && (node.is_empty() || node.len() > crate::patch::MAX_NODE_ID_LEN)
+        {
+            return Err("a voice node id is empty or too long".to_owned());
         }
         Ok(())
     }
@@ -490,7 +539,8 @@ mod tests {
     #[test]
     fn a_route_that_names_no_fx_is_the_channel_itself() {
         let parsed: AudioRoute =
-            serde_json::from_str(r#"{"device_set":1,"channel":2}"#).expect("parses");
+            serde_json::from_str(r#"{"from":{"from":"channel","device_set":1,"channel":2}}"#)
+                .expect("parses");
         assert_eq!(parsed, AudioRoute::channel(1, 2));
         parsed.validate().expect("a bare channel route is valid");
     }
@@ -507,6 +557,10 @@ mod tests {
             ..AudioRoute::channel(0, 0)
         };
         assert!(blank.validate().is_err());
+        assert!(AudioRoute::voice("").validate().is_err());
+        AudioRoute::voice("mic")
+            .validate()
+            .expect("a named voice is valid");
     }
 
     #[test]

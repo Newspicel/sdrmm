@@ -70,6 +70,7 @@ mod time_machine;
 mod transmit;
 pub mod trunking;
 pub mod video;
+mod voices;
 pub use array::{ArrayEvent, ArraySpec, LaneRef, ProcessorAction, ProcessorSpec};
 pub use audio::{AudioPacket, PcmBlock, PcmPayload};
 pub use denoise_models::DenoiseModels;
@@ -1079,7 +1080,10 @@ impl DeviceSetState {
     fn route_taps(&self, channel: u32, fx: &[String]) -> Vec<audio_recording::AudioRecorderTap> {
         self.audio_recordings
             .values()
-            .filter(|recording| recording.route.channel == channel && recording.route.fx == fx)
+            .filter(|recording| {
+                recording.route.channel_addr().map(|(_, ch)| ch) == Some(channel)
+                    && recording.route.fx == fx
+            })
             .map(|recording| recording.tap.clone())
             .collect()
     }
@@ -1090,17 +1094,16 @@ impl DeviceSetState {
         taps: Option<audio_recording::AudioTaps>,
     ) -> bool {
         if let Some(control) = &recording.fx_control {
-            control.send(audio_fx::FxControl::Record(taps)).is_ok()
-        } else {
-            self.send_dsp(
-                recording.stream,
-                DspCommand::SetChannelRecordings {
-                    id: recording.route.channel,
-                    taps,
-                },
-            );
-            true
+            return control.send(audio_fx::FxControl::Record(taps)).is_ok();
         }
+        let Some((_, id)) = recording.route.channel_addr() else {
+            return false;
+        };
+        self.send_dsp(
+            recording.stream,
+            DspCommand::SetChannelRecordings { id, taps },
+        );
+        true
     }
 
     fn rearm_audio_recording(&self, ch: u32, stream: u32) {
@@ -1147,6 +1150,7 @@ pub struct Engine {
     registry: DeviceRegistry,
     inner: Mutex<Inner>,
     audio_fx: Mutex<audio_fx::AudioFxHub>,
+    voices: Mutex<voices::VoiceHub>,
     denoise_models: Arc<DenoiseModels>,
     event_tx: broadcast::Sender<ServerEvent>,
     fault_tx: mpsc::Sender<(u32, DeviceError)>,
@@ -1190,6 +1194,7 @@ impl Engine {
             registry,
             inner: Mutex::new(Inner::default()),
             audio_fx: Mutex::new(audio_fx::AudioFxHub::new(Arc::clone(&denoise_models))),
+            voices: Mutex::new(voices::VoiceHub::default()),
             denoise_models,
             event_tx,
             fault_tx,

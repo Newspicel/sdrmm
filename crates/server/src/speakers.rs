@@ -209,19 +209,10 @@ fn wanted(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<String, Wanted> 
                 .feeds(&node.id, AUDIO_PORT)
                 .iter()
                 .flat_map(|feed| {
-                    let fx = graph.audio_fx(&feed.source);
                     let gain = speaker.gain(&feed.source);
-                    feed.tap
-                        .iter()
-                        .flat_map(sdrmm_wire::Tap::channels)
-                        .map(move |addr| {
-                            let route = AudioRoute {
-                                device_set: addr.device_set,
-                                channel: addr.channel,
-                                fx: fx.clone(),
-                            };
-                            (route, gain)
-                        })
+                    feed.audio_routes(graph)
+                        .into_iter()
+                        .map(move |route| (route, gain))
                 })
                 .collect();
             (!routes.is_empty()).then(|| (node.id.clone(), Wanted { device, routes }))

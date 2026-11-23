@@ -276,7 +276,10 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const ruled = useRunWired(node.id);
   const nameOf = useInputName();
   const recording = node.data?.recording ?? false;
-  const takes = inputs.map((input) => ({ input, status: ownRecording(input.channel, node.id) }));
+  const takes = inputs.map((input) => ({
+    input,
+    status: input.channel === null ? null : ownRecording(input.channel, node.id),
+  }));
   const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (
     <NodeShell node={node} title="Audio recorder" category="output">
@@ -346,7 +349,7 @@ function BasebandRecorder({ node }: { node: PatchNodeOf<"baseband_recorder"> }) 
   const recording = node.data?.recording ?? false;
   const takes = inputs.map((input) => ({
     input,
-    status: input.channel.baseband_recording ?? null,
+    status: input.channel?.baseband_recording ?? null,
   }));
   const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (

@@ -347,22 +347,24 @@ fn wanted_audio(
     for node in switched_on(graph, NodeKind::AudioRecorder) {
         let skip_silence = skips_silence(&node.body);
         let mut twice = false;
-        for feed in patch.feeds(&node.id, AUDIO_PORT) {
-            for addr in feed.tap.iter().flat_map(sdrmm_wire::Tap::channels) {
+        let routes = patch
+            .feeds(&node.id, AUDIO_PORT)
+            .iter()
+            .flat_map(|feed| feed.audio_routes(graph));
+        for route in routes {
+            let Some((device_set, channel)) = route.channel_addr() else {
+                continue;
+            };
+            {
                 let take = AudioTake {
                     node: node.id.clone(),
-                    device_set: addr.device_set,
-                    channel: addr.channel,
+                    device_set,
+                    channel,
                 };
                 if wanted.contains_key(&take) {
                     twice = true;
                     continue;
                 }
-                let route = AudioRoute {
-                    device_set: addr.device_set,
-                    channel: addr.channel,
-                    fx: graph.audio_fx(&feed.source),
-                };
                 wanted.insert(
                     take,
                     WantedAudio {

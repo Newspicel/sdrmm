@@ -197,6 +197,18 @@ fn of_feed(feed: &Feed, graph: &PatchGraph) -> Vec<Wanted> {
             from: upstream(0),
         }];
     }
+    if feed.payload.port_type() == PortType::Audio {
+        return (0..)
+            .zip(feed.audio_routes(graph))
+            .flat_map(|(index, route)| {
+                let from = upstream(index);
+                [Tapped::Audio(route.clone()), Tapped::AudioSpectrum(route)].map(|tapped| Wanted {
+                    tapped,
+                    from: from.clone(),
+                })
+            })
+            .collect();
+    }
     (0..)
         .zip(tap.channels())
         .flat_map(|(index, addr)| {
@@ -219,11 +231,8 @@ fn channel_streams(
 ) -> Vec<Tapped> {
     match port_type {
         PortType::Audio => {
-            let route = AudioRoute {
-                device_set: addr.device_set,
-                channel: addr.channel,
-                fx: graph.audio_fx(source),
-            };
+            let route =
+                AudioRoute::channel(addr.device_set, addr.channel).through(graph.audio_fx(source));
             vec![Tapped::Audio(route.clone()), Tapped::AudioSpectrum(route)]
         }
         PortType::Baseband => vec![

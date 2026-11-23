@@ -148,8 +148,8 @@ impl IqOrigin {
     pub const ALL: &'static [Self] = &[Self::Radio, Self::Synthetic, Self::Derived];
 }
 
-/// Where audio comes from: a channel the engine runs, or a voice the server carries straight
-/// to a transmitter (a microphone, a voice chat), which no channel audio input can tap.
+/// Where audio comes from: a channel the engine runs, or a voice the server carries into the
+/// patch (a microphone, a voice chat). Every audio input takes both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioOrigin {
@@ -161,11 +161,24 @@ impl AudioOrigin {
     pub const ALL: &'static [Self] = &[Self::Channel, Self::Voice];
 }
 
+/// Where baseband comes from: a channel the engine runs, or an encoder, which runs only inside
+/// the transmitter it feeds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BasebandOrigin {
+    Channel,
+    Encoder,
+}
+
+impl BasebandOrigin {
+    pub const ALL: &'static [Self] = &[Self::Channel, Self::Encoder];
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Payload {
     Iq { origins: Vec<IqOrigin> },
-    Baseband,
+    Baseband { origins: Vec<BasebandOrigin> },
     Audio { origins: Vec<AudioOrigin> },
     Events { kinds: KindSet },
     Video,
@@ -211,6 +224,13 @@ impl Payload {
     }
 
     #[must_use]
+    pub fn baseband(origins: &[BasebandOrigin]) -> Self {
+        Self::Baseband {
+            origins: origins.to_vec(),
+        }
+    }
+
+    #[must_use]
     pub fn audio(origins: &[AudioOrigin]) -> Self {
         Self::Audio {
             origins: origins.to_vec(),
@@ -235,7 +255,7 @@ impl Payload {
     pub const fn port_type(&self) -> PortType {
         match self {
             Self::Iq { .. } => PortType::Iq,
-            Self::Baseband => PortType::Baseband,
+            Self::Baseband { .. } => PortType::Baseband,
             Self::Audio { .. } => PortType::Audio,
             Self::Events { .. } => PortType::Events,
             Self::Video => PortType::Video,
@@ -244,6 +264,24 @@ impl Payload {
             Self::Array => PortType::Array,
             Self::Bearing => PortType::Bearing,
             Self::Transmit => PortType::Transmit,
+        }
+    }
+
+    /// A stream the source node makes itself, carried under its id: a voice, or an encoder's
+    /// baseband.
+    #[must_use]
+    pub fn self_made(&self) -> bool {
+        match self {
+            Self::Audio { origins } => {
+                !origins.is_empty() && origins.iter().all(|origin| *origin == AudioOrigin::Voice)
+            }
+            Self::Baseband { origins } => {
+                !origins.is_empty()
+                    && origins
+                        .iter()
+                        .all(|origin| *origin == BasebandOrigin::Encoder)
+            }
+            _ => false,
         }
     }
 
@@ -264,6 +302,9 @@ impl Payload {
             (Self::Audio { origins }, Self::Audio { origins: offered }) => {
                 offered.iter().all(|origin| origins.contains(origin))
             }
+            (Self::Baseband { origins }, Self::Baseband { origins: offered }) => {
+                offered.iter().all(|origin| origins.contains(origin))
+            }
             (Self::Events { kinds }, Self::Events { kinds: offered }) => {
                 offered.is_empty() || !kinds.intersection(offered).is_empty()
             }
@@ -281,21 +322,20 @@ impl Payload {
                 [IqOrigin::Radio] => Some("a radio lane".to_owned()),
                 _ => None,
             },
-            Self::Audio { origins } => match origins.as_slice() {
-                [AudioOrigin::Channel] => Some("channel audio".to_owned()),
-                _ => None,
-            },
             Self::Events { kinds } => kinds_noun(kinds),
             Self::Control { verbs } => match verbs.as_slice() {
                 [verb] => Some(verb.noun().to_owned()),
                 _ => None,
             },
-            Self::Baseband
-            | Self::Video
-            | Self::Position
-            | Self::Array
-            | Self::Bearing
-            | Self::Transmit => None,
+            Self::Baseband { origins } => match origins.as_slice() {
+                [BasebandOrigin::Channel] => Some("channel baseband".to_owned()),
+                _ => None,
+            },
+            Self::Audio { origins } => match origins.as_slice() {
+                [AudioOrigin::Channel] => Some("channel audio".to_owned()),
+                _ => None,
+            },
+            Self::Video | Self::Position | Self::Array | Self::Bearing | Self::Transmit => None,
         }
     }
 }

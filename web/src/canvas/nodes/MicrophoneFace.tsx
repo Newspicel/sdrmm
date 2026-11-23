@@ -10,7 +10,7 @@ import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { talkTargets } from "../pushToTalk";
-import { reachesArmedTransmitter } from "./airState";
+import { reachesListener } from "./airState";
 import { GateControls } from "./GateControls";
 import { FaceBody, NodeShell } from "./NodeShell";
 import { withMicrophoneGate } from "./transmit";
@@ -18,7 +18,7 @@ import { type Microphone, useMicrophone } from "./useMicrophone";
 import { SEND_MODES } from "./voiceChat";
 
 const KEY_HINT = "Hold to talk, or hold Space. Shift-click to latch, click again to release";
-const UNARMED_HINT = "No armed transmitter";
+const UNHEARD_HINT = "Nothing hears it";
 const KEYLESS_HINT = "Sends without the key";
 
 type MicrophoneSettings = PatchNodeOf<"microphone">["data"];
@@ -46,12 +46,12 @@ function gateOf(settings: MicrophoneSettings): VoiceGateSettings {
   };
 }
 
-function keyHint(armed: boolean, keys: boolean, error: string | null): string {
+function keyHint(heard: boolean, keys: boolean, error: string | null): string {
   if (error !== null) {
     return error;
   }
-  if (!armed) {
-    return UNARMED_HINT;
+  if (!heard) {
+    return UNHEARD_HINT;
   }
   return keys ? KEY_HINT : KEYLESS_HINT;
 }
@@ -60,7 +60,7 @@ function MicrophoneNodeFace({ node }: { node: PatchNodeOf<"microphone"> }) {
   const workspace = useWorkspaceContext();
   const held =
     workspace.talking && talkTargets(workspace.graph, workspace.selected).includes(node.id);
-  const armed = reachesArmedTransmitter(
+  const heard = reachesListener(
     workspace.resolved,
     workspace.graph.nodes,
     workspace.deviceSets,
@@ -69,7 +69,7 @@ function MicrophoneNodeFace({ node }: { node: PatchNodeOf<"microphone"> }) {
   const keys = node.data.send === "push_to_talk";
   const microphone = useMicrophone(node.id, workspace.socket, {
     send: node.data.send,
-    armed,
+    heard,
     held,
   });
   const [latched, setLatched] = useState(false);
@@ -97,8 +97,8 @@ function MicrophoneNodeFace({ node }: { node: PatchNodeOf<"microphone"> }) {
             type="button"
             className={`nodrag ${microphone.keyed ? BTN_DANGER_ARMED : BTN}`}
             aria-pressed={microphone.keyed}
-            disabled={!armed || !keys}
-            title={keyHint(armed, keys, microphone.error)}
+            disabled={!heard || !keys}
+            title={keyHint(heard, keys, microphone.error)}
             onPointerDown={(event) => {
               if (latched) {
                 setLatched(false);

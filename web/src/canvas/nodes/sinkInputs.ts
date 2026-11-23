@@ -10,7 +10,8 @@ export function useInputName(): (input: Input) => string {
   const workspace = useWorkspaceContext();
   return (input) =>
     workspace.graph.nodes.find((n) => n.id === input.node)?.label ??
-    input.channel.settings.params.type.toUpperCase();
+    input.channel?.settings.params.type.toUpperCase() ??
+    input.node;
 }
 
 export function useWireScope(sink: string): WireScope {

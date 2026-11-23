@@ -7,8 +7,8 @@ import type { SdrSocket } from "../../lib/ws";
 
 export interface MicrophoneOptions {
   send: SendMode;
-  /** The microphone's audio reaches an armed transmitter. */
-  armed: boolean;
+  /** The microphone's audio reaches a listener: an armed transmitter, a speaker, a chat. */
+  heard: boolean;
   /** The talk key is held for this microphone. */
   held: boolean;
 }
@@ -26,13 +26,10 @@ export interface Microphone {
 
 /** Push to talk opens on the key; the other modes stay open and leave the gate to the server. */
 export function captures(options: MicrophoneOptions, keyed: boolean): boolean {
-  return options.armed && (keyed || options.send !== "push_to_talk");
+  return options.heard && (keyed || options.send !== "push_to_talk");
 }
 
-/**
- * Opens the microphone only while an armed transmitter hears it, and sends each frame up the
- * socket under `node`.
- */
+/** Opens the microphone only while something hears it, and sends each frame up the socket. */
 export function useMicrophone(
   node: string,
   socket: SdrSocket,

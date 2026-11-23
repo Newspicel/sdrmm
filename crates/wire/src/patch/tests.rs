@@ -771,11 +771,32 @@ fn the_only_type_level_cycles_are_the_guarded_transforms() {
         .filter(|&kind| reachable[kind][kind])
         .map(|kind| catalog.nodes[kind].kind.as_str())
         .collect();
-    assert_eq!(cycle, vec!["event_filter", "triangulation", "bearing_fix"]);
+    assert_eq!(
+        cycle,
+        vec!["event_filter", "triangulation", "bearing_fix", "voice_chat"]
+    );
 }
 
 #[test]
-fn voice_chat_takes_only_channel_audio() {
+fn two_voice_chats_bridge_one_way_but_never_loop() {
+    let chat = |id: &str| node(id, NodeBody::VoiceChat(crate::VoiceChatNode::default()));
+    let bridged = PatchGraph {
+        nodes: vec![chat("a"), chat("b")],
+        edges: vec![edge(("a", AUDIO_PORT), ("b", AUDIO_PORT))],
+    };
+    assert_eq!(bridged.validate(), Ok(()));
+    let looped = PatchGraph {
+        edges: vec![
+            edge(("a", AUDIO_PORT), ("b", AUDIO_PORT)),
+            edge(("b", AUDIO_PORT), ("a", AUDIO_PORT)),
+        ],
+        ..bridged
+    };
+    assert!(matches!(looped.validate(), Err(PatchError::Cycle(_))));
+}
+
+#[test]
+fn every_audio_input_but_the_recorder_takes_a_voice() {
     let chat = || NodeBody::VoiceChat(crate::VoiceChatNode::default());
     let into = |source: PatchNode, sink: NodeBody| {
         let graph = PatchGraph {
@@ -794,13 +815,20 @@ fn voice_chat_takes_only_channel_audio() {
             NodeBody::Microphone(crate::MicrophoneNode::default()),
         )
     };
-    let takes = Some("Voice chat takes channel audio".to_owned());
     assert_eq!(into(channel("src", "probe_voice"), chat()), None);
-    assert_eq!(into(microphone(), chat()), takes);
-    assert_eq!(into(node("src", chat()), chat()), takes);
+    assert_eq!(into(microphone(), chat()), None);
+    assert_eq!(into(node("src", chat()), chat()), None);
     let encoder = || NodeBody::Encoder(crate::EncoderNode::default());
     assert_eq!(into(microphone(), encoder()), None);
     assert_eq!(into(node("src", chat()), encoder()), None);
+    let speaker = || NodeBody::Speaker(crate::SpeakerNode::default());
+    assert_eq!(into(microphone(), speaker()), None);
+    assert_eq!(into(node("src", chat()), speaker()), None);
+    let recorder = || NodeBody::AudioRecorder(crate::AudioRecorderNode::default());
+    assert_eq!(
+        into(microphone(), recorder()),
+        Some("Audio recorder takes channel audio".to_owned())
+    );
 }
 
 fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &PortSpec) -> bool {
