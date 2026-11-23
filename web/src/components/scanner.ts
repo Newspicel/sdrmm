@@ -160,6 +160,9 @@ export function liveStatus(
 }
 
 export function sweepKind(set: DeviceSet | null, status: ScannerStatus | null): string {
+  if (status?.live === true) {
+    return "none, all in view";
+  }
   if (status !== null) {
     return status.hardware_sweep === true ? "the radio's own" : "by retuning";
   }
@@ -168,6 +171,11 @@ export function sweepKind(set: DeviceSet | null, status: ScannerStatus | null): 
 
 export function formatMhz(hz: number | null | undefined): string {
   return hz == null || !Number.isFinite(hz) ? "-" : fixedWidthMhz(hz);
+}
+
+export function heardList(status: ScannerStatus, count = 3): string {
+  const heard = (status.heard ?? []).slice(0, count);
+  return heard.length === 0 ? "-" : heard.map((signal) => formatMhz(signal.hz)).join(" ");
 }
 
 export function formatDb(db: number | null | undefined): string {

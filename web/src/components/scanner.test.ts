@@ -15,6 +15,7 @@ import {
   channelName,
   formatDb,
   formatMhz,
+  heardList,
   liveStatus,
   presetIn,
   rangeNeed,
@@ -319,11 +320,27 @@ describe("formatMhz", () => {
   });
 });
 
+function heardAt(hz: number[]): ScannerStatus {
+  return { heard: hz.map((at, i) => ({ hz: at, snr_db: 20, at_ms: i })) } as never;
+}
+
+describe("heardList", () => {
+  it("shows the newest few and a dash before anything is heard", () => {
+    expect(heardList(heardAt([]))).toBe("-");
+    expect(heardList(heardAt([118_100_000, 118_700_000, 119_450_000, 121_500_000]))).toBe(
+      [118_100_000, 118_700_000, 119_450_000].map(formatMhz).join(" "),
+    );
+  });
+});
+
 describe("sweepKind", () => {
   it("says what is actually doing the sweeping, not what was asked for", () => {
     const radio = { capabilities: { hardware_sweep: true } } as DeviceSet;
     expect(sweepKind(radio, null)).toBe("the radio's own");
     expect(sweepKind(radio, { hardware_sweep: false } as never)).toBe("by retuning");
     expect(sweepKind(null, null)).toBe("by retuning");
+    expect(sweepKind(radio, { hardware_sweep: true, live: true } as never)).toBe(
+      "none, all in view",
+    );
   });
 });

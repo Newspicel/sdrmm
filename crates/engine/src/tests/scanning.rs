@@ -3,6 +3,9 @@ use std::sync::atomic::AtomicU32;
 
 use super::*;
 
+/// Far enough off the marker that no plan holding both fits one window, so the scan sweeps.
+const BEYOND_ONE_WINDOW_HZ: f64 = 5_000_000.0;
+
 fn nfm_decoder(engine: &Engine, ds: u32, frequency_hz: f64) -> u32 {
     engine
         .add_channel(
@@ -344,6 +347,45 @@ async fn scanner_once(
 }
 
 #[tokio::test]
+async fn a_plan_inside_the_window_is_watched_live_without_moving_the_radio() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
+    engine
+        .start_scan(
+            ds,
+            sdrmm_wire::ScanSettings {
+                frequencies: vec![SIGNAL_HZ - 50_000.0, SIGNAL_HZ, SIGNAL_HZ + 50_000.0],
+                resume_ms: 60_000,
+                ..sdrmm_wire::ScanSettings::for_channel(ch)
+            },
+        )
+        .unwrap();
+
+    let held = scanner_once(&engine, |s| s.state == ScanState::Holding).await;
+    assert!(
+        held.live,
+        "three channels 100 kHz apart fit a 240 kHz window"
+    );
+    assert_eq!(held.current_hz, SIGNAL_HZ);
+    assert_eq!(held.heard.first().map(|h| h.hz), Some(SIGNAL_HZ));
+    let center = engine.snapshot().device_sets[0].settings.center_hz;
+    let frames = held.sweeps;
+    let later = scanner_once(&engine, |s| s.sweeps >= frames + 5).await;
+    assert_eq!(later.state, ScanState::Holding);
+    assert_eq!(later.hits, 1, "one call, held once");
+    assert_eq!(
+        engine.snapshot().device_sets[0].settings.center_hz,
+        center,
+        "the radio moved while every target was already in view"
+    );
+    engine.stop_scan(ds, ch).unwrap();
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn an_all_scan_visits_each_busy_frequency_once_and_finishes() {
     let mut registry = DeviceRegistry::new();
     registry.register(50, Box::new(SignalDriver));
@@ -429,6 +471,7 @@ async fn a_firmware_sweep_finds_a_carrier_without_the_scanner_retuning() {
             stop_hz: marker + 200_000.0,
             step_hz: 50_000.0,
         }],
+        frequencies: vec![marker + BEYOND_ONE_WINDOW_HZ],
         dwell_ms: 40,
         resume_ms: 60_000,
         measure_bw_hz: Some(25_000.0),
@@ -496,7 +539,7 @@ async fn a_radio_sweeping_in_firmware_refuses_a_retune_by_name() {
         .start_scan(
             ds,
             sdrmm_wire::ScanSettings {
-                frequencies: vec![marker],
+                frequencies: vec![marker, marker + BEYOND_ONE_WINDOW_HZ],
                 margin_db: 200.0,
                 dwell_ms: 40,
                 measure_bw_hz: Some(25_000.0),
@@ -766,6 +809,7 @@ async fn close_call_holds_on_the_loudest_carrier_nobody_named() {
                     stop_hz: marker + 400_000.0,
                     step_hz: 200_000.0,
                 }],
+                frequencies: vec![marker + BEYOND_ONE_WINDOW_HZ],
                 margin_db: 12.0,
                 dwell_ms: 60,
                 resume_ms: 60_000,
@@ -857,7 +901,7 @@ async fn a_refused_firmware_sweep_falls_back_to_retuning_without_losing_the_radi
             sdrmm_wire::ScanSettings {
                 ranges: vec![sdrmm_wire::ScanRange {
                     start_hz: 100_000_000.0,
-                    stop_hz: 100_200_000.0,
+                    stop_hz: 100_300_000.0,
                     step_hz: 25_000.0,
                 }],
                 dwell_ms: 60,

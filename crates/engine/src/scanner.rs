@@ -9,7 +9,8 @@ use std::{
 
 use sdrmm_device::SweepPlan;
 use sdrmm_wire::{
-    PRIORITY_INTERVAL_MS, ScanMode, ScanSettings, ScanState, ScannerStatus, ServerEvent, StateScope,
+    HeardSignal, PRIORITY_INTERVAL_MS, ScanMode, ScanSettings, ScanState, ScannerStatus,
+    ServerEvent, StateScope,
 };
 use tokio::sync::broadcast::error::TryRecvError;
 
@@ -18,6 +19,7 @@ use crate::{Engine, EngineError, runtime::SpectrumSnapshot};
 mod close_call;
 mod floor;
 mod hold;
+mod live;
 mod plan;
 pub(crate) mod session;
 pub(crate) mod sweep;
@@ -37,6 +39,8 @@ const UPDATE_INTERVAL: Duration = Duration::from_millis(200);
 const PRIORITY_INTERVAL: Duration = Duration::from_millis(PRIORITY_INTERVAL_MS as u64);
 
 pub(crate) struct ScannerState {
+    /// The plan's lowest and highest target.
+    edges: (f64, f64),
     stop: Arc<AtomicBool>,
     release: Arc<AtomicBool>,
     status: Arc<Mutex<ScannerStatus>>,
@@ -97,12 +101,17 @@ pub(crate) fn spawn(
     scan.stream = stream;
     scan.hardware = hardware;
     lock_status(&scan.status).hardware_sweep = hardware;
+    let edges = (
+        scan.plan.targets.first().copied().unwrap_or_default(),
+        scan.plan.targets.last().copied().unwrap_or_default(),
+    );
     let (stop, release, status) = (scan.stop.clone(), scan.release.clone(), scan.status.clone());
     let thread = std::thread::Builder::new()
         .name(format!("sdrmm-scan-{ds}"))
         .spawn(move || scan.run())
         .map_err(|e| EngineError::Scan(format!("spawn scanner thread: {e}")))?;
     Ok(ScannerState {
+        edges,
         stop,
         release,
         status,
@@ -165,6 +174,8 @@ impl Scan {
             sweeps: 0,
             hits: 0,
             hardware_sweep: false,
+            live: false,
+            heard: Vec::new(),
             error: None,
         };
         Self {
@@ -234,6 +245,7 @@ impl Scan {
         loop {
             let engine = self.engine.upgrade().ok_or(Halt::Stopped)?;
             let rate = engine.scan_sample_rate(self.ds).ok_or(Halt::Stopped)?;
+            self.watch_live(&engine, rate)?;
             if self.hardware {
                 self.firmware_pass(&engine, rate)?;
             } else {
@@ -330,26 +342,34 @@ impl Scan {
         rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
         hz: f64,
     ) -> Result<Option<SpectrumSnapshot>, Halt> {
-        let halt = |e: EngineError| match e {
-            EngineError::DeviceSetNotFound(_) => Halt::Stopped,
-            other => Halt::Failed(format!("the decoder could not follow the scan: {other}")),
-        };
         if !engine
             .scan_reaches(self.ds, self.decoder, hz)
-            .map_err(halt)?
+            .map_err(follow_failed)?
         {
             return Ok(None);
         }
         lock_status(&self.status).current_hz = hz;
+        self.steer(engine, rx, hz)?;
+        drain(rx);
+        self.window_over(rx, hz)
+    }
+
+    /// Moves the decoder to `hz`, letting the radio settle if it had to follow.
+    fn steer(
+        &mut self,
+        engine: &Engine,
+        rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
+        hz: f64,
+    ) -> Result<(), Halt> {
         let moved = engine
             .scan_tune_channel(self.ds, self.decoder, hz)
-            .map_err(halt)?;
+            .map_err(follow_failed)?;
         self.followed = Some(hz);
         if moved {
             std::thread::sleep(RETUNE_SETTLE);
+            drain(rx);
         }
-        drain(rx);
-        self.window_over(rx, hz)
+        Ok(())
     }
 
     fn window_over(
@@ -527,6 +547,11 @@ impl Scan {
         status.current_hz = call.hz;
         status.current_snr_db = Some(call.snr_db);
         status.hits += 1;
+        status.note_heard(HeardSignal {
+            hz: call.hz,
+            snr_db: call.snr_db,
+            at_ms: crate::hunt::unix_ms(),
+        });
     }
 
     fn hit(&mut self, engine: &Arc<Engine>, call: Call) -> Result<(), Halt> {
@@ -633,10 +658,7 @@ impl Scan {
         self.last_follow = Some(now);
         engine
             .scan_tune_channel(self.ds, self.decoder, hz)
-            .map_err(|e| match e {
-                EngineError::DeviceSetNotFound(_) => Halt::Stopped,
-                other => Halt::Failed(format!("the decoder could not follow the scan: {other}")),
-            })?;
+            .map_err(follow_failed)?;
         self.followed = Some(hz);
         Ok(())
     }
@@ -651,6 +673,13 @@ impl Scan {
             device_set: self.ds,
             status: Box::new(lock_status(&self.status).clone()),
         });
+    }
+}
+
+fn follow_failed(e: EngineError) -> Halt {
+    match e {
+        EngineError::DeviceSetNotFound(_) => Halt::Stopped,
+        other => Halt::Failed(format!("the decoder could not follow the scan: {other}")),
     }
 }
 
@@ -823,6 +852,7 @@ mod tests {
     fn skipping_is_only_offered_while_holding() {
         let scan = listener();
         let state = ScannerState {
+            edges: (100_000_000.0, 100_000_000.0),
             stop: scan.stop.clone(),
             release: scan.release.clone(),
             status: scan.status.clone(),

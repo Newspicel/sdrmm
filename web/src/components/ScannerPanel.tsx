@@ -31,6 +31,7 @@ import {
   channelName,
   formatDb,
   formatMhz,
+  heardList,
   liveStatus,
   MIN_STEP_KHZ,
   presetIn,
@@ -211,6 +212,9 @@ function ScanReadouts({
         {name !== null && ` ${name}`}
       </Readout>
       <Readout label="Over noise">{formatDb(status.current_snr_db)}</Readout>
+      <Readout label="Heard" title="Last busy frequencies, newest first">
+        {heardList(status)}
+      </Readout>
       <Readout label="Find">{mode?.label ?? "-"}</Readout>
       <Readout label="Sweep">{sweepKind(active, status)}</Readout>
       <Readout label="Span">

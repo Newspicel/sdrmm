@@ -165,7 +165,7 @@ fn not_running() -> EngineError {
     EngineError::Processor("Not running".to_owned())
 }
 
-fn unix_ms() -> u64 {
+pub(crate) fn unix_ms() -> u64 {
     u64::try_from(jiff::Timestamp::now().as_millisecond()).unwrap_or_default()
 }
 

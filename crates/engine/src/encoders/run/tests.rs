@@ -73,6 +73,7 @@ fn a_recorder_takes_the_stream_whole_and_a_transmitter_only_the_burst() {
     let (air, mut aired) = encoded_for_tests(RATE, &shared);
     run.obey(Command::Attach(Sink::Air(air)));
     run.obey(Command::Payload(TxPayload::Frame(vec![0; 480])));
+    std::thread::sleep(Duration::from_millis(20));
     while run.step() {}
     assert!(run.produced > 480, "the stream runs past the burst");
     let (keyed, still_keyed) = aired();

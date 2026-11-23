@@ -447,11 +447,12 @@ impl Engine {
         {
             return Ok(false);
         }
-        let channels: Vec<ChannelInfo> = state
+        let mut channels: Vec<ChannelInfo> = state
             .channels
             .iter()
             .map(|c| if c.id == ch { moved.clone() } else { c.clone() })
             .collect();
+        channels.extend(state.scan_edges());
         let mut settled = state.settings.clone();
         if let Some(delta) = plan_center(&state.capabilities, &settled, &channels) {
             settled.merge_from(&delta);
