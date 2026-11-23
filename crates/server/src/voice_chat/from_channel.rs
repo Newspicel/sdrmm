@@ -37,7 +37,7 @@ struct Seen {
 }
 
 /// Mixes the allowed talkers and gates the mix on its way to the air.
-pub(super) struct ToAir {
+pub(super) struct FromChannel {
     talkers: HashMap<String, Seen>,
     talkers_changed: bool,
     bus: MixBus,
@@ -55,7 +55,7 @@ pub(super) fn allowed(node: &VoiceChatNode, id: &str, verified: bool) -> bool {
     node.allowed.is_empty() || (verified && node.allowed.iter().any(|allowed| allowed == id))
 }
 
-impl ToAir {
+impl FromChannel {
     pub(super) fn new(settings: &VoiceGateSettings) -> Self {
         Self {
             talkers: HashMap::new(),
@@ -88,7 +88,7 @@ impl ToAir {
         self.quiet = 0;
         self.bus.push(lane_of(&talker.id), &pcm);
         self.bus.drain(&mut self.held);
-        self.release(&tuning.node.to_air, air, meters);
+        self.release(&tuning.node.from_channel, air, meters);
     }
 
     /// Runs once a frame: lets talkers go quiet and, while nobody talks, sends the rest of
@@ -111,7 +111,7 @@ impl ToAir {
         self.bus.flush(&mut self.held);
         let padded = self.held.len().div_ceil(FRAME).max(1) * FRAME;
         self.held.resize(padded, 0.0);
-        self.release(&tuning.node.to_air, air, meters);
+        self.release(&tuning.node.from_channel, air, meters);
     }
 
     /// Who is talking now, each marked with whether the node lets them key.
@@ -205,22 +205,22 @@ pub(super) async fn run(
     (air, said): (Air, Said),
 ) {
     let mut tuned = tuning.borrow_and_update().clone();
-    let mut to_air = ToAir::new(&tuned.node.to_air);
+    let mut from_channel = FromChannel::new(&tuned.node.from_channel);
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             got = heard.recv() => {
                 let Some(got) = got else { return };
-                to_air.hear(got, &tuned, Instant::now(), &air, &meters);
+                from_channel.hear(got, &tuned, Instant::now(), &air, &meters);
             }
-            now = tick.tick() => to_air.tick(&tuned, now, &air, &meters),
+            now = tick.tick() => from_channel.tick(&tuned, now, &air, &meters),
         }
-        to_air.pass_on(&said);
+        from_channel.pass_on(&said);
         let retuned = tuning.has_changed().unwrap_or(false);
         if retuned {
             tuned = tuning.borrow_and_update().clone();
         }
-        to_air.publish(&tuned.node, retuned, &meters);
+        from_channel.publish(&tuned.node, retuned, &meters);
     }
 }

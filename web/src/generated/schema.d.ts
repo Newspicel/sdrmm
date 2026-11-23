@@ -8148,6 +8148,7 @@ export interface components {
             /** @default  */
             channel: string;
             /**
+             * @description Read from `to_air` too, its name in workspaces saved before.
              * @default {
              *       "hang_ms": 600,
              *       "mode": "voice_activity",
@@ -8155,8 +8156,9 @@ export interface components {
              *       "volume": 1
              *     }
              */
-            to_air: components["schemas"]["VoiceGateSettings"];
+            from_channel: components["schemas"]["VoiceGateSettings"];
             /**
+             * @description Read from `to_chat` too, its name in workspaces saved before.
              * @default {
              *       "hang_ms": 600,
              *       "mode": "voice_activity",
@@ -8164,21 +8166,21 @@ export interface components {
              *       "volume": 1
              *     }
              */
-            to_chat: components["schemas"]["VoiceGateSettings"];
+            to_channel: components["schemas"]["VoiceGateSettings"];
         };
         /** @enum {string} */
         VoiceChatState: "idle" | "connecting" | "joined";
         VoiceChatStatus: {
             error?: string | null;
+            /** Format: float */
+            from_channel_db?: number | null;
+            from_channel_open?: boolean;
             node: string;
             state: components["schemas"]["VoiceChatState"];
             talking?: components["schemas"]["ChatTalker"][];
             /** Format: float */
-            to_air_db?: number | null;
-            to_air_open?: boolean;
-            /** Format: float */
-            to_chat_db?: number | null;
-            to_chat_open?: boolean;
+            to_channel_db?: number | null;
+            to_channel_open?: boolean;
         };
         VoiceFacts: {
             /** Format: int32 */

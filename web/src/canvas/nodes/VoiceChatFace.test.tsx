@@ -10,7 +10,7 @@ const NODE = {
   id: "vc",
   kind: "voice_chat",
   position: { x: 0, y: 0 },
-  data: { account: "gone", channel: "", allowed: [], to_air: GATE, to_chat: GATE },
+  data: { account: "gone", channel: "", allowed: [], from_channel: GATE, to_channel: GATE },
 } as PatchNode;
 
 function render(inspected = false): string {

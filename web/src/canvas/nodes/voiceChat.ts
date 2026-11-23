@@ -11,7 +11,7 @@ import type {
 } from "../../lib/types";
 
 export type VoiceChatSettings = PatchNodeOf<"voice_chat">["data"];
-export type GateDirection = "to_air" | "to_chat";
+export type GateDirection = "from_channel" | "to_channel";
 
 export const SEND_MODES: Options<SendMode> = [
   { value: "push_to_talk", label: "Push to talk", title: "Sends while the key is held" },

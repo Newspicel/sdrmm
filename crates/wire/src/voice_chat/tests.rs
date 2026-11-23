@@ -23,13 +23,25 @@ fn old_microphone_without_vox_loads_as_push_to_talk() {
 }
 
 #[test]
+fn old_voice_chat_directions_load_under_their_new_names() {
+    let node: VoiceChatNode = serde_json::from_str(
+        r#"{"to_air":{"mode":"continuous"},"to_chat":{"mode":"voice_activity","volume":0.5}}"#,
+    )
+    .expect("old");
+    assert_eq!(node.from_channel.mode, SendMode::Continuous);
+    assert_eq!(node.to_channel.volume, 0.5);
+    let json = serde_json::to_value(&node).expect("json");
+    assert!(json.get("from_channel").is_some() && json.get("to_air").is_none());
+}
+
+#[test]
 fn voice_chat_refuses_push_to_talk() {
     let mut node = VoiceChatNode::default();
     assert!(node.valid());
-    node.to_air.mode = SendMode::PushToTalk;
+    node.from_channel.mode = SendMode::PushToTalk;
     assert!(!node.valid());
-    node.to_air.mode = SendMode::Continuous;
-    node.to_chat.mode = SendMode::PushToTalk;
+    node.from_channel.mode = SendMode::Continuous;
+    node.to_channel.mode = SendMode::PushToTalk;
     assert!(!node.valid());
 }
 
@@ -54,21 +66,21 @@ fn voice_chat_refuses_what_it_cannot_hold() {
             ..VoiceChatNode::default()
         },
         VoiceChatNode {
-            to_chat: VoiceGateSettings {
+            to_channel: VoiceGateSettings {
                 hang_ms: MAX_VOX_HANG_MS + 1,
                 ..VoiceGateSettings::default()
             },
             ..VoiceChatNode::default()
         },
         VoiceChatNode {
-            to_air: VoiceGateSettings {
+            from_channel: VoiceGateSettings {
                 volume: MAX_VOICE_VOLUME + 0.1,
                 ..VoiceGateSettings::default()
             },
             ..VoiceChatNode::default()
         },
         VoiceChatNode {
-            to_chat: VoiceGateSettings {
+            to_channel: VoiceGateSettings {
                 volume: f64::NAN,
                 ..VoiceGateSettings::default()
             },
@@ -125,10 +137,10 @@ fn voice_chat_status_round_trips() {
             allowed: true,
             verified: true,
         }],
-        to_chat_db: Some(-20.0),
-        to_air_db: None,
-        to_chat_open: true,
-        to_air_open: false,
+        to_channel_db: Some(-20.0),
+        from_channel_db: None,
+        to_channel_open: true,
+        from_channel_open: false,
     };
     let json = serde_json::to_value(&status).expect("json");
     assert_eq!(json["state"], "joined");

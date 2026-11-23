@@ -312,13 +312,13 @@
       "account": "",
       "channel": "",
       "allowed": [],
-      "to_air": {
+      "from_channel": {
         "mode": "voice_activity",
         "threshold_db": -35.0,
         "hang_ms": 600,
         "volume": 1.0
       },
-      "to_chat": {
+      "to_channel": {
         "mode": "voice_activity",
         "threshold_db": -35.0,
         "hang_ms": 600,

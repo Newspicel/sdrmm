@@ -29364,8 +29364,9 @@
             "type": "string",
             "default": ""
           },
-          "to_air": {
+          "from_channel": {
             "$ref": "#/components/schemas/VoiceGateSettings",
+            "description": "Read from `to_air` too, its name in workspaces saved before.",
             "default": {
               "hang_ms": 600,
               "mode": "voice_activity",
@@ -29373,8 +29374,9 @@
               "volume": 1.0
             }
           },
-          "to_chat": {
+          "to_channel": {
             "$ref": "#/components/schemas/VoiceGateSettings",
+            "description": "Read from `to_chat` too, its name in workspaces saved before.",
             "default": {
               "hang_ms": 600,
               "mode": "voice_activity",
@@ -29405,6 +29407,16 @@
               "null"
             ]
           },
+          "from_channel_db": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "from_channel_open": {
+            "type": "boolean"
+          },
           "node": {
             "type": "string"
           },
@@ -29417,24 +29429,14 @@
               "$ref": "#/components/schemas/ChatTalker"
             }
           },
-          "to_air_db": {
+          "to_channel_db": {
             "type": [
               "number",
               "null"
             ],
             "format": "float"
           },
-          "to_air_open": {
-            "type": "boolean"
-          },
-          "to_chat_db": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "float"
-          },
-          "to_chat_open": {
+          "to_channel_open": {
             "type": "boolean"
           }
         }

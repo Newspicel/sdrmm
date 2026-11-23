@@ -44,8 +44,8 @@ impl Gauge {
 
 /// What a joined node shows besides its link state.
 pub(super) struct Meters {
-    pub(super) to_chat: Gauge,
-    pub(super) to_air: Gauge,
+    pub(super) to_channel: Gauge,
+    pub(super) from_channel: Gauge,
     pub(super) talking: watch::Sender<Vec<ChatTalker>>,
     flipped: Notify,
 }
@@ -53,8 +53,8 @@ pub(super) struct Meters {
 impl Default for Meters {
     fn default() -> Self {
         Self {
-            to_chat: Gauge::default(),
-            to_air: Gauge::default(),
+            to_channel: Gauge::default(),
+            from_channel: Gauge::default(),
             talking: watch::Sender::new(Vec::new()),
             flipped: Notify::new(),
         }
@@ -63,13 +63,13 @@ impl Default for Meters {
 
 impl Meters {
     pub(super) fn chat(&self, db: Option<f32>, open: bool) {
-        if self.to_chat.set(db, open) {
+        if self.to_channel.set(db, open) {
             self.flipped.notify_one();
         }
     }
 
     pub(super) fn air(&self, db: Option<f32>, open: bool) {
-        if self.to_air.set(db, open) {
+        if self.from_channel.set(db, open) {
             self.flipped.notify_one();
         }
     }
@@ -81,10 +81,10 @@ pub(super) fn idle(node: &str, error: Option<String>) -> VoiceChatStatus {
         state: VoiceChatState::Idle,
         error,
         talking: Vec::new(),
-        to_chat_db: None,
-        to_air_db: None,
-        to_chat_open: false,
-        to_air_open: false,
+        to_channel_db: None,
+        from_channel_db: None,
+        to_channel_open: false,
+        from_channel_open: false,
     }
 }
 
@@ -112,10 +112,10 @@ pub(super) fn joined(
         state,
         error,
         talking: meters.talking.borrow().clone(),
-        to_chat_db: meters.to_chat.db(),
-        to_air_db: meters.to_air.db(),
-        to_chat_open: meters.to_chat.open(),
-        to_air_open: meters.to_air.open(),
+        to_channel_db: meters.to_channel.db(),
+        from_channel_db: meters.from_channel.db(),
+        to_channel_open: meters.to_channel.open(),
+        from_channel_open: meters.from_channel.open(),
         ..idle(node, None)
     }
 }
@@ -140,7 +140,7 @@ pub(super) async fn watch(
             _ = levels.tick() => true,
         };
         let status = joined(&node, &link.borrow_and_update(), false, &meters);
-        let read = (status.to_chat_db, status.to_air_db);
+        let read = (status.to_channel_db, status.from_channel_db);
         if metering && (status.state != VoiceChatState::Joined || shown == Some(read)) {
             continue;
         }

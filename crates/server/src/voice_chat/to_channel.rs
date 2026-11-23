@@ -23,13 +23,13 @@ pub(super) enum Feed {
 }
 
 /// Mixes the wired channels and cuts the mix into frames the gate lets into the chat.
-pub(super) struct ToChat {
+pub(super) struct ToChannel {
     bus: MixBus,
     held: Vec<f32>,
     gate: VoiceGate,
 }
 
-impl ToChat {
+impl ToChannel {
     pub(super) fn new(settings: &VoiceGateSettings) -> Self {
         Self {
             bus: MixBus::new(MIX_LAG),
@@ -72,11 +72,11 @@ pub(super) async fn run(
     tuning: watch::Receiver<Tuning>,
     meters: Arc<Meters>,
 ) {
-    let mut chat = ToChat::new(&tuning.borrow().node.to_chat);
+    let mut chat = ToChannel::new(&tuning.borrow().node.to_channel);
     let mut lost = 0u64;
     while let Some(feed) = feeds.recv().await {
         chat.take(feed);
-        let settings = tuning.borrow().node.to_chat.clone();
+        let settings = tuning.borrow().node.to_channel.clone();
         while let Some(frame) = chat.next_frame(&settings, &meters) {
             match send.try_send(frame) {
                 Ok(()) => {}

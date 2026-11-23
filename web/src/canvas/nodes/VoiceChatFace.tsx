@@ -89,8 +89,11 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
           gate={node.data[direction]}
           modes={KEYLESS_SEND_MODES}
           volume
-          levelDb={direction === "to_air" ? status?.to_air_db : status?.to_chat_db}
-          open={(direction === "to_air" ? status?.to_air_open : status?.to_chat_open) === true}
+          levelDb={direction === "from_channel" ? status?.from_channel_db : status?.to_channel_db}
+          open={
+            (direction === "from_channel" ? status?.from_channel_open : status?.to_channel_open) ===
+            true
+          }
           onEdit={(next) => edit((current) => withGate(current, direction, next))}
         />
       </Chips>
@@ -110,14 +113,14 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
           <GateMeter
             label="To channel"
             title="Patch audio going into the channel"
-            db={status?.to_chat_db}
-            open={status?.to_chat_open === true}
+            db={status?.to_channel_db}
+            open={status?.to_channel_open === true}
           />
           <GateMeter
             label="From channel"
             title="Channel voices going to the transmitter"
-            db={status?.to_air_db}
-            open={status?.to_air_open === true}
+            db={status?.from_channel_db}
+            open={status?.from_channel_open === true}
           />
         </div>
         <Talkers talking={status?.talking ?? NO_TALKERS} />
@@ -155,8 +158,8 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
             />
           </Chips>
         </InspectSection>
-        {gate("to_air", "From channel")}
-        {gate("to_chat", "To channel")}
+        {gate("from_channel", "From channel")}
+        {gate("to_channel", "To channel")}
       </Inspect>
     </NodeShell>
   );

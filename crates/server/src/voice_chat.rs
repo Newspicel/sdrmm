@@ -24,17 +24,17 @@ use tokio::{
 
 use crate::{AppState, resolved::Resolved};
 
+mod from_channel;
 mod gate;
 mod hub;
 mod status;
-mod to_air;
-mod to_chat;
+mod to_channel;
 
+use from_channel::{Air, Said};
 use hub::{Links, Unjoined};
 pub(crate) use hub::{Sessions, SignInError};
 use status::Meters;
-use to_air::{Air, Said};
-use to_chat::Feed;
+use to_channel::Feed;
 
 const _: () = assert!(
     AUDIO_RATE_HZ == RATE_HZ,
@@ -67,13 +67,13 @@ struct Want {
     tuning: Tuning,
 }
 
-struct ToChatRun {
+struct ToChannelRun {
     feeds: mpsc::Sender<Feed>,
     task: JoinHandle<()>,
     wires: HashMap<AudioRoute, JoinHandle<()>>,
 }
 
-impl Drop for ToChatRun {
+impl Drop for ToChannelRun {
     fn drop(&mut self) {
         self.task.abort();
         for wire in self.wires.values() {
@@ -92,8 +92,8 @@ struct Joined {
     seen_drops: u64,
     tuning: watch::Sender<Tuning>,
     meters: Arc<Meters>,
-    to_air: JoinHandle<()>,
-    to_chat: Option<ToChatRun>,
+    from_channel: JoinHandle<()>,
+    to_channel: Option<ToChannelRun>,
     watcher: JoinHandle<()>,
     ended_at: Option<tokio::time::Instant>,
     /// Dropped with the node, so its seat is free for the next join in the same pass.
@@ -102,7 +102,7 @@ struct Joined {
 
 impl Drop for Joined {
     fn drop(&mut self) {
-        self.to_air.abort();
+        self.from_channel.abort();
         self.watcher.abort();
     }
 }
@@ -389,7 +389,7 @@ impl Joined {
             drops,
             hold,
         } = link;
-        let to_air = ctx.runtime.spawn(to_air::run(
+        let from_channel = ctx.runtime.spawn(from_channel::run(
             heard,
             tuned,
             meters.clone(),
@@ -410,8 +410,8 @@ impl Joined {
             seen_drops: 0,
             tuning,
             meters,
-            to_air,
-            to_chat: None,
+            from_channel,
+            to_channel: None,
             watcher,
             ended_at: None,
             _hold: hold,
@@ -424,7 +424,7 @@ impl Joined {
 
     /// The link is over: its session closed, or it gave up a while ago.
     fn spent(&mut self) -> bool {
-        if !self.to_air.is_finished() {
+        if !self.from_channel.is_finished() {
             return false;
         }
         if !matches!(*self.link.borrow(), LinkState::Failed(_)) {
@@ -445,7 +445,7 @@ impl Joined {
         status::joined(
             node,
             &self.link.borrow(),
-            self.to_air.is_finished(),
+            self.from_channel.is_finished(),
             &self.meters,
         )
     }
@@ -466,20 +466,20 @@ impl Joined {
     /// Runs the chat direction while wired channels carry audio, one wire per route.
     fn wire(&mut self, ctx: &Ctx<'_>, routes: &HashSet<AudioRoute>) -> Result<(), String> {
         if routes.is_empty() {
-            if self.to_chat.take().is_some() {
+            if self.to_channel.take().is_some() {
                 self.meters.chat(None, false);
             }
             return Ok(());
         }
-        let run = self.to_chat.get_or_insert_with(|| {
+        let run = self.to_channel.get_or_insert_with(|| {
             let (feeds, fed) = mpsc::channel(FEED_QUEUE);
-            let task = ctx.runtime.spawn(to_chat::run(
+            let task = ctx.runtime.spawn(to_channel::run(
                 fed,
                 self.send.clone(),
                 self.tuning.subscribe(),
                 self.meters.clone(),
             ));
-            ToChatRun {
+            ToChannelRun {
                 feeds,
                 task,
                 wires: HashMap::new(),
@@ -509,7 +509,7 @@ impl Joined {
             let lane = crate::encoders::route_lane(route);
             let wire = ctx
                 .runtime
-                .spawn(to_chat::forward(pcm, lane, run.feeds.clone()));
+                .spawn(to_channel::forward(pcm, lane, run.feeds.clone()));
             run.wires.insert(route.clone(), wire);
         }
         Ok(())

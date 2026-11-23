@@ -108,7 +108,7 @@ fn voice_chat(allowed: &[&str]) -> NodeBody {
         account: ACCOUNT.to_owned(),
         channel: CHANNEL.to_owned(),
         allowed: allowed.iter().map(|id| (*id).to_owned()).collect(),
-        to_air: VoiceGateSettings {
+        from_channel: VoiceGateSettings {
             mode: SendMode::Continuous,
             ..VoiceGateSettings::default()
         },
@@ -339,14 +339,14 @@ fn a_stand_in_talker_shows_unverified_and_not_allowed() {
         allowed: vec!["client 3".to_owned()],
         ..VoiceChatNode::default()
     };
-    assert!(!to_air::allowed(&listed, "client 3", false));
-    assert!(to_air::allowed(&listed, "client 3", true));
-    assert!(to_air::allowed(
+    assert!(!from_channel::allowed(&listed, "client 3", false));
+    assert!(from_channel::allowed(&listed, "client 3", true));
+    assert!(from_channel::allowed(
         &VoiceChatNode::default(),
         "client 3",
         false
     ));
-    let mut to_air = to_air::ToAir::new(&VoiceGateSettings::default());
+    let mut from_channel = from_channel::FromChannel::new(&VoiceGateSettings::default());
     let tuning = Tuning {
         node: listed.clone(),
         keying: false,
@@ -354,14 +354,14 @@ fn a_stand_in_talker_shows_unverified_and_not_allowed() {
     let (air, _) = on_air();
     let meters = Meters::default();
     let now = tokio::time::Instant::now();
-    to_air.hear(
+    from_channel.hear(
         said_unverified("client 3", 0.1),
         &tuning,
         now,
         &air,
         &meters,
     );
-    let talking = to_air.talking(&listed);
+    let talking = from_channel.talking(&listed);
     assert_eq!(talking.len(), 1);
     assert!(!talking[0].verified && !talking[0].allowed);
 }
@@ -449,7 +449,7 @@ async fn an_account_fault_shows_on_its_nodes() {
 fn tuning(mode: SendMode) -> Tuning {
     Tuning {
         node: VoiceChatNode {
-            to_chat: VoiceGateSettings {
+            to_channel: VoiceGateSettings {
                 mode,
                 ..VoiceGateSettings::default()
             },
@@ -460,17 +460,17 @@ fn tuning(mode: SendMode) -> Tuning {
 }
 
 #[tokio::test]
-async fn continuous_to_chat_sends_silence() {
+async fn continuous_to_channel_sends_silence() {
     let (feeds, fed) = mpsc::channel(8);
     let (send, mut sent) = mpsc::channel(8);
     let (_tuning, tuned) = watch::channel(tuning(SendMode::Continuous));
-    tokio::spawn(to_chat::run(fed, send, tuned, Arc::default()));
+    tokio::spawn(to_channel::run(fed, send, tuned, Arc::default()));
     let silent = PcmBlock {
         start_frame: 0,
         channels: 2,
         payload: PcmPayload::Silence(FRAME + 100),
     };
-    let mono = to_chat::mono(&silent);
+    let mono = to_channel::mono(&silent);
     feeds
         .send(Feed::Audio { lane: 1, mono })
         .await
@@ -480,26 +480,26 @@ async fn continuous_to_chat_sends_silence() {
 }
 
 #[test]
-fn voice_activity_to_chat_holds_silence_back() {
-    let settings = tuning(SendMode::VoiceActivity).node.to_chat;
-    let mut chat = to_chat::ToChat::new(&settings);
+fn voice_activity_to_channel_holds_silence_back() {
+    let settings = tuning(SendMode::VoiceActivity).node.to_channel;
+    let mut chat = to_channel::ToChannel::new(&settings);
     let meters = Meters::default();
     chat.take(Feed::Audio {
         lane: 1,
         mono: vec![0.0; 4 * FRAME],
     });
     assert_eq!(chat.next_frame(&settings, &meters), None);
-    assert!(!meters.to_chat.open());
+    assert!(!meters.to_channel.open());
 }
 
 #[test]
-fn to_chat_volume_scales_what_the_gate_lets_through() {
+fn to_channel_volume_scales_what_the_gate_lets_through() {
     let settings = VoiceGateSettings {
         mode: SendMode::Continuous,
         volume: 0.5,
         ..VoiceGateSettings::default()
     };
-    let mut chat = to_chat::ToChat::new(&settings);
+    let mut chat = to_channel::ToChannel::new(&settings);
     chat.take(Feed::Audio {
         lane: 1,
         mono: vec![0.5; 4 * FRAME],
@@ -511,7 +511,7 @@ fn to_chat_volume_scales_what_the_gate_lets_through() {
 }
 
 #[test]
-fn to_chat_volume_never_clips() {
+fn to_channel_volume_never_clips() {
     let settings = VoiceGateSettings {
         mode: SendMode::Continuous,
         volume: 2.0,
@@ -521,7 +521,7 @@ fn to_chat_volume_never_clips() {
 }
 
 #[tokio::test]
-async fn to_air_volume_scales_what_reaches_the_transmitter() {
+async fn from_channel_volume_scales_what_reaches_the_transmitter() {
     let engine = Engine::new(None);
     let links = Arc::new(FakeLinks::default());
     let mut chats = chats(&links);
@@ -529,7 +529,7 @@ async fn to_air_volume_scales_what_reaches_the_transmitter() {
     let quieter = NodeBody::VoiceChat(VoiceChatNode {
         account: ACCOUNT.to_owned(),
         channel: CHANNEL.to_owned(),
-        to_air: VoiceGateSettings {
+        from_channel: VoiceGateSettings {
             mode: SendMode::Continuous,
             volume: 0.5,
             ..VoiceGateSettings::default()
@@ -554,7 +554,7 @@ fn stereo_channel_audio_is_mixed_to_mono() {
         channels: 2,
         payload: PcmPayload::Samples(Arc::from([0.5, -0.5, 1.0, 0.0].as_slice())),
     };
-    assert_eq!(to_chat::mono(&block), [0.0, 0.5]);
+    assert_eq!(to_channel::mono(&block), [0.0, 0.5]);
 }
 
 #[test]
@@ -652,7 +652,7 @@ fn a_renamed_account_keeps_its_session() {
 
 #[test]
 fn the_audio_out_hears_every_talker_without_a_transmitter() {
-    let mut to_air = to_air::ToAir::new(&VoiceGateSettings::default());
+    let mut from_channel = from_channel::FromChannel::new(&VoiceGateSettings::default());
     let tuning = Tuning {
         node: VoiceChatNode::default(),
         keying: false,
@@ -660,12 +660,12 @@ fn the_audio_out_hears_every_talker_without_a_transmitter() {
     let (air, mut aired) = on_air();
     let meters = Meters::default();
     let now = tokio::time::Instant::now();
-    to_air.hear(said("bob", 0.25), &tuning, now, &air, &meters);
+    from_channel.hear(said("bob", 0.25), &tuning, now, &air, &meters);
     let (tx, rx) = std::sync::mpsc::channel();
-    let out: to_air::Said = Arc::new(move |pcm: &[f32]| {
+    let out: from_channel::Said = Arc::new(move |pcm: &[f32]| {
         tx.send(pcm.to_vec()).expect("listening");
     });
-    to_air.pass_on(&out);
+    from_channel.pass_on(&out);
     assert_eq!(rx.try_recv().expect("heard"), vec![0.25; FRAME]);
     assert!(
         aired.try_recv().is_err(),

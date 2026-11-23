@@ -65,8 +65,12 @@ pub struct VoiceChatNode {
     pub channel: String,
     /// Chat users whose voice goes to the air. Empty lets anyone through.
     pub allowed: Vec<String>,
-    pub to_air: VoiceGateSettings,
-    pub to_chat: VoiceGateSettings,
+    /// Read from `to_air` too, its name in workspaces saved before.
+    #[serde(alias = "to_air")]
+    pub from_channel: VoiceGateSettings,
+    /// Read from `to_chat` too, its name in workspaces saved before.
+    #[serde(alias = "to_chat")]
+    pub to_channel: VoiceGateSettings,
 }
 
 impl VoiceChatNode {
@@ -79,7 +83,7 @@ impl VoiceChatNode {
                 .allowed
                 .iter()
                 .all(|user| user.chars().count() <= MAX_CHAT_ALLOWED_LEN)
-            && [&self.to_air, &self.to_chat]
+            && [&self.from_channel, &self.to_channel]
                 .into_iter()
                 .all(|gate| gate.valid() && gate.mode != SendMode::PushToTalk)
     }
@@ -112,13 +116,13 @@ pub struct VoiceChatStatus {
     #[serde(default)]
     pub talking: Vec<ChatTalker>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_chat_db: Option<f32>,
+    pub to_channel_db: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_air_db: Option<f32>,
+    pub from_channel_db: Option<f32>,
     #[serde(default)]
-    pub to_chat_open: bool,
+    pub to_channel_open: bool,
     #[serde(default)]
-    pub to_air_open: bool,
+    pub from_channel_open: bool,
 }
 
 #[cfg(test)]
