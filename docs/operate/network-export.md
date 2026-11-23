@@ -47,7 +47,7 @@ Wire ADS-B `events` → **Event output → Feed (Beast)** (default `127.0.0.1:30
 Wire `events` → **Event output** (messages cut at 1,900 chars; rate limits retry 4×):
 
 - **Webhook JSON / Discord:** HTTP POST JSON, or Discord message + call audio.
-- **Matrix:** room message + uploaded call audio.
+- **Matrix:** room message + uploaded call audio. Needs a **Token** login.
 - **MQTT:** QoS 1 JSON to `mqtt://` or `mqtts://`.
 - **Notification:** OS alert (desktop app only).
 

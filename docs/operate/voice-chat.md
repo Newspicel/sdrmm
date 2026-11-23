@@ -44,7 +44,7 @@ A new name or nickname applies live. Other changes reconnect.
 
 Use a separate bot account on a homeserver with MatrixRTC and lk-jwt-service.
 
-- **Login: Token** is for event output only. Voice needs **Password** or **OAuth**.
+- **Login: Token** serves event output only. **Password** and **OAuth** serve voice only.
 - **OAuth:** press **Sign in** in Accounts and approve the link.
 - **Recovery key:** enter it when the account already has cross-signing.
 - **Channel:** a room id or alias. The bot accepts an invite to the room.

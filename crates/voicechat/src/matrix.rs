@@ -103,19 +103,6 @@ struct Owner {
 }
 
 #[derive(Deserialize)]
-struct Tokens {
-    access_token: String,
-}
-
-/// The access token inside a saved session, for a client that only sends events.
-#[must_use]
-pub fn session_access_token(session: &str) -> Option<String> {
-    serde_json::from_str::<Tokens>(session)
-        .ok()
-        .map(|tokens| tokens.access_token)
-}
-
-#[derive(Deserialize)]
 struct Made {
     recovery_key: Option<String>,
 }

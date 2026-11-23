@@ -4,6 +4,9 @@ use sdrmm_wire::{AccountKind, AccountService, EventOutputTarget, MatrixLogin, Se
 
 use crate::Store;
 
+/// A voice login's session refreshes its token, which a sent event cannot follow.
+const TOKEN_LOGIN: &str = "Event output needs a token login";
+
 /// What an output signs in with: its account's settings with the credential read back from this
 /// server's store. Read again whenever the patch, the accounts or the secrets change.
 #[derive(Clone, PartialEq, Eq)]
@@ -77,19 +80,16 @@ fn read(store: &Store, id: &str, kind: AccountKind) -> Result<Login, String> {
             homeserver_url,
             login,
             access_token,
-            session,
             ..
-        } => Login::Matrix {
-            homeserver_url: homeserver_url.clone(),
-            access_token: if *login == MatrixLogin::Token {
-                required(access_token, "Matrix token")?
-            } else {
-                reveal(session, "Matrix session")?
-                    .as_deref()
-                    .and_then(sdrmm_voicechat::session_access_token)
-                    .ok_or_else(|| "Matrix is not signed in".to_owned())?
-            },
-        },
+        } => {
+            if *login != MatrixLogin::Token {
+                return Err(TOKEN_LOGIN.to_owned());
+            }
+            Login::Matrix {
+                homeserver_url: homeserver_url.clone(),
+                access_token: required(access_token, "Matrix token")?,
+            }
+        }
         AccountService::Mqtt {
             broker_url,
             username,

@@ -412,11 +412,7 @@ async fn the_first_login_handed_back_keeps_the_link() {
 }
 
 #[test]
-fn a_saved_session_hands_out_its_access_token() {
-    assert_eq!(
-        session_access_token(&device_session("A")).as_deref(),
-        Some("token")
-    );
+fn a_saved_session_names_its_user() {
     let oauth = Saved::OAuth(OAuthSession {
         client_id: ClientId::new("client".into()),
         user: UserSession {
@@ -432,8 +428,6 @@ fn a_saved_session_hands_out_its_access_token() {
     })
     .json()
     .unwrap();
-    assert_eq!(session_access_token(&oauth).as_deref(), Some("oauth-token"));
-    assert_eq!(session_access_token("{}"), None);
     assert_eq!(session_user(&oauth).as_deref(), Some("@bot:x.org"));
     assert_eq!(session_user("{}"), None);
 }

@@ -97,7 +97,7 @@ export const ACCOUNT_SPECS: Readonly<Record<AccountKind, AccountSpec>> = {
       {
         key: "login",
         label: "Login",
-        title: "A token only sends events. Voice needs a password or OAuth sign-in",
+        title: "Token: event output only. Password or OAuth: voice only",
         choices: [
           { value: "token", label: "Token" },
           { value: "password", label: "Password" },

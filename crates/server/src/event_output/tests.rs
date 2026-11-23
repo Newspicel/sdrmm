@@ -1119,61 +1119,28 @@ async fn a_matrix_account_without_its_token_cannot_send() {
         problem_of(&store, matrix_room(room)).await.as_deref(),
         Some("Matrix token is not set")
     );
-
-    let bot = account(
-        &store,
-        "Bot",
-        matrix_bot(MatrixLogin::Oauth, Secret::default()),
-    );
-    assert_eq!(
-        problem_of(&store, matrix_room(bot)).await.as_deref(),
-        Some("Matrix is not signed in")
-    );
 }
 
 #[tokio::test]
-async fn a_signed_in_matrix_account_delivers_with_its_session_token() {
-    let (base, captures) = server().await;
+async fn a_voice_matrix_account_cannot_send_events() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
-    let bot = account(
-        &store,
-        "Bot",
-        matrix_bot(MatrixLogin::Oauth, Secret::default()),
-    );
-    store
-        .set_account_session(
-            &bot,
-            r#"{"kind":"oauth","client_id":"c","user_id":"@bot:matrix.example","device_id":"D","access_token":"session-token"}"#,
-        )
-        .expect("signed in");
-    store
-        .hold()
-        .execute(
-            "UPDATE accounts SET body = replace(body, 'https://matrix.example', ?1)",
-            [format!("{base}/matrix")],
-        )
-        .expect("pointed at the capture");
-    let statuses = status::Statuses::default();
-    let mut bindings = [binding("room", matrix_room(bot))];
-    statuses.configure(&bindings);
-    resolve_logins(&store, &mut bindings, &statuses).await;
-    let [bound] = bindings;
-    let delivery = Delivery {
-        login: bound.login,
-        ..delivery_to("room", bound.target, &decoded())
-    };
-    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
-    sender.send(delivery).await.expect("queued");
-    drop(sender);
-
-    deliver_all(senders(None), receiver, statuses.clone()).await;
-
-    assert_eq!(statuses.get("room").expect("status").delivered, 1);
-    let captured = captures.lock().expect("captures");
-    assert_eq!(
-        captured[0].authorization.as_deref(),
-        Some("Bearer session-token")
-    );
+    for login in [MatrixLogin::Password, MatrixLogin::Oauth] {
+        let mut service = matrix_bot(login, Secret::default());
+        if let AccountService::Matrix { password, .. } = &mut service {
+            *password = Secret::Inline("pw".to_owned());
+        }
+        let bot = account(&store, "Bot", service);
+        store
+            .set_account_session(
+                &bot,
+                r#"{"kind":"oauth","client_id":"c","user_id":"@bot:matrix.example","device_id":"D","access_token":"session-token"}"#,
+            )
+            .expect("signed in");
+        assert_eq!(
+            problem_of(&store, matrix_room(bot)).await.as_deref(),
+            Some("Event output needs a token login")
+        );
+    }
 }
 
 #[tokio::test]
