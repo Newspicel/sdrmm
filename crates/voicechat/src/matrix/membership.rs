@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 pub(crate) const LEGACY_TYPE: &str = "org.matrix.msc3401.call.member";
 pub(crate) const RTC_TYPE: &str = "m.rtc.member";
 const APPLICATION: &str = "m.call";
-const EXPIRES_MS: u64 = 14_400_000;
+pub(crate) const EXPIRES_MS: u64 = 14_400_000;
 const LIVEKIT: &str = "livekit";
 const LIVEKIT_STABLE: &str = "m.livekit";
 const WELL_KNOWN_FOCI: &str = "org.matrix.msc4143.rtc_foci";
@@ -219,13 +219,6 @@ pub(crate) fn our_membership(
         state_key(user, device, owned_keys),
         content,
     )
-}
-
-/// When our membership lapses: `created_ts` plus `expires`.
-pub(crate) fn expires_at((_, _, content): &StateEntry) -> Option<u64> {
-    let created = content.get("created_ts")?.as_u64()?;
-    let expires = content.get("expires")?.as_u64()?;
-    Some(created.saturating_add(expires))
 }
 
 /// Keeps our membership one more expiry period, as js-sdk `MembershipManager` does: same

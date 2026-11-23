@@ -5,10 +5,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
 use matrix_sdk::ruma::api::client::delayed_events::update_delayed_event::UpdateAction;
+use matrix_sdk::ruma::api::error::ErrorKind;
 use matrix_sdk::ruma::events::StateEventType;
 use matrix_sdk::ruma::serde::Raw;
 use matrix_sdk::ruma::{OwnedDeviceId, OwnedUserId};
 use matrix_sdk::{Client, Room};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -20,6 +22,14 @@ use crate::matrix::membership::{
 const DELAYED_EVENTS: &str = "org.matrix.msc4140";
 /// Room versions with MSC3757 owned state keys, as js-sdk `MembershipManager` matches them.
 const OWNED_KEY_VERSIONS: [&str; 2] = ["org.matrix.msc3757", "org.matrix.msc3779"];
+
+/// Why a delayed leave did not restart.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Restart {
+    /// The server no longer has it: it fired or was dropped.
+    Gone,
+    Failed(String),
+}
 
 /// Every Matrix side effect of a call.
 #[async_trait]
@@ -43,7 +53,7 @@ pub(crate) trait Homeserver: Sync {
     /// Schedules `entry` after `delay`, answering its delay id.
     async fn put_delayed(&self, entry: &StateEntry, delay: Duration) -> Result<String, String>;
 
-    async fn restart_delayed(&self, id: &str) -> Result<(), String>;
+    async fn restart_delayed(&self, id: &str) -> Result<(), Restart>;
 
     async fn cancel_delayed(&self, id: &str) -> Result<(), String>;
 
@@ -72,6 +82,14 @@ fn refused<E: std::fmt::Display>(what: &'static str) -> impl FnOnce(E) -> String
         tracing::warn!(%error, what, "homeserver refused");
         format!("{what} refused")
     }
+}
+
+/// A 404 or `M_NOT_FOUND`, as js-sdk `isDelayedEventGoneError` reads it.
+fn gone(error: &matrix_sdk::Error) -> bool {
+    matches!(error.client_api_error_kind(), Some(ErrorKind::NotFound))
+        || error
+            .as_client_api_error()
+            .is_some_and(|error| error.status_code == StatusCode::NOT_FOUND)
 }
 
 #[derive(Deserialize)]
@@ -195,12 +213,18 @@ impl Homeserver for Matrix {
             .map_err(refused("Delayed leave"))
     }
 
-    async fn restart_delayed(&self, id: &str) -> Result<(), String> {
+    async fn restart_delayed(&self, id: &str) -> Result<(), Restart> {
         self.client
             .update_delayed_event(id.to_owned(), UpdateAction::Restart, None)
             .await
             .map(drop)
-            .map_err(refused("Delayed leave"))
+            .map_err(|error| {
+                if gone(&error) {
+                    Restart::Gone
+                } else {
+                    Restart::Failed(refused("Delayed leave")(error))
+                }
+            })
     }
 
     async fn cancel_delayed(&self, id: &str) -> Result<(), String> {
@@ -220,6 +244,7 @@ impl Homeserver for Matrix {
         let mut devices = Vec::with_capacity(to.len());
         for (user, device) in to {
             let Ok(user) = OwnedUserId::try_from(user.as_str()) else {
+                tracing::warn!(user, "call member with a bad user id skipped");
                 continue;
             };
             let device = OwnedDeviceId::from(device.as_str());

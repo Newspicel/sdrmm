@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
-use super::homeserver::Homeserver;
+use super::homeserver::{Homeserver, Restart};
 use super::media::Media;
 use super::people::Me;
 use super::wire::{Dial, Role, Wire, WireEvent};
@@ -83,6 +83,9 @@ struct Server {
     delayed: bool,
     states: Vec<CallState>,
     sent: Mutex<Vec<Sent>>,
+    /// Answers to restarts, in turn; Ok once used up unless `restarts_fail`.
+    restarts: Mutex<VecDeque<Restart>>,
+    restarts_fail: bool,
 }
 
 impl Server {
@@ -92,6 +95,22 @@ impl Server {
 
     fn sent(&self) -> Vec<Sent> {
         self.sent.lock().unwrap().clone()
+    }
+
+    fn count(&self, wanted: impl Fn(&Sent) -> bool) -> usize {
+        self.sent().iter().filter(|sent| wanted(sent)).count()
+    }
+
+    fn joins(&self) -> usize {
+        self.count(|sent| matches!(sent, Sent::State(entry) if entry.2 != json!({})))
+    }
+
+    fn delays(&self) -> usize {
+        self.count(|sent| matches!(sent, Sent::Delayed(_)))
+    }
+
+    fn restarts_of(&self, id: &str) -> usize {
+        self.count(|sent| *sent == Sent::Restart(id.into()))
     }
 
     fn keys_sent(&self) -> Vec<(Vec<(String, String)>, EncryptionKeys)> {
@@ -141,12 +160,19 @@ impl Homeserver for Server {
     async fn put_delayed(&self, entry: &StateEntry, delay: Duration) -> Result<String, String> {
         assert_eq!(delay, Duration::from_secs(8));
         self.log(Sent::Delayed(entry.clone()));
-        Ok("delay-1".into())
+        Ok(format!("delay-{}", self.delays()))
     }
 
-    async fn restart_delayed(&self, id: &str) -> Result<(), String> {
+    async fn restart_delayed(&self, id: &str) -> Result<(), Restart> {
         self.log(Sent::Restart(id.into()));
-        Ok(())
+        if self.restarts_fail {
+            return Err(Restart::Failed("busy".into()));
+        }
+        self.restarts
+            .lock()
+            .unwrap()
+            .pop_front()
+            .map_or(Ok(()), Err)
     }
 
     async fn cancel_delayed(&self, id: &str) -> Result<(), String> {
@@ -323,8 +349,12 @@ fn key_event(key: &Outgoing) -> SyncEvent {
     }
 }
 
-async fn wait_until(mut done: impl FnMut() -> bool) {
-    timeout(PATIENCE, async {
+async fn wait_until(done: impl FnMut() -> bool) {
+    wait_within(PATIENCE, done).await;
+}
+
+async fn wait_within(patience: Duration, mut done: impl FnMut() -> bool) {
+    timeout(patience, async {
         while !done() {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
@@ -593,4 +623,97 @@ fn both_key_event_types_are_heard() {
     }
     assert!(SyncEvent::key("m.room.message", ALICE, None, &content).is_none());
     assert!(SyncEvent::key("m.rtc.encryption_key", ALICE, None, &json!({})).is_none());
+}
+
+fn delayed(restarts: impl IntoIterator<Item = Restart>) -> Server {
+    Server {
+        delayed: true,
+        restarts: Mutex::new(restarts.into_iter().collect()),
+        ..Server::default()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_delayed_leave_restarts_every_five_seconds() {
+    let call = start(delayed([])).await;
+    let begun = tokio::time::Instant::now();
+    wait_within(Duration::from_secs(60), || {
+        call.server.restarts_of("delay-1") == 2
+    })
+    .await;
+    assert!(begun.elapsed() >= Duration::from_secs(10));
+    assert_eq!((call.server.delays(), call.server.joins()), (1, 1));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_restart_retries_the_same_leave() {
+    let call = start(delayed([Restart::Failed("busy".into())])).await;
+    wait_within(Duration::from_secs(60), || {
+        call.server.restarts_of("delay-1") == 3
+    })
+    .await;
+    assert_eq!((call.server.delays(), call.server.joins()), (1, 1));
+    assert!(
+        !call
+            .server
+            .sent()
+            .iter()
+            .any(|sent| matches!(sent, Sent::Cancel(_)))
+    );
+    assert_eq!(*call.link.state.borrow(), LinkState::Joined);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lost_delayed_leave_is_scheduled_again() {
+    let call = start(delayed([Restart::Gone])).await;
+    wait_within(Duration::from_secs(60), || {
+        call.server.restarts_of("delay-2") == 1
+    })
+    .await;
+    assert_eq!((call.server.delays(), call.server.joins()), (2, 2));
+    assert_eq!(*call.link.state.borrow(), LinkState::Joined);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_leave_that_cannot_be_held_rejoins() {
+    let (mut link, server, _sync, _task) = start_with(
+        Server {
+            delayed: true,
+            restarts_fail: true,
+            ..Server::default()
+        },
+        Ok(wire().0),
+    );
+    joined(&mut link).await;
+    timeout(
+        PATIENCE * 4,
+        link.state
+            .wait_for(|state| *state == LinkState::Failed("Membership lost".into())),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(server.restarts_of("delay-1") >= 2);
+    assert!(server.sent().contains(&Sent::Cancel("delay-1".into())));
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_membership_is_extended_before_it_lapses() {
+    let call = start(Server::default()).await;
+    tokio::time::advance(Duration::from_hours(4)).await;
+    wait_until(|| {
+        call.server
+            .count(|sent| matches!(sent, Sent::State(entry) if entry.2["expires"] == 28_800_000))
+            == 1
+    })
+    .await;
+    let joins: Vec<Sent> = call.server.sent();
+    let Some(Sent::State(first)) = joins.first() else {
+        panic!("{joins:?}")
+    };
+    let Some(Sent::State(extended)) = joins.last() else {
+        panic!("{joins:?}")
+    };
+    assert_eq!(extended.1, first.1);
+    assert_eq!(extended.2["created_ts"], first.2["created_ts"]);
 }

@@ -5,6 +5,7 @@
     expect(dead_code, reason = "the real homeserver needs a live one")
 )]
 mod homeserver;
+mod keep;
 mod live;
 mod media;
 mod people;

@@ -10,28 +10,25 @@ use tokio::time::{MissedTickBehavior, interval_at};
 
 use super::SyncEvent;
 use super::homeserver::Homeserver;
+use super::keep::{Keeper, Kept};
 use super::media::Media;
 use super::people::{Change, People};
-use super::run::{Call, DELAYED_LEAVE, Presence, Stop, now_ms, take_key};
+use super::run::{Call, Presence, Stop, now_ms, take_key};
 use super::wire::{Dial, Role, Wire, WireEvent};
 use crate::link::{Ends, Inbox, Outgoing};
 use crate::matrix::e2ee::keys::{EncryptionKeys, Outgoing as Key};
 use crate::matrix::livekit::peer::OpusOut;
-use crate::matrix::membership::{
-    Focus, Member, StateEntry, active_focus, expires_at, extend, identities,
-};
+use crate::matrix::membership::{Focus, Member, StateEntry, active_focus, identities};
 use crate::opus::Framer;
 use crate::{FRAME, Heard, RATE_HZ};
 
 /// How often the delayed leave restarts, as js-sdk `MembershipManager` does.
 const RESTART_EVERY: Duration = Duration::from_secs(5);
-/// How long before our membership lapses it is extended.
-const EXPIRY_HEADROOM_MS: u64 = 60_000;
 
 /// What a chore hands back to the loop.
 enum Done {
     Nothing,
-    Delay(Option<String>),
+    Kept(Kept),
     Name(String, String),
     Wire(String, Result<Box<dyn Wire>, String>),
 }
@@ -62,7 +59,7 @@ pub(super) struct Live<'a, H, D> {
     dialing: HashSet<String>,
     /// Homeserver and dialing work, run beside the audio so neither waits on it.
     chores: FuturesUnordered<BoxFuture<'a, Done>>,
-    entry: StateEntry,
+    keeper: Keeper,
     clock: Clock,
     framer: Framer,
     drops: u64,
@@ -86,19 +83,6 @@ async fn listen<D: Dial>(dial: &D, focus: Focus) -> Result<Box<dyn Wire>, String
     dial.connect(&grant, Role::Listen).await
 }
 
-/// A delayed leave the server lost may have fired, so the membership goes out again under a
-/// new one.
-async fn restart<H: Homeserver>(hs: &H, id: String, leave: StateEntry, entry: StateEntry) -> Done {
-    if hs.restart_delayed(&id).await.is_ok() {
-        return Done::Nothing;
-    }
-    let fresh = hs.put_delayed(&leave, DELAYED_LEAVE).await.ok();
-    if let Err(reason) = hs.put_state(&entry).await {
-        tracing::warn!(reason, "membership not renewed");
-    }
-    Done::Delay(fresh)
-}
-
 impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
     pub(super) fn new(
         hs: &'a H,
@@ -115,7 +99,7 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
             others: HashMap::new(),
             dialing: HashSet::new(),
             chores: FuturesUnordered::new(),
-            entry,
+            keeper: Keeper::new(entry),
             clock: Clock {
                 start: Instant::now(),
                 next: 0,
@@ -145,7 +129,11 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
                         return stop;
                     }
                 }
-                Some(done) = self.chores.next() => self.on_done(call, presence, done),
+                Some(done) = self.chores.next() => {
+                    if let Some(stop) = self.on_done(call, presence, done) {
+                        return stop;
+                    }
+                }
                 event = events.recv() => {
                     if let Some(stop) = self.on_sync(call, event) {
                         return stop;
@@ -341,10 +329,13 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
         }));
     }
 
-    fn on_done(&mut self, call: &mut Call, presence: &mut Presence, done: Done) {
+    fn on_done(&mut self, call: &mut Call, presence: &mut Presence, done: Done) -> Option<Stop> {
         match done {
             Done::Nothing => {}
-            Done::Delay(id) => presence.delay = id,
+            Done::Kept(kept) => match self.keeper.done(self.hs, presence, kept) {
+                Ok(next) => self.keep(next),
+                Err(stop) => return Some(stop),
+            },
             Done::Name(user, name) => call.people.named(user, name),
             Done::Wire(url, Ok(wire)) => {
                 self.dialing.remove(&url);
@@ -356,23 +347,19 @@ impl<'a, H: Homeserver, D: Dial> Live<'a, H, D> {
                 tracing::warn!(url, reason, "cannot listen on focus");
             }
         }
+        None
+    }
+
+    fn keep(&mut self, requests: impl IntoIterator<Item = BoxFuture<'a, Kept>>) {
+        for request in requests {
+            self.chores
+                .push(Box::pin(async move { Done::Kept(request.await) }));
+        }
     }
 
     fn on_tick(&mut self, call: &mut Call, presence: &Presence) {
-        if let (Some(id), Some(leave)) = (presence.delay.clone(), presence.leave.clone()) {
-            let (hs, entry) = (self.hs, self.entry.clone());
-            self.chores.push(Box::pin(restart(hs, id, leave, entry)));
-        }
-        if expires_at(&self.entry).is_some_and(|at| now_ms() + EXPIRY_HEADROOM_MS >= at) {
-            extend(&mut self.entry);
-            let (hs, entry) = (self.hs, self.entry.clone());
-            self.chores.push(Box::pin(async move {
-                if let Err(reason) = hs.put_state(&entry).await {
-                    tracing::warn!(reason, "membership not extended");
-                }
-                Done::Nothing
-            }));
-        }
+        let due = self.keeper.tick(self.hs, presence);
+        self.keep(due);
         let change = call.people.recount(now_ms());
         self.on_change(call, &change);
     }

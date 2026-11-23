@@ -126,13 +126,22 @@ pub(crate) struct LiveKitWire {
     leaving: Option<oneshot::Sender<()>>,
     task: Option<JoinHandle<()>>,
     dropped: Arc<AtomicU64>,
+    /// Mic frames the connection had no room for.
+    unsent: u64,
+    unsent_run: bool,
 }
 
 #[async_trait]
 impl Wire for LiveKitWire {
     fn publish(&mut self, frame: OpusOut) {
-        if let Err(TrySendError::Full(_)) = self.mic.try_send(frame) {
-            tracing::debug!("mic frame dropped");
+        if self.mic.try_send(frame).is_ok() {
+            self.unsent_run = false;
+            return;
+        }
+        self.unsent += 1;
+        if !self.unsent_run {
+            self.unsent_run = true;
+            tracing::warn!(total = self.unsent, "mic frames dropped");
         }
     }
 
@@ -247,6 +256,8 @@ impl Connection {
             leaving: Some(leaving),
             task: Some(task),
             dropped,
+            unsent: 0,
+            unsent_run: false,
         }
     }
 
@@ -346,7 +357,9 @@ impl Connection {
                 self.roster.apply(&update);
                 self.roster.joined();
                 for identity in self.roster.left() {
-                    let _ = events.try_send(Ok(WireEvent::Left(identity)));
+                    if events.try_send(Ok(WireEvent::Left(identity))).is_err() {
+                        tracing::warn!("LiveKit leave notice dropped");
+                    }
                 }
                 Ok(())
             }

@@ -308,8 +308,7 @@ fn a_membership_without_created_ts_ages_from_its_origin() {
 fn extending_pushes_the_expiry_out() {
     let ours = focus("https://lk.example");
     let mut entry = our_membership("@me:x.org", "DEV", &ours, NOW, false);
-    assert_eq!(expires_at(&entry), Some(NOW + 14_400_000));
     extend(&mut entry);
     assert_eq!(entry.2["expires"], 28_800_000);
-    assert_eq!(expires_at(&entry), Some(NOW + 28_800_000));
+    assert_eq!(entry.2["created_ts"], NOW);
 }
