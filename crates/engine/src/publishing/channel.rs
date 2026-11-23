@@ -117,6 +117,7 @@ impl ChannelPublisher {
                     audio_pcm: Vec::with_capacity(pcm_capacity),
                     events: Vec::with_capacity(16),
                     video: Vec::with_capacity(2),
+                    video_pts: Vec::with_capacity(2),
                     images: Vec::with_capacity(2),
                     ..Default::default()
                 },
@@ -172,14 +173,27 @@ impl ChannelPublisher {
                 for image in packet.outputs.images.drain(..) {
                     decoded.publish_image(packet.frequency, image);
                 }
+                let mut presentation = packet.outputs.video_pts.drain(..);
                 for picture in packet.outputs.video.drain(..) {
+                    let timestamp =
+                        presentation
+                            .next()
+                            .flatten()
+                            .map_or(packet.video_position, |pts| {
+                                use sdrmm_wire::frame::{
+                                    VIDEO_PRESENTATION_MASK, VIDEO_PRESENTATION_TIMESTAMP,
+                                };
+                                VIDEO_PRESENTATION_TIMESTAMP
+                                    | (pts as u64 & VIDEO_PRESENTATION_MASK)
+                            });
                     let _ = sinks.video_tx.send(VideoPacket {
                         seq: video_seq,
-                        timestamp: packet.video_position,
+                        timestamp,
                         picture: Arc::new(picture),
                     });
                     video_seq = video_seq.wrapping_add(1);
                 }
+                drop(presentation);
                 packet.recorder = None;
                 packet.outputs.reset();
                 packet.iq.clear();

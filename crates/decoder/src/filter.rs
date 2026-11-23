@@ -1,5 +1,5 @@
 use num_complex::Complex;
-use sdrmm_dsp::{Decimator, FirC, design_lowpass, design_lowpass_kaiser};
+use sdrmm_dsp::{Decimator, FastFir, FirC, design_lowpass, design_lowpass_kaiser};
 use sdrmm_wire::FilterSpec;
 
 use crate::ChannelError;
@@ -8,6 +8,7 @@ use crate::ChannelError;
 pub enum ChannelFilter {
     Symmetric(Decimator),
     Sideband(FirC),
+    OverlapSave(FastFir),
     Passthrough,
 }
 
@@ -35,7 +36,11 @@ impl ChannelFilter {
                     Some(db) => return Err(refused(&format!("stopband {db} dB"))),
                     None => design_lowpass(taps, cutoff),
                 };
-                Ok(Self::Symmetric(Decimator::new(&prototype, decimation)))
+                if decimation == 1 && input_rate_hz >= 8_000_000.0 && taps >= 127 {
+                    Ok(Self::OverlapSave(FastFir::real(&prototype)))
+                } else {
+                    Ok(Self::Symmetric(Decimator::new(&prototype, decimation)))
+                }
             }
             FilterSpec::Band {
                 taps,
@@ -63,7 +68,7 @@ impl ChannelFilter {
     pub fn decimation(&self) -> usize {
         match self {
             Self::Symmetric(filter) => filter.factor(),
-            Self::Sideband(_) | Self::Passthrough => 1,
+            Self::Sideband(_) | Self::OverlapSave(_) | Self::Passthrough => 1,
         }
     }
 
@@ -71,6 +76,7 @@ impl ChannelFilter {
         match self {
             Self::Symmetric(filter) => filter.reset(),
             Self::Sideband(filter) => filter.reset(),
+            Self::OverlapSave(filter) => filter.reset(),
             Self::Passthrough => {}
         }
     }
@@ -79,6 +85,7 @@ impl ChannelFilter {
         match self {
             Self::Symmetric(f) => f.process(input, out),
             Self::Sideband(f) => f.process(input, out),
+            Self::OverlapSave(f) => f.process(input, out),
             Self::Passthrough => {
                 out.clear();
                 out.extend_from_slice(input);
@@ -114,6 +121,30 @@ fn normalized(hz: f64, rate: f64) -> Result<f64, ChannelError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wide_lowpass_matches_direct_filter_across_buffers() {
+        let rate = 64_000_000.0 / 7.0;
+        let mut fft = ChannelFilter::new(&FilterSpec::lowpass(127, 4_000_000.0), rate).unwrap();
+        assert!(matches!(fft, ChannelFilter::OverlapSave(_)));
+        let mut direct = Decimator::new(&design_lowpass(127, 4_000_000.0 / rate), 1);
+        let input: Vec<_> = (0..4_800)
+            .map(|i| Complex::new((i as f32 * 0.43).cos(), (i as f32 * 0.67).sin()))
+            .collect();
+        let mut actual = Vec::new();
+        let mut expected = Vec::new();
+        for block in input.chunks(1_799) {
+            fft.process(block, &mut actual);
+            direct.process(block, &mut expected);
+            assert_eq!(actual.len(), expected.len());
+            assert!(
+                actual
+                    .iter()
+                    .zip(&expected)
+                    .all(|(a, b)| (a - b).norm() < 2e-5)
+            );
+        }
+    }
 
     fn rms(filter: &mut ChannelFilter, offset_hz: f64, rate: f64) -> f32 {
         let tone: Vec<Complex<f32>> = (0..4_800)

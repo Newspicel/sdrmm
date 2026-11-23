@@ -269,26 +269,45 @@ impl Engine {
     ) -> Result<(), EngineError> {
         let descriptor = descriptor_for(&settings.params)?;
         let (old, sinks, mut device_rate, mut center_hz, node) = {
-            let inner = self.lock();
+            let mut inner = self.lock();
             let state = inner
                 .device_sets
-                .get(&ds)
+                .get_mut(&ds)
                 .ok_or(EngineError::DeviceSetNotFound(ds))?;
             let info = state
                 .channels
-                .iter()
+                .iter_mut()
                 .find(|c| c.id == ch)
                 .ok_or(EngineError::ChannelNotFound(ch, ds))?;
+            if let Some(change) = sdrmm_decoder::registry::live_program(&info.settings, &settings) {
+                validate_channel(&descriptor, &settings)?;
+                let stream = info.stream;
+                info.settings = settings;
+                state.send_dsp(
+                    stream,
+                    DspCommand::SelectProgram {
+                        id: ch,
+                        program: change.program,
+                    },
+                );
+                inner.revision += 1;
+                drop(inner);
+                self.emit(ServerEvent::StateChanged {
+                    scope: StateScope::DeviceSet(ds),
+                });
+                return Ok(());
+            }
+            let (old, stream, node) = (info.settings.clone(), info.stream, info.node.clone());
             let handle = state
                 .media
                 .get(&ch)
                 .ok_or(EngineError::ChannelNotFound(ch, ds))?;
             (
-                info.settings.clone(),
+                old,
                 handle.sinks.clone(),
-                state.lane_rate(info.stream),
-                state.lane_center(info.stream),
-                info.node.clone(),
+                state.lane_rate(stream),
+                state.lane_center(stream),
+                node,
             )
         };
         let mut need_host = old != settings;

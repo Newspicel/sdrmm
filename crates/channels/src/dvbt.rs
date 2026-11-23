@@ -2,7 +2,7 @@ mod model;
 #[cfg(any(test, feature = "synth"))]
 pub mod synth;
 pub use model::*;
-use sdrmm_decoder::registry::Native;
+use sdrmm_decoder::registry::{LiveProgram, Native};
 use sdrmm_wire::{Control, KindSpec, NumberSpec, SettingField};
 mod acquire;
 mod channel;
@@ -16,8 +16,19 @@ pub mod tps;
 
 pub use channel::{DvbtChannel, channel_filter, occupied_band};
 
+fn program_switch(before: &DvbtParams, after: &DvbtParams) -> Option<LiveProgram> {
+    let comparable = DvbtParams {
+        program: after.program,
+        ..*before
+    };
+    (before.program != after.program && comparable == *after).then_some(LiveProgram {
+        program: after.program,
+    })
+}
+
 pub(crate) fn dvbt_decoder() -> Native<DvbtParams> {
     let decoder = Native::new::<DvbtChannel>(occupied_band)
+        .program_switch(program_switch)
         .filter(|p| Ok(channel_filter(p)))
         .input_rate(|p| p.sample_rate_hz())
         .audio_channels(|_| 2)

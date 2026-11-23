@@ -1,7 +1,7 @@
 use sdrmm_wire::FilterSpec;
-use std::sync::LazyLock;
+use std::{sync::LazyLock, time::Duration};
 
-use crate::dvbt::DvbtParams;
+use crate::dvbt::{DvbtParams, DvbtStandard};
 use num_complex::Complex;
 use sdrmm_decoder::broadcast::{
     BroadcastService, BroadcastServiceKind, BroadcastStatus, publish_status,
@@ -18,6 +18,8 @@ use sdrmm_modem::{
 
 pub const INPUT_RATE: f64 = 64_000_000.0 / 7.0;
 const TAPS_PER_SECOND: f64 = 10.0;
+const T2_TRANSPORT_TIMEOUT_SECONDS: f64 = 1.0;
+const T2_PLAYOUT_DELAY: Duration = Duration::from_millis(360);
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dvbt".to_owned(),
     name: "DVB-T/T2".to_owned(),
@@ -67,6 +69,7 @@ pub struct DvbtChannel {
     report_samples: usize,
     tap_samples: usize,
     was_locked: bool,
+    transport_gap_samples: usize,
 }
 
 impl DvbtChannel {
@@ -167,8 +170,13 @@ impl NativeChannel for DvbtChannel {
         check_rate(ctx, &DESCRIPTOR, params.sample_rate_hz())?;
         let mut demux = TsDemux::new();
         demux.select(params.program);
-        let mut media = Media::new()?;
-        media.enable_clock();
+        let media = if params.standard == DvbtStandard::DvbT2 {
+            Media::buffered(T2_PLAYOUT_DELAY)?
+        } else {
+            let mut media = Media::new()?;
+            media.enable_clock();
+            media
+        };
         Ok(Self {
             params,
             receiver: Frontend::new(params)?,
@@ -180,6 +188,7 @@ impl NativeChannel for DvbtChannel {
             report_samples: 0,
             tap_samples: 0,
             was_locked: false,
+            transport_gap_samples: 0,
         })
     }
 }
@@ -207,7 +216,27 @@ impl Channel for DvbtChannel {
         self.report_samples = 0;
         self.tap_samples = 0;
         self.was_locked = false;
+        self.transport_gap_samples = 0;
     }
+    fn select_program(&mut self, program: Option<u16>) {
+        self.demux.select(program);
+        self.params.program = program;
+    }
+
+    fn input_gap(&mut self, seconds: f64) -> bool {
+        if self.params.standard != DvbtStandard::DvbT2 {
+            return false;
+        }
+        let rate = self.params.sample_rate_hz();
+        let missing = (seconds * rate).round() as usize;
+        let missing_total = self.transport_gap_samples.saturating_add(missing);
+        self.receiver.reset();
+        self.demux.input_gap();
+        self.media.advance(missing, rate);
+        self.transport_gap_samples = missing_total;
+        true
+    }
+
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         let input_rate = self.params.sample_rate_hz();
         self.media.advance(iq.len(), input_rate);
@@ -215,10 +244,23 @@ impl Channel for DvbtChannel {
         self.receiver.push(iq, &mut self.packets);
         self.tap_symbols(iq.len(), out);
         let locked = self.receiver.locked();
+        self.transport_gap_samples = if locked || !self.packets.is_empty() {
+            0
+        } else {
+            self.transport_gap_samples.saturating_add(iq.len())
+        };
+        let locked = locked
+            || (self.was_locked
+                && self.params.standard == DvbtStandard::DvbT2
+                && (self.transport_gap_samples as f64) < input_rate * T2_TRANSPORT_TIMEOUT_SECONDS);
         if self.was_locked && !locked {
-            self.demux.reset();
-            self.media.reset();
-            self.selection = None;
+            if self.params.standard == DvbtStandard::DvbT2 {
+                self.demux.input_gap();
+            } else {
+                self.demux.reset();
+                self.media.reset();
+                self.selection = None;
+            }
         }
         self.was_locked = locked;
         self.units.clear();

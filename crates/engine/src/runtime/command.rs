@@ -24,6 +24,10 @@ pub(crate) enum DspCommand {
     RemoveChannel {
         id: u32,
     },
+    SelectProgram {
+        id: u32,
+        program: Option<u16>,
+    },
     RetuneChannel {
         id: u32,
         frequency_hz: f64,

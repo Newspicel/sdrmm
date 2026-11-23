@@ -25,11 +25,11 @@ function fakeSocket() {
         type: "StreamStopped",
         data: { stream_id: streamId, kind: "video" },
       }),
-    push: (streamId: number, width = 4, height = 2) =>
+    push: (streamId: number, width = 4, height = 2, seq = 0, timestamp = 0n) =>
       registry.emit("video", {
         streamId,
-        seq: 0,
-        timestamp: 0n,
+        seq,
+        timestamp,
         width,
         height,
         channels: 1,
@@ -83,6 +83,63 @@ describe("VideoHub", () => {
     expect(shown).toEqual([160]);
     remove();
     hub.detach();
+  });
+
+  it("schedules frames from their 90 kHz timestamps even when delivered together", () => {
+    const { fake, hub } = bench();
+    const planned: { at: number; epoch: number }[] = [];
+    hub.subscribe(input("tv"), (_, presentation) => {
+      if (presentation) planned.push(presentation);
+    });
+    fake.started(0x8000, "tv");
+    const marked = 1n << 63n;
+    fake.push(0x8000, 4, 2, 1, marked | ((1n << 33n) - 900n));
+    fake.push(0x8000, 4, 2, 2, marked | 900n);
+    fake.push(0x8000, 4, 2, 3, marked | 2700n);
+    expect(planned.map((frame) => frame.at - (planned[0]?.at ?? 0))).toEqual([0, 20, 40]);
+    expect(new Set(planned.map((frame) => frame.epoch)).size).toBe(1);
+    fake.reconnect();
+    fake.started(0x8000, "tv");
+    fake.push(0x8000, 4, 2, 1, marked | 6000n);
+    expect(planned[3]?.epoch).not.toBe(planned[0]?.epoch);
+  });
+
+  it("keeps the video clock when the audio buffer latency jumps", () => {
+    const { fake, hub } = bench();
+    const planned: { at: number; epoch: number }[] = [];
+    let delay = 0;
+    const release = registerMediaLatency("tv", () => delay);
+    hub.subscribe(input("tv"), (_, presentation) => {
+      if (presentation) planned.push(presentation);
+    });
+    fake.started(0x8000, "tv");
+    const marked = 1n << 63n;
+    fake.push(0x8000, 4, 2, 1, marked | 9000n);
+    vi.advanceTimersByTime(20);
+    delay = 500;
+    fake.push(0x8000, 4, 2, 2, marked | 10800n);
+    vi.advanceTimersByTime(20);
+    delay = 100;
+    fake.push(0x8000, 4, 2, 3, marked | 12600n);
+    expect(planned.map((frame) => frame.at - (planned[0]?.at ?? 0))).toEqual([0, 22, 44]);
+    expect(new Set(planned.map((frame) => frame.epoch)).size).toBe(1);
+    release();
+  });
+
+  it("counts gaps without mistaking sequence rollover or a reconnect for missing frames", () => {
+    const { fake, hub } = bench();
+    const scope = input("atv");
+    hub.subscribe(scope, () => {});
+    fake.started(0x8000, "atv");
+    fake.push(0x8000, 4, 2, 0xfffffffe);
+    fake.push(0x8000, 4, 2, 1);
+    expect(hub.missingFrames(scope)).toBe(2);
+    fake.reconnect();
+    fake.started(0x8000, "atv");
+    fake.push(0x8000, 4, 2, 400);
+    expect(hub.missingFrames(scope)).toBe(2);
+    fake.push(0x8000, 4, 2, 402);
+    expect(hub.missingFrames(scope)).toBe(3);
   });
 
   it("asks for the port once for every watcher and lets go after the last", () => {

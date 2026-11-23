@@ -317,6 +317,11 @@ fn drain_commands(
                     slot.retire(Retired::Channel(channels.remove(index).1));
                 }
             }
+            DspCommand::SelectProgram { id, program } => {
+                if let Some((_, host)) = channels.iter_mut().find(|(existing, _)| *existing == id) {
+                    host.select_program(program);
+                }
+            }
             DspCommand::RetuneChannel { id, frequency_hz } => {
                 if let Some((_, host)) = channels.iter_mut().find(|(existing, _)| *existing == id) {
                     host.retune(frequency_hz);

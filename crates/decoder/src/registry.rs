@@ -48,6 +48,10 @@ pub trait Decoder: Send + Sync {
     /// `params` with every setting the decoder defaults filled in.
     fn normalize(&self, params: &ChannelParams) -> Result<ChannelParams, ChannelError>;
 
+    fn live_program(&self, _before: &ChannelParams, _after: &ChannelParams) -> Option<LiveProgram> {
+        None
+    }
+
     fn kinds(&self) -> Vec<KindSpec> {
         Vec::new()
     }
@@ -135,12 +139,18 @@ pub fn announced_placements(frame: &sdrmm_wire::DvFrame) -> Vec<TrunkPlacement> 
         .collect()
 }
 
+pub struct LiveProgram {
+    pub program: Option<u16>,
+}
+
 type Open = fn(ChannelCtx, ChannelSettings) -> Result<Box<dyn Channel>, ChannelError>;
+type ProgramSwitch<S> = fn(&S, &S) -> Option<LiveProgram>;
 
 /// A decoder compiled into the build, whose settings are the struct `S`.
 pub struct Native<S> {
     base: fn() -> &'static ChannelDescriptor,
     open: Open,
+    program_switch: Option<ProgramSwitch<S>>,
     band: fn(&S) -> (f64, f64),
     filter: fn(&S) -> Result<FilterSpec, ChannelError>,
     input_rate: Option<fn(&S) -> f64>,
@@ -190,6 +200,7 @@ where
         Self {
             base: C::descriptor,
             open: boxed::<C>,
+            program_switch: None,
             band,
             filter: |_| Ok(FilterSpec::Passthrough),
             input_rate: None,
@@ -207,6 +218,12 @@ where
             recipes: &[],
             complete: OnceLock::new(),
         }
+    }
+
+    #[must_use]
+    pub fn program_switch(mut self, select: ProgramSwitch<S>) -> Self {
+        self.program_switch = Some(select);
+        self
     }
 
     #[must_use]
@@ -368,6 +385,10 @@ where
     fn normalize(&self, params: &ChannelParams) -> Result<ChannelParams, ChannelError> {
         ChannelParams::new(params.type_id(), &self.settings(params)?)
             .map_err(ChannelError::InvalidSettings)
+    }
+
+    fn live_program(&self, before: &ChannelParams, after: &ChannelParams) -> Option<LiveProgram> {
+        self.program_switch?(&self.settings(before).ok()?, &self.settings(after).ok()?)
     }
 
     fn kinds(&self) -> Vec<KindSpec> {
@@ -628,6 +649,22 @@ pub fn channel_filter(params: &ChannelParams) -> Result<ChannelFilter, ChannelEr
 
 pub fn tune(params: &ChannelParams, signal: &IdentSignal) -> Result<Tuned, ChannelError> {
     registry().decoder(params.type_id())?.tune(params, signal)
+}
+
+pub fn live_program(before: &ChannelSettings, after: &ChannelSettings) -> Option<LiveProgram> {
+    if before.params.type_id() != after.params.type_id() {
+        return None;
+    }
+    let comparable = ChannelSettings {
+        params: after.params.clone(),
+        ..before.clone()
+    };
+    if comparable != *after {
+        return None;
+    }
+    registry()
+        .find(before.params.type_id())?
+        .live_program(&before.params, &after.params)
 }
 
 pub fn normalize(params: &ChannelParams) -> Result<ChannelParams, ChannelError> {

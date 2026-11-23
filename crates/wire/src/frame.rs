@@ -5,6 +5,11 @@ pub const PROTOCOL_VERSION: u8 = 1;
 
 pub const HEADER_LEN: usize = 16;
 
+/// A video timestamp with this bit set carries a 33-bit MPEG presentation timestamp at 90 kHz.
+pub const VIDEO_PRESENTATION_TIMESTAMP: u64 = 1 << 63;
+pub const VIDEO_PRESENTATION_MASK: u64 = (1 << 33) - 1;
+pub const VIDEO_PACING_LEAD_MS: u32 = 100;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 /// 2, 3 and 4 carried uncompressed IQ and video. They stay retired, so an old client never

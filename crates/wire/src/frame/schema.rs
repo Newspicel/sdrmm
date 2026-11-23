@@ -1,7 +1,8 @@
 use super::{
     AudioFrame, FUSION_FRAME_CELLS, FrameKind, FusionGridFrame, HEADER_LEN, IQ_FULL_SCALE, IqFrame,
     PROTOCOL_VERSION, RangeDopplerFrame, SpatialSpectrumFrame, SpectrumFrame, SymbolFrame,
-    VIDEO_GRAY, VIDEO_RGB, VideoFrame, VisibilityFrame,
+    VIDEO_GRAY, VIDEO_PACING_LEAD_MS, VIDEO_PRESENTATION_MASK, VIDEO_PRESENTATION_TIMESTAMP,
+    VIDEO_RGB, VideoFrame, VisibilityFrame,
 };
 
 struct Emitted {
@@ -95,7 +96,7 @@ fn emitted() -> [Emitted; 9] {
 #[must_use]
 pub fn typescript_frames() -> String {
     let mut out = format!(
-        "export const PROTOCOL_VERSION = {PROTOCOL_VERSION};\nconst HEADER_LEN = {HEADER_LEN};\nexport const FUSION_FRAME_CELLS = {FUSION_FRAME_CELLS};\nconst IQ_FULL_SCALE = {IQ_FULL_SCALE};\nexport const VIDEO_GRAY = {VIDEO_GRAY};\nexport const VIDEO_RGB = {VIDEO_RGB};\n"
+        "export const PROTOCOL_VERSION = {PROTOCOL_VERSION};\nconst HEADER_LEN = {HEADER_LEN};\nexport const FUSION_FRAME_CELLS = {FUSION_FRAME_CELLS};\nconst IQ_FULL_SCALE = {IQ_FULL_SCALE};\nexport const VIDEO_GRAY = {VIDEO_GRAY};\nexport const VIDEO_RGB = {VIDEO_RGB};\nexport const VIDEO_PRESENTATION_TIMESTAMP = {VIDEO_PRESENTATION_TIMESTAMP}n;\nexport const VIDEO_PRESENTATION_MASK = {VIDEO_PRESENTATION_MASK}n;\nexport const VIDEO_PACING_LEAD_MS = {VIDEO_PACING_LEAD_MS};\n"
     );
     out.push_str(&format!(
         "export const WS_SUBPROTOCOL = {:?};\nexport const WS_BEARER_PROTOCOL_PREFIX = {:?};\nexport const WS_CLOSE_REVOKED = {};\nexport const WEBTRANSPORT_PATH = {:?};\nexport const WEBTRANSPORT_LENGTH_BYTES = {};\n",

@@ -319,13 +319,18 @@ impl TsDemux {
         }
     }
 
-    pub fn reset(&mut self) {
+    /// Discard fragments that cannot be continued across a known transport gap.
+    pub fn input_gap(&mut self) {
         self.sections.clear();
         self.tables.clear();
         self.pes.clear();
+        self.continuity.clear();
+    }
+
+    pub fn reset(&mut self) {
+        self.input_gap();
         self.programs.clear();
         self.pmt_pids.clear();
-        self.continuity.clear();
         self.discontinuities = 0;
         self.dropped = 0;
         self.scrambled = 0;
@@ -962,6 +967,27 @@ mod tests {
         assert_eq!(units.len(), 3);
         assert_eq!(units[0].payload, b"audio");
         assert_eq!(units[1].pts, Some(93600));
+    }
+
+    #[test]
+    fn an_input_gap_keeps_the_program_and_discards_partial_pes() {
+        let packets = multiplex(&[42; 1000], b"audio");
+        let mut demux = TsDemux::new();
+        let mut units = Vec::new();
+        for packet in &packets[..4] {
+            demux.push(packet, &mut units);
+        }
+        let program = demux.program().expect("program from PAT and PMT").number;
+        demux.input_gap();
+        assert_eq!(demux.program().map(|program| program.number), Some(program));
+        for packet in &packets[4..] {
+            demux.push(packet, &mut units);
+        }
+        let video: Vec<_> = units.iter().filter(|unit| unit.pid == VIDEO_PID).collect();
+        assert_eq!(video.len(), 2);
+        assert_eq!(video[0].pts, Some(93_600));
+        assert_eq!(video[1].pts, Some(97_200));
+        assert_eq!(video[0].payload, [42; 1000]);
     }
 
     #[test]

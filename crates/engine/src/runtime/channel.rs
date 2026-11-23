@@ -156,6 +156,7 @@ pub(crate) struct ChannelHost {
     has_audio: bool,
     audio_rec: Option<AudioTaps>,
     rx: Box<dyn Channel>,
+    selected_program: Option<Option<u16>>,
     blanker: Option<NoiseBlanker>,
     if_stage: Option<IfStage>,
     outputs: ChannelOutputs,
@@ -244,6 +245,7 @@ impl ChannelHost {
             has_audio: descriptor.has_audio,
             audio_rec: None,
             rx,
+            selected_program: None,
             blanker: (descriptor.has_audio && settings.blanker.enabled)
                 .then(|| NoiseBlanker::new(wide_rate, settings.blanker.threshold)),
             if_stage: IfStage::build(
@@ -328,8 +330,16 @@ impl ChannelHost {
         if let Some(next) = self.next_input
             && next != index
         {
-            self.skip_input(index.saturating_sub(next));
-            self.recovering = true;
+            let missing = index.saturating_sub(next);
+            self.skip_input(missing);
+            if !self.recovering
+                && missing > 0
+                && self.rx.input_gap(missing as f64 / self.device_rate)
+            {
+                self.reset_after_gap();
+            } else {
+                self.recovering = true;
+            }
         }
         self.next_input = Some(index.saturating_add(input.len() as u64));
         if self.recovering {
@@ -338,11 +348,10 @@ impl ChannelHost {
                 return;
             }
             self.rx.position_changed(self.position.as_ref());
-            self.ddc.reset();
-            self.filter.reset();
-            self.reset_front_end();
-            self.squelch.reset();
-            self.lo_artifact_hz = None;
+            if let Some(program) = self.selected_program {
+                self.rx.select_program(program);
+            }
+            self.reset_after_gap();
             self.recovering = false;
         }
         if selected.is_some() {
@@ -350,6 +359,14 @@ impl ChannelHost {
         } else {
             self.process(input, center_hz);
         }
+    }
+
+    fn reset_after_gap(&mut self) {
+        self.ddc.reset();
+        self.filter.reset();
+        self.reset_front_end();
+        self.squelch.reset();
+        self.lo_artifact_hz = None;
     }
 
     fn skip_input(&mut self, count: u64) {
@@ -622,6 +639,11 @@ impl ChannelHost {
         self.offset_hz = offset_hz;
         self.ddc.set_offset(offset_hz);
         true
+    }
+
+    pub(super) fn select_program(&mut self, program: Option<u16>) {
+        self.selected_program = Some(program);
+        self.rx.select_program(program);
     }
 
     fn restart_chain(&mut self) {

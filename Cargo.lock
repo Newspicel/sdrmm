@@ -8017,6 +8017,7 @@ dependencies = [
  "http-body-util",
  "jiff 0.2.42",
  "libc",
+ "libloading 0.9.0",
  "local-ip-address",
  "mdns-sd",
  "mime_guess",

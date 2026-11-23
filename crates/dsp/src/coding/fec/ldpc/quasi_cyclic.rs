@@ -201,6 +201,9 @@ impl QuasiCyclic {
     /// Sweeps every layer until a sweep finds every check holding and flips no total, at most
     /// `limit + 1` sweeps. Returns the sweeps that changed something.
     pub fn run(&mut self, limit: usize) -> Option<usize> {
+        if self.hard_parity_holds() {
+            return Some(0);
+        }
         (0..=limit).find(|_| {
             let sweep = self.sweep();
             sweep.unsatisfied == 0 && !sweep.flipped
@@ -212,6 +215,28 @@ impl QuasiCyclic {
         for (bit, &total) in hard.iter_mut().zip(&self.totals) {
             *bit = total < 0;
         }
+    }
+
+    fn hard_parity_holds(&mut self) -> bool {
+        let size = self.layout.size;
+        if self.layout.degree == 0 {
+            return true;
+        }
+        let gathered = &mut self.gathered[..self.stride];
+        let parity = &mut self.extrinsic[..self.stride];
+        for layer in 0..self.layout.layers() {
+            parity.fill(0);
+            for &circulant in self.layout.layer(layer) {
+                gather(&self.totals, circulant, size, gathered);
+                for (check, &value) in parity.iter_mut().zip(gathered.iter()) {
+                    *check ^= value;
+                }
+            }
+            if parity[..size].iter().any(|&check| check < 0) {
+                return false;
+            }
+        }
+        true
     }
 
     fn sweep(&mut self) -> Sweep {

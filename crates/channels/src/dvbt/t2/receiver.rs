@@ -2,7 +2,7 @@ use std::f32::consts::TAU;
 
 use num_complex::Complex;
 use sdrmm_decoder::SymbolTap;
-use sdrmm_dsp::{FracResampler, math::fft::Transform};
+use sdrmm_dsp::{FracResampler, math::fft::Transform, tuning::nco::Nco};
 use sdrmm_modem::constellation::Constellation as Table;
 
 use super::{
@@ -57,7 +57,10 @@ pub struct Receiver {
     p2_gains: Vec<f32>,
     l1: Vec<Complex<f32>>,
     state: State,
+    last_guard: Option<u8>,
+    last_p2_frequency: Option<(Preamble, f32)>,
     phase: f32,
+    correction: Nco,
     selected: Option<u8>,
     pub parameters: Option<Pre>,
     pub frequency: f32,
@@ -102,7 +105,10 @@ impl Receiver {
             p2_gains: vec![0.0; 22432],
             l1: vec![Complex::default(); 22432],
             state: State::Search,
+            last_guard: None,
+            last_p2_frequency: None,
             phase: 0.0,
+            correction: Nco::new(0.0, 1.0),
             selected,
             parameters: None,
             frequency: 0.0,
@@ -132,7 +138,8 @@ impl Receiver {
         self.locked = false;
         self.lag = 0.0;
         self.last_frame = None;
-        self.clock = FracResampler::trimmable(TRIM_KEEP);
+        self.clock.reset();
+        let _ = self.clock.set_ratio(1.0);
         self.clock_error = 0.0;
         self.equalizer.reset();
         self.scheduler.reset();
@@ -273,7 +280,11 @@ impl Receiver {
             return Ok(false);
         }
         let mut last = DecodeError::Acquisition;
-        for code in [0, 1, 2, 3, 4, 5, 6] {
+        let last_guard = self.last_guard;
+        for code in last_guard
+            .into_iter()
+            .chain((0..=6).filter(|code| Some(*code) != last_guard))
+        {
             let guard = match code {
                 0 => fft / 32,
                 1 => fft / 16,
@@ -291,25 +302,40 @@ impl Receiver {
                 continue;
             }
             let frequency = self.frequency;
-            self.frequency += residual;
-            match self.decode_preamble(preamble, guard, code, packets) {
-                Ok(pre) => {
-                    self.parameters = Some(pre);
-                    self.frames = self.frames.saturating_add(1);
-                    let used = count * (fft + guard);
-                    self.consume(used);
-                    let p2_count = self.modes[fft.ilog2() as usize - 10].map.data;
-                    let address = count * p2_count - 1840 - pre.post_cells;
-                    self.state = State::Data {
-                        pre,
-                        symbol: count,
-                        address,
-                    };
-                    return Ok(true);
-                }
-                Err(error) => {
-                    last = error;
-                    self.frequency = frequency;
+            let measured = frequency + residual;
+            let spacing = TAU / fft as f32;
+            let tracked = self
+                .last_p2_frequency
+                .filter(|(previous, _)| previous.s1 == preamble.s1 && previous.s2 == preamble.s2)
+                .map_or(measured, |(_, previous)| {
+                    measured - ((measured - previous) / spacing).round() * spacing
+                });
+            for candidate in [Some(tracked), (tracked != measured).then_some(measured)]
+                .into_iter()
+                .flatten()
+            {
+                self.frequency = candidate;
+                match self.decode_preamble(preamble, guard, code, packets) {
+                    Ok(pre) => {
+                        self.parameters = Some(pre);
+                        self.last_guard = Some(code);
+                        self.last_p2_frequency = Some((preamble, self.frequency));
+                        self.frames = self.frames.saturating_add(1);
+                        let used = count * (fft + guard);
+                        self.consume(used);
+                        let p2_count = self.modes[fft.ilog2() as usize - 10].map.data;
+                        let address = count * p2_count - 1840 - pre.post_cells;
+                        self.state = State::Data {
+                            pre,
+                            symbol: count,
+                            address,
+                        };
+                        return Ok(true);
+                    }
+                    Err(error) => {
+                        last = error;
+                        self.frequency = frequency;
+                    }
                 }
             }
         }
@@ -408,17 +434,8 @@ impl Receiver {
         if self.pending.len() < length + 16 {
             return Ok(false);
         }
-        let (mut quality, mut residual) = prefix(&self.pending, 0, fft, guard, self.frequency);
-        let mut adjustment = 0_isize;
-        let margin = (guard / 8).clamp(1, 8) as isize - 1;
-        for offset in -margin..=margin {
-            let (candidate, error) = prefix(&self.pending, offset, fft, guard, self.frequency);
-            if candidate > quality + 0.002 {
-                quality = candidate;
-                residual = error;
-                adjustment = offset;
-            }
-        }
+        let (quality, residual, mut adjustment) =
+            tracked_prefix(&self.pending, fft, guard, self.frequency);
         if quality < 0.12 {
             return Err(DecodeError::Acquisition);
         }
@@ -464,10 +481,14 @@ impl Receiver {
         if self.scheduler.report().packets > previous {
             self.locked = true;
         }
-        self.consume((length as isize + adjustment) as usize);
-        if symbol + 1 == pre.preamble.p2_symbols()? + pre.data_symbols {
+        let last = symbol + 1 == pre.preamble.p2_symbols()? + pre.data_symbols;
+        let consumed = (length as isize + adjustment) as usize;
+        let overlap = if last && self.fef == 0 { 64 } else { 0 };
+        self.consume(consumed - overlap);
+        if last {
             self.scheduler.end()?;
-            self.last_frame = Some((self.consumed + self.fef as u64, self.consumed - self.origin));
+            let end = self.consumed + overlap as u64;
+            self.last_frame = Some((end + self.fef as u64, end - self.origin));
             self.state = if self.fef > 0 {
                 State::Skip(self.fef)
             } else {
@@ -520,10 +541,12 @@ impl Receiver {
 
     fn transform(&mut self, mode: usize, start: usize) {
         let fft = self.modes[mode].map.fft;
-        for (i, p) in self.spectrum[..fft].iter_mut().enumerate() {
-            *p = self.pending[start + i]
-                * Complex::from_polar(1.0, -self.phase - self.frequency * (start + i) as f32);
-        }
+        let turns = -f64::from(self.frequency) / std::f64::consts::TAU;
+        self.correction.set_turns(turns);
+        self.correction
+            .set_phase(turns * start as f64 - f64::from(self.phase) / std::f64::consts::TAU);
+        self.correction
+            .mix_into(&self.pending[start..start + fft], &mut self.spectrum[..fft]);
         self.modes[mode].fft.process(&mut self.spectrum[..fft]);
     }
 
@@ -572,6 +595,49 @@ fn prefix(
     let residual =
         (correlation * Complex::from_polar(1.0, -frequency * fft as f32)).arg() / fft as f32;
     (quality, residual)
+}
+
+fn tracked_prefix(
+    iq: &[Complex<f32>],
+    fft: usize,
+    guard: usize,
+    frequency: f32,
+) -> (f32, f32, isize) {
+    let edge = (guard / 8).max(1);
+    let margin = (guard / 8).clamp(1, 8) - 1;
+    let width = guard - 2 * edge;
+    let first = edge - margin;
+    let pair = |at| (iq[at], iq[at + fft]);
+    let (mut corr, mut left, mut right) = (Complex::default(), 0.0, 0.0);
+    let mut windows = [(Complex::new(0.0, 0.0), 0.0); 15];
+    for at in first..first + width {
+        let (a, b) = pair(at);
+        corr += b * a.conj();
+        left += a.norm_sqr();
+        right += b.norm_sqr();
+    }
+    for (i, window) in windows[..2 * margin + 1].iter_mut().enumerate() {
+        *window = (corr, corr.norm_sqr() / (left * right).max(1e-20));
+        if i < 2 * margin {
+            let (a, b) = pair(first + i);
+            let (c, d) = pair(first + i + width);
+            corr += d * c.conj() - b * a.conj();
+            left += c.norm_sqr() - a.norm_sqr();
+            right += d.norm_sqr() - b.norm_sqr();
+        }
+    }
+    let (mut correlation, mut quality) = windows[margin];
+    let mut adjustment = 0;
+    for (i, &(candidate, score)) in windows[..2 * margin + 1].iter().enumerate() {
+        if score > quality + 0.002 {
+            correlation = candidate;
+            quality = score;
+            adjustment = i as isize - margin as isize;
+        }
+    }
+    let residual =
+        (correlation * Complex::from_polar(1.0, -frequency * fft as f32)).arg() / fft as f32;
+    (quality, residual, adjustment)
 }
 
 /// The four PLP grids, indexed by bits per cell over two, less one.

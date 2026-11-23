@@ -6,6 +6,9 @@ use std::{
 use axum::body::Bytes;
 use sdrmm_decoder::VideoPicture;
 
+#[cfg(target_os = "linux")]
+mod turbo;
+
 const QUALITY: u32 = 85;
 const REMEMBERED: usize = 8;
 const BLOCK: usize = 8;
@@ -390,6 +393,10 @@ pub(crate) fn encode(picture: &VideoPicture) -> Option<Vec<u8>> {
     };
     if pixels == 0 || !fits {
         return None;
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(output) = turbo::compress(picture, color) {
+        return Some(output);
     }
     let mut writer = BitWriter {
         out: headers(picture.width, picture.height, color),

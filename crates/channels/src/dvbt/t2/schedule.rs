@@ -2,7 +2,7 @@ use num_complex::Complex;
 
 use super::{
     Coding, Constellation, DecodeError, Frame, Rate,
-    bicm::Decoder,
+    bicm::{Decoded, Decoder},
     interleave,
     signalling::{Plp, Post, Pre},
     transport::Transport,
@@ -12,6 +12,11 @@ use sdrmm_modem::dvb::PACKET;
 
 const TIME_CAPACITY: usize = 1 << 19;
 const TAP_CELLS: usize = 4096;
+const PARALLEL_BLOCKS: usize = 16;
+const MAX_MESSAGE_BITS: usize = 54_000;
+
+mod fec;
+use fec::FecLane;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Report {
@@ -31,6 +36,7 @@ pub struct Scheduler {
     buffered_gains: Vec<f32>,
     deinterleaved_gains: Vec<f32>,
     word: Vec<bool>,
+    fec_workers: Option<[FecLane; 2]>,
     transport: Transport,
     slices: usize,
     interval: usize,
@@ -47,7 +53,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new() -> Result<Self, DecodeError> {
+    pub fn new(parallel: bool) -> Result<Self, DecodeError> {
         let mut decoders = Vec::with_capacity(14);
         for frame in [Frame::Short, Frame::Normal] {
             for rate in [
@@ -82,7 +88,16 @@ impl Scheduler {
             deinterleaved: vec![Complex::default(); TIME_CAPACITY],
             buffered_gains: Vec::with_capacity(TIME_CAPACITY),
             deinterleaved_gains: vec![0.0; TIME_CAPACITY],
-            word: vec![false; 54000],
+            word: vec![false; MAX_MESSAGE_BITS],
+            fec_workers: if parallel
+                && std::thread::available_parallelism().is_ok_and(|cpus| cpus.get() >= 4)
+            {
+                FecLane::new()
+                    .zip(FecLane::new())
+                    .map(|(first, second)| [first, second])
+            } else {
+                None
+            },
             transport: Transport::default(),
             slices: 0,
             interval: 0,
@@ -261,17 +276,26 @@ impl Scheduler {
             if expected != self.received {
                 return Err(DecodeError::Discontinuity);
             }
-            let span = first - address..last - address;
-            for (&cell, &gain) in cells[span.clone()].iter().zip(&gains[span]) {
-                if self.buffered.len() == self.buffered.capacity() {
+            let mut start = first - address;
+            let end = last - address;
+            while start < end {
+                let blocks = self.block_size(plp)?;
+                let required = blocks * plp.coding.cells();
+                if required > self.buffered.capacity() {
                     return Err(DecodeError::Capacity);
                 }
-                self.buffered.push(cell);
-                self.buffered_gains.push(gain);
-                self.received += 1;
-                let block_size = self.block_size(plp)?;
-                if self.buffered.len() == block_size * plp.coding.cells() {
-                    self.decode_block(plp, block_size, noise, packets)?;
+                let room = required
+                    .checked_sub(self.buffered.len())
+                    .filter(|&remaining| remaining > 0)
+                    .ok_or(DecodeError::Discontinuity)?;
+                let count = (end - start).min(room);
+                let span = start..start + count;
+                self.buffered.extend_from_slice(&cells[span.clone()]);
+                self.buffered_gains.extend_from_slice(&gains[span]);
+                self.received += count;
+                start += count;
+                if self.buffered.len() == required {
+                    self.decode_block(plp, blocks, noise, packets)?;
                     self.buffered.clear();
                     self.buffered_gains.clear();
                     self.time_block += 1;
@@ -314,55 +338,126 @@ impl Scheduler {
             self.deinterleaved[..count].copy_from_slice(&self.buffered);
             self.deinterleaved_gains[..count].copy_from_slice(&self.buffered_gains);
         }
-        for index in 0..blocks {
-            let first = index * plp.coding.cells();
+        let noise = noise.max(0.0001);
+        if blocks >= PARALLEL_BLOCKS && plp.time_length != 0 && self.fec_workers.is_some() {
+            self.decode_parallel(plp, blocks, noise, packets);
+        } else {
+            self.decode_serial(plp, 0..blocks, noise, packets);
+        }
+        Ok(())
+    }
+
+    fn decode_parallel<S: Sink>(&mut self, plp: Plp, blocks: usize, noise: f32, packets: &mut S) {
+        let Some(mut workers) = self.fec_workers.take() else {
+            self.decode_serial(plp, 0..blocks, noise, packets);
+            return;
+        };
+        let bounds = [0, blocks.div_ceil(3), (2 * blocks).div_ceil(3), blocks];
+        let cell_count = plp.coding.cells();
+        let [first, second] = &mut workers;
+        let submitted = [(1, first), (2, second)].map(|(index, worker)| {
+            let first = bounds[index];
+            let range = first * cell_count..bounds[index + 1] * cell_count;
+            worker.submit(
+                plp.coding,
+                first,
+                &self.deinterleaved[range.clone()],
+                &self.deinterleaved_gains[range],
+                noise,
+            )
+        });
+        self.decode_serial(plp, 0..bounds[1], noise, packets);
+        for (index, (worker, submitted)) in workers.iter_mut().zip(submitted).enumerate() {
+            if let Some(job) = submitted.then(|| worker.finish()).flatten() {
+                for (decoded, word) in job
+                    .results
+                    .iter()
+                    .copied()
+                    .zip(job.words.chunks_exact(plp.coding.message()))
+                {
+                    Self::accept_word(
+                        &mut self.report,
+                        &mut self.transport,
+                        decoded,
+                        word,
+                        packets,
+                    );
+                }
+            } else {
+                self.decode_serial(plp, bounds[index + 1]..bounds[index + 2], noise, packets);
+            }
+        }
+        self.fec_workers = Some(workers);
+    }
+
+    fn decode_serial<S: Sink>(
+        &mut self,
+        plp: Plp,
+        indices: std::ops::Range<usize>,
+        noise: f32,
+        packets: &mut S,
+    ) {
+        let cell_count = plp.coding.cells();
+        for index in indices {
+            let first = index * cell_count;
+            let range = first..first + cell_count;
             let block = if plp.time_length == 0 {
                 self.time_block
             } else {
                 index
             };
             self.keep_tap(plp, first, block);
-            let result = self.decoders[self.decoder].2.decode_weighted(
-                &self.deinterleaved[first..first + plp.coding.cells()],
-                &self.deinterleaved_gains[first..first + plp.coding.cells()],
+            let decoded = self.decoders[self.decoder].2.decode_weighted(
+                &self.deinterleaved[range.clone()],
+                &self.deinterleaved_gains[range],
                 block,
-                noise.max(0.0001),
+                noise,
                 &mut self.word,
             );
-            let result = match result {
-                Ok(decoded) => {
-                    self.report.blocks = self.report.blocks.saturating_add(1);
-                    self.report.corrected_bits = self
-                        .report
-                        .corrected_bits
-                        .saturating_add(decoded.corrected_bits as u32);
-                    self.transport.push_to(&self.word[..decoded.bits], packets)
-                }
-                Err(error) => Err(error),
-            };
-            match result {
-                Ok(report) => {
-                    self.report.packets = self.report.packets.saturating_add(report.packets as u32);
-                    self.report.errors = self
-                        .report
-                        .errors
-                        .saturating_add((report.crc_errors + report.discontinuities) as u32);
-                    if report.crc_errors > 0 {
-                        self.report.last_error = Some(DecodeError::Header);
-                    } else if report.discontinuities > 0 {
-                        self.report.last_error = Some(DecodeError::Discontinuity);
-                    } else {
-                        self.report.last_error = None;
-                    }
-                }
-                Err(error) => {
-                    self.transport.reset();
-                    self.report.errors = self.report.errors.saturating_add(1);
-                    self.report.last_error = Some(error);
-                }
+            Self::accept_word(
+                &mut self.report,
+                &mut self.transport,
+                decoded,
+                &self.word,
+                packets,
+            );
+        }
+    }
+
+    fn accept_word<S: Sink>(
+        report: &mut Report,
+        transport: &mut Transport,
+        decoded: Result<Decoded, DecodeError>,
+        word: &[bool],
+        packets: &mut S,
+    ) {
+        let result = decoded.and_then(|decoded| {
+            report.blocks = report.blocks.saturating_add(1);
+            report.corrected_bits = report
+                .corrected_bits
+                .saturating_add(decoded.corrected_bits as u32);
+            transport.push_to(&word[..decoded.bits], packets)
+        });
+        match result {
+            Ok(status) => {
+                report.packets = report.packets.saturating_add(status.packets as u32);
+                report.errors = report
+                    .errors
+                    .saturating_add((status.crc_errors + status.discontinuities) as u32);
+                report.last_error = if status.crc_errors > 0 {
+                    Some(DecodeError::Header)
+                } else if status.discontinuities > 0 {
+                    Some(DecodeError::Discontinuity)
+                } else {
+                    None
+                };
+            }
+            Err(error) => {
+                transport.reset();
+                report.errors = report.errors.saturating_add(1);
+                report.last_error = Some(error);
             }
         }
-        Ok(())
     }
 
     /// A block the decoder rejects keeps no tap; its error surfaces from the decode after.

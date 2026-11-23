@@ -106,6 +106,25 @@ fn p1_acquires_all_preamble_codes_with_fractional_and_integer_offsets() {
 }
 
 #[test]
+fn p1_acquires_when_only_the_shifted_copies_are_noisy() {
+    let preamble = Preamble { s1: 0, s2: 8 };
+    let mut samples = p1(preamble);
+    let rms = (samples.iter().map(Complex::norm_sqr).sum::<f32>() / 2048.0).sqrt();
+    let mut state = 0xa431_6bf9_u32;
+    let (prefix, rest) = samples.split_at_mut(542);
+    for sample in prefix.iter_mut().chain(&mut rest[1024..]) {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        *sample += Complex::from_polar(2.0 * rms, TAU * (state as f32 / u32::MAX as f32));
+    }
+
+    let detection = Acquisition::default().find(&samples).unwrap();
+    assert_eq!(detection.preamble, preamble);
+    assert!(detection.confidence >= 0.75);
+}
+
+#[test]
 fn p1_ignores_silence_and_nonfinite_samples() {
     let mut acquisition = Acquisition::default();
     assert!(acquisition.find(&vec![Complex::default(); 4096]).is_none());

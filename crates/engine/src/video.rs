@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 pub use sdrmm_decoder::VideoPicture;
 
-pub(crate) const VIDEO_CHANNEL_CAP: usize = 8;
+pub(crate) const VIDEO_CHANNEL_CAP: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct VideoPacket {

@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
@@ -34,20 +34,31 @@ use crate::{
 };
 
 pub(crate) const RING_SECONDS: f64 = 0.1;
-const LIVE_MAX_AGE: Duration = Duration::from_millis(100);
+const LIVE_MAX_AGE: Duration = Duration::from_millis((RING_SECONDS * 1_000.0) as u64);
 const RING_MIN: usize = 1 << 17;
 const RING_MAX: usize = 1 << 25;
 const SWEEP_FFT_SIZE: usize = 4_096;
 
+fn live_capture_window() -> Duration {
+    static WINDOW: OnceLock<Duration> = OnceLock::new();
+    *WINDOW.get_or_init(|| {
+        std::env::var("SDRMM_CAPTURE_BUFFER_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|ms| (100..=1_000).contains(ms))
+            .map_or(LIVE_MAX_AGE, Duration::from_millis)
+    })
+}
+
 pub(crate) fn ring_capacity(sample_rate: f64) -> usize {
-    ((sample_rate * RING_SECONDS) as usize).clamp(RING_MIN, RING_MAX)
+    ((sample_rate * live_capture_window().as_secs_f64()) as usize).clamp(RING_MIN, RING_MAX)
 }
 
 fn max_age_for(device: &dyn SdrDevice) -> Duration {
     if device.playback().is_some() {
         Duration::MAX
     } else {
-        LIVE_MAX_AGE
+        live_capture_window()
     }
 }
 

@@ -119,23 +119,34 @@ pub struct DecodedImage {
     pub picture: VideoPicture,
 }
 
+/// Give the player time to decode and schedule a timed video frame before its audio.
+pub const VIDEO_PACING_LEAD_MS: f64 = sdrmm_wire::frame::VIDEO_PACING_LEAD_MS as f64;
+
 #[derive(Default)]
 pub struct ChannelOutputs {
     pub audio_pcm: Vec<f32>,
     pub audio_rate: u32,
     pub events: Vec<DecoderEvent>,
     pub video: Vec<VideoPicture>,
+    pub video_pts: Vec<Option<i64>>,
     pub images: Vec<DecodedImage>,
     pub symbols: SymbolTap,
     pub status: Option<ChannelStatus>,
 }
 
 impl ChannelOutputs {
+    pub fn timed_picture(&mut self, picture: VideoPicture, pts: i64) {
+        self.video_pts.resize(self.video.len(), None);
+        self.video_pts.push(Some(pts));
+        self.video.push(picture);
+    }
+
     pub fn reset(&mut self) {
         self.audio_pcm.clear();
         self.audio_rate = 0;
         self.events.clear();
         self.video.clear();
+        self.video_pts.clear();
         self.images.clear();
         self.symbols.clear();
         self.status = None;
@@ -154,6 +165,13 @@ pub trait Channel: Send {
     fn apply(&mut self, settings: ChannelSettings) -> Result<(), ChannelError>;
 
     fn retuned(&mut self) {}
+
+    /// Returns true when a known sample gap has been handled without replacing this receiver.
+    fn input_gap(&mut self, _seconds: f64) -> bool {
+        false
+    }
+
+    fn select_program(&mut self, _program: Option<u16>) {}
 
     fn position_changed(&mut self, _fix: Option<&PositionFix>) {}
 

@@ -1,4 +1,7 @@
-export function latestOnly<T>(work: (item: T) => Promise<void>): (item: T) => void {
+export function latestOnly<T>(
+  work: (item: T) => Promise<void>,
+  onSkip?: () => void,
+): (item: T) => void {
   let busy = false;
   let waiting: { item: T } | null = null;
   const run = (item: T): void => {
@@ -16,6 +19,7 @@ export function latestOnly<T>(work: (item: T) => Promise<void>): (item: T) => vo
   };
   return (item) => {
     if (busy) {
+      if (waiting !== null) onSkip?.();
       waiting = { item };
     } else {
       run(item);

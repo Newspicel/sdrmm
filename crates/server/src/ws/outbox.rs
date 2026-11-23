@@ -90,6 +90,21 @@ fn packet(message: Message) -> Packet {
 }
 
 impl Packet {
+    fn timed_video(&self) -> bool {
+        if !self
+            .key
+            .is_some_and(|(kind, _)| kind == FrameKind::VideoJpeg as u8)
+        {
+            return false;
+        }
+        let Message::Binary(bytes) = &self.message else {
+            return false;
+        };
+        sdrmm_wire::frame::peek_header(bytes).is_ok_and(|header| {
+            header.timestamp & sdrmm_wire::frame::VIDEO_PRESENTATION_TIMESTAMP != 0
+        })
+    }
+
     fn len(&self) -> usize {
         match &self.message {
             Message::Text(text) => text.len(),
@@ -141,7 +156,11 @@ impl Queue {
             .key
             .is_some_and(|(kind, _)| kind == FrameKind::AudioOpus as u8);
         if !audio
-            && let Some(index) = self.media.iter().position(|old| old.key == packet.key)
+            && !packet.timed_video()
+            && let Some(index) = self
+                .media
+                .iter()
+                .position(|old| old.key == packet.key && !old.timed_video())
             && let Some(old) = self.media.remove(index)
         {
             self.bytes -= old.len();
@@ -362,6 +381,31 @@ mod tests {
         assert_eq!(rx.recv().await, Some(media(FrameKind::AudioOpus, 2, 3)));
         assert_eq!(rx.recv().await, Some(media(FrameKind::Spectrum, 1, 2)));
         assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn paced_video_keeps_every_frame_in_order() {
+        let (tx, mut rx) = channel();
+        let frame = |seq| {
+            Message::Binary(
+                sdrmm_wire::VideoFrame {
+                    stream_id: 7,
+                    seq,
+                    timestamp: sdrmm_wire::frame::VIDEO_PRESENTATION_TIMESTAMP | u64::from(seq),
+                    width: 1,
+                    height: 1,
+                    channels: sdrmm_wire::VIDEO_GRAY,
+                    jpeg: &[0xff, 0xd8],
+                }
+                .encode()
+                .expect("frame")
+                .into(),
+            )
+        };
+        tx.send(frame(1)).expect("first");
+        tx.send(frame(2)).expect("second");
+        assert_eq!(rx.recv().await, Some(frame(1)));
+        assert_eq!(rx.recv().await, Some(frame(2)));
     }
 
     #[tokio::test]

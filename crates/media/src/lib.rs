@@ -28,6 +28,7 @@ const CHUNK_BYTES: usize = 8192;
 const INPUT_SLOTS: usize = 256;
 const OUTPUT_SLOTS: usize = 32;
 const OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+const BUFFERED_OUTPUT_BYTES: usize = 192 * 1024 * 1024;
 
 /// The codec a unit is in.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -224,9 +225,14 @@ impl Output {
     }
 }
 
-fn publish(output: &mut Producer<Output>, resident: &AtomicUsize, mut value: Output) -> bool {
+fn publish(
+    output: &mut Producer<Output>,
+    resident: &AtomicUsize,
+    limit: usize,
+    mut value: Output,
+) -> bool {
     let bytes = value.bytes();
-    while resident.load(Ordering::Acquire) + bytes > OUTPUT_BYTES {
+    while resident.load(Ordering::Acquire) + bytes > limit {
         if output.is_abandoned() {
             return false;
         }
@@ -281,7 +287,12 @@ impl Open {
     }
 }
 
-fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: &AtomicUsize) {
+fn run(
+    mut input: Consumer<Input>,
+    mut output: Producer<Output>,
+    resident: &AtomicUsize,
+    limit: usize,
+) {
     let mut epoch = 0;
     let mut open = Open::default();
     let mut frames = Vec::new();
@@ -307,7 +318,7 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: &Atom
                 pts: None,
                 payload: Payload::Silence(item.frames),
             };
-            if !publish(&mut output, resident, silence) {
+            if !publish(&mut output, resident, limit, silence) {
                 return;
             }
             continue;
@@ -319,6 +330,7 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: &Atom
             if !publish(
                 &mut output,
                 resident,
+                limit,
                 Output {
                     epoch,
                     pts,
@@ -337,7 +349,7 @@ fn run(mut input: Consumer<Input>, mut output: Producer<Output>, resident: &Atom
                     message,
                 },
             };
-            if !publish(&mut output, resident, failure) {
+            if !publish(&mut output, resident, limit, failure) {
                 return;
             }
         }
@@ -352,6 +364,7 @@ pub struct Media {
     output: Consumer<Output>,
     epoch: u64,
     clock: Option<clock::Clock>,
+    paced_video: bool,
     pending: VecDeque<Output>,
     pub audio_frames: u32,
     pub video_frames: u32,
@@ -363,20 +376,32 @@ pub struct Media {
 
 impl Media {
     pub fn new() -> Result<Self, ChannelError> {
+        Self::open(OUTPUT_BYTES, None)
+    }
+
+    /// Holds an initial reserve of decoded frames to bridge uneven transport delivery.
+    /// Audio and video use the same presentation clock.
+    pub fn buffered(delay: Duration) -> Result<Self, ChannelError> {
+        Self::open(BUFFERED_OUTPUT_BYTES, Some(clock::Clock::with_delay(delay)))
+    }
+
+    fn open(limit: usize, clock: Option<clock::Clock>) -> Result<Self, ChannelError> {
+        let paced_video = clock.is_some();
         let (input, incoming) = RingBuffer::new(INPUT_SLOTS);
         let (outgoing, output) = RingBuffer::new(OUTPUT_SLOTS);
         let resident = Arc::new(AtomicUsize::new(0));
         let worker_resident = resident.clone();
         thread::Builder::new()
             .name("broadcast-media".to_owned())
-            .spawn(move || run(incoming, outgoing, &worker_resident))
+            .spawn(move || run(incoming, outgoing, &worker_resident, limit))
             .map_err(|error| ChannelError::InvalidSettings(format!("Media worker: {error}")))?;
         Ok(Self {
             input,
             resident,
             output,
             epoch: 0,
-            clock: None,
+            clock,
+            paced_video,
             pending: VecDeque::with_capacity(OUTPUT_SLOTS),
             audio_frames: 0,
             video_frames: 0,
@@ -401,8 +426,8 @@ impl Media {
     /// Drops whatever is queued and starts the counts over, as for a new stream.
     pub fn reset(&mut self) {
         self.epoch = self.epoch.wrapping_add(1);
-        if self.clock.is_some() {
-            self.enable_clock();
+        if let Some(clock) = &mut self.clock {
+            clock.reset();
         }
         for item in self.pending.drain(..) {
             self.resident.fetch_sub(item.bytes(), Ordering::AcqRel);
@@ -490,18 +515,24 @@ impl Media {
                 self.resident.fetch_sub(item.bytes(), Ordering::AcqRel);
                 continue;
             }
-            if let (Some(clock), Some(pts)) = (&mut self.clock, item.pts)
-                && !clock.due(pts)
-            {
-                self.pending.push_back(item);
-                continue;
+            let video = self.paced_video && matches!(&item.payload, Payload::Video(_));
+            if let (Some(clock), Some(pts)) = (&mut self.clock, item.pts) {
+                let due = if video {
+                    clock.due_with_lead(pts, sdrmm_decoder::VIDEO_PACING_LEAD_MS)
+                } else {
+                    clock.due(pts)
+                };
+                if !due {
+                    self.pending.push_back(item);
+                    continue;
+                }
             }
             self.resident.fetch_sub(item.bytes(), Ordering::AcqRel);
-            self.deliver(item.payload, out);
+            self.deliver(item.payload, item.pts.filter(|_| video), out);
         }
     }
 
-    fn deliver(&mut self, payload: Payload, out: &mut ChannelOutputs) {
+    fn deliver(&mut self, payload: Payload, pts: Option<i64>, out: &mut ChannelOutputs) {
         match payload {
             Payload::Audio(pcm) => {
                 out.audio_rate = AUDIO_RATE;
@@ -513,7 +544,11 @@ impl Media {
                 out.audio_pcm.resize(out.audio_pcm.len() + frames * 2, 0.0);
             }
             Payload::Video(picture) => {
-                out.video.push(picture);
+                if let Some(pts) = pts {
+                    out.timed_picture(picture, pts);
+                } else {
+                    out.video.push(picture);
+                }
                 self.video_frames = self.video_frames.saturating_add(1);
             }
             Payload::Error { video, message } => self.failed(video, message),

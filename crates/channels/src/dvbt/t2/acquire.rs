@@ -54,6 +54,9 @@ pub struct Detection {
 
 const LEADS: usize = 3;
 const COHERENT_MARGIN: f32 = 3.0;
+const P1_CORRELATION: f32 = 0.30;
+const WEAK_P1_CORRELATION: f32 = 0.15;
+const WEAK_P1_SIGNALLING_CONFIDENCE: f32 = 0.75;
 
 pub struct Acquisition {
     fft: Transform,
@@ -103,16 +106,16 @@ impl Acquisition {
         let mut peak = (0, 0.0_f32, 0.0_f32);
         for at in 0..=iq.len() - 2048 {
             let denominator = power.iter().product::<f32>();
-            let quality = if denominator > 1e-20 {
-                (c.norm_sqr() * b.norm_sqr() / denominator).sqrt()
-            } else {
-                0.0
-            };
-            if quality > 0.3 && quality > peak.1 {
-                peak = (at, quality, (c * b).arg() / 1024.0);
+            let correlation_power = c.norm_sqr() * b.norm_sqr();
+            let floor = peak.1.max(WEAK_P1_CORRELATION * WEAK_P1_CORRELATION);
+            if denominator > 1e-20 && correlation_power > denominator * floor {
+                peak = (at, correlation_power / denominator, (c * b).arg() / 1024.0);
             }
             if peak.1 > 0.0 && (at >= peak.0 + 24 || at == iq.len() - 2048) {
-                if let Some(mut detected) = self.decode(&iq[peak.0..peak.0 + 2048], peak.2) {
+                if let Some(mut detected) = self.decode(&iq[peak.0..peak.0 + 2048], peak.2)
+                    && (peak.1 > P1_CORRELATION * P1_CORRELATION
+                        || detected.confidence >= WEAK_P1_SIGNALLING_CONFIDENCE)
+                {
                     detected.start = peak.0;
                     return Some(detected);
                 }

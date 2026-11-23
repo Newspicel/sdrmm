@@ -90,7 +90,7 @@ fn transmitted(plp: Plp) -> (Vec<Complex<f32>>, Vec<[u8; PACKET]>) {
 
 #[test]
 fn type1_type2_and_interframe_schedules_recover_only_selected_cells() {
-    let mut scheduler = Scheduler::new().unwrap();
+    let mut scheduler = Scheduler::new(false).unwrap();
     for (length, across, kind) in [
         (0, false, 1),
         (1, false, 1),
@@ -137,7 +137,7 @@ fn type1_type2_and_interframe_schedules_recover_only_selected_cells() {
 
 #[test]
 fn missing_slices_and_missing_interleaving_frames_are_reported() {
-    let mut scheduler = Scheduler::new().unwrap();
+    let mut scheduler = Scheduler::new(false).unwrap();
     let (pre, mut post, _) = configuration(2, true, 2);
     post.frame = 1;
     assert_eq!(

@@ -1,6 +1,8 @@
 use num_complex::Complex;
 
-use crate::filter::iir::one_pole_coeff;
+use crate::{filter::iir::one_pole_coeff, math::complex::sum_norm_sqr};
+
+const POWER_BLOCK: usize = 128;
 
 const DETECT_TAU_S: f64 = 3e-3;
 const ATTACK_TAU_S: f64 = 5e-3;
@@ -27,6 +29,7 @@ pub struct LevelMeter {
     detect: f32,
     attack: f32,
     release: f32,
+    block_coefficients: Option<[f32; 3]>,
     peak_db: f32,
     held: u64,
     hold_samples: u64,
@@ -43,6 +46,11 @@ impl LevelMeter {
             detect: one_pole_coeff(rate, DETECT_TAU_S),
             attack: one_pole_coeff(rate, ATTACK_TAU_S),
             release: one_pole_coeff(rate, RELEASE_TAU_S),
+            block_coefficients: (rate >= 2_000_000.0).then(|| {
+                let block_rate = rate / POWER_BLOCK as f64;
+                [DETECT_TAU_S, ATTACK_TAU_S, RELEASE_TAU_S]
+                    .map(|tau| one_pole_coeff(block_rate, tau))
+            }),
             peak_db: LEVEL_FLOOR_DB,
             held: 0,
             hold_samples: (PEAK_HOLD_S * rate).round() as u64,
@@ -55,14 +63,17 @@ impl LevelMeter {
             self.mean = 0.0;
             self.power = 0.0;
         }
-        for &x in iq {
-            self.mean += self.detect * (x.norm_sqr() - self.mean);
-            let coeff = if self.mean > self.power {
-                self.attack
-            } else {
-                self.release
-            };
-            self.power += coeff * (self.mean - self.power);
+        let mut tail = iq;
+        if let Some([detect, attack, release]) = self.block_coefficients {
+            let (blocks, remainder) = iq.as_chunks::<POWER_BLOCK>();
+            for block in blocks {
+                let power = sum_norm_sqr(block) / POWER_BLOCK as f32;
+                self.advance(power, detect, attack, release);
+            }
+            tail = remainder;
+        }
+        for &x in tail {
+            self.advance(x.norm_sqr(), self.detect, self.attack, self.release);
         }
         let now = self.level_db();
         if now >= self.peak_db {
@@ -75,6 +86,17 @@ impl LevelMeter {
                     (self.peak_db - self.peak_fall_per_sample * iq.len() as f32).max(now);
             }
         }
+    }
+
+    #[inline]
+    fn advance(&mut self, power: f32, detect: f32, attack: f32, release: f32) {
+        self.mean += detect * (power - self.mean);
+        let coeff = if self.mean > self.power {
+            attack
+        } else {
+            release
+        };
+        self.power += coeff * (self.mean - self.power);
     }
 
     #[must_use]
@@ -148,6 +170,21 @@ mod tests {
             "read {:.2} dB for a signal whose true level is {truth:.2} dB",
             meter.level_db()
         );
+    }
+
+    #[test]
+    fn wide_rate_block_meter_matches_sample_detector() {
+        let mut fast = LevelMeter::new(9_142_857.0);
+        let mut reference = fast.clone();
+        reference.block_coefficients = None;
+        for i in 0..1000 {
+            let tone = tone_at_db(if i < 400 { -24.0 } else { -12.0 }, 1203);
+            fast.process(&tone);
+            reference.process(&tone);
+            if i > 5 {
+                assert!((fast.level_db() - reference.level_db()).abs() < 0.2);
+            }
+        }
     }
 
     #[test]

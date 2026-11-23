@@ -155,8 +155,8 @@ pub(super) struct Multiplex {
 impl Multiplex {
     pub fn new() -> Result<Self, DecodeError> {
         Ok(Self {
-            data: Scheduler::new()?,
-            common: Scheduler::new()?,
+            data: Scheduler::new(true)?,
+            common: Scheduler::new(false)?,
             merged: Merge::default(),
             packets: std::array::from_fn(|_| Vec::with_capacity(8192)),
             group: None,

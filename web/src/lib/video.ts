@@ -1,4 +1,9 @@
-import type { VideoFrame } from "./frame";
+import {
+  VIDEO_PACING_LEAD_MS,
+  VIDEO_PRESENTATION_MASK,
+  VIDEO_PRESENTATION_TIMESTAMP,
+  type VideoFrame,
+} from "./frame";
 import type { Listener, Unsubscribe } from "./listeners";
 import { mediaLatencyMs } from "./mediaLatency";
 import { type PortHub, portHub, producerOf, sourceKey } from "./ports";
@@ -11,6 +16,50 @@ const RELEASE_GRACE_MS = 5_000;
 
 const PENDING_FRAMES = 32;
 const PENDING_BYTES = 16 * 1024 * 1024;
+const PTS_PERIOD = VIDEO_PRESENTATION_MASK + 1n;
+const AUDIO_SLEW_MS = 2;
+
+export interface VideoPresentation {
+  at: number;
+  epoch: number;
+}
+
+class PictureClock {
+  private anchor: { pts: bigint; at: number; stream: number; audioLatency: number } | null = null;
+  private epoch = 0;
+
+  at(
+    timestamp: bigint,
+    stream: number,
+    now: number,
+    audioLatency: number,
+  ): VideoPresentation | undefined {
+    if ((timestamp & VIDEO_PRESENTATION_TIMESTAMP) === 0n) return undefined;
+    const pts = timestamp & VIDEO_PRESENTATION_MASK;
+    const anchor = this.anchor;
+    if (anchor?.stream === stream) {
+      const distance =
+        ((pts - anchor.pts + PTS_PERIOD / 2n) & VIDEO_PRESENTATION_MASK) - PTS_PERIOD / 2n;
+      const at = anchor.at + Number(distance) / 90;
+      const lead = at - now;
+      if (lead >= -120 && lead <= 500) {
+        anchor.audioLatency += Math.max(
+          -AUDIO_SLEW_MS,
+          Math.min(AUDIO_SLEW_MS, audioLatency - anchor.audioLatency),
+        );
+        return { at: at + anchor.audioLatency, epoch: this.epoch };
+      }
+    }
+    const at = now + VIDEO_PACING_LEAD_MS;
+    this.anchor = { pts, stream, at, audioLatency };
+    this.epoch += 1;
+    return { at: at + audioLatency, epoch: this.epoch };
+  }
+
+  reset(): void {
+    this.anchor = null;
+  }
+}
 
 export interface VideoInput {
   node: string;
@@ -18,16 +67,21 @@ export interface VideoInput {
   source: string;
 }
 
+type PictureListener = (frame: VideoFrame, presentation?: VideoPresentation) => void;
+
 interface Watched {
   input: VideoInput;
-  listeners: Set<(frame: VideoFrame) => void>;
+  listeners: Set<PictureListener>;
   latest: VideoFrame | null;
   release: number;
   hold: (() => void) | null;
   pending: { frame: VideoFrame; due: number }[];
   pendingBytes: number;
   dropped: number;
+  missing: number;
+  lastSequence: { stream: number; seq: number } | null;
   timer: number;
+  clock: PictureClock;
 }
 
 function keyOf(input: VideoInput): string {
@@ -53,7 +107,25 @@ export class VideoHub {
     if (watched === undefined) {
       return;
     }
-    const due = Date.now() + mediaLatencyMs(producerOf(key));
+    const last = watched.lastSequence;
+    if (last?.stream === frame.streamId) {
+      const step = (frame.seq - last.seq) >>> 0;
+      if (step > 1 && step < 0x80000000) watched.missing += step - 1;
+    }
+    watched.lastSequence = { stream: frame.streamId, seq: frame.seq };
+    const audioLatency = mediaLatencyMs(producerOf(key));
+    const presentation = watched.clock.at(
+      frame.timestamp,
+      frame.streamId,
+      performance.now(),
+      audioLatency,
+    );
+    if (presentation !== undefined) {
+      watched.latest = frame;
+      for (const listener of watched.listeners) listener(frame, presentation);
+      return;
+    }
+    const due = Date.now() + audioLatency;
     watched.pending.push({ frame, due });
     watched.pendingBytes += frame.jpeg.byteLength;
     let dropped = 0;
@@ -85,6 +157,10 @@ export class VideoHub {
     return this.inputs.get(keyOf(input))?.dropped ?? 0;
   }
 
+  missingFrames(input: VideoInput): number {
+    return this.inputs.get(keyOf(input))?.missing ?? 0;
+  }
+
   private present(watched: Watched): void {
     clearTimeout(watched.timer);
     while (watched.pending[0] && watched.pending[0].due <= Date.now()) {
@@ -105,6 +181,8 @@ export class VideoHub {
     clearTimeout(watched.timer);
     watched.pending = [];
     watched.pendingBytes = 0;
+    watched.lastSequence = null;
+    watched.clock.reset();
     watched.timer = 0;
   }
 
@@ -130,7 +208,7 @@ export class VideoHub {
     this.unsubscribes = [];
   }
 
-  subscribe(input: VideoInput, listener: (frame: VideoFrame) => void): () => void {
+  subscribe(input: VideoInput, listener: PictureListener): () => void {
     const key = keyOf(input);
     let watched = this.inputs.get(key);
     if (watched === undefined) {
@@ -143,7 +221,10 @@ export class VideoHub {
         pending: [],
         pendingBytes: 0,
         dropped: 0,
+        missing: 0,
+        lastSequence: null,
         timer: 0,
+        clock: new PictureClock(),
       };
       this.inputs.set(key, watched);
       this.hold(watched);
@@ -182,7 +263,7 @@ export class VideoHub {
     watched.hold = this.ports.hold(watched.input.node, watched.input.port);
   }
 
-  private release(key: string, listener: (frame: VideoFrame) => void): void {
+  private release(key: string, listener: PictureListener): void {
     const watched = this.inputs.get(key);
     if (watched === undefined) {
       return;

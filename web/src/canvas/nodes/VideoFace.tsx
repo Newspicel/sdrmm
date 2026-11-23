@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { FaceStats, Stat } from "../../components/face/Stats";
+import { Fragment, useState } from "react";
+import { Stat } from "../../components/face/Stats";
 import {
-  useVideoDrops,
+  VideoPlaybackReadouts,
   type VideoSignal,
   VideoView,
   videoSignalText,
@@ -10,7 +10,6 @@ import { capturedImageUrl } from "../../lib/api";
 import { useInputs } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import type { CapturedImage, PatchNode } from "../../lib/types";
-import type { VideoInput } from "../../lib/video";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 import { useInputName } from "./sinkInputs";
 
@@ -29,7 +28,7 @@ export function VideoFace({ node }: { node: PatchNode }) {
             <VideoView
               key={input.source}
               scope={{ node: node.id, port: "video", source: input.source }}
-              onSignal={(signal) => setSignals((held) => ({ ...held, [input.node]: signal }))}
+              onSignal={(signal) => setSignals((held) => ({ ...held, [input.source]: signal }))}
             />
           ))
         )}
@@ -37,42 +36,26 @@ export function VideoFace({ node }: { node: PatchNode }) {
       </FaceBody>
       {inputs.length > 0 && (
         <FaceFooter>
-          <FaceStats>
+          <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto">
             {inputs.map((input) => {
-              const signal = signals[input.node] ?? null;
+              const signal = signals[input.source] ?? null;
               return (
-                <Stat
-                  key={input.node}
-                  label={inputs.length > 1 ? nameOf(input) : "Picture"}
-                  title="Decoded picture size and sync"
-                  tone={signal?.live === true ? undefined : "warn"}
-                >
-                  {videoSignalText(signal)}
-                </Stat>
+                <Fragment key={input.source}>
+                  <Stat
+                    label={inputs.length > 1 ? nameOf(input) : "Picture"}
+                    title="Decoded picture size and sync"
+                    tone={signal?.live === true ? undefined : "warn"}
+                  >
+                    {videoSignalText(signal)}
+                  </Stat>
+                  {signal?.stats && <VideoPlaybackReadouts stats={signal.stats} />}
+                </Fragment>
               );
             })}
-            {inputs.map((input) => (
-              <DroppedPictures
-                key={input.source}
-                scope={{ node: node.id, port: "video", source: input.source }}
-              />
-            ))}
-          </FaceStats>
+          </div>
         </FaceFooter>
       )}
     </NodeShell>
-  );
-}
-
-function DroppedPictures({ scope }: { scope: VideoInput }) {
-  const dropped = useVideoDrops(scope);
-  if (dropped === 0) {
-    return null;
-  }
-  return (
-    <Stat label="Dropped" tone="warn" title="Pictures that arrived faster than this face drew them">
-      {dropped}
-    </Stat>
   );
 }
 

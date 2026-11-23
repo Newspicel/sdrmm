@@ -748,7 +748,9 @@ fn spawn_video(
         loop {
             match rx.recv().await {
                 Ok(mut packet) => {
-                    out_tx.dropped(newest(&mut rx, &mut packet));
+                    if packet.timestamp & sdrmm_wire::frame::VIDEO_PRESENTATION_TIMESTAMP == 0 {
+                        out_tx.dropped(newest(&mut rx, &mut packet));
+                    }
                     let Some(frame) = video_frame(stream_id, &packet, &pictures).await else {
                         tracing::warn!(stream_id, "a picture could not be encoded");
                         out_tx.dropped(1);

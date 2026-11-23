@@ -169,6 +169,29 @@ impl FrequencyFilter {
     }
 }
 
+#[cfg(all(target_arch = "x86_64", target_feature = "avx", target_feature = "fma"))]
+#[inline(always)]
+fn dot8(wr: &[f32; TAPS], wi: &[f32; TAPS], ar: &[f32; TAPS], ai: &[f32; TAPS]) -> Complex<f32> {
+    use std::arch::x86_64::*;
+    unsafe {
+        let wr = _mm256_loadu_ps(wr.as_ptr());
+        let wi = _mm256_loadu_ps(wi.as_ptr());
+        let ar = _mm256_loadu_ps(ar.as_ptr());
+        let ai = _mm256_loadu_ps(ai.as_ptr());
+        let re = _mm256_fmsub_ps(wr, ar, _mm256_mul_ps(wi, ai));
+        let im = _mm256_fmadd_ps(wr, ai, _mm256_mul_ps(wi, ar));
+        let re = _mm_add_ps(_mm256_castps256_ps128(re), _mm256_extractf128_ps::<1>(re));
+        let im = _mm_add_ps(_mm256_castps256_ps128(im), _mm256_extractf128_ps::<1>(im));
+        let sums = _mm_hadd_ps(re, im);
+        let sums = _mm_hadd_ps(sums, sums);
+        Complex::new(
+            _mm_cvtss_f32(sums),
+            _mm_cvtss_f32(_mm_shuffle_ps::<0x55>(sums, sums)),
+        )
+    }
+}
+
+#[cfg(not(all(target_arch = "x86_64", target_feature = "avx", target_feature = "fma")))]
 #[inline(always)]
 fn dot8(wr: &[f32; TAPS], wi: &[f32; TAPS], ar: &[f32; TAPS], ai: &[f32; TAPS]) -> Complex<f32> {
     let mut re = 0.0f32;

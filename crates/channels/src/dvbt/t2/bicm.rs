@@ -9,7 +9,7 @@ pub struct Decoder {
     coding: Coding,
     cell_map: Vec<usize>,
     bit_map: Vec<usize>,
-    points: Vec<Complex<f32>>,
+    demapper: Demapper,
     llrs: Vec<f32>,
     word: Vec<bool>,
     ldpc: Ldpc,
@@ -29,15 +29,11 @@ impl Decoder {
         let bch = Bch::new(coding.frame, coding.correct(), coding.message());
         let mut cell_map = interleave::cell_permutation(coding.cells())?;
         cell_map.reserve(coding.frame.length() / 2 - cell_map.len());
-        let mut points = Vec::with_capacity(256);
-        points.extend(
-            (0..1 << coding.constellation.bits()).map(|word| point(word, coding.constellation)),
-        );
         Ok(Self {
             coding,
             cell_map,
             bit_map: interleave::bit_permutation(coding)?,
-            points,
+            demapper: Demapper::new(coding.constellation),
             llrs: vec![0.0; coding.frame.length()],
             word: Vec::with_capacity(coding.information()),
             ldpc: Ldpc::with_addresses(coding.frame, coding.addresses()?)
@@ -57,10 +53,7 @@ impl Decoder {
         self.cell_map.resize(coding.cells(), 0);
         interleave::cell_permutation_into(&mut self.cell_map)?;
         interleave::bit_permutation_into(coding, &mut self.bit_map)?;
-        self.points.clear();
-        self.points.extend(
-            (0..1 << coding.constellation.bits()).map(|word| point(word, coding.constellation)),
-        );
+        self.demapper = Demapper::new(coding.constellation);
         self.coding = coding;
         Ok(())
     }
@@ -113,7 +106,7 @@ impl Decoder {
         for i in 0..cells.len() {
             let (p, here, there) = self.cell(cells, shift, rotation, i);
             let reliability = f32::midpoint(gain(here), gain(there));
-            let soft = soften(p, &self.points, bits, noise_variance / reliability);
+            let soft = self.demapper.soften(p, noise_variance / reliability);
             for (bit, &llr) in soft[..bits].iter().enumerate() {
                 self.llrs[self.bit_map[i * bits + bit]] = llr;
             }
@@ -178,6 +171,89 @@ impl Decoder {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct Nearest {
+    lower: f32,
+    upper: f32,
+    midpoint: f32,
+}
+
+impl Nearest {
+    fn squared_distance(self, value: f32) -> f32 {
+        let closest = if value < self.midpoint {
+            self.lower
+        } else {
+            self.upper
+        };
+        (value - closest).powi(2)
+    }
+}
+
+struct Demapper {
+    intervals: [[[Nearest; 2]; 4]; 17],
+    dimension: usize,
+    levels: usize,
+    min: f32,
+    inverse_step: f32,
+}
+
+impl Demapper {
+    fn new(constellation: Constellation) -> Self {
+        let dimension = constellation.bits() / 2;
+        let levels = 1 << dimension;
+        let mut amplitudes = [(0.0, 0); 16];
+        for (label, entry) in amplitudes[..levels].iter_mut().enumerate() {
+            let word =
+                (0..dimension).fold(0, |word, bit| word | ((label >> bit & 1) << (2 * bit + 1)));
+            *entry = (point(word, constellation).re, label);
+        }
+        let amplitudes = &mut amplitudes[..levels];
+        amplitudes.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+        let mut intervals = [[[Nearest::default(); 2]; 4]; 17];
+        for (interval, options) in intervals[..=levels].iter_mut().enumerate() {
+            for (bit, classes) in options[..dimension].iter_mut().enumerate() {
+                for (value, closest) in classes.iter_mut().enumerate() {
+                    let has_value =
+                        |(_, label): &&(f32, usize)| label >> (dimension - 1 - bit) & 1 == value;
+                    let lower = amplitudes[..interval].iter().rev().find(has_value);
+                    let upper = amplitudes[interval..].iter().find(has_value);
+                    let lower = lower.or(upper).expect("each bit has both values").0;
+                    let upper = upper.map_or(lower, |entry| entry.0);
+                    *closest = Nearest {
+                        lower,
+                        upper,
+                        midpoint: f32::midpoint(lower, upper),
+                    };
+                }
+            }
+        }
+        Self {
+            intervals,
+            dimension,
+            levels,
+            min: amplitudes[0].0,
+            inverse_step: (levels - 1) as f32 / (amplitudes[levels - 1].0 - amplitudes[0].0),
+        }
+    }
+
+    fn soften(&self, sample: Complex<f32>, variance: f32) -> [f32; 8] {
+        let mut soft = [0.0; 8];
+        for (axis, value) in [sample.re, sample.im].into_iter().enumerate() {
+            let interval =
+                (((value - self.min) * self.inverse_step + 1.0) as usize).min(self.levels);
+            for (bit, nearest) in self.intervals[interval][..self.dimension]
+                .iter()
+                .enumerate()
+            {
+                let zero = nearest[0].squared_distance(value);
+                let one = nearest[1].squared_distance(value);
+                soft[2 * bit + axis] = ((one - zero) / variance).clamp(-32.0, 32.0);
+            }
+        }
+        soft
+    }
+}
+
 pub fn point(word: usize, constellation: Constellation) -> Complex<f32> {
     let bits = constellation.bits();
     let dimension = bits / 2;
@@ -217,4 +293,38 @@ pub(super) fn soften(
         *out = ((distance[1] - distance[0]) / variance).clamp(-32.0, 32.0);
     }
     soft
+}
+
+#[cfg(test)]
+mod demapper_tests {
+    use super::*;
+
+    #[test]
+    fn interval_demapper_matches_exhaustive_distances() {
+        for constellation in [
+            Constellation::Qpsk,
+            Constellation::Qam16,
+            Constellation::Qam64,
+            Constellation::Qam256,
+        ] {
+            let bits = constellation.bits();
+            let points: Vec<_> = (0..1 << bits)
+                .map(|word| point(word, constellation))
+                .collect();
+            let demapper = Demapper::new(constellation);
+            for step in -2048..=2048 {
+                let sample = Complex::new(step as f32 / 727.0, step as f32 / 1123.0);
+                assert_eq!(
+                    demapper.soften(sample, 0.15),
+                    soften(sample, &points, bits, 0.15)
+                );
+            }
+            for &sample in &points {
+                assert_eq!(
+                    demapper.soften(sample, 0.15),
+                    soften(sample, &points, bits, 0.15)
+                );
+            }
+        }
+    }
 }
