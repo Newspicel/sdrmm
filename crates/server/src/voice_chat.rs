@@ -30,7 +30,7 @@ mod status;
 mod to_air;
 mod to_chat;
 
-use hub::Links;
+use hub::{Links, Unjoined};
 pub(crate) use hub::{Sessions, SignInError};
 use status::Meters;
 use to_air::{Air, Said};
@@ -123,6 +123,8 @@ struct VoiceChats {
     accounts_changed: bool,
     used: BTreeSet<String>,
     joined: HashMap<String, Joined>,
+    /// Nodes whose account is signing in.
+    waiting: HashSet<String>,
 }
 
 pub(crate) fn follow(state: &AppState) {
@@ -178,6 +180,7 @@ impl VoiceChats {
             accounts_changed: false,
             used: BTreeSet::new(),
             joined: HashMap::new(),
+            waiting: HashSet::new(),
         }
     }
 
@@ -229,10 +232,15 @@ impl VoiceChats {
         self.settle_sessions(&wanted);
         let mut nodes: Vec<&String> = wanted.keys().collect();
         nodes.sort();
+        self.waiting.clear();
         for node in nodes {
             let fault = match self.run(ctx, node, &wanted[node]) {
                 Ok(joined) => joined.fault(),
-                Err(text) => Some(text),
+                Err(Unjoined::Waiting) => {
+                    self.waiting.insert(node.clone());
+                    continue;
+                }
+                Err(Unjoined::Fault(text)) => Some(text),
             };
             let account = &wanted[node].account.id;
             if let Some(text) = fault.or_else(|| self.links.fault(account)) {
@@ -329,7 +337,7 @@ impl VoiceChats {
             .retain(|_, joined| !closed.contains(&joined.account));
     }
 
-    fn run(&mut self, ctx: &Ctx<'_>, node: &str, want: &Want) -> Result<&mut Joined, String> {
+    fn run(&mut self, ctx: &Ctx<'_>, node: &str, want: &Want) -> Result<&mut Joined, Unjoined> {
         let joined = match self.joined.entry(node.to_owned()) {
             Entry::Occupied(held) => held.into_mut(),
             Entry::Vacant(free) => {
@@ -359,6 +367,9 @@ impl VoiceChats {
             .map(|node| {
                 if let Some(joined) = self.joined.get(&node.id) {
                     return joined.status(&node.id);
+                }
+                if self.waiting.contains(&node.id) {
+                    return status::connecting(&node.id);
                 }
                 let fault = problems.iter().find(|problem| problem.node == node.id);
                 status::idle(&node.id, fault.map(|problem| problem.text.clone()))

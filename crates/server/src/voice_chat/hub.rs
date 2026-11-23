@@ -12,14 +12,30 @@ mod sign_in;
 
 pub(crate) use sign_in::SignInError;
 
+#[cfg(test)]
+mod tests;
+
 const DEFAULT_NICKNAME: &str = "sdrmm";
 const VOICE_LOGIN: &str = "Voice needs password or OAuth login";
-const SIGNING_IN: &str = "Signing in";
 const NOT_SAVED: &str = "Session not saved";
+
+/// Why a node is not in its channel.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Unjoined {
+    /// The account is signing in, which the operator asked for: the node waits, connecting.
+    Waiting,
+    Fault(String),
+}
+
+impl From<String> for Unjoined {
+    fn from(text: String) -> Self {
+        Self::Fault(text)
+    }
+}
 
 /// Where voice channels come from: the chat services, or a fake in tests.
 pub(crate) trait Links: Send + Sync {
-    fn join(&self, account: &Account, channel: &str) -> Result<Link, String>;
+    fn join(&self, account: &Account, channel: &str) -> Result<Link, Unjoined>;
 
     /// Keeps a session only for the accounts in `used`, as they read now. Answers the accounts
     /// whose session it closed, so every link joined through one of them is gone.
@@ -136,9 +152,6 @@ impl Sessions {
             }
             MatrixLogin::Oauth => sdrmm_voicechat::MatrixLogin::OAuth,
         };
-        if self.signing_in(&account.id) {
-            return Err(SIGNING_IN.to_owned());
-        }
         Ok(MatrixAccount {
             homeserver: homeserver_url.clone(),
             user: user.clone(),
@@ -178,6 +191,7 @@ impl Sessions {
             Service::Matrix(matrix) => matrix.session.clone(),
             Service::Discord { .. } | Service::TeamSpeak { .. } => None,
         };
+        lock(&self.faults).remove(account);
         let session = Session::open(service);
         let keeper = session
             .saved()
@@ -235,9 +249,14 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Links for Sessions {
-    fn join(&self, account: &Account, channel: &str) -> Result<Link, String> {
-        let service = self.service(account)?;
+    /// Holds the session lock throughout, so a sign-in that closes the session cannot slip in
+    /// between the check and the open.
+    fn join(&self, account: &Account, channel: &str) -> Result<Link, Unjoined> {
         let mut held = self.lock();
+        if self.signing_in(&account.id) {
+            return Err(Unjoined::Waiting);
+        }
+        let service = self.service(account)?;
         let live = match held.entry(account.id.clone()) {
             Entry::Occupied(found) => {
                 let live = found.into_mut();
@@ -250,7 +269,7 @@ impl Links for Sessions {
         };
         live.session
             .join(channel)
-            .map_err(|error| error.to_string())
+            .map_err(|error| Unjoined::Fault(error.to_string()))
     }
 
     fn settle(&self, used: &[Account]) -> Vec<String> {

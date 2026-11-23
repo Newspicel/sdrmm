@@ -85,13 +85,13 @@ pub(super) async fn delete_account(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    let store = state.store.clone();
-    let deleted = id.clone();
-    tokio::task::spawn_blocking(move || store.delete_account(&deleted)).await??;
-    state.chat_sessions.forget(&id);
-    if let Some(dir) = state.chat_sessions.store_dir(&id) {
+    let account = find(&state, id).await?;
+    state.chat_sessions.forget(&account.id);
+    if let Some(dir) = state.chat_sessions.store_dir(&account.id) {
         remove_store(&dir).await?;
     }
+    let store = state.store.clone();
+    tokio::task::spawn_blocking(move || store.delete_account(&account.id)).await??;
     Ok(StatusCode::NO_CONTENT)
 }
 

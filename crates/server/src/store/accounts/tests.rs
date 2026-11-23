@@ -340,6 +340,28 @@ fn with_managed(mut account: Account, session: Secret, store_key: Secret) -> Acc
 
 const BOT: &str = "@bot:matrix.example";
 
+fn session_of(user: &str) -> String {
+    format!(
+        r#"{{"kind":"oauth","client_id":"c","user_id":"{user}","device_id":"D","access_token":"t"}}"#
+    )
+}
+
+#[test]
+fn a_session_of_another_user_is_refused() {
+    let store = Store::open(None).expect("store");
+    let made = store
+        .create_account(matrix(MatrixLogin::Oauth, BOT))
+        .expect("created");
+    for session in [session_of("@other:matrix.example"), "{}".to_owned()] {
+        assert!(matches!(
+            store.set_account_session(&made.id, &session),
+            Err(StoreError::AccountField("session"))
+        ));
+    }
+    let kept = store.account(&made.id).expect("read").expect("found");
+    assert!(!managed_of(&kept).0.is_set());
+}
+
 #[test]
 fn a_request_cannot_set_the_session() {
     let store = Store::open(None).expect("store");
@@ -354,12 +376,15 @@ fn a_request_cannot_set_the_session() {
     assert_ne!(held(&store, &key).as_deref(), Some("forged-key"));
 
     store
-        .set_account_session(&made.id, "real")
+        .set_account_session(&made.id, &session_of(BOT))
         .expect("signed in");
     let updated = store.update_account(&made.id, forged).expect("updated");
 
     let (session, kept_key) = managed_of(&updated);
-    assert_eq!(held(&store, &session).as_deref(), Some("real"));
+    assert_eq!(
+        held(&store, &session).as_deref(),
+        Some(session_of(BOT).as_str())
+    );
     assert_eq!(kept_key, key);
 }
 
@@ -370,7 +395,7 @@ fn another_user_forgets_the_session() {
         .create_account(matrix(MatrixLogin::Oauth, BOT))
         .expect("created");
     store
-        .set_account_session(&made.id, "real")
+        .set_account_session(&made.id, &session_of(BOT))
         .expect("signed in");
     let signed_in = store.account(&made.id).expect("read").expect("found");
     let (session, key) = managed_of(&signed_in);
@@ -431,7 +456,7 @@ fn deleting_removes_every_matrix_secret() {
     }
     let made = store.create_account(request).expect("created");
     store
-        .set_account_session(&made.id, "real")
+        .set_account_session(&made.id, &session_of(BOT))
         .expect("signed in");
     let made = store.account(&made.id).expect("read").expect("found");
     let every: Vec<Secret> = made

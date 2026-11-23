@@ -10,7 +10,6 @@ use tokio::sync::oneshot;
 use super::{Sessions, lock, save};
 
 const DEVICE_NAME: &str = "sdrmm";
-const OTHER_USER: &str = "Signed in as another user";
 const FAILED: &str = "Sign-in failed";
 
 /// One sign-in of an account. A newer attempt replaces it, so the older one cannot end it.
@@ -48,7 +47,8 @@ impl Sessions {
             .await
             .map_err(|error| SignInError::Refused(error.to_string()))?
             .map_err(SignInError::Refused)?;
-        let started = match matrix_sign_in(homeserver_url, &store, DEVICE_NAME).await {
+        let started = matrix_sign_in(homeserver_url, &store, DEVICE_NAME, Some(user)).await;
+        let started = match started {
             Ok(started) => started,
             Err(error) => {
                 let reason = reason(error);
@@ -62,16 +62,20 @@ impl Sessions {
             user_code: started.user_code,
             expires_in_s: u32::try_from(started.expires_in.as_secs()).unwrap_or(u32::MAX),
         };
-        let attempt = self.next_attempt();
-        self.set_sign_in(
-            &account.id,
-            attempt,
-            MatrixSignInState::Pending(prompt.clone()),
-        );
-        self.lock().remove(&account.id);
-        let finish = self.finish_sign_in(account.id.clone(), user.clone(), attempt, started.done);
-        tokio::spawn(finish);
+        let attempt = self.show_sign_in(&account.id, prompt.clone());
+        tokio::spawn(self.finish_sign_in(account.id.clone(), attempt, started.done));
         Ok(prompt)
+    }
+
+    /// Marks the sign-in pending and closes the account's session under one lock, so no join
+    /// reopens it in between.
+    pub(super) fn show_sign_in(&self, account: &str, prompt: MatrixSignInPrompt) -> u64 {
+        let mut held = self.lock();
+        let attempt = self.next_attempt();
+        self.set_sign_in(account, attempt, MatrixSignInState::Pending(prompt));
+        held.remove(account);
+        lock(&self.faults).remove(account);
+        attempt
     }
 
     fn next_attempt(&self) -> u64 {
@@ -88,16 +92,15 @@ impl Sessions {
             .is_some_and(|run| run.attempt == attempt)
     }
 
-    /// Saves the approved session unless it is another user's, then ends the sign-in.
-    async fn finish_sign_in(
+    /// Saves the approved session, then ends the sign-in. The store refuses a session of
+    /// another user than the account's.
+    pub(super) async fn finish_sign_in(
         self: Arc<Self>,
         account: String,
-        user: String,
         attempt: u64,
         done: oneshot::Receiver<Result<SignedIn, String>>,
     ) {
         let outcome = match done.await.unwrap_or_else(|_| Err(FAILED.to_owned())) {
-            Ok(signed) if signed.user != user => Err(OTHER_USER.to_owned()),
             Ok(_) if !self.current(&account, attempt) => return,
             Ok(signed) => save(&self.store, &account, signed.session).await,
             Err(error) => Err(error),

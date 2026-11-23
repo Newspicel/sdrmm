@@ -7,7 +7,7 @@ use matrix_sdk::deserialized_responses::{
     VerificationState,
 };
 use matrix_sdk::ruma::serde::Raw;
-use matrix_sdk::ruma::{owned_device_id, owned_room_id, owned_user_id};
+use matrix_sdk::ruma::{owned_device_id, owned_room_id, owned_user_id, user_id};
 use matrix_sdk::sync::{JoinedRoomUpdate, State, Timeline};
 use matrix_sdk::test_utils::mocks::MatrixMockServer;
 use matrix_sdk::{SessionMeta, SessionTokens};
@@ -126,7 +126,7 @@ async fn sign_in_reports_the_code() {
         .expect(1)
         .mount()
         .await;
-    let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm")
+    let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm", None)
         .await
         .unwrap();
     assert_eq!(shown.user_code, "N32YVC");
@@ -138,8 +138,8 @@ async fn sign_in_reports_the_code() {
     assert_eq!(shown.expires_in, Duration::from_mins(20));
 }
 
-#[tokio::test]
-async fn sign_in_ends_with_an_oauth_session() {
+/// A homeserver that approves a device sign-in at once, as `@bot:x.org` unless `as_other`.
+async fn approving(as_other: bool) -> MatrixMockServer {
     let server = homeserver().await;
     let oauth = server.oauth();
     oauth.mock_server_metadata().ok().mount().await;
@@ -156,8 +156,38 @@ async fn sign_in_ends_with_an_oauth_session() {
         .mount()
         .await;
     oauth.mock_token().ok().mount().await;
-    server.mock_who_am_i().ok().mount().await;
-    let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm")
+    let who = server.mock_who_am_i();
+    if as_other {
+        who.ok().mount().await;
+    } else {
+        who.ok_with_user_id(user_id!("@bot:x.org")).mount().await;
+    }
+    server
+}
+
+#[tokio::test]
+async fn sign_in_as_another_user_keeps_the_store() {
+    let server = approving(true).await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = MatrixStore {
+        dir: Some(dir.path().join("store")),
+        passphrase: "secret".into(),
+    };
+    let kept = dir.path().join("store").join("keys");
+    std::fs::create_dir_all(dir.path().join("store")).unwrap();
+    std::fs::write(&kept, b"device A").unwrap();
+    let shown = matrix_sign_in(&server.uri(), &store, "sdrmm", Some("@bot:x.org"))
+        .await
+        .unwrap();
+    let refused = timeout(PATIENCE, shown.done).await.unwrap().unwrap();
+    assert_eq!(refused.unwrap_err(), "Signed in as another user");
+    assert!(kept.exists());
+}
+
+#[tokio::test]
+async fn sign_in_ends_with_an_oauth_session() {
+    let server = approving(false).await;
+    let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm", Some("@bot:x.org"))
         .await
         .unwrap();
     let signed_in = timeout(PATIENCE, shown.done)
@@ -392,4 +422,6 @@ fn a_saved_session_hands_out_its_access_token() {
     .unwrap();
     assert_eq!(session_access_token(&oauth).as_deref(), Some("oauth-token"));
     assert_eq!(session_access_token("{}"), None);
+    assert_eq!(session_user(&oauth).as_deref(), Some("@bot:x.org"));
+    assert_eq!(session_user("{}"), None);
 }

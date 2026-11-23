@@ -51,14 +51,23 @@ impl Store {
         Ok(account)
     }
 
-    /// Keeps `session` as the Matrix account's saved sign-in.
+    /// Keeps `session` as the Matrix account's saved sign-in. A session of another user than
+    /// the account's is refused: the account may have been edited while it was live.
     pub fn set_account_session(&self, id: &str, session: &str) -> Result<(), StoreError> {
         let conn = self.lock();
         let tx = conn.unchecked_transaction()?;
         let mut account = read(&tx, id)?;
-        let AccountService::Matrix { session: held, .. } = &mut account.service else {
+        let AccountService::Matrix {
+            user,
+            session: held,
+            ..
+        } = &mut account.service
+        else {
             return Err(StoreError::AccountField("service"));
         };
+        if sdrmm_voicechat::session_user(session).as_deref() != Some(user.as_str()) {
+            return Err(StoreError::AccountField("session"));
+        }
         if let Secret::Stored { secret } = held {
             secrets::put(&tx, secret, session)?;
         } else {

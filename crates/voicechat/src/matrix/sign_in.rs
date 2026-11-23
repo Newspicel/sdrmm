@@ -19,6 +19,7 @@ use super::MatrixStore;
 use super::account::connect::{Fault, Saved, build_client, clear_store};
 use crate::VoiceChatError;
 
+const OTHER_USER: &str = "Signed in as another user";
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const API_SCOPE: &str = "urn:matrix:client:api:*";
 const DEVICE_SCOPE: &str = "urn:matrix:client:device:";
@@ -52,11 +53,13 @@ impl fmt::Debug for SignedIn {
 }
 
 /// Starts a device sign-in on `homeserver`. `done` answers once the operator approves,
-/// after the new device's keys are set up in `store`, which is closed again by then.
+/// after the new device's keys are set up in `store`, which is closed again by then. An
+/// approval as another user than `user` is refused before `store` is touched.
 pub async fn matrix_sign_in(
     homeserver: &str,
     store: &MatrixStore,
     device_name: &str,
+    user: Option<&str>,
 ) -> Result<SignIn, VoiceChatError> {
     let discovery = build_client(homeserver, None).await.map_err(start)?;
     let metadata = discovery.oauth().server_metadata().await.map_err(|error| {
@@ -88,6 +91,7 @@ pub async fn matrix_sign_in(
         client_id,
         grant,
         store: store.clone(),
+        user: user.map(str::to_owned),
     };
     tokio::spawn(async move {
         if answer.send(pending.finish().await).is_err() {
@@ -184,12 +188,20 @@ struct Pending {
     client_id: ClientId,
     grant: Grant,
     store: MatrixStore,
+    user: Option<String>,
 }
 
 impl Pending {
     async fn finish(self) -> Result<SignedIn, String> {
         let tokens = self.poll().await?;
         let who = self.whoami(&tokens.access_token).await?;
+        if self
+            .user
+            .as_deref()
+            .is_some_and(|user| user != who.user_id.as_str())
+        {
+            return Err(OTHER_USER.to_owned());
+        }
         let session = OAuthSession {
             client_id: self.client_id,
             user: UserSession {

@@ -24,6 +24,8 @@ struct FarEnd {
 #[derive(Default)]
 struct FakeLinks {
     ends: Mutex<Vec<FarEnd>>,
+    signing_in: std::sync::atomic::AtomicBool,
+    fault: Mutex<Option<String>>,
 }
 
 impl FakeLinks {
@@ -38,7 +40,10 @@ impl FakeLinks {
 }
 
 impl Links for FakeLinks {
-    fn join(&self, account: &Account, channel: &str) -> Result<Link, String> {
+    fn join(&self, account: &Account, channel: &str) -> Result<Link, Unjoined> {
+        if self.signing_in.load(Ordering::Relaxed) {
+            return Err(Unjoined::Waiting);
+        }
         let (send, sent) = mpsc::channel(64);
         let (heard, hears) = mpsc::channel(64);
         let (state, watched) = watch::channel(LinkState::Joined);
@@ -62,7 +67,7 @@ impl Links for FakeLinks {
     }
 
     fn fault(&self, _account: &str) -> Option<String> {
-        None
+        self.fault.lock().expect("fault").clone()
     }
 }
 
@@ -415,6 +420,32 @@ async fn same_account_same_channel_twice_is_a_fault() {
     assert_eq!(second.error.as_deref(), Some(CLASH));
 }
 
+#[tokio::test]
+async fn a_signing_in_account_shows_connecting_without_a_fault() {
+    let engine = Engine::new(None);
+    let links = Arc::new(FakeLinks::default());
+    links.signing_in.store(true, Ordering::Relaxed);
+    let mut chats = chats(&links);
+    let (air, _) = on_air();
+    let wired = graph(vec![("chat", voice_chat(&[]))], true);
+    let problems = settle(&mut chats, &engine, wired.clone(), false, &air);
+    assert!(problems.is_empty(), "{problems:?}");
+    let statuses = chats.statuses(&wired, &problems);
+    assert_eq!(statuses, [status::connecting("chat")]);
+}
+
+#[tokio::test]
+async fn an_account_fault_shows_on_its_nodes() {
+    let engine = Engine::new(None);
+    let links = Arc::new(FakeLinks::default());
+    *links.fault.lock().expect("fault") = Some("Session not saved".to_owned());
+    let mut chats = chats(&links);
+    let (air, _) = on_air();
+    let wired = graph(vec![("chat", voice_chat(&[]))], true);
+    let problems = settle(&mut chats, &engine, wired, false, &air);
+    assert_eq!(problems, [problem("chat", "Session not saved".to_owned())]);
+}
+
 fn tuning(mode: SendMode) -> Tuning {
     Tuning {
         node: VoiceChatNode {
@@ -580,11 +611,10 @@ fn a_token_login_cannot_join_voice() {
         .expect("create");
     let sessions = Sessions::new(store, None);
     assert_eq!(
-        sessions
-            .join(&room, "!room:matrix.example")
-            .err()
-            .as_deref(),
-        Some("Voice needs password or OAuth login")
+        sessions.join(&room, "!room:matrix.example").err(),
+        Some(Unjoined::Fault(
+            "Voice needs password or OAuth login".to_owned()
+        ))
     );
 }
 
@@ -614,7 +644,7 @@ fn a_renamed_account_keeps_its_session() {
     assert!(
         sessions
             .join(&renamed, "Ops")
-            .is_err_and(|error| error.contains(CHANNEL)),
+            .is_err_and(|error| matches!(error, Unjoined::Fault(text) if text.contains(CHANNEL))),
         "a reopened session would have let a second channel in"
     );
     assert!(sessions.settle(std::slice::from_ref(&renamed)).is_empty());

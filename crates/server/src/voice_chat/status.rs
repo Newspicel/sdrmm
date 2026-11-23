@@ -88,6 +88,14 @@ pub(super) fn idle(node: &str, error: Option<String>) -> VoiceChatStatus {
     }
 }
 
+/// A node waiting for its account's sign-in.
+pub(super) fn connecting(node: &str) -> VoiceChatStatus {
+    VoiceChatStatus {
+        state: VoiceChatState::Connecting,
+        ..idle(node, None)
+    }
+}
+
 pub(super) fn joined(
     node: &str,
     link: &LinkState,

@@ -114,6 +114,14 @@ pub fn session_access_token(session: &str) -> Option<String> {
         .map(|tokens| tokens.access_token)
 }
 
+/// Who a saved session signs in as.
+#[must_use]
+pub fn session_user(session: &str) -> Option<String> {
+    serde_json::from_str::<Owner>(session)
+        .ok()
+        .map(|owner| owner.user_id)
+}
+
 fn same_device(next: Option<&str>, latest: Option<&str>) -> bool {
     let owner = |json: &str| serde_json::from_str::<Owner>(json).ok();
     match (next.and_then(owner), latest.and_then(owner)) {
