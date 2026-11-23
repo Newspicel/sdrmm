@@ -14,6 +14,11 @@ const BATCH: usize = 4;
 /// The cutoff of a resampler that keeps the whole band, as a share of the lower rate.
 const WHOLE_BAND_CUTOFF: f64 = 0.45;
 
+/// A ratio asked of a resampler whose clock was cut for one ratio, or that is not positive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("this resampler cannot take that ratio")]
+pub struct FixedRatio;
+
 #[derive(Clone, Debug)]
 pub struct FracResampler {
     rows: Vec<f32>,
@@ -67,9 +72,44 @@ impl FracResampler {
         Self::design(ratio, 0.5 * ratio, taps, prototype)
     }
 
+    /// A resampler for a ratio near one that [`Self::set_ratio`] moves while it runs, as a
+    /// receiver trims its sample clock to a transmitter's. It keeps the band to `keep` of the
+    /// rate; past that it rolls off to half the rate.
+    #[must_use]
+    pub fn trimmable(keep: f64) -> Self {
+        assert!(keep > 0.0 && keep < 1.0, "keep must be a share of the band");
+        let edge = 0.5 * keep;
+        let taps = Prototype::Blackman.taps(0.5 - edge);
+        Self::built(
+            Clock::Free {
+                step: 1.0,
+                fraction: 0.0,
+            },
+            f64::midpoint(edge, 0.5),
+            taps,
+            Prototype::Blackman,
+        )
+    }
+
+    /// Moves a [`Self::trimmable`] resampler to a new output-to-input `ratio` from its next
+    /// output on. A resampler on an exact clock keeps the ratio it was cut for.
+    pub fn set_ratio(&mut self, ratio: f64) -> Result<(), FixedRatio> {
+        match &mut self.clock {
+            Clock::Free { step, .. } if ratio.is_finite() && ratio > 0.0 => {
+                *step = ratio.recip();
+                Ok(())
+            }
+            _ => Err(FixedRatio),
+        }
+    }
+
     fn design(ratio: f64, cutoff: f64, taps: usize, prototype: Prototype) -> Self {
+        let clock = Clock::for_ratio(ratio, taps.next_multiple_of(TAP_MULTIPLE));
+        Self::built(clock, cutoff, taps, prototype)
+    }
+
+    fn built(clock: Clock, cutoff: f64, taps: usize, prototype: Prototype) -> Self {
         let taps_per_phase = taps.next_multiple_of(TAP_MULTIPLE);
-        let clock = Clock::for_ratio(ratio, taps_per_phase);
         let phases = clock.phases();
         let proto = prototype.lowpass(phases * taps + 1, cutoff / phases as f64);
         let mut rows = vec![0.0f32; (phases + 1) * taps_per_phase];

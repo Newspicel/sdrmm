@@ -226,3 +226,64 @@ fn reset_leaves_the_state_a_fresh_resampler_would_have() {
         assert_eq!(a, b, "sample {i}: fresh {a}, reset {b}");
     }
 }
+
+/// Error power, against output power, of a tone carried through a trimmed resampler whose
+/// ratio steps from `from` to `to` halfway, after the one complex gain that best fits.
+fn trimmed_tone_error_db(cycles: f64, from: f64, to: f64) -> f64 {
+    let tone = |n: f64| Complex::from_polar(1.0, std::f64::consts::TAU * cycles * n);
+    let input: Vec<Complex<f32>> = (0..40_000)
+        .map(|n| {
+            let z = tone(f64::from(n));
+            Complex::new(z.re as f32, z.im as f32)
+        })
+        .collect();
+    let mut resampler = FracResampler::trimmable(0.9);
+    resampler.set_ratio(from).unwrap();
+    let mut first = Vec::new();
+    resampler.process(&input[..20_000], &mut first);
+    resampler.set_ratio(to).unwrap();
+    let mut second = Vec::new();
+    resampler.process(&input[20_000..], &mut second);
+    let (step_from, step_to) = (from.recip(), to.recip());
+    let at = |m: usize| {
+        let early = m.min(first.len()) as f64;
+        let late = m.saturating_sub(first.len()) as f64;
+        tone(step_from * early + step_to * late)
+    };
+    let output: Vec<_> = first.iter().chain(&second).copied().collect();
+    let settled = 200..output.len() - 200;
+    let gain = settled
+        .clone()
+        .map(|m| Complex::new(f64::from(output[m].re), f64::from(output[m].im)) * at(m).conj())
+        .sum::<Complex<f64>>()
+        / settled.len() as f64;
+    let (mut error, mut power) = (0.0, 0.0);
+    for m in settled {
+        let y = Complex::new(f64::from(output[m].re), f64::from(output[m].im));
+        error += (y - gain * at(m)).norm_sqr();
+        power += y.norm_sqr();
+    }
+    10.0 * (error / power).log10()
+}
+
+#[test]
+fn a_trimmed_ratio_follows_its_clock_cleanly_to_the_kept_band_edge() {
+    for cycles in [0.05, -0.3, 0.44] {
+        let error_db = trimmed_tone_error_db(cycles, 1.0 / (1.0 + 40e-6), 1.0 / (1.0 - 25e-6));
+        assert!(
+            error_db < -50.0,
+            "{cycles} cycles a sample: {error_db:.1} dB"
+        );
+    }
+}
+
+#[test]
+fn only_a_trimmable_resampler_takes_a_new_ratio() {
+    assert_eq!(
+        FracResampler::new(0.5).set_ratio(0.6),
+        Err(crate::FixedRatio)
+    );
+    let mut trimmed = FracResampler::trimmable(0.9);
+    assert_eq!(trimmed.set_ratio(0.0), Err(crate::FixedRatio));
+    assert_eq!(trimmed.set_ratio(1.0 + 1e-5), Ok(()));
+}

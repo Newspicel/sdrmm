@@ -1,7 +1,7 @@
 use num_complex::Complex;
 use sdrmm_dsp::math::complex::widen;
 
-use super::line_fit::LineFit;
+use super::LineFit;
 
 pub const TRACK_ALPHA: f64 = 0.35;
 

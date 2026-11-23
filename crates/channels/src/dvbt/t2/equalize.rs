@@ -5,12 +5,16 @@ use super::{
     DecodeError,
     mapping::{Carrier, Mapping},
 };
-use sdrmm_modem::ofdm::wiener::{Design, FrequencyFilter, TAPS, measure_span};
+use sdrmm_modem::ofdm::{
+    LineFit, PilotFit,
+    wiener::{Design, FrequencyFilter, TAPS, measure_span},
+};
 
 const PROFILE: usize = 16_384;
 const SPAN_MARGIN: f32 = 4.0;
 const ALIAS_SHARE: f32 = 0.9;
 const PILOT_NOISE_SHARE: f32 = 0.5;
+const DEGENERATE_SPREAD: f64 = 1e-6;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Shape {
@@ -25,6 +29,7 @@ pub struct Equalizer {
     estimates: [Vec<Complex<f32>>; 2],
     data_carriers: Vec<usize>,
     epoch: usize,
+    drift: f64,
     pub noise: f32,
     filters: [FrequencyFilter; 2],
     profile: Vec<Complex<f32>>,
@@ -39,6 +44,7 @@ impl Default for Equalizer {
             estimates: std::array::from_fn(|_| vec![Complex::default(); 27841]),
             data_carriers: Vec::with_capacity(27841),
             epoch: 1,
+            drift: 0.0,
             noise: 0.01,
             filters: std::array::from_fn(|_| FrequencyFilter::new()),
             profile: vec![Complex::default(); PROFILE],
@@ -51,7 +57,14 @@ impl Equalizer {
     pub fn reset(&mut self) {
         self.ages.iter_mut().for_each(|ages| ages.fill(0));
         self.epoch = 1;
+        self.drift = 0.0;
         self.noise = 0.01;
+    }
+
+    /// Samples each symbol moves later against the FFT window, from the phase slope the
+    /// pilots measured between the last two symbols.
+    pub fn drift_samples(&self, fft: usize) -> f64 {
+        -self.drift * fft as f64 / std::f64::consts::TAU
     }
 
     pub fn shift(&mut self, fft: usize, samples: isize) {
@@ -133,6 +146,9 @@ impl Equalizer {
         Ok(())
     }
 
+    /// Turns the kept pilots by the phase line the newest symbol measures against them, so a
+    /// sample clock that drifts against the transmitter's, which tilts phase across carriers
+    /// from symbol to symbol, does not age the pilots into noise.
     fn track_phase(
         &mut self,
         spectrum: &[Complex<f32>],
@@ -140,28 +156,89 @@ impl Equalizer {
         miso: bool,
         history: usize,
     ) {
-        let mut correlation = Complex::<f32>::default();
-        let mut errors = 0.0;
-        let mut power = 0.0;
+        let Some(fit) = self.measure_drift(spectrum, map, miso, history) else {
+            return;
+        };
+        self.drift = fit.slope_rad_per_bin;
+        let half = (map.carriers / 2) as f64;
+        let step = Complex::from_polar(1.0, fit.slope_rad_per_bin);
+        for observations in &mut self.observations[..=usize::from(miso)] {
+            let mut rotation =
+                Complex::from_polar(1.0, fit.common_rad - fit.slope_rad_per_bin * half);
+            for k in 0..map.carriers {
+                observations[bin(map, k)] *= Complex::new(rotation.re as f32, rotation.im as f32);
+                rotation *= step;
+            }
+        }
+        let (mut errors, mut power) = (0.0, 0.0);
+        self.pilot_pairs(spectrum, map, miso, history, |_, new, old| {
+            errors += (new - old).norm_sqr();
+            power += old.norm_sqr();
+        });
+        if power > 1e-12 {
+            self.noise = (errors / power).clamp(0.0001, 2.0);
+        }
+    }
+
+    /// The common phase and per-carrier slope that carry the kept pilots onto this symbol's,
+    /// unwrapped around the slope the last symbol measured.
+    fn measure_drift(
+        &self,
+        spectrum: &[Complex<f32>],
+        map: &Mapping,
+        miso: bool,
+        history: usize,
+    ) -> Option<PilotFit> {
+        let mut common = Complex::<f64>::default();
+        self.pilot_pairs(spectrum, map, miso, history, |offset, new, old| {
+            let turn = new * old.conj();
+            common += Complex::new(f64::from(turn.re), f64::from(turn.im))
+                * Complex::from_polar(1.0, -self.drift * offset);
+        });
+        if common.norm_sqr() <= 1e-24 {
+            return None;
+        }
+        let predicted = PilotFit {
+            common_rad: common.arg(),
+            slope_rad_per_bin: self.drift,
+        };
+        let mut fit = LineFit::default();
+        self.pilot_pairs(spectrum, map, miso, history, |offset, new, old| {
+            let turn = new * old.conj();
+            let at = predicted.common_rad + predicted.slope_rad_per_bin * offset;
+            let residual = Complex::new(f64::from(turn.re), f64::from(turn.im))
+                * Complex::from_polar(1.0, -at);
+            fit.push(offset, at + residual.arg(), residual.norm());
+        });
+        let (common_rad, slope_rad_per_bin) = fit.line(DEGENERATE_SPREAD);
+        Some(PilotFit {
+            common_rad,
+            slope_rad_per_bin,
+        })
+    }
+
+    /// Calls `visit` with each pilot's carrier offset from the centre, its value now and its
+    /// kept value, for pilots seen again within `history` symbols.
+    fn pilot_pairs(
+        &self,
+        spectrum: &[Complex<f32>],
+        map: &Mapping,
+        miso: bool,
+        history: usize,
+        mut visit: impl FnMut(f64, Complex<f32>, Complex<f32>),
+    ) {
+        let half = (map.carriers / 2) as f64;
         for k in 0..map.carriers {
             if let Carrier::Pilot { inverted, .. } = map.map[k] {
                 let group = usize::from(miso && inverted);
                 let bin = bin(map, k);
-                if self.ages[group][bin] != 0 && self.epoch - self.ages[group][bin] <= history + 1 {
-                    let old = self.observations[group][bin];
-                    let new = spectrum[bin] / map.pilots[k];
-                    correlation += new * old.conj();
-                    errors += (new - old).norm_sqr();
-                    power += old.norm_sqr();
-                }
-            }
-        }
-        if power > 1e-12 {
-            self.noise = (errors / power).clamp(0.0001, 2.0);
-            let rotation = Complex::from_polar(1.0, correlation.arg());
-            for observations in &mut self.observations[..=usize::from(miso)] {
-                for k in 0..map.carriers {
-                    observations[bin(map, k)] *= rotation;
+                let age = self.ages[group][bin];
+                if age != 0 && self.epoch - age <= history + 1 {
+                    visit(
+                        k as f64 - half,
+                        spectrum[bin] / map.pilots[k],
+                        self.observations[group][bin],
+                    );
                 }
             }
         }

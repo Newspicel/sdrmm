@@ -2,7 +2,7 @@ use std::f32::consts::TAU;
 
 use num_complex::Complex;
 use sdrmm_decoder::SymbolTap;
-use sdrmm_dsp::math::fft::Transform;
+use sdrmm_dsp::{FracResampler, math::fft::Transform};
 use sdrmm_modem::constellation::Constellation as Table;
 
 use super::{
@@ -16,6 +16,13 @@ use super::{
     signalling::{Pre, Signalling},
 };
 use sdrmm_modem::dvb::PACKET;
+
+/// Share of the rate the clock trim keeps flat, past the widest T2 spectrum.
+const TRIM_KEEP: f64 = 0.9;
+/// Share of each symbol's measured clock error the trim takes on.
+const TRIM_GAIN: f64 = 0.05;
+/// The furthest a receiver clock is trusted to run from the transmitter's.
+const MAX_CLOCK_ERROR: f64 = 300e-6;
 
 struct Mode {
     fft: Transform,
@@ -63,6 +70,11 @@ pub struct Receiver {
     origin: u64,
     tables: Vec<Table>,
     cells_per_sample: f64,
+    lag: f64,
+    last_frame: Option<(u64, u64)>,
+    clock: FracResampler,
+    clock_error: f64,
+    trimmed: Vec<Complex<f32>>,
 }
 
 impl Receiver {
@@ -103,6 +115,11 @@ impl Receiver {
             origin: 0,
             tables: tables()?,
             cells_per_sample: 0.0,
+            lag: 0.0,
+            last_frame: None,
+            clock: FracResampler::trimmable(TRIM_KEEP),
+            clock_error: 0.0,
+            trimmed: Vec::with_capacity(4200),
         })
     }
 
@@ -113,6 +130,10 @@ impl Receiver {
         self.phase = 0.0;
         self.frequency = 0.0;
         self.locked = false;
+        self.lag = 0.0;
+        self.last_frame = None;
+        self.clock = FracResampler::trimmable(TRIM_KEEP);
+        self.clock_error = 0.0;
         self.equalizer.reset();
         self.scheduler.reset();
     }
@@ -152,6 +173,11 @@ impl Receiver {
         self.scheduler.release_tap();
     }
 
+    /// How far the radio's sample clock runs from the transmitter's, as a share of its rate.
+    pub const fn clock_error(&self) -> f64 {
+        self.clock_error
+    }
+
     pub fn snr(&self) -> f32 {
         -10.0 * self.equalizer.noise.max(1e-6).log10()
     }
@@ -163,11 +189,12 @@ impl Receiver {
                 self.pending.clear();
                 continue;
             }
-            if self.pending.len() + block.len() > self.pending.capacity() {
+            self.clock.process(block, &mut self.trimmed);
+            if self.pending.len() + self.trimmed.len() > self.pending.capacity() {
                 self.fail(DecodeError::Capacity);
                 self.pending.clear();
             }
-            self.pending.extend_from_slice(block);
+            self.pending.extend_from_slice(&self.trimmed);
             loop {
                 match self.step(packets) {
                     Ok(true) => {}
@@ -188,6 +215,7 @@ impl Receiver {
         self.last_error = Some(error);
         self.locked = false;
         self.parameters = None;
+        self.last_frame = None;
         self.state = State::Search;
         self.scheduler.reset();
     }
@@ -210,6 +238,7 @@ impl Receiver {
                 }
                 if let Some(detection) = self.acquisition.find(&self.pending) {
                     self.origin = self.consumed + detection.start as u64;
+                    self.count_lost_frames();
                     self.frequency = detection.frequency;
                     self.phase = 0.0;
                     self.consume(detection.start + 2048);
@@ -300,7 +329,7 @@ impl Receiver {
         self.equalizer.reset();
         for symbol in 0..count {
             self.modes[mode].map.p2(preamble, symbol)?;
-            self.transform(mode, symbol * (fft + guard) + guard);
+            self.transform(mode, symbol * (fft + guard) + guard - backoff(guard));
             self.equalizer.decode(
                 &self.spectrum[..fft],
                 &self.modes[mode].map,
@@ -393,10 +422,15 @@ impl Receiver {
         if quality < 0.12 {
             return Err(DecodeError::Acquisition);
         }
+        adjustment += self.follow_drift(fft);
+        self.trim_clock(fft, length)?;
         self.frequency += residual * 0.2;
         let mode = fft.ilog2() as usize - 10;
         self.modes[mode].map.data(pre, symbol)?;
-        self.transform(mode, (guard as isize + adjustment) as usize);
+        self.transform(
+            mode,
+            (guard as isize + adjustment) as usize - backoff(guard),
+        );
         self.equalizer.shift(fft, adjustment);
         let map = &self.modes[mode].map;
         let history = match pre.pilots {
@@ -433,6 +467,7 @@ impl Receiver {
         self.consume((length as isize + adjustment) as usize);
         if symbol + 1 == pre.preamble.p2_symbols()? + pre.data_symbols {
             self.scheduler.end()?;
+            self.last_frame = Some((self.consumed + self.fef as u64, self.consumed - self.origin));
             self.state = if self.fef > 0 {
                 State::Skip(self.fef)
             } else {
@@ -446,6 +481,41 @@ impl Receiver {
             };
         }
         Ok(true)
+    }
+
+    /// Leans the resampler against the clock error the pilots measured, so symbols are cut from
+    /// a stream at the transmitter's rate and no carrier slides toward its neighbour.
+    fn trim_clock(&mut self, fft: usize, length: usize) -> Result<(), DecodeError> {
+        let error = self.equalizer.drift_samples(fft) / length as f64;
+        self.clock_error =
+            (self.clock_error + TRIM_GAIN * error).clamp(-MAX_CLOCK_ERROR, MAX_CLOCK_ERROR);
+        self.clock
+            .set_ratio((1.0 + self.clock_error).recip())
+            .map_err(|_| DecodeError::Parameters)
+    }
+
+    /// Counts the frames that passed between the last one decoded and this P1 as bad, so a frame
+    /// whose P1 went unseen is not lost in silence.
+    fn count_lost_frames(&mut self) {
+        let Some((end, length)) = self.last_frame.take() else {
+            return;
+        };
+        let lost = (self.origin.saturating_sub(end) + length / 2) / length.max(1);
+        if lost > 0 {
+            self.errors = self
+                .errors
+                .saturating_add(u32::try_from(lost).unwrap_or(u32::MAX));
+            self.last_error = Some(DecodeError::Discontinuity);
+        }
+    }
+
+    /// Whole samples to move this symbol's window by, so a sample clock that runs off the
+    /// transmitter's keeps the window on the symbol and the next P1 where it is looked for.
+    fn follow_drift(&mut self, fft: usize) -> isize {
+        self.lag += self.equalizer.drift_samples(fft);
+        let step = self.lag.trunc();
+        self.lag -= step;
+        step as isize
     }
 
     fn transform(&mut self, mode: usize, start: usize) {
@@ -462,6 +532,12 @@ impl Receiver {
         self.pending.drain(..count);
         self.phase = (self.phase + self.frequency * count as f32).rem_euclid(TAU);
     }
+}
+
+/// How far into the guard interval each FFT window starts, so the ringing of the filters on
+/// the way, and pre-echoes in a single-frequency network, stay out of the next symbol.
+const fn backoff(guard: usize) -> usize {
+    guard / 4
 }
 
 fn guard_allowed(preamble: Preamble, code: u8) -> bool {

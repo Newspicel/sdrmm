@@ -8,7 +8,7 @@ use crate::{
     constellation::Constellation,
     framesync::{derotate, derotate_from},
     multicarrier::mmse::{mmse, unbias},
-    ofdm::{MIN_NOISE_VAR, line_fit::LineFit},
+    ofdm::{LineFit, MIN_NOISE_VAR},
 };
 
 pub const LEAK_TAPS: usize = 2;

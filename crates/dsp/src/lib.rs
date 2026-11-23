@@ -63,7 +63,7 @@ pub use filter::iir::{
 };
 pub use filter::interp::{CubicInterpolator, Interpolator, RealInterpolator};
 pub use filter::real_resamp::RealResampler;
-pub use filter::resamp::FracResampler;
+pub use filter::resamp::{FixedRatio, FracResampler};
 pub use filter::{average::MovingAverage, frac_delay::FracDelay, moving::MovingSum};
 pub use math::db::Decibels;
 pub use math::fastmath::{fast_arg, fast_atan2, madd, phase_diff_into};

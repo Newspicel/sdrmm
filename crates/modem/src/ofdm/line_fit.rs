@@ -1,6 +1,6 @@
 /// Weighted least-squares line through `(x, y)` samples, accumulated one sample at a time.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct LineFit {
+pub struct LineFit {
     sw: f64,
     sx: f64,
     sy: f64,
@@ -9,7 +9,7 @@ pub(crate) struct LineFit {
 }
 
 impl LineFit {
-    pub(crate) fn push(&mut self, x: f64, y: f64, weight: f64) {
+    pub fn push(&mut self, x: f64, y: f64, weight: f64) {
         self.sw += weight;
         self.sx += weight * x;
         self.sy += weight * y;
@@ -17,13 +17,15 @@ impl LineFit {
         self.sxy += weight * x * y;
     }
 
-    pub(crate) fn weight(&self) -> f64 {
+    #[must_use]
+    pub fn weight(&self) -> f64 {
         self.sw
     }
 
     /// The intercept and slope. Samples too close to one abscissa, by `degenerate`, give the
     /// weighted mean and a flat line.
-    pub(crate) fn line(&self, degenerate: f64) -> (f64, f64) {
+    #[must_use]
+    pub fn line(&self, degenerate: f64) -> (f64, f64) {
         let det = self.sw * self.sxx - self.sx * self.sx;
         if det.abs() <= degenerate {
             return (self.sy / self.sw, 0.0);
