@@ -420,7 +420,7 @@ impl Voice {
     }
 
     fn hear(&mut self, client: &Client, data: &VoiceData, inbox: &Inbox) {
-        if data.data.is_empty() {
+        if ends_stream(&data.data) {
             return;
         }
         if data.codec != OPUS_VOICE && data.codec != OPUS_MUSIC {
@@ -489,9 +489,22 @@ impl Voice {
     }
 }
 
+/// `TeamSpeak` closes a talk spurt with an empty packet or a one byte marker, neither of
+/// them Opus.
+fn ends_stream(packet: &[u8]) -> bool {
+    packet.len() <= 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn end_of_stream_markers_are_not_audio() {
+        assert!(ends_stream(&[]));
+        assert!(ends_stream(&[0x00]));
+        assert!(!ends_stream(&[0xfc, 0xff, 0xfe]));
+    }
 
     fn channel(id: u64, parent_id: u64, name: &str) -> ChannelInfo {
         ChannelInfo {
