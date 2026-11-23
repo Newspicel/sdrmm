@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
+import { channelHasAudio } from "../../components/channelSettings";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import {
   useVideoDrops,
@@ -7,18 +8,21 @@ import {
   videoSignalText,
 } from "../../components/VideoView";
 import { capturedImageUrl } from "../../lib/api";
-import { useInputs } from "../../lib/resolved";
+import { type Input, useInputs } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import type { CapturedImage, PatchNode } from "../../lib/types";
 import type { VideoInput } from "../../lib/video";
+import { useWorkspaceContext } from "../context";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 import { useInputName } from "./sinkInputs";
+import { VideoSound } from "./VideoSound";
 
 export function VideoFace({ node }: { node: PatchNode }) {
   const inputs = useInputs(node.id, "video");
   const nameOf = useInputName();
   const [signals, setSignals] = useState<Readonly<Record<string, VideoSignal | null>>>({});
   const { pictures } = useSinkFeed(node.id);
+  const carriesSound = useCarriesSound();
   return (
     <NodeShell node={node} title="Video" category="output">
       <FaceBody>
@@ -26,11 +30,15 @@ export function VideoFace({ node }: { node: PatchNode }) {
           <FaceEmpty />
         ) : (
           inputs.map((input) => (
-            <VideoView
-              key={input.source}
-              scope={{ node: node.id, port: "video", source: input.source }}
-              onSignal={(signal) => setSignals((held) => ({ ...held, [input.node]: signal }))}
-            />
+            <Fragment key={input.source}>
+              <VideoView
+                scope={{ node: node.id, port: "video", source: input.source }}
+                onSignal={(signal) => setSignals((held) => ({ ...held, [input.node]: signal }))}
+              />
+              {carriesSound(input) && (
+                <VideoSound node={node.id} input={input} name={nameOf(input)} />
+              )}
+            </Fragment>
           ))
         )}
         {pictures.length > 0 && <Gallery pictures={pictures} />}
@@ -62,6 +70,13 @@ export function VideoFace({ node }: { node: PatchNode }) {
       )}
     </NodeShell>
   );
+}
+
+/** Whether a video wire's decoder sends sound along with its pictures. */
+function useCarriesSound(): (input: Input) => boolean {
+  const types = useWorkspaceContext().context.channelTypes;
+  return (input) =>
+    channelHasAudio(types.find((type) => type.type_id === input.channel.settings.params.type));
 }
 
 function DroppedPictures({ scope }: { scope: VideoInput }) {

@@ -4,7 +4,7 @@ use std::{
 };
 
 use sdrmm_engine::Engine;
-use sdrmm_wire::{NodeBody, PatchGraph};
+use sdrmm_wire::{AudioRoute, ChannelAddr, NodeBody, PatchGraph};
 
 use crate::{
     AppState,
@@ -53,9 +53,24 @@ fn apply(engine: &Engine, graph: &PatchGraph) {
     engine.retain_audio_fx(&present);
 }
 
+/// The sound a video wire from `source` carries with its pictures: the channel's own audio,
+/// through its audio chain, when its decoder makes sound.
+pub(crate) fn video_sound(graph: &PatchGraph, source: &str, at: ChannelAddr) -> Option<AudioRoute> {
+    let Some(NodeBody::Channel(channel)) = graph.node(source).map(|node| &node.body) else {
+        return None;
+    };
+    sdrmm_decoder::registry::descriptor(&channel.channel_type)
+        .is_some_and(|descriptor| descriptor.has_audio && descriptor.has_video)
+        .then(|| AudioRoute {
+            device_set: at.device_set,
+            channel: at.channel,
+            fx: graph.audio_fx(source),
+        })
+}
+
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{AudioProcessing, AudioRoute, ChannelNode, PatchNode, Position};
+    use sdrmm_wire::{AudioProcessing, AudioRoute, ChannelNode, NodeKind, PatchNode, Position};
 
     use super::*;
 
@@ -139,5 +154,47 @@ mod tests {
             );
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
+    }
+
+    fn graph(id: &str, body: NodeBody) -> PatchGraph {
+        PatchGraph {
+            nodes: vec![PatchNode {
+                id: id.to_owned(),
+                body,
+                position: Position { x: 0.0, y: 0.0 },
+                size: None,
+                label: None,
+            }],
+            edges: Vec::new(),
+        }
+    }
+
+    fn channel(channel_type: &str) -> NodeBody {
+        NodeBody::Channel(ChannelNode {
+            channel_type: channel_type.to_owned(),
+            ..ChannelNode::default()
+        })
+    }
+
+    #[test]
+    fn a_video_wire_carries_the_sound_of_a_decoder_that_makes_both() {
+        sdrmm_channels::builtin::install();
+        let at = ChannelAddr {
+            device_set: 2,
+            channel: 5,
+        };
+        assert_eq!(
+            video_sound(&graph("tv", channel("dvbt")), "tv", at),
+            Some(AudioRoute::channel(2, 5))
+        );
+        assert_eq!(video_sound(&graph("fm", channel("wfm")), "fm", at), None);
+        assert_eq!(
+            video_sound(
+                &graph("screen", NodeBody::default_for(NodeKind::Video)),
+                "screen",
+                at
+            ),
+            None
+        );
     }
 }

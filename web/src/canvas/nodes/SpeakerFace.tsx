@@ -1,15 +1,12 @@
-import { Play, Square } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "../../components/BaseControls";
-import { FACE_BTN, ICON_BTN } from "../../components/controls";
-import { formatPeak, type MeterTone, meterTone, meterUnit } from "../../components/dbfs";
+import { FACE_BTN } from "../../components/controls";
+import { formatPeak, meterTone, meterUnit } from "../../components/dbfs";
 import { Chips } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { GainMeter, MeterBar, MeterRow } from "../../components/face/Meter";
 import { FaceStats, Stat } from "../../components/face/Stats";
-import { Icon } from "../../components/Icon";
 import { SettingRow } from "../../components/Settings";
-import { Tip } from "../../components/Tip";
 import { useDebouncedCommit } from "../../components/useDebouncedCommit";
 import { tapKey } from "../../lib/audio/engine";
 import { resumeAudioOutput } from "../../lib/audio/sink";
@@ -25,6 +22,7 @@ import { AudioSpectrogramView } from "./AudioSpectrogramView";
 import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 import { SpeakerOutputChip } from "./SpeakerOutputChip";
 import { inputKey } from "./sinkInputs";
+import { METER_FILL, PlayToggle } from "./soundControls";
 import {
   type SpeakerHealth,
   speakerHealthShown,
@@ -168,7 +166,7 @@ function AudioInput({
             label={`${name} level`}
             value={meterUnit(peakDb)}
             valueText={formatPeak(peakDb)}
-            fill={TONE[meterTone(peakDb, false)]}
+            fill={METER_FILL[meterTone(peakDb, false)]}
           />
         }
         readout={`${Math.round(fader.volume * 100)}%`}
@@ -216,31 +214,6 @@ function AudioInput({
       />
       {audio.error !== null && <FaceFault message={audio.error} />}
     </div>
-  );
-}
-
-const TONE: Record<MeterTone, string> = {
-  ok: "bg-ok",
-  warn: "bg-warn",
-  danger: "bg-danger",
-};
-
-function PlayToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
-  return (
-    <Tip
-      text={active ? "Stop listening" : "Listen"}
-      render={
-        <Button
-          type="button"
-          className={`${ICON_BTN} ${active ? "bg-accent/15 text-accent" : ""}`}
-          aria-label={active ? "Stop" : "Play"}
-          aria-pressed={active}
-          onClick={onToggle}
-        />
-      }
-    >
-      <Icon glyph={active ? Square : Play} size={14} filled={active} />
-    </Tip>
   );
 }
 

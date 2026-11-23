@@ -29,7 +29,8 @@ export function videoSignalText(signal: VideoSignal | null): string {
 }
 
 export function useVideoDrops(scope: VideoInput): number {
-  return useSyncExternalStore(videoHub.onDrop, () => videoHub.droppedFrames(scope));
+  const read = () => videoHub.droppedFrames(scope);
+  return useSyncExternalStore(videoHub.onDrop, read, read);
 }
 
 export function VideoView({

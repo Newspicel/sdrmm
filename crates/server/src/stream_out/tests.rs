@@ -105,6 +105,19 @@ fn a_stream_follows_its_channel_picture_and_sound() {
 }
 
 #[test]
+fn a_stream_takes_its_sound_from_the_picture_wire_when_none_is_wired() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let (engine, ds, ch) = radio(&dir);
+    let current = resolved(patch(&[VIDEO_PORT]), &engine);
+    let wanted = wanted(&current.graph, &current.patch);
+    assert_eq!(
+        wanted.get("out").and_then(|want| want.audio.clone()),
+        Some(AudioRoute::channel(ds, ch))
+    );
+    engine.remove_device_set(ds).expect("close");
+}
+
+#[test]
 fn a_stream_without_a_picture_wire_runs_nothing() {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let (engine, ds, _) = radio(&dir);

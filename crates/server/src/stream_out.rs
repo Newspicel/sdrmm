@@ -226,12 +226,14 @@ fn wanted(graph: &PatchGraph, patch: &ResolvedPatch) -> HashMap<String, Wanted> 
             let NodeBody::StreamOut(settings) = &node.body else {
                 return None;
             };
-            let video = first_channel(patch, &node.id, VIDEO_PORT)?.1;
-            let audio = first_channel(patch, &node.id, AUDIO_PORT).map(|(source, at)| AudioRoute {
-                device_set: at.device_set,
-                channel: at.channel,
-                fx: graph.audio_fx(&source),
-            });
+            let (pictured, video) = first_channel(patch, &node.id, VIDEO_PORT)?;
+            let audio = first_channel(patch, &node.id, AUDIO_PORT)
+                .map(|(source, at)| AudioRoute {
+                    device_set: at.device_set,
+                    channel: at.channel,
+                    fx: graph.audio_fx(&source),
+                })
+                .or_else(|| crate::audio_fx::video_sound(graph, &pictured, video));
             let want = Wanted {
                 settings: settings.clone(),
                 video,

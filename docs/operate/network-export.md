@@ -30,7 +30,7 @@ Wire `Device iq` or channel `baseband` → **Network IQ** (sample rate locks; in
 
 ## Video
 
-Wire channel `video` (and optionally `audio`) → **Stream out**. It sends MPEG-TS with MPEG-2 video (25 fps, up to 1920×1080) and MP2 audio:
+Wire channel `video` → **Stream out**. The video wire carries the channel's sound; wire `audio` too to send another sound instead. It sends MPEG-TS with MPEG-2 video (25 fps, up to 1920×1080) and MP2 audio:
 
 | Transport | Details |
 |---|---|

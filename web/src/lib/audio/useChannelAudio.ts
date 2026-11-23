@@ -30,7 +30,8 @@ onOutputStateChange((running) => audioEngine.setOutputRunning(running));
 onOutputRerouted(() => audioEngine.rerouteOutput());
 
 function useTapValue<T>(tap: AudioTap, get: (tap: AudioTap) => T): T {
-  return useSyncExternalStore(audioEngine.subscribe, () => get(tap));
+  const read = () => get(tap);
+  return useSyncExternalStore(audioEngine.subscribe, read, read);
 }
 
 export function useChannelAudio(socket: SdrSocket | null, tap: AudioTap): ChannelAudio {

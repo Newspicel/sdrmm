@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { useSinkStore } from "../../lib/sinks";
-import type { CapturedImage, PatchNode } from "../../lib/types";
+import type { CapturedImage, ChannelDescriptor, ChannelInfo, PatchNode } from "../../lib/types";
 import { catalogBody } from "../../test/catalog";
 import { renderFace } from "../../test/faceHarness";
-import { placed } from "../../test/fixtures";
+import { deviceSet, placed } from "../../test/fixtures";
+import { resolvedNodeOf, resolvedPatch, resolvedPort } from "../../test/resolved";
 import { VideoFace } from "./VideoFace";
 
 const NODE: PatchNode = placed("screen", catalogBody("video"));
@@ -53,5 +54,58 @@ describe("video face", () => {
 
   it("shows no gallery before a picture arrives", () => {
     expect(render([])).not.toContain("<img");
+  });
+});
+
+const TV: ChannelInfo = {
+  id: 2,
+  node: "tv",
+  stream: 0,
+  settings: { frequency_hz: 514_000_000, params: { type: "dvbt", settings: {} } },
+};
+
+function fedBy(hasAudio: boolean): string {
+  const descriptor: ChannelDescriptor = {
+    type_id: "dvbt",
+    name: "DVB-T/T2",
+    band: { low_hz: -4_000_000, high_hz: 4_000_000 },
+    input_rate_hz: 9_142_857,
+    has_audio: hasAudio,
+    has_video: true,
+    settings: [],
+  };
+  const resolved = resolvedPatch([
+    resolvedNodeOf("screen", "video", [
+      resolvedPort(
+        { name: "video", port_type: "video", direction: "in", multi: "many" },
+        {
+          feeds: [
+            {
+              source: "tv",
+              port: "video",
+              tap: { tap: "channels", channels: [{ device_set: 1, channel: 2 }] },
+            },
+          ],
+        },
+      ),
+    ]),
+  ]);
+  return renderFace(VideoFace, NODE, {
+    graph: { nodes: [NODE], edges: [] },
+    devices: new Map([["radio", deviceSet({ id: 1, channels: [TV] })]]),
+    channelTypes: [descriptor],
+    resolved,
+  });
+}
+
+describe("video sound", () => {
+  it("plays the sound a television wire carries", () => {
+    const html = fedBy(true);
+    expect(html).toContain(">Sound<");
+    expect(html).toContain('aria-label="Play"');
+  });
+
+  it("offers no sound for a decoder that makes none", () => {
+    expect(fedBy(false)).not.toContain(">Sound<");
   });
 });

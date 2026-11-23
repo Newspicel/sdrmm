@@ -386,7 +386,7 @@ async fn a_port_derives_a_spectrum_from_its_own_signal_only_when_asked() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_video_port_streams_pictures_in_the_media_id_space() {
+async fn a_video_port_streams_pictures_and_their_sound_in_the_media_id_space() {
     let (mut ws, _, _) = bench(graph(
         vec![
             radio("band"),
@@ -400,11 +400,19 @@ async fn a_video_port_streams_pictures_in_the_media_id_space() {
     ))
     .await;
     subscribe_port(&mut ws, "screen", "video").await;
-    let (video_id, kind, source) = port_stream(&mut ws).await;
-    assert_eq!((kind, source.as_str()), (StreamKind::Video, "picture"));
-    assert!(video_id >= MEDIA_ID_BASE);
+    let mut started = [port_stream(&mut ws).await, port_stream(&mut ws).await];
+    started.sort_by_key(|(_, kind, _)| *kind == StreamKind::Audio);
+    let [(video_id, video, from), (audio_id, audio, heard)] = started;
+    assert_eq!((video, from.as_str()), (StreamKind::Video, "picture"));
+    assert_eq!((audio, heard.as_str()), (StreamKind::Audio, "picture"));
+    assert!(video_id >= MEDIA_ID_BASE && audio_id >= MEDIA_ID_BASE);
     unsubscribe_port(&mut ws, "screen", "video").await;
-    assert_eq!(stopped(&mut ws).await, (video_id, StreamKind::Video));
+    let mut ended = [stopped(&mut ws).await, stopped(&mut ws).await];
+    ended.sort_by_key(|(_, kind)| *kind == StreamKind::Audio);
+    assert_eq!(
+        ended,
+        [(video_id, StreamKind::Video), (audio_id, StreamKind::Audio)]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

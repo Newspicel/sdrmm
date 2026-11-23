@@ -201,27 +201,28 @@ fn of_feed(feed: &Feed, graph: &PatchGraph) -> Vec<Wanted> {
         .zip(tap.channels())
         .flat_map(|(index, addr)| {
             let from = upstream(index);
-            channel_streams(
-                feed.payload.port_type(),
-                addr,
-                &graph.audio_fx(&feed.source),
-            )
-            .into_iter()
-            .map(move |tapped| Wanted {
-                tapped,
-                from: from.clone(),
-            })
+            channel_streams(feed.payload.port_type(), addr, graph, &feed.source)
+                .into_iter()
+                .map(move |tapped| Wanted {
+                    tapped,
+                    from: from.clone(),
+                })
         })
         .collect()
 }
 
-fn channel_streams(port_type: PortType, addr: ChannelAddr, fx: &[String]) -> Vec<Tapped> {
+fn channel_streams(
+    port_type: PortType,
+    addr: ChannelAddr,
+    graph: &PatchGraph,
+    source: &str,
+) -> Vec<Tapped> {
     match port_type {
         PortType::Audio => {
             let route = AudioRoute {
                 device_set: addr.device_set,
                 channel: addr.channel,
-                fx: fx.to_vec(),
+                fx: graph.audio_fx(source),
             };
             vec![Tapped::Audio(route.clone()), Tapped::AudioSpectrum(route)]
         }
@@ -230,7 +231,9 @@ fn channel_streams(port_type: PortType, addr: ChannelAddr, fx: &[String]) -> Vec
             Tapped::Symbols(addr),
             Tapped::BasebandSpectrum(addr),
         ],
-        PortType::Video => vec![Tapped::Video(addr)],
+        PortType::Video => std::iter::once(Tapped::Video(addr))
+            .chain(crate::audio_fx::video_sound(graph, source, addr).map(Tapped::Audio))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -255,7 +258,7 @@ fn own_output(
         }),
         _ => patch
             .channel(node)
-            .map(|addr| channel_streams(port_type, addr, &graph.audio_fx(node))),
+            .map(|addr| channel_streams(port_type, addr, graph, node)),
     };
     tapped
         .unwrap_or_default()

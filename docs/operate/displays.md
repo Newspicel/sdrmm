@@ -39,7 +39,7 @@ Event filter --events--> Decoder log
 | **Readout** | `events` | Live structured state (RDS text, aircraft/vessel/LoRa tables, DAB slideshows) |
 | **Decoder log** | `events` | Persistent history grouped by **List**, **Frequency**, or **Station**; plays 8 kHz call clips (kept 24h) and offers safe file downloads (DAB MOT, GOES EMWIN) |
 | **Map** | `events`, `position` | Live tracks, sonde burst/landing forecasts, satellite footprints. Bottom-left gear picks style, 3D **Globe**, or custom XYZ / MapLibre URL (saved per browser) |
-| **Video** | `video` | Live ATV/DVB video and still-picture gallery (SSTV, WEFAX, satellites, Wenet; PNGs kept 24h, max 512 / 256 MB; needs a `video` wire to save) |
+| **Video** | `video` | Live ATV/DVB video with its sound (Play on the face) and still-picture gallery (SSTV, WEFAX, satellites, Wenet; PNGs kept 24h, max 512 / 256 MB; needs a `video` wire to save) |
 | **Export** | `events` | On-demand CSV or JSON download of logged rows (for continuous sinks, see [Network export](network-export.md)) |
 
 ## Event filter
