@@ -532,3 +532,14 @@ fn a_session_hands_its_recovery_key_to_the_account() {
     assert!(!kept.contains("recovery_key"));
     assert_eq!(sdrmm_voicechat::session_user(&kept).as_deref(), Some(BOT));
 }
+
+#[test]
+fn a_session_names_its_user_in_any_case() {
+    let store = Store::open(None).expect("store");
+    let made = store
+        .create_account(matrix(MatrixLogin::Oauth, BOT))
+        .expect("created");
+    store
+        .set_account_session(&made.id, &session_of("@bot:Matrix.Example"))
+        .expect("signed in");
+}

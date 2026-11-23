@@ -187,6 +187,16 @@ async fn sign_in_as_another_user_keeps_the_store() {
 }
 
 #[tokio::test]
+async fn sign_in_names_the_user_in_any_case() {
+    let server = approving(false).await;
+    let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm", Some("@bot:X.org"))
+        .await
+        .unwrap();
+    let signed_in = timeout(PATIENCE, shown.done).await.unwrap().unwrap();
+    assert_eq!(signed_in.unwrap().user, "@bot:x.org");
+}
+
+#[tokio::test]
 async fn sign_in_ends_with_an_oauth_session() {
     let server = approving(false).await;
     let shown = matrix_sign_in(&server.uri(), &memory(), "sdrmm", Some("@bot:x.org"))
@@ -426,6 +436,12 @@ fn a_saved_session_hands_out_its_access_token() {
     assert_eq!(session_access_token("{}"), None);
     assert_eq!(session_user(&oauth).as_deref(), Some("@bot:x.org"));
     assert_eq!(session_user("{}"), None);
+}
+
+#[test]
+fn user_ids_compare_in_lowercase() {
+    assert!(same_user("@bot:x.org", "@Bot:X.org"));
+    assert!(!same_user("@bot:x.org", "@bot2:x.org"));
 }
 
 async fn failed_with(session: &Session) -> LinkState {

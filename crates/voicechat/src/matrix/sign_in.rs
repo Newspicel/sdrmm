@@ -198,7 +198,7 @@ impl Pending {
         if self
             .user
             .as_deref()
-            .is_some_and(|user| user != who.user_id.as_str())
+            .is_some_and(|user| !super::same_user(user, who.user_id.as_str()))
         {
             return Err(OTHER_USER.to_owned());
         }

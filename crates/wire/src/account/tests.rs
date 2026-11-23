@@ -333,7 +333,16 @@ fn matrix_password_login_needs_user_and_password() {
         with("@bot:matrix.example", Secret::default()),
         Err("password")
     );
-    for user in ["", "bot", "@bot", "@:x", "@bot:", "@b ot:x"] {
+    assert_eq!(with("@bot:Matrix.Example", inline("pw")), Ok(()));
+    for user in [
+        "",
+        "bot",
+        "@bot",
+        "@:x",
+        "@bot:",
+        "@b ot:x",
+        "@Bot:matrix.example",
+    ] {
         assert_eq!(with(user, inline("pw")), Err("user"), "{user}");
     }
     let long = format!("@{}:x", "b".repeat(MAX_MATRIX_USER_LEN));

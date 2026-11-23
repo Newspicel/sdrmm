@@ -71,7 +71,9 @@ impl Store {
         else {
             return Err(StoreError::AccountField("service"));
         };
-        if sdrmm_voicechat::session_user(&session).as_deref() != Some(user.as_str()) {
+        if !sdrmm_voicechat::session_user(&session)
+            .is_some_and(|owner| sdrmm_voicechat::same_user(&owner, user))
+        {
             return Err(StoreError::AccountField("session"));
         }
         let mut named = keep_secret(&tx, held, &session)?;

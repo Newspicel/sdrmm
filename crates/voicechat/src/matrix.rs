@@ -137,6 +137,12 @@ pub fn take_recovery_key(session: &str) -> Option<(String, String)> {
     Some((rest, key))
 }
 
+/// Whether two user ids name the same account, compared as the homeserver does: in lowercase.
+#[must_use]
+pub fn same_user(one: &str, other: &str) -> bool {
+    one.eq_ignore_ascii_case(other)
+}
+
 /// Who a saved session signs in as.
 #[must_use]
 pub fn session_user(session: &str) -> Option<String> {

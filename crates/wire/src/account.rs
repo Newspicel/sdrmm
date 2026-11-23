@@ -384,14 +384,19 @@ fn holds(ok: bool, field: &'static str) -> Result<(), &'static str> {
     if ok { Ok(()) } else { Err(field) }
 }
 
-/// `@local:server`, without spaces.
+/// `@local:server`, without spaces. Homeservers lowercase a new localpart, so an uppercase one
+/// names no account.
 fn valid_matrix_user(user: &str) -> bool {
     user.len() <= MAX_MATRIX_USER_LEN
         && !user.contains(char::is_whitespace)
         && user
             .strip_prefix('@')
             .and_then(|rest| rest.split_once(':'))
-            .is_some_and(|(local, server)| !local.is_empty() && !server.is_empty())
+            .is_some_and(|(local, server)| {
+                !local.is_empty()
+                    && !server.is_empty()
+                    && !local.bytes().any(|b| b.is_ascii_uppercase())
+            })
 }
 
 /// An absolute URL in one of `schemes` that carries no login of its own: the login belongs in
