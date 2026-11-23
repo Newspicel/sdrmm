@@ -5,7 +5,7 @@ use sdrmm_plugins::PluginModule;
 
 mod common;
 
-const MANIFEST: &str = r#"{"abi":4,"decoder":{"descriptor":{"type_id":"capped","name":"Capped","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
+const MANIFEST: &str = r#"{"abi":5,"decoder":{"descriptor":{"type_id":"capped","name":"Capped","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
 const MEMORY: &str = r#"(memory (export "memory") 2)"#;
 
 fn text() -> String {

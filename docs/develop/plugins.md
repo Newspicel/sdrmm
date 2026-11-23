@@ -28,6 +28,6 @@ Or add `sdrmm-plugin = { git = "https://github.com/newspicel/sdrmm", tag = "v2.4
 
 ## ABI, speed, and safety
 
-- **ABI v5:** v4 builds still load; older ones are refused until recompiled against the current SDK.
+- **ABI v5:** other builds are refused until recompiled against the current SDK.
 - **Native kernels:** `sdrmm_plugin::kernels` runs host FIR, FFT, and fractional resamplers directly on guest memory (and in-process under `cargo test`).
 - **Isolation:** per-call time budget + 256 MiB memory cap. Runaway plugins stop only their own channel. Plugins are crash-isolated, not security-sandboxed; install only trusted code.

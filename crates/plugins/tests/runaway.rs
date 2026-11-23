@@ -9,7 +9,7 @@ use sdrmm_wire::present::FieldValue;
 
 mod common;
 
-const MANIFEST: &str = r#"{"abi":4,"decoder":{"descriptor":{"type_id":"runaway","name":"Runaway","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
+const MANIFEST: &str = r#"{"abi":5,"decoder":{"descriptor":{"type_id":"runaway","name":"Runaway","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
 
 fn plugin_path() -> PathBuf {
     common::wat_plugin(

@@ -6,12 +6,12 @@ use sdrmm_decoder::{ChannelCtx, ChannelOutputs, Decoder};
 use sdrmm_plugins::{PluginModule, WasmDecoder};
 use sdrmm_wire::{
     SymbolPlane,
-    plugin::{ABI_VERSION, OLDEST_ABI_VERSION, OutputHeader, Picture, PictureImage, plane_code},
+    plugin::{ABI_VERSION, OutputHeader, Picture, PictureImage, plane_code},
 };
 
 mod common;
 
-const MANIFEST: &str = r#"{"abi":4,"decoder":{"descriptor":{"type_id":"painter","name":"Painter","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
+const MANIFEST: &str = r#"{"abi":5,"decoder":{"descriptor":{"type_id":"painter","name":"Painter","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}"#;
 const HEADER_AT: u32 = 20_000;
 const PICTURES_AT: u32 = 21_000;
 const SYMBOLS_AT: u32 = 22_000;
@@ -158,17 +158,8 @@ fn carriers_cross_on_their_own_plane() {
 }
 
 #[test]
-fn a_plugin_of_the_oldest_abi_still_taps_symbols() {
-    let decoder = painting(OLDEST_ABI_VERSION, plane_code(Some(SymbolPlane::Level)))
-        .unwrap_or_else(|error| panic!("{error}"));
-    let out = run_on(&decoder, true);
-    assert_eq!(out.symbols.plane, Some(SymbolPlane::Level));
-    assert_eq!(out.symbols.symbols, SYMBOLS);
-}
-
-#[test]
 fn a_plugin_newer_or_older_than_the_host_is_refused() {
-    for abi in [OLDEST_ABI_VERSION - 1, ABI_VERSION + 1] {
+    for abi in [ABI_VERSION - 1, ABI_VERSION + 1] {
         let refused = painting(abi, 0);
         let Err(error) = refused else {
             panic!("ABI {abi} must be refused");
@@ -188,7 +179,7 @@ fn an_unknown_plane_stops_the_channel_on_its_face() {
 
 #[test]
 fn a_plugin_that_declares_trunking_is_refused() {
-    let manifest = r#"{"abi":4,"decoder":{"descriptor":{"type_id":"trunker","name":"Trunker","bandwidth_hz":1000.0,"input_rate_hz":48000.0,"trunking":{"slots":2,"schemes":[]}}}}"#;
+    let manifest = r#"{"abi":5,"decoder":{"descriptor":{"type_id":"trunker","name":"Trunker","bandwidth_hz":1000.0,"input_rate_hz":48000.0,"trunking":{"slots":2,"schemes":[]}}}}"#;
     let text = common::wat_text(common::ABI, manifest, "i32.const 0", "");
     let refused = PluginModule::from_bytes("trunker".to_owned(), text.as_bytes(), None);
     let Err(error) = refused else {

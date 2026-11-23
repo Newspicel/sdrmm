@@ -3,7 +3,7 @@ title: Plugins in any language
 description: Freestanding WebAssembly ABI v5 reference for C, C++, Zig, Go, and AssemblyScript plugins.
 ---
 
-Authoritative contract: `crates/wire/src/plugin.rs`. Must export linear `memory` (≤ 256 MiB), import only `sdrmm` below (no WASI/`env`), use little-endian numbers and UTF-8 JSON, and finish every call within 500 ms. The host loads ABI 4 and 5; 4 lacks symbol plane `3`, and a host older than 5 refuses a v5 plugin. An unknown plane code stops the channel with an error. One host instance serves control calls; each channel gets its own instance.
+Authoritative contract: `crates/wire/src/plugin.rs`. Must export linear `memory` (≤ 256 MiB), import only `sdrmm` below (no WASI/`env`), use little-endian numbers and UTF-8 JSON, and finish every call within 500 ms. The host loads ABI 5 only. An unknown plane code stops the channel with an error. One host instance serves control calls; each channel gets its own instance.
 
 ## Toolchains
 

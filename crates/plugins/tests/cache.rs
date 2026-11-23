@@ -14,7 +14,7 @@ mod common;
 
 fn manifest(name: &str) -> String {
     format!(
-        r#"{{"abi":4,"decoder":{{"descriptor":{{"type_id":"cached","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}}}"#
+        r#"{{"abi":5,"decoder":{{"descriptor":{{"type_id":"cached","name":"{name}","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}}}}"#
     )
 }
 

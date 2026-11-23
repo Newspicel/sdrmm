@@ -25,7 +25,7 @@ const EVENTS: &str = r#"[{"kind":"probe","data":{"n":1}}]"#;
 
 fn manifest(processor: &str) -> String {
     format!(
-        r#"{{"abi":4,"decoder":{{"descriptor":{{"type_id":"probe_rx","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{processor}}}"#
+        r#"{{"abi":5,"decoder":{{"descriptor":{{"type_id":"probe_rx","name":"Probe","bandwidth_hz":1000.0,"input_rate_hz":48000.0}}}},"processor":{processor}}}"#
     )
 }
 
