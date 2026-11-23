@@ -58,19 +58,16 @@ pub(super) async fn run_account(mut line: Line, alive: mpsc::Sender<()>) {
 /// One client, from opening it to the fault that ends it.
 async fn connected(line: &mut Line, backoff: &mut Backoff) -> Fault {
     let account = &*line.account;
-    let client = match connect::build_client(&account.homeserver, Some(&account.store)).await {
-        Ok(client) => client,
-        Err(fault) => return fault,
-    };
-    let changes = client.subscribe_to_session_changes();
     let session = line
         .saved
         .borrow()
         .clone()
         .or_else(|| account.session.clone());
-    if let Err(fault) = connect::sign_in(&client, account, session.as_deref(), &line.saved).await {
-        return fault;
-    }
+    let client = match connect::open(account, session.as_deref(), &line.saved).await {
+        Ok(client) => client,
+        Err(fault) => return fault,
+    };
+    let changes = client.subscribe_to_session_changes();
     let (events, _) = broadcast::channel(EVENTS);
     match client.sync_once(settings()).await {
         Ok(first) => fan_out(&first, &events),
@@ -117,6 +114,10 @@ async fn sync(client: &Client, events: &broadcast::Sender<SyncEvent>) -> Fault {
 }
 
 fn sync_fault(error: &matrix_sdk::Error) -> Fault {
+    if connect::store_failed(error) {
+        tracing::warn!(%error, "Matrix store failed");
+        return Fault::lasting("Store unreadable");
+    }
     if matches!(
         error.client_api_error_kind(),
         Some(ErrorKind::UnknownToken { .. })

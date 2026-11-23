@@ -554,8 +554,6 @@ fn lookup_failed(error: &twilight_http::Error) -> String {
     }
 }
 
-/// twilight builds its TLS configs from the process default provider, which rustls cannot pick
-/// by itself once more than one provider is compiled in.
 fn songbird_config() -> Config {
     Config::default().decode_mode(DecodeMode::Decode(DecodeConfig::new(
         Channels::Mono,

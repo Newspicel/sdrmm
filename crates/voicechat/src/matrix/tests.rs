@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::time::timeout;
 
-use super::account::connect::{Saved, build_client, sign_in};
+use super::account::connect::{Fault, Saved, build_client, open, sign_in};
 use super::account::sync::{key_of, members_of};
 use super::call::SyncEvent;
 use super::*;
@@ -279,5 +279,91 @@ fn state_members_carry_their_send_time() {
             ("!room:x.org".to_owned(), 10),
             ("!room:x.org".to_owned(), 20)
         ]
+    );
+}
+
+fn device_session(device: &str) -> String {
+    Saved::Matrix(MatrixSession {
+        meta: SessionMeta {
+            user_id: owned_user_id!("@bot:x.org"),
+            device_id: device.into(),
+        },
+        tokens: SessionTokens {
+            access_token: "token".into(),
+            refresh_token: None,
+        },
+    })
+    .json()
+    .unwrap()
+}
+
+/// A store folder holding device `A`'s keys.
+async fn store_of_device_a(homeserver: &str, dir: &std::path::Path) -> MatrixStore {
+    let store = MatrixStore {
+        dir: Some(dir.join("store")),
+        passphrase: "secret".into(),
+    };
+    let client = build_client(homeserver, Some(&store)).await.unwrap();
+    let saved = watch::Sender::new(None);
+    let account = account(homeserver, MatrixLogin::Password("hunter2".into()));
+    sign_in(&client, &account, Some(&device_session("A")), &saved)
+        .await
+        .unwrap();
+    client
+        .encryption()
+        .wait_for_e2ee_initialization_tasks()
+        .await;
+    store
+}
+
+#[tokio::test]
+async fn a_fresh_login_starts_on_a_cleared_store() {
+    let server = homeserver().await;
+    server.mock_login().ok().expect(1).mount().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
+    account.store = store_of_device_a(&server.uri(), dir.path()).await;
+    let saved = watch::Sender::new(None);
+    let client = open(&account, None, &saved).await.unwrap();
+    assert_ne!(client.device_id().unwrap(), "A");
+    assert!(saved.borrow().is_some());
+}
+
+#[tokio::test]
+async fn a_store_of_another_device_is_a_lasting_fault() {
+    let server = homeserver().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
+    account.store = store_of_device_a(&server.uri(), dir.path()).await;
+    let saved = watch::Sender::new(None);
+    let fault = open(&account, Some(&device_session("B")), &saved)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(fault, Fault::lasting("Store unreadable"));
+}
+
+#[tokio::test]
+async fn the_first_login_handed_back_keeps_the_link() {
+    let server = homeserver().await;
+    server.mock_login().ok().mount().await;
+    let mut account = account(&server.uri(), MatrixLogin::Password("hunter2".into()));
+    account.nickname = "Relay".into();
+    let mut session = Session::open(Service::Matrix(account));
+    let _room = session.join("!room:x.org").unwrap();
+    let mut saved = session.saved().unwrap();
+    let first = timeout(PATIENCE, saved.wait_for(Option::is_some))
+        .await
+        .unwrap()
+        .unwrap()
+        .clone();
+    let mut next = session.service().clone();
+    if let Service::Matrix(account) = &mut next {
+        account.session = first;
+    }
+    assert_eq!(session.update(next), Ok(()));
+    assert_eq!(
+        session.join("!room:x.org").unwrap_err(),
+        crate::VoiceChatError::Clash("!room:x.org".into())
     );
 }

@@ -70,8 +70,8 @@ impl Service {
     }
 
     /// Whether `next` is this account under another nickname, which a live session takes
-    /// without leaving its channels.
-    fn renamed_to(&self, next: &Self) -> bool {
+    /// without leaving its channels. `latest` is the Matrix session the live backend runs on.
+    fn renamed_to(&self, next: &Self, latest: Option<&str>) -> bool {
         match (self, next) {
             (Self::Discord { token, .. }, Self::Discord { token: next, .. }) => token == next,
             (
@@ -88,7 +88,7 @@ impl Service {
                     ..
                 },
             ) => address == next_address && password == next_password && identity == next_identity,
-            (Self::Matrix(account), Self::Matrix(next)) => account.renamed_to(next),
+            (Self::Matrix(account), Self::Matrix(next)) => account.renamed_to(next, latest),
             _ => false,
         }
     }
@@ -182,7 +182,11 @@ impl Session {
         if service == self.service {
             return Ok(());
         }
-        if !self.service.renamed_to(&service) {
+        let latest = match &self.backend {
+            Backend::Matrix(matrix) => matrix.latest(),
+            Backend::Discord(_) | Backend::TeamSpeak(_) => None,
+        };
+        if !self.service.renamed_to(&service, latest.as_deref()) {
             return Err(service);
         }
         let nickname = service.nickname().to_owned();
@@ -224,7 +228,9 @@ pub fn new_teamspeak_identity() -> String {
     tsclient_rs::generateIdentity(TEAMSPEAK_LEVEL).to_string()
 }
 
-/// Installs the process TLS provider once; rustls needs one before any connection.
+/// Installs the process TLS provider once. twilight, reqwest and matrix-sdk build their TLS
+/// configs from the process default, which rustls cannot pick by itself once more than one
+/// provider is compiled in.
 fn install_tls_provider() {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -385,6 +391,12 @@ mod tests {
         Session::open(Service::Matrix(matrix_account(session)))
     }
 
+    fn session_of(device: &str, token: &str) -> String {
+        format!(
+            r#"{{"kind":"matrix","user_id":"@bot:x.org","device_id":"{device}","access_token":"{token}"}}"#
+        )
+    }
+
     fn with_session(service: &Service, session: &str) -> Service {
         let mut next = service.clone();
         if let Service::Matrix(account) = &mut next {
@@ -404,9 +416,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_refreshed_session_keeps_the_link() {
-        let mut session = matrix(Some("first"));
+        let mut session = matrix(Some(&session_of("A", "first")));
         let _room = session.join("!room:x.org").unwrap();
-        let next = with_session(session.service(), "refreshed");
+        let next = with_session(session.service(), &session_of("A", "refreshed"));
         assert_eq!(session.update(next.clone()), Ok(()));
         assert_eq!(session.service(), &next);
         assert_eq!(
@@ -419,9 +431,21 @@ mod tests {
     #[test]
     fn a_first_session_reopens() {
         let mut session = matrix(None);
-        let signed_in = with_session(session.service(), "first");
+        let signed_in = with_session(session.service(), &session_of("A", "first"));
         assert_eq!(session.update(signed_in.clone()), Err(signed_in));
         assert!(teamspeak().saved().is_none());
+    }
+
+    #[test]
+    fn a_sign_in_with_a_new_device_reopens() {
+        let mut session = matrix(Some(&session_of("A", "first")));
+        let other = with_session(session.service(), &session_of("B", "second"));
+        assert_eq!(session.update(other.clone()), Err(other));
+        let mut dropped = session.service().clone();
+        if let Service::Matrix(account) = &mut dropped {
+            account.session = None;
+        }
+        assert_eq!(session.update(dropped.clone()), Err(dropped));
     }
 
     #[tokio::test]

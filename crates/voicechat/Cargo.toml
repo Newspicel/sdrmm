@@ -44,4 +44,5 @@ url.workspace = true
 [dev-dependencies]
 axum.workspace = true
 matrix-sdk = { workspace = true, features = ["testing"] }
+tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

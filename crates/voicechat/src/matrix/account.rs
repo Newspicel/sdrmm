@@ -63,6 +63,14 @@ impl Matrix {
         self.saved.subscribe()
     }
 
+    /// The session this backend runs on: the last one it saved, else the one it started with.
+    pub(crate) fn latest(&self) -> Option<String> {
+        self.saved
+            .borrow()
+            .clone()
+            .or_else(|| self.account.session.clone())
+    }
+
     pub(crate) fn rename(&self, nickname: String) {
         self.nickname.send_replace(nickname);
     }

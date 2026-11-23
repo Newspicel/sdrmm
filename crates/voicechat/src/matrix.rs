@@ -11,6 +11,8 @@ mod sign_in;
 use std::fmt;
 use std::path::PathBuf;
 
+use serde::Deserialize;
+
 pub(crate) use account::Matrix;
 pub use sign_in::{SignIn, SignedIn, matrix_sign_in};
 
@@ -79,15 +81,31 @@ impl fmt::Debug for MatrixStore {
 }
 
 impl MatrixAccount {
-    /// Whether `next` is this account under another nickname or with refreshed tokens, which a
-    /// live session takes as it is. A first session, or one taken away, needs a new session.
-    pub(crate) fn renamed_to(&self, next: &Self) -> bool {
+    /// Whether `next` is this account under another nickname, or with the session its live
+    /// backend last saved (`latest`): a refresh, or the backend's own first login handed back.
+    /// A session of another device, or none, needs a new session.
+    pub(crate) fn renamed_to(&self, next: &Self, latest: Option<&str>) -> bool {
         self.homeserver == next.homeserver
             && self.user == next.user
             && self.login == next.login
             && self.recovery_key == next.recovery_key
             && self.store == next.store
-            && self.session.is_some() == next.session.is_some()
+            && (next.session == self.session || same_device(next.session.as_deref(), latest))
+    }
+}
+
+/// Who a saved session signs in as.
+#[derive(Deserialize, PartialEq)]
+struct Owner {
+    user_id: String,
+    device_id: String,
+}
+
+fn same_device(next: Option<&str>, latest: Option<&str>) -> bool {
+    let owner = |json: &str| serde_json::from_str::<Owner>(json).ok();
+    match (next.and_then(owner), latest.and_then(owner)) {
+        (Some(next), Some(latest)) => next == latest,
+        _ => false,
     }
 }
 

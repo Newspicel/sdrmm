@@ -12,6 +12,7 @@ use crate::matrix::{MatrixAccount, MatrixLogin, MatrixStore};
 
 pub(crate) const NOT_SIGNED_IN: &str = "Not signed in";
 const UNREACHABLE: &str = "Homeserver unreachable";
+const STORE_UNREADABLE: &str = "Store unreadable";
 const DEVICE_NAME: &str = "sdrmm";
 
 /// Why the account stopped, and whether trying again may help.
@@ -91,10 +92,28 @@ pub(crate) async fn build_client(
     builder.build().await.map_err(|error| {
         tracing::warn!(%error, homeserver, "Matrix client not built");
         match error {
-            ClientBuildError::SqliteStore(_) => Fault::lasting("Store unreadable"),
+            ClientBuildError::SqliteStore(_) => Fault::lasting(STORE_UNREADABLE),
             _ => Fault::passing(UNREACHABLE),
         }
     })
+}
+
+/// The account's client, signed in. A fresh login starts on an empty store: keys of another
+/// device there would refuse the new one, and a store without its session cannot be restored.
+pub(crate) async fn open(
+    account: &MatrixAccount,
+    session: Option<&str>,
+    saved: &watch::Sender<Option<String>>,
+) -> Result<Client, Fault> {
+    if session.is_none() {
+        if account.login == MatrixLogin::OAuth {
+            return Err(Fault::lasting(NOT_SIGNED_IN));
+        }
+        clear_store(&account.store).await?;
+    }
+    let client = build_client(&account.homeserver, Some(&account.store)).await?;
+    sign_in(&client, account, session, saved).await?;
+    Ok(client)
 }
 
 /// Restores `session`, or logs in with the password and saves the new session.
@@ -116,16 +135,51 @@ pub(crate) async fn sign_in(
         .initial_device_display_name(DEVICE_NAME)
         .send()
         .await
-        .map_err(|error| {
-            tracing::warn!(%error, "Matrix login failed");
-            if error.as_client_api_error().is_some() {
-                Fault::lasting("Login refused")
-            } else {
-                Fault::passing(UNREACHABLE)
-            }
-        })?;
+        .map_err(|error| login_fault(&error))?;
     save(client, saved);
     Ok(())
+}
+
+/// A refusal or a lost connection before the login, or a store fault after it. The last must
+/// not retry: each retry would log in again and leave another device behind.
+fn login_fault(error: &matrix_sdk::Error) -> Fault {
+    tracing::warn!(%error, "Matrix login failed");
+    match error {
+        matrix_sdk::Error::Http(_) if error.as_client_api_error().is_some() => {
+            Fault::lasting("Login refused")
+        }
+        matrix_sdk::Error::Http(_) => Fault::passing(UNREACHABLE),
+        _ => Fault::lasting(STORE_UNREADABLE),
+    }
+}
+
+/// Whether `error` comes from the account's own store, which no retry fixes.
+pub(crate) fn store_failed(error: &matrix_sdk::Error) -> bool {
+    matches!(
+        error,
+        matrix_sdk::Error::CryptoStoreError(_)
+            | matrix_sdk::Error::BadCryptoStoreState
+            | matrix_sdk::Error::StateStore(_)
+            | matrix_sdk::Error::EventCacheStore(_)
+            | matrix_sdk::Error::MediaStore(_)
+    )
+}
+
+/// Empties the store folder for a new device.
+pub(crate) async fn clear_store(store: &MatrixStore) -> Result<(), Fault> {
+    let Some(dir) = store.dir.clone() else {
+        return Ok(());
+    };
+    let cleared = tokio::task::spawn_blocking(move || match std::fs::remove_dir_all(&dir) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    })
+    .await
+    .unwrap_or_else(|error| Err(std::io::Error::other(error)));
+    cleared.map_err(|error| {
+        tracing::warn!(%error, "Matrix store not cleared");
+        Fault::lasting(STORE_UNREADABLE)
+    })
 }
 
 async fn restore(client: &Client, session: &str) -> Result<(), Fault> {
@@ -139,7 +193,7 @@ async fn restore(client: &Client, session: &str) -> Result<(), Fault> {
     };
     client.restore_session(session).await.map_err(|error| {
         tracing::warn!(%error, "Matrix session not restored");
-        Fault::lasting(NOT_SIGNED_IN)
+        Fault::lasting(STORE_UNREADABLE)
     })
 }
 

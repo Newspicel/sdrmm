@@ -16,7 +16,7 @@ use tokio::time::Instant;
 use url::Url;
 
 use super::MatrixStore;
-use super::account::connect::{Fault, Saved, build_client};
+use super::account::connect::{Fault, Saved, build_client, clear_store};
 use crate::VoiceChatError;
 
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -277,20 +277,21 @@ fn failed(error: &dyn fmt::Display) -> String {
     "Sign-in failed".to_owned()
 }
 
-/// Restores `session` into the account's store once, so the device it names gets its keys
-/// there, then closes the store for the session that will open it.
+/// Restores `session` into an emptied account store, so the new device gets its keys there and
+/// no older device's keys refuse it, then closes the store for the session that will open it.
 async fn settle(
     homeserver: &Url,
     store: &MatrixStore,
     session: OAuthSession,
 ) -> Result<(), String> {
+    clear_store(store).await.map_err(|fault| fault.reason)?;
     let client = build_client(homeserver.as_str(), Some(store))
         .await
         .map_err(|fault| fault.reason)?;
-    client
-        .restore_session(session)
-        .await
-        .map_err(|error| failed(&error))?;
+    client.restore_session(session).await.map_err(|error| {
+        tracing::warn!(%error, "Matrix sign-in not stored");
+        "Store unreadable".to_owned()
+    })?;
     client
         .encryption()
         .wait_for_e2ee_initialization_tasks()
