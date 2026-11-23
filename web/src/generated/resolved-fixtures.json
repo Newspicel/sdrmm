@@ -1082,6 +1082,119 @@
       "revision": 0
     }
   },
+  "098ed5106b8fc790": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "out",
+          "kind": "event_output",
+          "label": "Event output",
+          "ports": [
+            {
+              "direction": "in",
+              "keeps": [
+                "clips"
+              ],
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dtmf",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "fisb",
+                  "fleetsync",
+                  "flex",
+                  "fst4",
+                  "fst4w",
+                  "ft4",
+                  "ft8",
+                  "gk2a_lrit",
+                  "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
+                  "gsm",
+                  "hfdl",
+                  "horus",
+                  "hrpt",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "lora",
+                  "lrpt",
+                  "mdc1200",
+                  "morse",
+                  "msk144",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "q65",
+                  "radar",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wenet",
+                  "wenet_image",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "0b8195f67a796cf5": {
     "patch": {
       "edges": [
@@ -4697,6 +4810,116 @@
           "runs": {
             "device_set": 1,
             "runs": "radio"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "688bb6c3610850fd": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "out",
+          "kind": "event_output",
+          "label": "Event output",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dtmf",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "fisb",
+                  "fleetsync",
+                  "flex",
+                  "fst4",
+                  "fst4w",
+                  "ft4",
+                  "ft8",
+                  "gk2a_lrit",
+                  "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
+                  "gsm",
+                  "hfdl",
+                  "horus",
+                  "hrpt",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "lora",
+                  "lrpt",
+                  "mdc1200",
+                  "morse",
+                  "msk144",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "q65",
+                  "radar",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wenet",
+                  "wenet_image",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
+            }
+          ],
+          "runs": {
+            "runs": "server"
           }
         }
       ],
@@ -10648,6 +10871,116 @@
       "revision": 0
     }
   },
+  "ceda813436a39781": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "out",
+          "kind": "event_output",
+          "label": "Event output",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dtmf",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "fisb",
+                  "fleetsync",
+                  "flex",
+                  "fst4",
+                  "fst4w",
+                  "ft4",
+                  "ft8",
+                  "gk2a_lrit",
+                  "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
+                  "gsm",
+                  "hfdl",
+                  "horus",
+                  "hrpt",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "lora",
+                  "lrpt",
+                  "mdc1200",
+                  "morse",
+                  "msk144",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "q65",
+                  "radar",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wenet",
+                  "wenet_image",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "d20b838ac63c1d25": {
     "patch": {
       "edges": [
@@ -12083,6 +12416,119 @@
       "revision": 0
     }
   },
+  "defb418ef60d6d55": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "out",
+          "kind": "event_output",
+          "label": "Event output",
+          "ports": [
+            {
+              "direction": "in",
+              "keeps": [
+                "clips"
+              ],
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dtmf",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "fisb",
+                  "fleetsync",
+                  "flex",
+                  "fst4",
+                  "fst4w",
+                  "ft4",
+                  "ft8",
+                  "gk2a_lrit",
+                  "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
+                  "gsm",
+                  "hfdl",
+                  "horus",
+                  "hrpt",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "lora",
+                  "lrpt",
+                  "mdc1200",
+                  "morse",
+                  "msk144",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "q65",
+                  "radar",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wenet",
+                  "wenet_image",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
+            }
+          ],
+          "runs": {
+            "runs": "server"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
   "ea63a0aa6e832549": {
     "patch": {
       "edges": [],
@@ -13381,6 +13827,116 @@
           ],
           "runs": {
             "runs": "engine"
+          }
+        }
+      ],
+      "revision": 0
+    }
+  },
+  "f72cccd391736bdd": {
+    "patch": {
+      "edges": [],
+      "epoch": 0,
+      "nodes": [
+        {
+          "id": "out",
+          "kind": "event_output",
+          "label": "Event output",
+          "ports": [
+            {
+              "direction": "in",
+              "multi": "many",
+              "name": "events",
+              "payload": {
+                "kinds": [
+                  "acars",
+                  "adsb",
+                  "ais",
+                  "aprs",
+                  "apt",
+                  "bearing_fix",
+                  "ble",
+                  "broadcast_data",
+                  "bss",
+                  "call",
+                  "cw_skimmer",
+                  "dect",
+                  "df",
+                  "df_fix",
+                  "dsc",
+                  "dtmf",
+                  "dv",
+                  "eot",
+                  "ermes",
+                  "fisb",
+                  "fleetsync",
+                  "flex",
+                  "fst4",
+                  "fst4w",
+                  "ft4",
+                  "ft8",
+                  "gk2a_lrit",
+                  "gnss",
+                  "gnss_fix",
+                  "goes_hrit",
+                  "gsm",
+                  "hfdl",
+                  "horus",
+                  "hrpt",
+                  "ident",
+                  "ils",
+                  "inmarsat_aero",
+                  "inmarsat_stdc",
+                  "iridium",
+                  "ism",
+                  "ism_survey",
+                  "js8",
+                  "jt65",
+                  "jt9",
+                  "lora",
+                  "lrpt",
+                  "mdc1200",
+                  "morse",
+                  "msk144",
+                  "navtex",
+                  "noise_figure",
+                  "per",
+                  "pocsag",
+                  "psk",
+                  "q65",
+                  "radar",
+                  "radio_clock",
+                  "radiosonde",
+                  "rds",
+                  "remote_id",
+                  "rtty",
+                  "same",
+                  "sarsat",
+                  "scrambler",
+                  "selcall",
+                  "sid",
+                  "sstv",
+                  "stanag",
+                  "tetrapol",
+                  "tone",
+                  "transmission",
+                  "vdl2",
+                  "vor",
+                  "wefax",
+                  "wenet",
+                  "wenet_image",
+                  "wifi_occupancy",
+                  "wmbus",
+                  "wspr"
+                ],
+                "type": "events"
+              },
+              "port_type": "events",
+              "takes": "ACARS, ADS-B, AIS, APRS, NOAA APT, Bearing fix, BLE, Broadcast data, BSS, Call, CW skimmer, DECT, Bearing, Fix, DSC, DTMF, Digital voice, End-of-Train, ERMES, FIS-B, FleetSync, FLEX, FST4, FST4W, FT4, FT8, GK-2A LRIT, GNSS lab, GNSS fix, GOES HRIT, GSM, HFDL, Horus, HRPT, Signal ID, ILS, Inmarsat Aero, Inmarsat STD-C, Iridium, ISM sensor, 2.4 GHz, JS8, JT65, JT9, LoRa, Meteor LRPT, MDC-1200, Morse, MSK144, NAVTEX, Noise figure, PER, POCSAG, PSK, Q65, Radar, Radio clock, Radiosonde, RDS, Remote ID, RTTY, SAME, 406 MHz beacon, Scrambler, Selcall, SID, SSTV, STANAG, Tetrapol, Tone, Transmission, VDL Mode 2, VOR, WEFAX, Wenet, Wenet pictures, Wi-Fi load, wM-Bus, WSPR"
+            }
+          ],
+          "runs": {
+            "runs": "server"
           }
         }
       ],

@@ -13,7 +13,7 @@ use sdrmm_dsp::audio::mix::lane_of;
 use sdrmm_engine::Engine;
 use sdrmm_voicechat::{FRAME, Hold, Link, LinkState, RATE_HZ};
 use sdrmm_wire::{
-    AUDIO_PORT, AudioRoute, ChatAccount, ChatService, NodeBody, NodeProblem, PatchGraph,
+    AUDIO_PORT, Account, AccountService, AudioRoute, NodeBody, NodeProblem, PatchGraph,
     ProblemSource, ResolvedPatch, ServerEvent, VoiceChatNode, audio::AUDIO_RATE_HZ,
 };
 use tokio::{
@@ -60,7 +60,7 @@ pub(super) struct Tuning {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Want {
-    account: ChatAccount,
+    account: Account,
     channel: String,
     routes: HashSet<AudioRoute>,
     tuning: Tuning,
@@ -118,7 +118,7 @@ struct Ctx<'a> {
 /// Every voice chat node of the active patch.
 struct VoiceChats {
     links: Arc<dyn Links>,
-    accounts: Vec<ChatAccount>,
+    accounts: Vec<Account>,
     accounts_changed: bool,
     used: BTreeSet<String>,
     joined: HashMap<String, Joined>,
@@ -132,7 +132,7 @@ pub(crate) fn follow(state: &AppState) {
     let chats = Arc::new(Mutex::new(VoiceChats::new(Arc::new(Sessions::new(
         state.store.clone(),
     )))));
-    let mut accounts = state.store.subscribe_chat_accounts();
+    let mut accounts = state.store.subscribe_accounts();
     accounts.mark_changed();
     let mut armed = state.encoders.subscribe_changes();
     let held = chats.clone();
@@ -156,7 +156,7 @@ pub(crate) fn follow(state: &AppState) {
             accounts.mark_unchanged();
             let (state, chats, runtime) = (state.clone(), chats.clone(), runtime.clone());
             let step = move || {
-                let accounts = edited.then(|| state.store.chat_accounts());
+                let accounts = edited.then(|| state.store.accounts());
                 lock(&chats).reconcile(&state, &runtime, accounts);
             };
             if let Err(error) = tokio::task::spawn_blocking(step).await {
@@ -186,11 +186,11 @@ impl VoiceChats {
         &mut self,
         state: &AppState,
         runtime: &Handle,
-        accounts: Option<Result<Vec<ChatAccount>, crate::store::StoreError>>,
+        accounts: Option<Result<Vec<Account>, crate::store::StoreError>>,
     ) {
         match accounts {
             Some(Ok(accounts)) => self.set_accounts(accounts),
-            Some(Err(error)) => tracing::error!(%error, "could not read the chat accounts"),
+            Some(Err(error)) => tracing::error!(%error, "could not read the accounts"),
             None => {}
         }
         let current = state.resolved.current();
@@ -217,7 +217,7 @@ impl VoiceChats {
         }
     }
 
-    fn set_accounts(&mut self, accounts: Vec<ChatAccount>) {
+    fn set_accounts(&mut self, accounts: Vec<Account>) {
         self.accounts = accounts;
         self.accounts_changed = true;
     }
@@ -314,7 +314,7 @@ impl VoiceChats {
             return;
         }
         self.accounts_changed = false;
-        let accounts: Vec<ChatAccount> = self
+        let accounts: Vec<Account> = self
             .accounts
             .iter()
             .filter(|account| used.contains(&account.id))
@@ -525,8 +525,8 @@ fn subscribe(
 
 /// A `TeamSpeak` server seats a client that names no channel in its default one; Discord has
 /// no such channel.
-fn has_default_channel(service: &ChatService) -> bool {
-    matches!(service, ChatService::Teamspeak { .. })
+fn has_default_channel(service: &AccountService) -> bool {
+    matches!(service, AccountService::Teamspeak { .. })
 }
 
 fn routes(graph: &PatchGraph, patch: &ResolvedPatch, node: &str) -> HashSet<AudioRoute> {

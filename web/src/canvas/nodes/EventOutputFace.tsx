@@ -1,9 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
 import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
 import { TextChip } from "../../components/face/TextChip";
-import { aboutQuery } from "../../lib/api";
+import {
+  ACCOUNT_SPECS,
+  accountOf,
+  accountOptions,
+  accountsOf,
+  NO_ACCOUNT,
+} from "../../lib/accounts";
+import { aboutQuery, accountsQuery } from "../../lib/api";
 import { portOn, useFeeds } from "../../lib/resolved";
-import type { EventOutputTarget, FeedEntry, PatchNode, PatchNodeOf } from "../../lib/types";
+import type {
+  Account,
+  EventOutputTarget,
+  FeedEntry,
+  PatchNode,
+  PatchNodeOf,
+} from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import {
@@ -11,6 +24,9 @@ import {
   feedTarget,
   newOutputTarget,
   outputServices,
+  placeOf,
+  type SigningTarget,
+  signsIn,
   takesMessage,
   WEBHOOK_FORMATS,
 } from "./eventOutput";
@@ -18,7 +34,8 @@ import { FeedOutputControls } from "./FeedOutputControls";
 import { MessageChip } from "./MessageChip";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { OutputDelivery } from "./OutputDelivery";
-import { SecretChip } from "./SecretChip";
+
+const NO_ACCOUNTS: readonly Account[] = [];
 
 export function EventOutputFace({ node }: { node: PatchNode }) {
   if (node.kind !== "event_output") {
@@ -30,6 +47,7 @@ export function EventOutputFace({ node }: { node: PatchNode }) {
 function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const workspace = useWorkspaceContext();
   const notify = useQuery(aboutQuery(true)).data?.notify === true;
+  const accounts = useQuery(accountsQuery()).data ?? NO_ACCOUNTS;
   const target = node.data.target;
   const feeds = workspace.context.catalog.feeds ?? [];
   const inputs = useFeeds(node.id, "events").length;
@@ -57,7 +75,7 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
             options={outputServices(notify, target.service, feeds)}
             onChange={(service) => editTarget(newOutputTarget(service, feeds))}
           />
-          <TargetChips target={target} feeds={feeds} onEdit={editTarget} />
+          <TargetChips target={target} feeds={feeds} accounts={accounts} onEdit={editTarget} />
           {takesMessage(target.service) && (
             <MessageChip
               value={node.data.message ?? ""}
@@ -103,7 +121,9 @@ function emptyHint(inputs: number, configured: boolean, target: EventOutputTarge
     return configured ? "Received IPv4 and IPv6 datagrams" : "Enter the interface name";
   }
   if (!configured) {
-    return "Enter the destination credentials";
+    return signsIn(target) && (target.account ?? "") === ""
+      ? "Pick an account"
+      : "Enter where to send";
   }
   if (target.service === "postgres") {
     return "One row per event";
@@ -121,10 +141,12 @@ type TargetOf<S extends EventOutputTarget["service"]> = Extract<EventOutputTarge
 function TargetChips({
   target,
   feeds,
+  accounts,
   onEdit,
 }: {
   target: EventOutputTarget;
   feeds: readonly FeedEntry[];
+  accounts: readonly Account[];
   onEdit: (next: EventOutputTarget) => void;
 }) {
   switch (target.service) {
@@ -147,15 +169,11 @@ function TargetChips({
     case "tunnel":
       return <TunnelChips target={target} onEdit={onEdit} />;
     case "webhook":
-      return <WebhookChips target={target} onEdit={onEdit} />;
     case "matrix":
-      return <MatrixChips target={target} onEdit={onEdit} />;
     case "postgres":
-      return <PostgresChips target={target} onEdit={onEdit} />;
     case "influx":
-      return <InfluxChips target={target} onEdit={onEdit} />;
     case "mqtt":
-      return <MqttChips target={target} onEdit={onEdit} />;
+      return <AccountChips target={target} accounts={accounts} onEdit={onEdit} />;
   }
 }
 
@@ -196,175 +214,46 @@ function TunnelChips({
   );
 }
 
-function WebhookChips({
+/** The account an output signs in with, from the Library, and where inside it the output sends. */
+function AccountChips({
   target,
+  accounts,
   onEdit,
 }: {
-  target: TargetOf<"webhook">;
+  target: SigningTarget;
+  accounts: readonly Account[];
   onEdit: (next: EventOutputTarget) => void;
 }) {
+  const own = accountsOf(accounts, [target.service]);
+  const account = accountOf(own, target.account ?? NO_ACCOUNT);
+  const place = placeOf(target);
   return (
     <>
-      <SecretChip
-        label="Endpoint"
-        name="Webhook URL"
-        title="Webhook URL, kept on this server"
-        secret={target.url}
-        onSet={(url) => onEdit({ ...target, url })}
-      />
       <ChoiceChip
-        label="Format"
-        title="Webhook payload format"
-        value={target.format ?? "json"}
-        options={WEBHOOK_FORMATS}
-        onChange={(format) => onEdit({ ...target, format })}
+        label="Account"
+        title={`${ACCOUNT_SPECS[target.service].label} account, from the Accounts list`}
+        value={target.account ?? NO_ACCOUNT}
+        options={accountOptions(own, target.account ?? NO_ACCOUNT)}
+        quiet={account === undefined}
+        onChange={(id) => onEdit({ ...target, account: id })}
       />
-    </>
-  );
-}
-
-function MatrixChips({
-  target,
-  onEdit,
-}: {
-  target: TargetOf<"matrix">;
-  onEdit: (next: EventOutputTarget) => void;
-}) {
-  return (
-    <>
-      <TextChip
-        label="Homeserver"
-        title="Matrix homeserver URL"
-        value={target.homeserver_url}
-        onCommit={(homeserver_url) => onEdit({ ...target, homeserver_url })}
-      />
-      <TextChip
-        label="Room"
-        title="Matrix room ID"
-        value={target.room_id}
-        onCommit={(room_id) => onEdit({ ...target, room_id })}
-      />
-      <SecretChip
-        label="Token"
-        title="Matrix access token, kept on this server"
-        secret={target.access_token}
-        onSet={(access_token) => onEdit({ ...target, access_token })}
-      />
-    </>
-  );
-}
-
-function PostgresChips({
-  target,
-  onEdit,
-}: {
-  target: TargetOf<"postgres">;
-  onEdit: (next: EventOutputTarget) => void;
-}) {
-  return (
-    <>
-      <TextChip
-        label="Server"
-        name="PostgreSQL URL"
-        title="postgres://host:5432/database. Add ?sslmode=disable for a server without TLS."
-        value={target.url}
-        onCommit={(url) => onEdit({ ...target, url })}
-      />
-      <TextChip
-        label="Table"
-        name="PostgreSQL table"
-        title="Created on first write. Lowercase letters, digits and _."
-        value={target.table}
-        onCommit={(table) => onEdit({ ...target, table })}
-      />
-      <TextChip
-        label="User"
-        title="PostgreSQL username"
-        value={target.username ?? ""}
-        onCommit={(username) => onEdit({ ...target, username })}
-      />
-      <SecretChip
-        label="Password"
-        title="PostgreSQL password, kept on this server"
-        secret={target.password}
-        onSet={(password) => onEdit({ ...target, password })}
-      />
-    </>
-  );
-}
-
-function InfluxChips({
-  target,
-  onEdit,
-}: {
-  target: TargetOf<"influx">;
-  onEdit: (next: EventOutputTarget) => void;
-}) {
-  return (
-    <>
-      <TextChip
-        label="Server"
-        name="InfluxDB URL"
-        title="InfluxDB 2 or 3 base URL, e.g. http://127.0.0.1:8086"
-        value={target.url}
-        onCommit={(url) => onEdit({ ...target, url })}
-      />
-      <TextChip
-        label="Bucket"
-        name="InfluxDB bucket"
-        title="Bucket, or database on InfluxDB 3"
-        value={target.bucket}
-        onCommit={(bucket) => onEdit({ ...target, bucket })}
-      />
-      <TextChip
-        label="Org"
-        title="InfluxDB organization"
-        value={target.org ?? ""}
-        onCommit={(org) => onEdit({ ...target, org })}
-      />
-      <SecretChip
-        label="Token"
-        title="InfluxDB token, kept on this server"
-        secret={target.token}
-        onSet={(token) => onEdit({ ...target, token })}
-      />
-    </>
-  );
-}
-
-function MqttChips({
-  target,
-  onEdit,
-}: {
-  target: TargetOf<"mqtt">;
-  onEdit: (next: EventOutputTarget) => void;
-}) {
-  return (
-    <>
-      <TextChip
-        label="Broker"
-        title="MQTT broker URL"
-        value={target.broker_url}
-        onCommit={(broker_url) => onEdit({ ...target, broker_url })}
-      />
-      <TextChip
-        label="Topic"
-        title="MQTT topic"
-        value={target.topic}
-        onCommit={(topic) => onEdit({ ...target, topic })}
-      />
-      <TextChip
-        label="User"
-        title="MQTT username"
-        value={target.username ?? ""}
-        onCommit={(username) => onEdit({ ...target, username })}
-      />
-      <SecretChip
-        label="Password"
-        title="MQTT password, kept on this server"
-        secret={target.password}
-        onSet={(password) => onEdit({ ...target, password })}
-      />
+      {place !== undefined && (
+        <TextChip
+          label={place.label}
+          title={place.title}
+          value={place.value}
+          onCommit={(value) => onEdit(place.set(value))}
+        />
+      )}
+      {target.service === "webhook" && (
+        <ChoiceChip
+          label="Format"
+          title="Webhook payload format"
+          value={target.format ?? "json"}
+          options={WEBHOOK_FORMATS}
+          onChange={(format) => onEdit({ ...target, format })}
+        />
+      )}
     </>
   );
 }

@@ -13,13 +13,28 @@ function render(target: EventOutputTarget): string {
 }
 
 describe("EventOutputFace", () => {
-  it("puts the service and its fields on chips", () => {
-    const html = render({ service: "mqtt", broker_url: "mqtt://broker", topic: "sdr" });
+  it("puts the service, its account and its topic on chips", () => {
+    const html = render({ service: "mqtt", account: "a1", topic: "sdr" });
     expect(html).toContain('aria-label="Output service"');
     expect(html).toContain(">MQTT<");
-    expect(html).toContain('aria-label="MQTT broker URL"');
-    expect(html).toContain(">mqtt://broker<");
+    expect(html).toContain('aria-label="MQTT account, from the Accounts list"');
+    expect(html).toContain('aria-label="MQTT topic"');
+    expect(html).toContain(">sdr<");
     expect(html).not.toMatch(/<(?:select)/);
+  });
+
+  it("shows an account this server does not list as unknown, never as a fault", () => {
+    const html = render({ service: "matrix", account: "gone", room_id: "!r:m" });
+    expect(html).toContain('aria-label="Matrix account, from the Accounts list"');
+    expect(html).toContain(">unknown<");
+    expect(html).not.toContain('role="alert"');
+  });
+
+  it("keeps no login on the node", () => {
+    const html = render({ service: "postgres", account: "", table: "sdrmm_events" });
+    expect(html).toContain('aria-label="Created on first write. Lowercase letters, digits and _"');
+    expect(html).not.toContain("Password");
+    expect(html).not.toContain("Server");
   });
 
   it("names a notification output", () => {
@@ -41,7 +56,7 @@ describe("EventOutputFace", () => {
   });
 
   it("offers a message layout where a person reads the result", () => {
-    expect(render({ service: "webhook", url: "", format: "discord" })).toContain(">Message<");
+    expect(render({ service: "webhook", account: "", format: "discord" })).toContain(">Message<");
     expect(render({ service: "desktop" })).toContain(">usual<");
     expect(render({ service: "csv", file: "adsb" })).not.toContain(">Message<");
   });
@@ -57,9 +72,9 @@ describe("EventOutputFace", () => {
     expect(html).toContain(">{headline}<");
   });
 
-  it("never shows a secret on its chip", () => {
-    const html = render({ service: "webhook", url: "https://hooks.example/abc", format: "json" });
-    expect(html).not.toContain("hooks.example");
-    expect(html).toContain(">set<");
+  it("offers the webhook format beside its account", () => {
+    const html = render({ service: "webhook", account: "a1", format: "json" });
+    expect(html).toContain('aria-label="Webhook account, from the Accounts list"');
+    expect(html).toContain('aria-label="Webhook payload format"');
   });
 });

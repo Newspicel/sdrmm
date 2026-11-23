@@ -3,8 +3,8 @@ use std::time::Duration;
 use sdrmm_engine::{PcmBlock, PcmPayload};
 use sdrmm_voicechat::{Heard, Talker};
 use sdrmm_wire::{
-    ChatService, EncoderNode, PatchEdge, PatchNode, PortRef, Position, SendMode, VoiceChatState,
-    VoiceGateSettings, event_output::Secret,
+    AccountService, EncoderNode, PatchEdge, PatchNode, PortRef, Position, Secret, SendMode,
+    VoiceChatState, VoiceGateSettings,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
@@ -38,7 +38,7 @@ impl FakeLinks {
 }
 
 impl Links for FakeLinks {
-    fn join(&self, account: &ChatAccount, channel: &str) -> Result<Link, String> {
+    fn join(&self, account: &Account, channel: &str) -> Result<Link, String> {
         let (send, sent) = mpsc::channel(64);
         let (heard, hears) = mpsc::channel(64);
         let (state, watched) = watch::channel(LinkState::Joined);
@@ -57,16 +57,16 @@ impl Links for FakeLinks {
         })
     }
 
-    fn settle(&self, _used: &[ChatAccount]) -> Vec<String> {
+    fn settle(&self, _used: &[Account]) -> Vec<String> {
         Vec::new()
     }
 }
 
-fn account() -> ChatAccount {
-    ChatAccount {
+fn account() -> Account {
+    Account {
         id: ACCOUNT.to_owned(),
         name: "Club".to_owned(),
-        service: ChatService::Discord {
+        service: AccountService::Discord {
             token: Secret::Inline("token".to_owned()),
             nickname: String::new(),
         },
@@ -222,9 +222,9 @@ fn in_channel(channel: &str) -> NodeBody {
     })
 }
 
-fn teamspeak() -> ChatAccount {
-    ChatAccount {
-        service: ChatService::Teamspeak {
+fn teamspeak() -> Account {
+    Account {
+        service: AccountService::Teamspeak {
             address: "ts.example".to_owned(),
             password: Secret::default(),
             nickname: "sdrmm".to_owned(),
@@ -526,10 +526,10 @@ fn stereo_channel_audio_is_mixed_to_mono() {
 fn an_edited_account_reopens_its_session() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
     let club = store
-        .create_chat_account(ChatAccount {
+        .create_account(Account {
             id: String::new(),
             name: "Club".to_owned(),
-            service: ChatService::Teamspeak {
+            service: AccountService::Teamspeak {
                 address: "127.0.0.1:9".to_owned(),
                 password: Secret::default(),
                 nickname: String::new(),
@@ -541,10 +541,10 @@ fn an_edited_account_reopens_its_session() {
     let link = sessions.join(&club, CHANNEL).expect("join");
     assert!(sessions.settle(std::slice::from_ref(&club)).is_empty());
     let mut moved = club.clone();
-    if let ChatService::Teamspeak { address, .. } = &mut moved.service {
+    if let AccountService::Teamspeak { address, .. } = &mut moved.service {
         "127.0.0.1:10".clone_into(address);
     }
-    let moved = store.update_chat_account(&club.id, moved).expect("update");
+    let moved = store.update_account(&club.id, moved).expect("update");
     assert_eq!(
         sessions.settle(std::slice::from_ref(&moved)),
         std::slice::from_ref(&club.id)
@@ -558,10 +558,10 @@ fn an_edited_account_reopens_its_session() {
 fn a_renamed_account_keeps_its_session() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
     let club = store
-        .create_chat_account(ChatAccount {
+        .create_account(Account {
             id: String::new(),
             name: "Club".to_owned(),
-            service: ChatService::Teamspeak {
+            service: AccountService::Teamspeak {
                 address: "127.0.0.1:9".to_owned(),
                 password: Secret::default(),
                 nickname: String::new(),
@@ -573,12 +573,10 @@ fn a_renamed_account_keeps_its_session() {
     let _lobby = sessions.join(&club, CHANNEL).expect("join");
     let mut renamed = club.clone();
     "Net".clone_into(&mut renamed.name);
-    if let ChatService::Teamspeak { nickname, .. } = &mut renamed.service {
+    if let AccountService::Teamspeak { nickname, .. } = &mut renamed.service {
         "relay".clone_into(nickname);
     }
-    let renamed = store
-        .update_chat_account(&club.id, renamed)
-        .expect("update");
+    let renamed = store.update_account(&club.id, renamed).expect("update");
     assert!(
         sessions
             .join(&renamed, "Ops")

@@ -45,10 +45,10 @@ pub enum StoreError {
     CpsField(&'static str),
     #[error("that name is already taken")]
     CpsNameTaken,
-    #[error("chat account {0} not found")]
-    ChatAccountNotFound(String),
-    #[error("unusable chat account {0}")]
-    ChatAccountField(&'static str),
+    #[error("account {0} not found")]
+    AccountNotFound(String),
+    #[error("unusable account {0}")]
+    AccountField(&'static str),
     #[error("antenna {0} not found")]
     NanoVnaAntennaNotFound(i64),
     #[error("measurement {0} not found")]
@@ -465,6 +465,7 @@ const MIGRATIONS: &[&str] = &[
         expires_at TEXT NOT NULL
     ) WITHOUT ROWID;
     ",
+    "ALTER TABLE chat_accounts RENAME TO accounts;",
 ];
 
 const SERVER_ID_KEY: &str = "server_id";
@@ -507,7 +508,7 @@ pub struct Store {
     run_start: String,
     server_id: std::sync::Arc<str>,
     secret_changes: tokio::sync::watch::Sender<u64>,
-    chat_account_changes: tokio::sync::watch::Sender<u64>,
+    account_changes: tokio::sync::watch::Sender<u64>,
 }
 
 impl Store {
@@ -521,7 +522,7 @@ impl Store {
         audio_fx_lift::lift_audio_chains(&conn)?;
         coherent_break::break_old_snapshots(&conn)?;
         steps::upgrade_stored(&conn)?;
-        secrets::lift_stored(&conn)?;
+        legacy_logins::lift_stored(&conn)?;
         secrets::collect(&conn)?;
         let server_id = ensure_server_id(&conn)?.into();
         let store = Self {
@@ -529,7 +530,7 @@ impl Store {
             run_start: now_rfc3339(),
             server_id,
             secret_changes: tokio::sync::watch::Sender::new(0),
-            chat_account_changes: tokio::sync::watch::Sender::new(0),
+            account_changes: tokio::sync::watch::Sender::new(0),
         };
         store.seed_workspaces()?;
         Ok(store)
@@ -990,10 +991,9 @@ impl Store {
         snapshot: &WorkspaceSnapshot,
     ) -> Result<i64, StoreError> {
         validate_name(name)?;
-        let mut snapshot = settled(snapshot.clone());
+        let snapshot = settled(snapshot.clone());
         snapshot.validate_against(&sdrmm_decoder::descriptors())?;
         let conn = self.lock();
-        secrets::lift(&conn, &mut snapshot)?;
         let json = serde_json::to_string(&snapshot)?;
         let now = now_rfc3339();
         conn.execute(
@@ -1010,7 +1010,6 @@ impl Store {
         let detail = read_workspace(&conn, id, None)?;
         let state = read_workspace_state(&conn, id)?;
         let mut export = WorkspaceExport::new(detail.info.name, detail.snapshot, state);
-        secrets::lift(&conn, &mut export.snapshot)?;
         export.forget_absent_nodes();
         Ok(export)
     }
@@ -1020,6 +1019,16 @@ impl Store {
         export: &WorkspaceExport,
         notices: &[WorkspaceNoticeKind],
     ) -> Result<i64, StoreError> {
+        self.import_workspace_with(export, notices, &LegacyLogins::default())
+    }
+
+    /// Imports `export`, first giving each login an old output carried its account.
+    pub(crate) fn import_workspace_with(
+        &self,
+        export: &WorkspaceExport,
+        notices: &[WorkspaceNoticeKind],
+        logins: &LegacyLogins,
+    ) -> Result<i64, StoreError> {
         let mut document = export.clone();
         document.snapshot.graph.settle_arrays();
         document.validate_against(&sdrmm_decoder::descriptors())?;
@@ -1027,7 +1036,7 @@ impl Store {
         let now = now_rfc3339();
         let mut conn = self.lock();
         let tx = conn.transaction()?;
-        secrets::lift(&tx, &mut document.snapshot)?;
+        logins.settle(&tx, &mut document.snapshot)?;
         let json = serde_json::to_string(&document.snapshot)?;
         let name = free_workspace_name(&tx, document.name.trim())?;
         tx.execute(
@@ -1066,8 +1075,7 @@ impl Store {
             )
             .map_err(|err| name_taken(err, name))?;
         }
-        if let Some(mut ours) = settled {
-            secrets::lift(&tx, &mut ours)?;
+        if let Some(ours) = settled {
             let held = parse_workspace_snapshot(&held)?;
             let merged = rebase(&tx, id, req.revision, current, &held, &ours)?;
             if merged != held {
@@ -2255,12 +2263,13 @@ pub fn rfc3339_now() -> String {
     now_rfc3339()
 }
 
+mod accounts;
 mod arrays;
 mod audio_fx_lift;
-mod chat_accounts;
 mod coherent_break;
 mod cps;
 mod history;
+mod legacy_logins;
 mod log_groups;
 mod nanovna;
 mod phones;
@@ -2268,6 +2277,7 @@ mod secrets;
 mod sessions;
 mod steps;
 
+pub(crate) use legacy_logins::LegacyLogins;
 pub(crate) use phones::{OfferFailure, OfferRow, PairWrite, PhoneRow};
 pub(crate) use sessions::SessionRow;
 pub(crate) use steps::upgrade_import;

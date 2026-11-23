@@ -19,6 +19,7 @@ import { Icon } from "../../components/Icon";
 import { PortalContainerProvider } from "../../components/PortalContainer";
 import { activityText, idlePort, usePortActivity } from "../../lib/activity";
 import { kindLabel } from "../../lib/eventKinds";
+import { rem, useUiScale } from "../../lib/prefs";
 import { ignoredOf, useNodeProblems } from "../../lib/resolved";
 import type { NodeCategory, PatchNode, PortSpec, PortType } from "../../lib/types";
 import { portKey, useWiringStore } from "../../lib/wiring";
@@ -236,6 +237,7 @@ function FramedShell({
   const selected = workspace.selected === node.id;
   const active = surface === "rack" || selected;
   const minimum = nodeMinSize(node, ports);
+  const scale = useUiScale();
   const wheelClaim = useRef<WheelClaim | null>(null);
   const holdWheel = useCallback<WheelHold>((claim) => {
     wheelClaim.current = claim;
@@ -257,8 +259,8 @@ function FramedShell({
       <PortalContainerProvider container={portalContainer}>
         {surface === "canvas" && isResizable(node) && (
           <NodeResizer
-            minWidth={minimum.w}
-            minHeight={minimum.h}
+            minWidth={minimum.w * scale}
+            minHeight={minimum.h * scale}
             autoScale={false}
             lineClassName="!border-accent/40"
             handleClassName="!size-2 !rounded-inset !border-accent !bg-panel"
@@ -379,7 +381,9 @@ function FramedShell({
             port={port}
             color={HUE_TEXT[portHue(workspace.context.catalog, port.port_type)]}
             label={portLabel(port.name, ports)}
-            offset={anchors[port.name] ?? PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index)}
+            offset={
+              anchors[port.name] ?? rem(PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index))
+            }
             labelled={!(port.name in anchors) && !echoesWire(workspace.graph, node.id, port)}
             waiting={rowPorts?.includes(port.name) === true && !(port.name in anchors)}
           />
@@ -440,10 +444,13 @@ function canvasSize(
   minHeight: number,
   width: number | undefined,
 ): React.CSSProperties {
+  const least = rem(minHeight);
   if (width !== undefined) {
-    return { minHeight, width };
+    return { minHeight: least, width: rem(width) };
   }
-  return isResizable(node) ? { minHeight } : { minHeight, width: nodeSize(node).w };
+  return isResizable(node)
+    ? { minHeight: least }
+    : { minHeight: least, width: rem(nodeSize(node).w) };
 }
 
 function useWheelRouting(
@@ -519,7 +526,7 @@ function PortHandle({
   port: PortSpec;
   color: string;
   label: string;
-  offset: number;
+  offset: number | string;
   labelled: boolean;
   waiting: boolean;
 }) {

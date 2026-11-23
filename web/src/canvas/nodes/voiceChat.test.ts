@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { ChatAccount, PatchNode } from "../../lib/types";
+import type { PatchNode } from "../../lib/types";
 import {
-  accountOf,
-  accountOptions,
   allowedEntries,
   allowedOf,
   KEYLESS_SEND_MODES,
-  NO_ACCOUNT,
-  newChatAccount,
   withGate,
   withVoiceChat,
 } from "./voiceChat";
@@ -26,18 +22,6 @@ const chat = {
     to_chat: { ...GATE, mode: "continuous" },
   },
 } as PatchNode;
-
-const ACCOUNTS: ChatAccount[] = [
-  { id: "a1", name: "Club bot", service: "discord", token: { secret: "s1" } },
-  {
-    id: "a2",
-    name: "Net",
-    service: "teamspeak",
-    address: "ts.example",
-    nickname: "sdr",
-    identity: { secret: "s2" },
-  },
-];
 
 describe("withGate", () => {
   it("changes one field of one direction and keeps every other field", () => {
@@ -77,22 +61,6 @@ describe("withVoiceChat", () => {
     expect(withVoiceChat(chat, { account: "a2" })).toMatchObject({
       data: { account: "a2", channel: "123", to_air: GATE },
     });
-  });
-});
-
-describe("accounts", () => {
-  it("shows an id this server does not know as no account", () => {
-    expect(accountOf(ACCOUNTS, "a2")?.name).toBe("Net");
-    expect(accountOf(ACCOUNTS, "gone")).toBeUndefined();
-    expect(accountOptions(ACCOUNTS).map((option) => option.value)).toEqual([
-      NO_ACCOUNT,
-      "a1",
-      "a2",
-    ]);
-  });
-
-  it("starts a new account empty for its service", () => {
-    expect(newChatAccount("teamspeak")).toMatchObject({ service: "teamspeak", address: "" });
   });
 });
 

@@ -1,0 +1,28 @@
+{
+  "name": "ceda813436a39781",
+  "test": "EventOutputFace > keeps no login on the node",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "postgres",
+            "account": "",
+            "table": "sdrmm_events"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

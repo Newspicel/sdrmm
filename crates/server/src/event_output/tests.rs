@@ -11,8 +11,9 @@ use axum::{
 use reqwest::StatusCode;
 use sdrmm_channels::RttyText;
 use sdrmm_wire::{
-    ChannelNode, DecoderEvent, EventAudio, EventOutputNode, PatchEdge, PatchGraph, PatchNode,
-    PortRef, Position, RackLayout, UpdateWorkspaceRequest, VoiceCall, WorkspaceSnapshot,
+    AccountService, ChannelNode, DecoderEvent, EventAudio, EventOutputNode, PatchEdge, PatchGraph,
+    PatchNode, PortRef, Position, RackLayout, Secret, UpdateWorkspaceRequest, VoiceCall,
+    WorkspaceSnapshot,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -54,9 +55,13 @@ fn edge(from: (&str, &str), to: (&str, &str)) -> PatchEdge {
 
 fn discord_webhook() -> EventOutputTarget {
     EventOutputTarget::Webhook {
-        url: Secret::Inline("https://discord.com/api/webhooks/1/token".to_owned()),
+        account: "hook".to_owned(),
         format: WebhookFormat::Discord,
     }
+}
+
+fn binding(node: &str, target: EventOutputTarget) -> Binding {
+    Binding::plain(node, target)
 }
 
 fn call() -> VoiceCall {
@@ -337,25 +342,12 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
 
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].node, "configured");
-    let Some((_, Secret::Stored { secret })) = bindings[0].target.secret() else {
-        panic!(
-            "the saved webhook names a stored URL: {:?}",
-            bindings[0].target
-        );
-    };
-    assert_eq!(
-        store.secret(secret).expect("read").as_deref(),
-        configured.secret().and_then(|(_, url)| url.inline())
-    );
+    assert_eq!(bindings[0].target, configured);
 }
 
 fn routing_for() -> Routing {
     Routing {
-        bindings: vec![Binding {
-            message: String::new(),
-            node: "matched".to_owned(),
-            target: discord_webhook(),
-        }],
+        bindings: vec![binding("matched", discord_webhook())],
     }
 }
 
@@ -363,18 +355,7 @@ fn routing_for() -> Routing {
 fn decoded_records_route_only_to_outputs_the_record_reached() {
     let target = discord_webhook();
     let routing = Routing {
-        bindings: vec![
-            Binding {
-                message: String::new(),
-                node: "matched".to_owned(),
-                target: target.clone(),
-            },
-            Binding {
-                message: String::new(),
-                node: "other".to_owned(),
-                target,
-            },
-        ],
+        bindings: vec![binding("matched", target.clone()), binding("other", target)],
     };
 
     let deliveries = decoded_deliveries(&routing, &decoded(), 9, &Calls::default());
@@ -403,11 +384,7 @@ fn a_completed_call_travels_the_events_wire_like_any_other_decode() {
 
 fn recordings_routing() -> Routing {
     Routing {
-        bindings: vec![Binding {
-            message: String::new(),
-            node: "matched".to_owned(),
-            target: EventOutputTarget::Recordings,
-        }],
+        bindings: vec![binding("matched", EventOutputTarget::Recordings)],
     }
 }
 
@@ -649,11 +626,7 @@ async fn a_panicking_delivery_fails_its_batch_and_spares_the_worker() {
 #[test]
 fn a_stopped_delivery_worker_is_reported_on_every_output() {
     let statuses = status::Statuses::default();
-    statuses.configure(&[Binding {
-        message: String::new(),
-        node: "hook".to_owned(),
-        target: json_webhook("https://a.test/".to_owned()),
-    }]);
+    statuses.configure(&[binding("hook", json_webhook("a"))]);
 
     worker_ended(Ok(()), &statuses);
 
@@ -956,10 +929,17 @@ async fn a_json_webhook_error_does_not_expose_the_endpoint() {
     assert!(!error.contains(secret));
 }
 
-fn json_webhook(url: String) -> EventOutputTarget {
+fn json_webhook(account: &str) -> EventOutputTarget {
     EventOutputTarget::Webhook {
-        url: Secret::Inline(url),
+        account: account.to_owned(),
         format: WebhookFormat::Json,
+    }
+}
+
+fn webhook_delivery(node: &str, url: String) -> Delivery {
+    Delivery {
+        login: Ok(Arc::new(Login::Webhook { url })),
+        ..delivery_to(node, json_webhook(node), &decoded())
     }
 }
 
@@ -971,28 +951,18 @@ async fn delivery_outcomes_reach_the_output_status() {
         .expect("test listener");
     let address = closed.local_addr().expect("local address");
     drop(closed);
-    let good = json_webhook(format!("{base}/hook"));
-    let bad = json_webhook(format!("http://{address}/hook"));
     let statuses = status::Statuses::default();
     statuses.configure(&[
-        Binding {
-            message: String::new(),
-            node: "good".to_owned(),
-            target: good.clone(),
-        },
-        Binding {
-            message: String::new(),
-            node: "bad".to_owned(),
-            target: bad.clone(),
-        },
+        binding("good", json_webhook("good")),
+        binding("bad", json_webhook("bad")),
     ]);
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
     sender
-        .send(delivery_to("good", good, &decoded()))
+        .send(webhook_delivery("good", format!("{base}/hook")))
         .await
         .expect("queued");
     sender
-        .send(delivery_to("bad", bad, &decoded()))
+        .send(webhook_delivery("bad", format!("http://{address}/hook")))
         .await
         .expect("queued");
     drop(sender);
@@ -1007,48 +977,70 @@ async fn delivery_outcomes_reach_the_output_status() {
 }
 
 fn senders(shell: Option<Arc<dyn NativeShell>>) -> Senders {
-    senders_over(shell, Arc::new(crate::Store::open(None).expect("store")))
-}
-
-fn senders_over(shell: Option<Arc<dyn NativeShell>>, store: Arc<crate::Store>) -> Senders {
     Senders {
         client: Client::new(),
         engine: std::sync::Weak::new(),
         shell,
-        store,
     }
 }
 
-fn influx_with(url: String, token: Secret) -> EventOutputTarget {
+fn account(store: &crate::Store, name: &str, service: AccountService) -> String {
+    store
+        .create_account(sdrmm_wire::Account {
+            id: String::new(),
+            name: name.to_owned(),
+            service,
+        })
+        .expect("account")
+        .id
+}
+
+fn influx_account(store: &crate::Store, url: String) -> String {
+    account(
+        store,
+        "Lab",
+        AccountService::Influx {
+            url,
+            org: String::new(),
+            token: Secret::Inline("kept-token".to_owned()),
+        },
+    )
+}
+
+fn influx_on(account: String) -> EventOutputTarget {
     EventOutputTarget::Influx {
-        url,
+        account,
         bucket: "radio".to_owned(),
-        org: String::new(),
-        token,
     }
+}
+
+async fn problem_of(store: &Arc<crate::Store>, target: EventOutputTarget) -> Option<String> {
+    let statuses = status::Statuses::default();
+    let mut bindings = [binding("out", target)];
+    statuses.configure(&bindings);
+    resolve_logins(store, &mut bindings, &statuses).await;
+    statuses.get("out").and_then(|status| status.error)
 }
 
 #[tokio::test]
-async fn a_stored_credential_is_read_from_this_servers_store() {
+async fn a_delivery_signs_in_with_its_accounts_credential() {
     let (base, captures) = server().await;
     let store = Arc::new(crate::Store::open(None).expect("store"));
-    let id = store.create_secret("kept-token").expect("kept");
-    let target = influx_with(format!("{base}/influx"), Secret::stored(id));
+    let target = influx_on(influx_account(&store, format!("{base}/influx")));
     let statuses = status::Statuses::default();
-    let binding = Binding {
-        message: String::new(),
-        node: "influx".to_owned(),
-        target: target.clone(),
+    let mut bindings = [binding("influx", target)];
+    statuses.configure(&bindings);
+    resolve_logins(&store, &mut bindings, &statuses).await;
+    let [bound] = bindings;
+    let delivery = Delivery {
+        login: bound.login,
+        ..delivery_to("influx", bound.target, &decoded())
     };
-    statuses.configure(std::slice::from_ref(&binding));
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
-    sender
-        .send(delivery_to("influx", target, &decoded()))
-        .await
-        .expect("queued");
+    sender.send(delivery).await.expect("queued");
     drop(sender);
 
-    deliver_all(senders_over(None, store), receiver, statuses.clone()).await;
+    deliver_all(senders(None), receiver, statuses.clone()).await;
 
     assert_eq!(statuses.get("influx").expect("status").delivered, 1);
     let captured = captures.lock().expect("captures");
@@ -1059,48 +1051,100 @@ async fn a_stored_credential_is_read_from_this_servers_store() {
 }
 
 #[tokio::test]
-async fn a_credential_missing_on_this_server_shows_until_it_is_set() {
+async fn a_missing_account_shows_until_one_is_picked() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
-    let binding = Binding {
-        message: String::new(),
-        node: "influx".to_owned(),
-        target: influx_with("http://127.0.0.1:9".to_owned(), Secret::stored("elsewhere")),
-    };
-    let statuses = status::Statuses::default();
-    statuses.configure(std::slice::from_ref(&binding));
 
-    check_secrets(&store, std::slice::from_ref(&binding), &statuses).await;
-    let error = statuses.get("influx").and_then(|status| status.error);
     assert_eq!(
-        error.as_deref(),
-        Some("InfluxDB token is not set on this server")
+        problem_of(&store, influx_on("gone".to_owned()))
+            .await
+            .as_deref(),
+        Some("InfluxDB account is gone")
     );
 
-    let changes = store.subscribe_secrets();
-    store.put_secret("elsewhere", "token").expect("set");
-    assert!(changes.has_changed().expect("open"));
-    check_secrets(&store, std::slice::from_ref(&binding), &statuses).await;
-    assert_eq!(statuses.get("influx").and_then(|status| status.error), None);
+    let id = influx_account(&store, "http://127.0.0.1:9".to_owned());
+    assert_eq!(problem_of(&store, influx_on(id)).await, None);
+}
+
+#[tokio::test]
+async fn an_account_of_another_service_is_refused() {
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let hook = account(
+        &store,
+        "Hook",
+        AccountService::Webhook {
+            url: Secret::Inline("https://hooks.example/a".to_owned()),
+        },
+    );
+
+    assert_eq!(
+        problem_of(&store, influx_on(hook)).await.as_deref(),
+        Some("Hook is a Webhook account, not InfluxDB")
+    );
+}
+
+#[tokio::test]
+async fn a_matrix_account_without_its_token_cannot_send() {
+    let store = Arc::new(crate::Store::open(None).expect("store"));
+    let room = account(
+        &store,
+        "Room",
+        AccountService::Matrix {
+            homeserver_url: "https://matrix.example".to_owned(),
+            access_token: Secret::default(),
+        },
+    );
+    let target = EventOutputTarget::Matrix {
+        account: room,
+        room_id: "!radio:matrix.example".to_owned(),
+    };
+
+    assert_eq!(
+        problem_of(&store, target).await.as_deref(),
+        Some("Matrix token is not set")
+    );
 }
 
 #[tokio::test]
 async fn a_stored_webhook_url_still_has_to_be_https() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
-    let id = store
-        .create_secret("http://plain.example/hook")
-        .expect("kept");
-    let target = json_webhook_secret(Secret::stored(id));
+    let hook = account(
+        &store,
+        "Hook",
+        AccountService::Webhook {
+            url: Secret::Inline("https://hooks.example/a".to_owned()),
+        },
+    );
+    store
+        .hold()
+        .execute("UPDATE secrets SET value = 'http://plain.example/hook'", [])
+        .expect("downgraded");
 
-    let error = reveal(&store, &target).await.expect_err("plain http");
-
-    assert_eq!(error.to_string(), "Webhook URL is not valid");
+    assert_eq!(
+        problem_of(&store, json_webhook(&hook)).await.as_deref(),
+        Some("Webhook URL is not valid")
+    );
 }
 
-fn json_webhook_secret(url: Secret) -> EventOutputTarget {
-    EventOutputTarget::Webhook {
-        url,
-        format: WebhookFormat::Json,
-    }
+#[tokio::test]
+async fn a_login_that_does_not_fit_its_output_fails_the_delivery() {
+    let statuses = status::Statuses::default();
+    statuses.configure(&[binding("hook", json_webhook("hook"))]);
+    let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
+    let mismatched = Delivery {
+        login: Ok(Arc::new(Login::None)),
+        ..delivery_to("hook", json_webhook("hook"), &decoded())
+    };
+    sender.send(mismatched).await.expect("queued");
+    drop(sender);
+
+    deliver_all(senders(None), receiver, statuses.clone()).await;
+
+    let status = statuses.get("hook").expect("status");
+    assert_eq!(status.failed, 1);
+    assert_eq!(
+        status.error.as_deref(),
+        Some("The account does not fit this output")
+    );
 }
 
 #[derive(Debug, Default)]
@@ -1122,11 +1166,7 @@ impl NativeShell for Notifications {
 
 async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
     let statuses = status::Statuses::default();
-    statuses.configure(&[Binding {
-        message: String::new(),
-        node: "desk".to_owned(),
-        target: EventOutputTarget::Desktop,
-    }]);
+    statuses.configure(&[binding("desk", EventOutputTarget::Desktop)]);
     let (sender, receiver) = mpsc::channel(DELIVERY_QUEUE);
     sender
         .send(delivery_to("desk", EventOutputTarget::Desktop, &decoded()))
@@ -1171,13 +1211,9 @@ fn a_call_notification_is_titled_by_its_mode() {
 
 #[test]
 fn a_full_delivery_queue_counts_the_dropped_event() {
-    let target = json_webhook("http://127.0.0.1:9/hook".to_owned());
+    let target = json_webhook("hook");
     let statuses = status::Statuses::default();
-    statuses.configure(&[Binding {
-        message: String::new(),
-        node: "hook".to_owned(),
-        target: target.clone(),
-    }]);
+    statuses.configure(&[binding("hook", target.clone())]);
     let (sender, _receiver) = mpsc::channel(1);
     enqueue(
         &sender,
@@ -1194,16 +1230,12 @@ fn a_full_delivery_queue_counts_the_dropped_event() {
 #[test]
 fn a_changed_target_starts_a_fresh_status() {
     let statuses = status::Statuses::default();
-    let binding = |url: &str| Binding {
-        message: String::new(),
-        node: "hook".to_owned(),
-        target: json_webhook(url.to_owned()),
-    };
-    statuses.configure(&[binding("http://a.test/")]);
+    let bound = |account: &str| binding("hook", json_webhook(account));
+    statuses.configure(&[bound("a")]);
     statuses.failed("hook", 2, "down".to_owned());
-    statuses.configure(&[binding("http://a.test/")]);
+    statuses.configure(&[bound("a")]);
     assert_eq!(statuses.get("hook").expect("kept").failed, 2);
-    statuses.configure(&[binding("http://b.test/")]);
+    statuses.configure(&[bound("b")]);
     assert_eq!(statuses.get("hook").expect("reset").failed, 0);
     statuses.configure(&[]);
     assert!(statuses.get("hook").is_none());
@@ -1483,10 +1515,7 @@ fn spectrum_monitor_audio_is_attached_to_event_deliveries() {
         ..decoded()
     };
     let mut plain = routing_for();
-    plain.bindings[0].target = EventOutputTarget::Webhook {
-        url: Secret::Inline("https://example.com/hook".to_owned()),
-        format: WebhookFormat::Json,
-    };
+    plain.bindings[0].target = json_webhook("hook");
     let unkept = decoded_deliveries(&plain, &record, 1, &calls);
     assert!(
         unkept[0].message.audio.is_none(),
@@ -1555,20 +1584,22 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
 }
 
 fn influx_target() -> EventOutputTarget {
-    EventOutputTarget::Influx {
-        url: "http://127.0.0.1:8086".to_owned(),
-        bucket: "radio".to_owned(),
-        org: "home".to_owned(),
-        token: Secret::Inline("influx-token".to_owned()),
+    influx_on("db".to_owned())
+}
+
+fn postgres_target(table: &str) -> EventOutputTarget {
+    EventOutputTarget::Postgres {
+        account: "db".to_owned(),
+        table: table.to_owned(),
     }
 }
 
-fn postgres_target(url: &str, table: &str) -> EventOutputTarget {
-    EventOutputTarget::Postgres {
-        url: url.to_owned(),
-        table: table.to_owned(),
-        username: "radio".to_owned(),
-        password: Secret::Inline("secret".to_owned()),
+fn postgres_settings<'a>(url: &'a str, table: &'a str) -> postgres::PostgresTarget<'a> {
+    postgres::PostgresTarget {
+        url,
+        table,
+        username: "radio",
+        password: "secret",
     }
 }
 
@@ -1576,6 +1607,7 @@ fn delivery_to(node: &str, target: EventOutputTarget, record: &DecodedRecord) ->
     Delivery {
         node: node.to_owned(),
         target,
+        login: Ok(Arc::new(Login::None)),
         event: "test".to_owned(),
         message: message(node, record),
     }
@@ -1680,7 +1712,7 @@ fn only_consecutive_database_deliveries_to_one_output_share_a_batch() {
 fn postgres_rows_hold_the_event_columns_and_full_record() {
     let batch = [delivery_to(
         "archive",
-        postgres_target("postgres://127.0.0.1/radio", "sdrmm_events"),
+        postgres_target("sdrmm_events"),
         &decoded(),
     )];
 
@@ -1754,11 +1786,15 @@ fn a_remote_postgres_must_speak_tls_unless_the_url_says_otherwise() {
 
 #[tokio::test]
 async fn postgres_refuses_an_unsafe_table_before_connecting() {
-    let target = postgres_target("postgres://127.0.0.1:1/radio", "events; drop");
-    let batch = [delivery_to("archive", target.clone(), &decoded())];
+    let batch = [delivery_to(
+        "archive",
+        postgres_target("events; drop"),
+        &decoded(),
+    )];
+    let settings = postgres_settings("postgres://127.0.0.1:1/radio", "events; drop");
 
     let error = postgres::Connections::default()
-        .insert("archive", &target, "secret", &batch)
+        .insert("archive", &settings, &batch)
         .await
         .expect_err("unsafe table")
         .to_string();
@@ -1773,14 +1809,15 @@ async fn an_unreachable_postgres_surfaces_the_failure() {
         .expect("test listener");
     let address = listener.local_addr().expect("local address");
     drop(listener);
-    let target = postgres_target(
-        &format!("postgres://{address}/radio?sslmode=disable"),
-        "sdrmm_events",
-    );
-    let batch = [delivery_to("archive", target.clone(), &decoded())];
+    let url = format!("postgres://{address}/radio?sslmode=disable");
+    let batch = [delivery_to(
+        "archive",
+        postgres_target("sdrmm_events"),
+        &decoded(),
+    )];
 
     let error = postgres::Connections::default()
-        .insert("archive", &target, "secret", &batch)
+        .insert("archive", &postgres_settings(&url, "sdrmm_events"), &batch)
         .await
         .expect_err("connection failure")
         .to_string();

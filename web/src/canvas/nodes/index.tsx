@@ -1,5 +1,6 @@
 import type { Node, NodeProps } from "@xyflow/react";
 import { type ComponentType, type CSSProperties, lazy, Suspense } from "react";
+import { rem } from "../../lib/prefs";
 import type { NodeKind, PatchNode } from "../../lib/types";
 import type { FlowData } from "../Canvas";
 import { nodeMinSize, nodeSize } from "../graph";
@@ -92,10 +93,10 @@ export const NODE_TYPES: Record<string, ComponentType<NodeProps<Node<FlowData>>>
 
 export function faceSize(node: PatchNode): CSSProperties {
   const size = nodeSize(node);
-  return { width: size.h === undefined ? size.w : "100%", height: "100%" };
+  return { width: size.h === undefined ? rem(size.w) : "100%", height: "100%" };
 }
 
 /// A rack slot may be narrower than a face can draw; the slot scrolls rather than squeezing it.
 export function rackFaceSize(node: PatchNode): CSSProperties {
-  return { minWidth: nodeMinSize(node, []).w };
+  return { minWidth: rem(nodeMinSize(node, []).w) };
 }

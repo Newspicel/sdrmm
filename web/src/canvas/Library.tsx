@@ -6,6 +6,7 @@ import {
   Disc3,
   KeyRound,
   LayoutTemplate,
+  Settings2,
   Shapes,
   SlidersHorizontal,
   Smartphone,
@@ -17,9 +18,11 @@ import { BandsPanel } from "../components/BandsPanel";
 import { BookmarksPanel } from "../components/BookmarksPanel";
 import { ExamplesPanel } from "../components/ExamplesPanel";
 import { Icon } from "../components/Icon";
+import { PrefsPanel } from "../components/PrefsPanel";
 import { PresetsPanel } from "../components/PresetsPanel";
 import { RecordingsPanel } from "../components/RecordingsPanel";
 import { TemplatesPanel } from "../components/TemplatesPanel";
+import { type MessageKey, useT } from "../lib/i18n/translate";
 import { oneOf, rememberedKey, useRemembered } from "../lib/remembered";
 import type { RecordingInfo } from "../lib/types";
 import { ToolsPanel } from "../tools/ToolsPanel";
@@ -39,33 +42,35 @@ type SectionId =
   | "recordings"
   | "tools"
   | "phones"
-  | "accounts";
+  | "accounts"
+  | "settings";
 
 interface Section {
   id: SectionId;
-  label: string;
+  label: MessageKey;
   glyph: LucideIcon;
 }
 
 /** Sections in groups; a rule between groups is the only heading they get. */
 const GROUPS: readonly (readonly Section[])[] = [
   [
-    { id: "templates", label: "Templates", glyph: LayoutTemplate },
-    { id: "examples", label: "Examples", glyph: Shapes },
-    { id: "presets", label: "Presets", glyph: SlidersHorizontal },
+    { id: "templates", label: "library.templates", glyph: LayoutTemplate },
+    { id: "examples", label: "library.examples", glyph: Shapes },
+    { id: "presets", label: "library.presets", glyph: SlidersHorizontal },
   ],
   [
-    { id: "bookmarks", label: "Bookmarks", glyph: Bookmark },
-    { id: "bands", label: "Bands", glyph: AudioLines },
+    { id: "bookmarks", label: "library.bookmarks", glyph: Bookmark },
+    { id: "bands", label: "library.bands", glyph: AudioLines },
   ],
   [
-    { id: "recordings", label: "Recordings", glyph: Disc3 },
-    { id: "tools", label: "Tools", glyph: Wrench },
+    { id: "recordings", label: "library.recordings", glyph: Disc3 },
+    { id: "tools", label: "library.tools", glyph: Wrench },
   ],
   [
-    { id: "phones", label: "Phones", glyph: Smartphone },
-    { id: "accounts", label: "Accounts", glyph: KeyRound },
+    { id: "phones", label: "library.phones", glyph: Smartphone },
+    { id: "accounts", label: "library.accounts", glyph: KeyRound },
   ],
+  [{ id: "settings", label: "library.settings", glyph: Settings2 }],
 ];
 
 const SECTION_IDS = GROUPS.flat().map((section) => section.id);
@@ -96,6 +101,7 @@ export function Library({
 }) {
   const [section, setSection] = useRemembered<SectionId>(SECTION_KEY, "templates", IS_SECTION);
   const panes = useSectionPanes(onOpenTool, onActivate);
+  const t = useT();
   return (
     <Tabs
       orientation="vertical"
@@ -103,7 +109,7 @@ export function Library({
       onValueChange={(next) => next !== null && setSection(next)}
       className="flex overflow-hidden rounded-control"
     >
-      <TabsList className={RAIL} aria-label="Library section">
+      <TabsList className={RAIL} aria-label={t("library.section")}>
         {GROUPS.map((group, index) => (
           <Fragment key={group[0]?.id}>
             {index > 0 && <span aria-hidden className="mx-2 my-1 h-px shrink-0 bg-line" />}
@@ -114,7 +120,7 @@ export function Library({
                 className={(state) => railItem(state.selected)}
               >
                 <Icon glyph={entry.glyph} size={14} />
-                {entry.label}
+                {t(entry.label)}
               </TabsTab>
             ))}
           </Fragment>
@@ -163,5 +169,6 @@ function useSectionPanes(
     tools: <ToolsPanel onOpen={onOpenTool} />,
     phones: <PhonesPanel />,
     accounts: <AccountsPanel />,
+    settings: <PrefsPanel />,
   };
 }

@@ -18,7 +18,7 @@ Transmitter --transmit--> Device
 
 ## Accounts
 
-Add accounts in **Library > Accounts**. They are server-wide, and every workspace picks from the same list.
+Add accounts in **Library > Accounts**. They are server-wide, and every workspace picks from the same list. A voice chat offers only Discord and TeamSpeak accounts.
 
 | Kind | Fields |
 |---|---|

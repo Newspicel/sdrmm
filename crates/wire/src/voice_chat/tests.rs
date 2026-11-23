@@ -38,7 +38,7 @@ fn voice_chat_refuses_what_it_cannot_hold() {
     let long = |len| "x".repeat(len);
     for bad in [
         VoiceChatNode {
-            account: long(MAX_CHAT_ACCOUNT_LEN + 1),
+            account: long(crate::account::MAX_ACCOUNT_LEN + 1),
             ..VoiceChatNode::default()
         },
         VoiceChatNode {
@@ -99,45 +99,6 @@ fn voice_chat_with_unknown_account_is_valid() {
 }
 
 #[test]
-fn chat_account_round_trips() {
-    for account in [
-        ChatAccount {
-            id: "a1".to_owned(),
-            name: "Club".to_owned(),
-            service: ChatService::Discord {
-                token: Secret::stored("tok_1"),
-                nickname: "Relay".to_owned(),
-            },
-        },
-        ChatAccount {
-            id: "a2".to_owned(),
-            name: "Net".to_owned(),
-            service: ChatService::Teamspeak {
-                address: "ts.example.org".to_owned(),
-                password: Secret::default(),
-                nickname: "sdr".to_owned(),
-                identity: Secret::stored("id_1"),
-            },
-        },
-    ] {
-        let json = serde_json::to_value(&account).expect("json");
-        assert_eq!(json["id"], account.id);
-        let back: ChatAccount = serde_json::from_value(json).expect("back");
-        assert_eq!(back, account);
-    }
-    let json = serde_json::to_value(ChatAccount {
-        id: "a".to_owned(),
-        name: "n".to_owned(),
-        service: ChatService::Discord {
-            token: Secret::default(),
-            nickname: String::new(),
-        },
-    })
-    .expect("json");
-    assert_eq!(json["service"], "discord");
-}
-
-#[test]
 fn voice_chat_node_has_audio_in_and_out() {
     let kind = NodeKind::parse("voice_chat").expect("registered");
     assert_eq!(NodeBody::default_for(kind).kind(), kind);
@@ -150,25 +111,6 @@ fn voice_chat_node_has_audio_in_and_out() {
             "{direction:?}"
         );
     }
-}
-
-#[test]
-fn a_teamspeak_account_without_secrets_loads() {
-    let account: ChatAccount = serde_json::from_value(serde_json::json!({
-        "id": "t", "name": "Net", "service": "teamspeak", "address": "ts.example.org"
-    }))
-    .expect("parsed");
-    let ChatService::Teamspeak {
-        password,
-        identity,
-        nickname,
-        ..
-    } = account.service
-    else {
-        panic!("not teamspeak");
-    };
-    assert!(!password.is_set() && !identity.is_set());
-    assert!(nickname.is_empty());
 }
 
 #[test]

@@ -26,11 +26,10 @@ describe("VoiceChatFace", () => {
     expect(render()).not.toContain("Chat account, from the Accounts list");
   });
 
-  it("shows an unknown account as an empty choice, never as a fault", () => {
+  it("shows an account it cannot see as unknown, never as a fault", () => {
     const html = render(true);
     expect(html).toContain('aria-label="Chat account, from the Accounts list"');
-    expect(html).toContain(">none<");
-    expect(html).not.toContain("gone");
+    expect(html).toContain(">unknown<");
     expect(html).not.toContain('role="alert"');
   });
 

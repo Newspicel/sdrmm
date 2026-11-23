@@ -82,6 +82,7 @@ export function SliderField({
   readout,
   disabled = false,
   onChange,
+  onCommit,
 }: {
   label: string;
   value: number;
@@ -91,6 +92,7 @@ export function SliderField({
   readout: ReactNode;
   disabled?: boolean;
   onChange: (value: number) => void;
+  onCommit?: (value: number) => void;
 }) {
   return (
     <span className="flex min-w-0 grow basis-40 items-center gap-3">
@@ -103,6 +105,7 @@ export function SliderField({
         step={step}
         value={value}
         onChange={onChange}
+        onCommit={onCommit}
       />
       <span
         className={`w-14 shrink-0 text-right font-mono text-xs tabular-nums ${

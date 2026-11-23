@@ -2,7 +2,7 @@ use std::{collections::HashMap, net::IpAddr, sync::Arc};
 
 use rustls::ClientConfig;
 use rustls_platform_verifier::BuilderVerifierExt;
-use sdrmm_wire::{EventOutputTarget, valid_sql_identifier};
+use sdrmm_wire::valid_sql_identifier;
 use tokio_postgres::{
     Client, Config,
     config::{Host, SslMode},
@@ -19,8 +19,7 @@ pub(super) struct PostgresTarget<'a> {
 }
 
 struct Open {
-    target: EventOutputTarget,
-    password: String,
+    settings: [String; 4],
     client: Client,
 }
 
@@ -33,35 +32,18 @@ impl Connections {
     pub(super) async fn insert(
         &mut self,
         node: &str,
-        target: &EventOutputTarget,
-        password: &str,
+        settings: &PostgresTarget<'_>,
         batch: &[Delivery],
     ) -> Result<(), DeliveryError> {
-        let EventOutputTarget::Postgres {
-            url,
-            table,
-            username,
-            ..
-        } = target
-        else {
-            return Err(DeliveryError::Failed(
-                "Postgres output got another service's settings".to_owned(),
-            ));
-        };
-        let target_settings = PostgresTarget {
-            url,
-            table,
-            username,
-            password,
-        };
-        let client = self.client(node, target, &target_settings).await?;
-        let inserted = tokio::time::timeout(REQUEST_TIMEOUT, insert_rows(client, table, batch))
-            .await
-            .unwrap_or_else(|_| {
-                Err(DeliveryError::Failed(
-                    "Postgres did not finish the insert in time".to_owned(),
-                ))
-            });
+        let client = self.client(node, settings).await?;
+        let inserted =
+            tokio::time::timeout(REQUEST_TIMEOUT, insert_rows(client, settings.table, batch))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(DeliveryError::Failed(
+                        "Postgres did not finish the insert in time".to_owned(),
+                    ))
+                });
         if inserted.is_err() {
             self.open.remove(node);
         }
@@ -71,19 +53,25 @@ impl Connections {
     async fn client(
         &mut self,
         node: &str,
-        target: &EventOutputTarget,
         settings: &PostgresTarget<'_>,
     ) -> Result<&Client, DeliveryError> {
-        let reusable = self.open.get(node).is_some_and(|open| {
-            open.target == *target && open.password == settings.password && !open.client.is_closed()
-        });
+        let wanted = [
+            settings.url,
+            settings.table,
+            settings.username,
+            settings.password,
+        ]
+        .map(str::to_owned);
+        let reusable = self
+            .open
+            .get(node)
+            .is_some_and(|open| open.settings == wanted && !open.client.is_closed());
         if !reusable {
             let client = connect(settings).await?;
             self.open.insert(
                 node.to_owned(),
                 Open {
-                    target: target.clone(),
-                    password: settings.password.to_owned(),
+                    settings: wanted,
                     client,
                 },
             );

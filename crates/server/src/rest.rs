@@ -34,10 +34,10 @@ use sdrmm_wire::{
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
+mod accounts;
 mod actions;
 mod arrays;
 mod audio_recordings;
-mod chat_accounts;
 mod cps;
 mod decoderlog;
 mod denoise;
@@ -54,7 +54,6 @@ mod presets;
 mod processors;
 mod recordings;
 mod satellites;
-mod secrets;
 mod sign_in;
 mod sinks;
 mod sky_scan;
@@ -353,7 +352,7 @@ impl From<StoreError> for AppError {
             | StoreError::CpsUserNotFound(_)
             | StoreError::CpsDeviceNotFound(_)
             | StoreError::CpsCodeplugNotFound(_)
-            | StoreError::ChatAccountNotFound(_)
+            | StoreError::AccountNotFound(_)
             | StoreError::NanoVnaAntennaNotFound(_)
             | StoreError::NanoVnaMeasurementNotFound(_) => {
                 (StatusCode::NOT_FOUND, ErrorCode::NotFound)
@@ -362,7 +361,7 @@ impl From<StoreError> for AppError {
             | StoreError::Sources(_)
             | StoreError::WorkspaceLayout(_)
             | StoreError::CpsField(_)
-            | StoreError::ChatAccountField(_)
+            | StoreError::AccountField(_)
             | StoreError::NanoVnaField(_) => (StatusCode::BAD_REQUEST, ErrorCode::Request),
             StoreError::WorkspaceNameTaken(_)
             | StoreError::WorkspaceConflict { .. }
@@ -586,6 +585,5 @@ pub(crate) fn openapi_router() -> OpenApiRouter<AppState> {
         .merge(denoise::routes())
         .merge(speech::routes())
         .merge(nanovna::routes())
-        .merge(secrets::routes())
-        .merge(chat_accounts::routes())
+        .merge(accounts::routes())
 }

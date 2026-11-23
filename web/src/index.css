@@ -63,12 +63,11 @@
   --color-band-other: oklch(0.6 0.02 80);
 
   --text-plot: 9px;
-  --text-2xs: 10px;
-  --text-2xs: 11px;
-  --text-dial-sm: 16px;
-  --text-dial-md: 20px;
-  --text-dial-lg: 26px;
-  --text-dial-xl: 34px;
+  --text-2xs: 0.6875rem;
+  --text-dial-sm: 1rem;
+  --text-dial-md: 1.25rem;
+  --text-dial-lg: 1.625rem;
+  --text-dial-xl: 2.125rem;
 
   --radius-inset: 2px;
   --radius-control: 3px;
@@ -158,7 +157,7 @@
     background: var(--color-bg);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: 13px;
+    font-size: 0.8125rem;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     color-scheme: dark;
@@ -213,7 +212,7 @@
 @layer components {
   .legend {
     font-family: var(--font-sans);
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1.4;
     color: var(--color-ink-dim);
   }

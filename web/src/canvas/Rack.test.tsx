@@ -52,7 +52,7 @@ describe("Rack grips", () => {
     const html = render();
     expect(html).not.toMatch(/style="width:/);
     expect(html).toMatch(
-      /class="size-full overflow-auto"><div class="h-full" style="min-width:\d+px"/,
+      /class="size-full overflow-auto"><div class="h-full" style="min-width:[\d.]+rem"/,
     );
   });
 });

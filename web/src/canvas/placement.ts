@@ -1,5 +1,6 @@
 import { type Node, type Rect, useReactFlow, useStoreApi } from "@xyflow/react";
 import { useCallback } from "react";
+import { uiScale } from "../lib/prefs";
 import type { PatchGraph, Position } from "../lib/types";
 import { type Faced, nodeSize } from "./graph";
 
@@ -15,7 +16,9 @@ export function dropSize(of: Faced): { w: number; h: number } {
     return { w: size.w, h: size.h };
   }
   const kind = typeof of === "string" ? of : of.kind;
-  return { w: size.w, h: kind === "channel" ? ASSUMED_CHANNEL_HEIGHT : ASSUMED_HEIGHT };
+  const scale = uiScale();
+  const tall = kind === "channel" ? ASSUMED_CHANNEL_HEIGHT : ASSUMED_HEIGHT;
+  return { w: size.w * scale, h: tall * scale };
 }
 
 export interface PlacementRect {

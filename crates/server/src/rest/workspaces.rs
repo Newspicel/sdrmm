@@ -489,6 +489,7 @@ pub(super) async fn import_workspace(
     Json(mut document): Json<serde_json::Value>,
 ) -> Result<Json<CreatedRowId>, AppError> {
     let notices = crate::store::upgrade_import(&mut document);
+    let logins = crate::store::LegacyLogins::take(&mut document);
     let export: WorkspaceExport = crate::json::from_value(&document).map_err(|err| {
         rejection(
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -499,7 +500,7 @@ pub(super) async fn import_workspace(
     let engine = state.engine.clone();
     let store = state.store.clone();
     let id = tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
-        let id = store.import_workspace(&export, &notices)?;
+        let id = store.import_workspace_with(&export, &notices, &logins)?;
         engine.emit_scope(StateScope::Workspaces);
         Ok(id)
     })

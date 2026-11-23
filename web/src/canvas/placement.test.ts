@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setTextSize, TEXT_SIZE } from "../lib/prefs";
 import type { PatchGraph, PatchNode } from "../lib/types";
+import { nodeSize } from "./graph";
 import { dropPosition, dropSize, type PlacementRect, useNodePlacement } from "./placement";
 
 const flow = vi.hoisted(() => ({
@@ -60,6 +62,16 @@ describe("useNodePlacement", () => {
     const dropped = dropSize("channel");
     expect(bounds.x + bounds.width).toBeGreaterThanOrEqual(position.x + dropped.w);
     expect(bounds.y + bounds.height).toBeGreaterThanOrEqual(position.y + dropped.h);
+  });
+});
+
+describe("dropSize", () => {
+  it("grows with the font size, as the face does", () => {
+    const natural = dropSize("channel");
+    setTextSize(150);
+    expect(dropSize("channel")).toEqual({ w: natural.w * 1.5, h: natural.h * 1.5 });
+    expect(natural.w).toBe(nodeSize("channel").w);
+    setTextSize(TEXT_SIZE.base);
   });
 });
 

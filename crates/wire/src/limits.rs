@@ -86,6 +86,7 @@ pub struct Limits {
     pub decoder_log_rows: u32,
     pub workspace_state_version: u32,
     pub voice_chat: VoiceChatLimits,
+    pub account: AccountLimits,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -265,8 +266,6 @@ pub struct VoiceChatLimits {
     pub hang_seed_ms: u32,
     pub volume: Bounds<f64>,
     pub volume_seed: f64,
-    pub account_len: usize,
-    pub discord_nickname_len: usize,
     pub channel_len: usize,
     pub allowed: usize,
     pub allowed_len: usize,
@@ -285,11 +284,24 @@ pub const VOICE_CHAT_LIMITS: VoiceChatLimits = VoiceChatLimits {
         crate::voice_chat::MAX_VOICE_VOLUME,
     ),
     volume_seed: crate::voice_chat::DEFAULT_VOICE_VOLUME,
-    account_len: crate::voice_chat::MAX_CHAT_ACCOUNT_LEN,
-    discord_nickname_len: crate::voice_chat::MAX_DISCORD_NICKNAME_LEN,
     channel_len: crate::voice_chat::MAX_CHAT_CHANNEL_LEN,
     allowed: crate::voice_chat::MAX_CHAT_ALLOWED,
     allowed_len: crate::voice_chat::MAX_CHAT_ALLOWED_LEN,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct AccountLimits {
+    pub name_len: usize,
+    pub discord_nickname_len: usize,
+    pub url_len: usize,
+    pub secret_len: usize,
+}
+
+pub const ACCOUNT_LIMITS: AccountLimits = AccountLimits {
+    name_len: crate::account::MAX_ACCOUNT_LEN,
+    discord_nickname_len: crate::account::MAX_DISCORD_NICKNAME_LEN,
+    url_len: crate::account::MAX_URL_LEN,
+    secret_len: crate::account::MAX_SECRET_LEN,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -412,6 +424,7 @@ pub const LIMITS: Limits = Limits {
     decoder_log_rows: crate::rest::MAX_DECODER_LOG_ROWS,
     workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,
     voice_chat: VOICE_CHAT_LIMITS,
+    account: ACCOUNT_LIMITS,
 };
 
 pub fn generated() -> Result<String, serde_json::Error> {

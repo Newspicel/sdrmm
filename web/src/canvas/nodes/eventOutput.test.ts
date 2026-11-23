@@ -7,6 +7,7 @@ import {
   messageShown,
   newOutputTarget,
   outputServices,
+  signsIn,
   takesMessage,
 } from "./eventOutput";
 
@@ -17,22 +18,17 @@ const PROBE_FEED: FeedEntry = {
   kinds: [],
 };
 
-const matrix = (access_token: string) =>
-  eventOutputConfigured({
-    service: "matrix",
-    homeserver_url: "https://matrix.example",
-    room_id: "!radio:matrix.example",
-    access_token,
-  });
+const matrix = (account: string, room_id: string) =>
+  eventOutputConfigured({ service: "matrix", account, room_id });
 
-const mqtt = (broker_url: string, topic: string) =>
-  eventOutputConfigured({ service: "mqtt", broker_url, topic, username: "", password: "" });
+const mqtt = (account: string, topic: string) =>
+  eventOutputConfigured({ service: "mqtt", account, topic });
 
-const postgres = (url: string, table: string, username: string) =>
-  eventOutputConfigured({ service: "postgres", url, table, username, password: "" });
+const postgres = (account: string, table: string) =>
+  eventOutputConfigured({ service: "postgres", account, table });
 
-const influx = (url: string, bucket: string) =>
-  eventOutputConfigured({ service: "influx", url, bucket, org: "", token: "" });
+const influx = (account: string, bucket: string) =>
+  eventOutputConfigured({ service: "influx", account, bucket });
 
 const has = (feeds: FeedEntry[]) =>
   outputServices(false, "mqtt", feeds).some((option) => option.value === "feed");
@@ -89,50 +85,31 @@ describe("event output configuration", () => {
     expect(outputServices(false, "feed").some((option) => option.value === "feed")).toBe(true);
   });
 
-  it("needs a webhook endpoint", () => {
-    expect(eventOutputConfigured({ service: "webhook", url: "", format: "json" })).toBe(false);
-    expect(eventOutputConfigured({ service: "webhook", url: "   ", format: "json" })).toBe(false);
-    expect(
-      eventOutputConfigured({
-        service: "webhook",
-        url: "https://discord.com/api/webhooks/1/token",
-        format: "discord",
-      }),
-    ).toBe(true);
-  });
-
-  it("needs all Matrix credentials", () => {
-    expect(matrix("")).toBe(false);
-    expect(matrix("   ")).toBe(false);
-    expect(matrix("secret")).toBe(true);
-  });
-
-  it("counts a credential this server keeps by id", () => {
-    expect(
-      eventOutputConfigured({ service: "webhook", url: { secret: "a1" }, format: "json" }),
-    ).toBe(true);
-    expect(eventOutputConfigured({ service: "webhook", url: { secret: "" }, format: "json" })).toBe(
-      false,
+  it("needs a webhook account", () => {
+    expect(eventOutputConfigured({ service: "webhook", account: "", format: "json" })).toBe(false);
+    expect(eventOutputConfigured({ service: "webhook", account: " ", format: "json" })).toBe(false);
+    expect(eventOutputConfigured({ service: "webhook", format: "json" })).toBe(false);
+    expect(eventOutputConfigured({ service: "webhook", account: "a1", format: "discord" })).toBe(
+      true,
     );
   });
 
-  it("needs an MQTT broker and a topic, but no credentials", () => {
-    expect(mqtt("", "sdrmm/events")).toBe(false);
-    expect(mqtt("mqtts://broker.example", "  ")).toBe(false);
-    expect(mqtt("mqtts://broker.example", "sdrmm/events")).toBe(true);
+  it("needs an account and a place for every other service that signs in", () => {
+    for (const configured of [matrix, mqtt, postgres, influx]) {
+      expect(configured("a1", "radio")).toBe(true);
+      expect(configured("", "radio")).toBe(false);
+      expect(configured("a1", " ")).toBe(false);
+    }
   });
 
-  it("needs a Postgres server, table and user", () => {
-    expect(postgres("postgres://db.example/radio", "sdrmm_events", "radio")).toBe(true);
-    expect(postgres("", "sdrmm_events", "radio")).toBe(false);
-    expect(postgres("postgres://db.example/radio", " ", "radio")).toBe(false);
-    expect(postgres("postgres://db.example/radio", "sdrmm_events", "")).toBe(false);
-  });
-
-  it("needs an InfluxDB server and bucket, but no token", () => {
-    expect(influx("http://127.0.0.1:8086", "radio")).toBe(true);
-    expect(influx("", "radio")).toBe(false);
-    expect(influx("http://127.0.0.1:8086", "")).toBe(false);
+  it("knows which services sign in", () => {
+    expect(signsIn(newOutputTarget("mqtt"))).toBe(true);
+    expect(signsIn(newOutputTarget("csv"))).toBe(false);
+    expect(newOutputTarget("postgres")).toEqual({
+      service: "postgres",
+      account: "",
+      table: "sdrmm_events",
+    });
   });
 
   it("starts every service unconfigured", () => {

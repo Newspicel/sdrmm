@@ -427,11 +427,10 @@ mod tests {
     async fn a_bind_failure_and_lost_events_are_visible() {
         let busy = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut outputs = Outputs::default();
-        outputs.configure(&[Binding {
-            message: String::new(),
-            node: "busy".to_owned(),
-            target: beast(busy.local_addr().unwrap().to_string()),
-        }]);
+        outputs.configure(&[Binding::plain(
+            "busy",
+            beast(busy.local_addr().unwrap().to_string()),
+        )]);
 
         assert!(!outputs.entries["busy"].status.borrow().listening);
         assert!(error(&outputs, "busy").contains("Cannot listen"));
@@ -447,11 +446,7 @@ mod tests {
     }
 
     fn binding(node: &str, address: &str) -> Binding {
-        Binding {
-            message: String::new(),
-            node: node.to_owned(),
-            target: beast(address.to_owned()),
-        }
+        Binding::plain(node, beast(address.to_owned()))
     }
 
     fn listening(outputs: &Outputs, node: &str) -> bool {
@@ -496,15 +491,14 @@ mod tests {
     #[tokio::test]
     async fn a_format_no_decoder_offers_is_a_wait_not_a_fault() {
         let mut outputs = Outputs::default();
-        outputs.configure(&[Binding {
-            message: String::new(),
-            node: "odd".to_owned(),
-            target: EventOutputTarget::Feed {
+        outputs.configure(&[Binding::plain(
+            "odd",
+            EventOutputTarget::Feed {
                 format: "nope".to_owned(),
                 address: "127.0.0.1:0".to_owned(),
                 enabled: true,
             },
-        }]);
+        )]);
 
         let status = outputs.entries["odd"].status.borrow().clone();
         assert!(!status.listening);

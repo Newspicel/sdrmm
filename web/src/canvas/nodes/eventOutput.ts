@@ -1,4 +1,5 @@
-import type { EventOutputTarget, FeedEntry, Secret } from "../../lib/types";
+import type { AccountKind } from "../../lib/accounts";
+import type { EventOutputTarget, FeedEntry } from "../../lib/types";
 
 export const OUTPUT_SERVICES = [
   { value: "recordings", label: "Recordings" },
@@ -91,23 +92,74 @@ export function newOutputTarget(
     case "tunnel":
       return { service, interface: "", address: "10.23.0.1", prefix: 24 };
     case "webhook":
-      return { service, url: "", format: "json" };
+      return { service, account: "", format: "json" };
     case "matrix":
-      return { service, homeserver_url: "", room_id: "", access_token: "" };
+      return { service, account: "", room_id: "" };
     case "mqtt":
-      return { service, broker_url: "", topic: "", username: "", password: "" };
+      return { service, account: "", topic: "" };
     case "postgres":
-      return { service, url: "", table: "sdrmm_events", username: "", password: "" };
+      return { service, account: "", table: "sdrmm_events" };
     case "influx":
-      return { service, url: "", bucket: "", org: "", token: "" };
+      return { service, account: "", bucket: "" };
   }
 }
 
-export function secretSet(secret: Secret | undefined): boolean {
-  if (secret === undefined) {
-    return false;
+export type SigningTarget = Extract<EventOutputTarget, { service: AccountKind }>;
+
+const ACCOUNT_SERVICES: ReadonlySet<EventOutputTarget["service"]> = new Set([
+  "webhook",
+  "matrix",
+  "mqtt",
+  "postgres",
+  "influx",
+]);
+
+/** Whether the output signs in through an account of its own service. */
+export function signsIn(target: EventOutputTarget): target is SigningTarget {
+  return ACCOUNT_SERVICES.has(target.service);
+}
+
+export interface OutputPlace {
+  label: string;
+  title: string;
+  value: string;
+  set: (value: string) => EventOutputTarget;
+}
+
+/** Where inside its account's service an output sends. A webhook's account is the place. */
+export function placeOf(target: SigningTarget): OutputPlace | undefined {
+  switch (target.service) {
+    case "webhook":
+      return undefined;
+    case "matrix":
+      return {
+        label: "Room",
+        title: "Matrix room ID",
+        value: target.room_id,
+        set: (room_id) => ({ ...target, room_id }),
+      };
+    case "mqtt":
+      return {
+        label: "Topic",
+        title: "MQTT topic",
+        value: target.topic,
+        set: (topic) => ({ ...target, topic }),
+      };
+    case "postgres":
+      return {
+        label: "Table",
+        title: "Created on first write. Lowercase letters, digits and _",
+        value: target.table,
+        set: (table) => ({ ...target, table }),
+      };
+    case "influx":
+      return {
+        label: "Bucket",
+        title: "Bucket, or database on InfluxDB 3",
+        value: target.bucket,
+        set: (bucket) => ({ ...target, bucket }),
+      };
   }
-  return typeof secret === "string" ? secret.trim() !== "" : secret.secret !== "";
 }
 
 export function eventOutputConfigured(target: EventOutputTarget): boolean {
@@ -125,20 +177,18 @@ export function eventOutputConfigured(target: EventOutputTarget): boolean {
     case "tunnel":
       return target.interface.trim() !== "";
     case "webhook":
-      return secretSet(target.url);
+      return filled(target.account);
     case "matrix":
-      return (
-        target.homeserver_url.trim() !== "" &&
-        target.room_id.trim() !== "" &&
-        secretSet(target.access_token)
-      );
+      return filled(target.account) && filled(target.room_id);
     case "mqtt":
-      return target.broker_url.trim() !== "" && target.topic.trim() !== "";
+      return filled(target.account) && filled(target.topic);
     case "postgres":
-      return [target.url, target.table, target.username ?? ""].every(
-        (value) => value.trim() !== "",
-      );
+      return filled(target.account) && filled(target.table);
     case "influx":
-      return target.url.trim() !== "" && target.bucket.trim() !== "";
+      return filled(target.account) && filled(target.bucket);
   }
+}
+
+function filled(value: string | undefined): boolean {
+  return (value ?? "").trim() !== "";
 }

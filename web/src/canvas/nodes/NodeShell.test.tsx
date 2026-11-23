@@ -35,7 +35,7 @@ function render(content: string, over: { selected?: string; live?: boolean } = {
 describe("NodeShell on the canvas", () => {
   it("keeps a content-sized face at one width whatever it shows", () => {
     for (const markup of [render("idle"), render("scanning ".repeat(40))]) {
-      expect(markup).toContain("width:400px");
+      expect(markup).toContain("width:25rem");
       expect(markup).not.toContain("w-max");
     }
   });

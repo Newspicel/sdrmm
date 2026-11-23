@@ -14,7 +14,7 @@ use sdrmm_engine::Engine;
 use sdrmm_recorder::{AUDIO_SUFFIX, audio_stem, save_unique};
 use sdrmm_wire::{
     DecodedRecord, EVENTS_PORT, EventOutputTarget, NodeBody, StateScope, WebhookFormat,
-    event_output::Secret, present::Presentation,
+    present::Presentation,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -24,12 +24,14 @@ use tokio::sync::{
 };
 
 use crate::{NativeShell, Store, calls::Calls, decoded::Decoded, resolved::Resolved};
+use login::Login;
 
 pub(crate) mod csv;
 mod feed;
 mod file;
 mod influx;
 mod layout;
+mod login;
 mod postgres;
 mod status;
 pub(crate) mod text;
@@ -55,6 +57,19 @@ struct Binding {
     node: String,
     target: EventOutputTarget,
     message: String,
+    login: Result<Arc<Login>, String>,
+}
+
+#[cfg(test)]
+impl Binding {
+    fn plain(node: &str, target: EventOutputTarget) -> Self {
+        Self {
+            node: node.to_owned(),
+            target,
+            message: String::new(),
+            login: Ok(Arc::new(Login::None)),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -65,6 +80,7 @@ struct Routing {
 struct Delivery {
     node: String,
     target: EventOutputTarget,
+    login: Result<Arc<Login>, String>,
     event: String,
     message: OutputMessage,
 }
@@ -128,6 +144,7 @@ pub(crate) async fn run(
     store: Arc<Store>,
 ) {
     let mut secret_changes = store.subscribe_secrets();
+    let mut account_changes = store.subscribe_accounts();
     let mut decoded = decoded;
     let client = match Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -145,14 +162,13 @@ pub(crate) async fn run(
         client,
         engine: engine.clone(),
         shell,
-        store: store.clone(),
     };
     let (mut delivery_tx, mut worker) = spawn_worker(&senders, &statuses);
     let mut routing = routing_of(&patch.borrow_and_update());
     let mut tunnels = tunnel::Outputs::new(statuses.clone());
     let mut feeds = feed::Outputs::default();
     configure(&routing, &mut tunnels, &mut feeds, &statuses);
-    check_secrets(&store, &routing.bindings, &statuses).await;
+    resolve_logins(&store, &mut routing.bindings, &statuses).await;
     let mut status_tick = tokio::time::interval(Duration::from_secs(1));
     let mut decoded_open = true;
     let mut decoded_sequence = 0_u64;
@@ -173,12 +189,15 @@ pub(crate) async fn run(
                 Ok(()) => {
                     routing = routing_of(&patch.borrow_and_update());
                     configure(&routing, &mut tunnels, &mut feeds, &statuses);
-                    check_secrets(&store, &routing.bindings, &statuses).await;
+                    resolve_logins(&store, &mut routing.bindings, &statuses).await;
                 }
                 Err(_) => break,
             },
             Ok(()) = secret_changes.changed() => {
-                check_secrets(&store, &routing.bindings, &statuses).await;
+                resolve_logins(&store, &mut routing.bindings, &statuses).await;
+            },
+            Ok(()) = account_changes.changed() => {
+                resolve_logins(&store, &mut routing.bindings, &statuses).await;
             },
             record = decoded.recv(), if decoded_open => match record {
                 Ok(Decoded::Record(routed)) => {
@@ -233,32 +252,13 @@ fn configure(
     feeds.configure(&routing.bindings);
 }
 
-/// An output whose credential this server lacks says so before an event finds out.
-async fn check_secrets(store: &Arc<Store>, bindings: &[Binding], statuses: &status::Statuses) {
+/// Reads each output's account again. One that cannot sign in says why before an event finds
+/// out, and its deliveries fail with that reason.
+async fn resolve_logins(store: &Arc<Store>, bindings: &mut [Binding], statuses: &status::Statuses) {
     for binding in bindings {
-        let problem = reveal(store, &binding.target).await.err();
-        statuses.unresolved(&binding.node, problem.map(|problem| problem.to_string()));
+        binding.login = login::resolve(store, &binding.target).await.map(Arc::new);
+        statuses.unresolved(&binding.node, binding.login.as_ref().err().cloned());
     }
-}
-
-/// The credential a delivery sends, read from this server's store when the workspace names it.
-async fn reveal(store: &Arc<Store>, target: &EventOutputTarget) -> Result<String, DeliveryError> {
-    let Some((what, secret)) = target.secret() else {
-        return Ok(String::new());
-    };
-    let Secret::Stored { secret: id } = secret else {
-        return Ok(secret.inline().unwrap_or_default().to_owned());
-    };
-    let (store, id) = (store.clone(), id.clone());
-    let value = tokio::task::spawn_blocking(move || store.secret(&id))
-        .await
-        .map_err(|error| DeliveryError::Failed(format!("{what}: {error}")))?
-        .map_err(|error| DeliveryError::Failed(format!("{what}: {error}")))?
-        .ok_or_else(|| DeliveryError::Failed(format!("{what} is not set on this server")))?;
-    if !target.accepts_secret(&value) {
-        return Err(DeliveryError::Failed(format!("{what} is not valid")));
-    }
-    Ok(value)
 }
 
 fn enqueue(delivery_tx: &mpsc::Sender<Delivery>, statuses: &status::Statuses, delivery: Delivery) {
@@ -293,6 +293,7 @@ fn decoded_deliveries(
             Delivery {
                 node: binding.node.clone(),
                 target: binding.target.clone(),
+                login: binding.login.clone(),
                 event: event_label(record, &view),
                 message: decoded_message(
                     &binding.node,
@@ -387,6 +388,7 @@ fn routing_of(resolved: &Resolved) -> Routing {
                     } else {
                         String::new()
                     },
+                    login: Ok(Arc::new(Login::None)),
                 })
         })
         .collect();
@@ -398,7 +400,6 @@ struct Senders {
     client: Client,
     engine: std::sync::Weak<Engine>,
     shell: Option<Arc<dyn NativeShell>>,
-    store: Arc<Store>,
 }
 
 async fn deliver_all(
@@ -412,7 +413,6 @@ async fn deliver_all(
         for batch in pending.chunk_by(same_batch) {
             let outputs = Outputs {
                 client: &senders.client,
-                store: &senders.store,
                 databases: &mut databases,
                 engine: &senders.engine,
                 shell: senders.shell.as_ref(),
@@ -468,7 +468,6 @@ fn batch_name(batch: &[Delivery]) -> String {
 
 struct Outputs<'a> {
     client: &'a Client,
-    store: &'a Arc<Store>,
     databases: &'a mut postgres::Connections,
     engine: &'a std::sync::Weak<Engine>,
     shell: Option<&'a Arc<dyn NativeShell>>,
@@ -519,8 +518,10 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
     let Some(delivery) = batch.first() else {
         return Ok(());
     };
-    let client = outputs.client;
-    let secret = reveal(outputs.store, &delivery.target).await?;
+    let login = delivery
+        .login
+        .as_deref()
+        .map_err(|problem| DeliveryError::Failed(problem.clone()))?;
     match &delivery.target {
         EventOutputTarget::Recordings => save_recording(outputs.engine, &delivery.message).await,
         EventOutputTarget::Desktop => notify(outputs.shell, &delivery.message).await,
@@ -533,64 +534,83 @@ async fn deliver(outputs: &mut Outputs<'_>, batch: &[Delivery]) -> Result<(), De
         EventOutputTarget::Tunnel { .. } | EventOutputTarget::Feed { .. } => Err(
             DeliveryError::Failed("Network streams use the dedicated writer".to_owned()),
         ),
-        EventOutputTarget::Webhook { format, .. } => {
-            send_webhook(client, &secret, *format, &delivery.message).await
+        _ => sign_in_and_deliver(outputs, batch, delivery, login).await,
+    }
+}
+
+async fn sign_in_and_deliver(
+    outputs: &mut Outputs<'_>,
+    batch: &[Delivery],
+    delivery: &Delivery,
+    login: &Login,
+) -> Result<(), DeliveryError> {
+    let client = outputs.client;
+    match (&delivery.target, login) {
+        (EventOutputTarget::Webhook { format, .. }, Login::Webhook { url }) => {
+            send_webhook(client, url, *format, &delivery.message).await
         }
-        EventOutputTarget::Matrix {
-            homeserver_url,
-            room_id,
-            ..
-        } => {
-            send_matrix(
-                client,
-                MatrixTarget {
-                    homeserver_url,
-                    room_id,
-                    access_token: &secret,
-                },
-                &delivery.message,
-            )
-            .await
+        (
+            EventOutputTarget::Matrix { room_id, .. },
+            Login::Matrix {
+                homeserver_url,
+                access_token,
+            },
+        ) => {
+            let target = MatrixTarget {
+                homeserver_url,
+                room_id,
+                access_token,
+            };
+            send_matrix(client, target, &delivery.message).await
         }
-        EventOutputTarget::Mqtt {
-            broker_url,
-            topic,
-            username,
-            ..
-        } => {
-            send_mqtt(
-                MqttTarget {
-                    broker_url,
-                    topic,
-                    username,
-                    password: &secret,
-                    client_id: &mqtt_client_id(&delivery.node),
-                },
-                &delivery.message,
-            )
-            .await
+        (
+            EventOutputTarget::Mqtt { topic, .. },
+            Login::Mqtt {
+                broker_url,
+                username,
+                password,
+            },
+        ) => {
+            let target = MqttTarget {
+                broker_url,
+                topic,
+                username,
+                password,
+                client_id: &mqtt_client_id(&delivery.node),
+            };
+            send_mqtt(target, &delivery.message).await
         }
-        EventOutputTarget::Postgres { .. } => {
+        (
+            EventOutputTarget::Postgres { table, .. },
+            Login::Postgres {
+                url,
+                username,
+                password,
+            },
+        ) => {
+            let settings = postgres::PostgresTarget {
+                url,
+                table,
+                username,
+                password,
+            };
             outputs
                 .databases
-                .insert(&delivery.node, &delivery.target, &secret, batch)
+                .insert(&delivery.node, &settings, batch)
                 .await
         }
-        EventOutputTarget::Influx {
-            url, bucket, org, ..
-        } => {
-            influx::send(
-                client,
-                influx::InfluxTarget {
-                    url,
-                    bucket,
-                    org,
-                    token: &secret,
-                },
-                batch,
-            )
-            .await
+        (EventOutputTarget::Influx { bucket, .. }, Login::Influx { url, org, token }) => {
+            let target = influx::InfluxTarget {
+                url,
+                bucket,
+                org,
+                token,
+            };
+            influx::send(client, target, batch).await
         }
+        _ => Err(DeliveryError::Failed(
+            "The account does not fit this output".to_owned(),
+        )),
     }
 }
 

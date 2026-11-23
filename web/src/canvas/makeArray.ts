@@ -1,3 +1,4 @@
+import { uiScale } from "../lib/prefs";
 import type { LaneWire, NodeBodyOf, PatchGraph, PatchNode, Position } from "../lib/types";
 import { addEdge, addNode, nodeOf, nodeSize } from "./graph";
 
@@ -8,7 +9,8 @@ const ARRAY_GAP_PX = 80;
 export function arrayPlacement(graph: PatchGraph, device: string): Position {
   const source = nodeOf(graph, device);
   const position = source?.position ?? { x: 0, y: 0 };
-  return { x: position.x + nodeSize(source?.kind ?? "device").w + ARRAY_GAP_PX, y: position.y };
+  const width = nodeSize(source?.kind ?? "device").w * uiScale();
+  return { x: position.x + width + ARRAY_GAP_PX, y: position.y };
 }
 
 export function makeArray(

@@ -12,6 +12,7 @@ import {
 } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { workspaceExportUrl } from "../lib/api";
+import { useT } from "../lib/i18n/translate";
 import { MAX_NAME_LEN } from "../lib/limits";
 import { pickFile } from "../lib/pickFile";
 import type { WorkspaceInfo } from "../lib/types";
@@ -39,10 +40,11 @@ export function WorkspaceMenu({
   onImport: (file: File) => void;
   onRemove: (id: number) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   return (
     <div className="flex flex-col gap-1">
-      <span className={LABEL}>Workspaces</span>
+      <span className={LABEL}>{t("workspace.list")}</span>
       {workspaces.map((workspace) => (
         <WorkspaceRow
           key={workspace.id}
@@ -68,20 +70,20 @@ export function WorkspaceMenu({
         >
           <Input
             className={`${FIELD} flex-1`}
-            aria-label="Name for a new workspace"
-            placeholder="New workspace"
+            aria-label={t("workspace.newName")}
+            placeholder={t("workspace.newPlaceholder")}
             maxLength={MAX_NAME_LEN}
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
           <Button type="submit" className={BTN_QUIET} disabled={name.trim() === ""}>
-            Add
+            {t("workspace.add")}
           </Button>
         </Form>
         <Button
           type="button"
           className={`${BTN_QUIET} justify-center`}
-          title="Read a workspace file exported here or on another machine"
+          title={t("workspace.importTitle")}
           onClick={() => {
             void pickFile(WORKSPACE_FILE_ACCEPT).then((file) => {
               if (file !== null) {
@@ -90,7 +92,7 @@ export function WorkspaceMenu({
             });
           }}
         >
-          Import a workspace file
+          {t("workspace.import")}
         </Button>
       </div>
     </div>
@@ -114,6 +116,8 @@ function WorkspaceRow({
   onClone: (id: number) => void;
   onRemove: (id: number) => void;
 }) {
+  const t = useT();
+  const named = { name: workspace.name };
   const [mode, setMode] = useState<"idle" | "rename" | "confirm" | "switch">("idle");
   const [draft, setDraft] = useState(workspace.name);
   const abandoned = useRef(false);
@@ -130,7 +134,7 @@ function WorkspaceRow({
       <Input
         autoFocus
         className={`${FIELD} w-full`}
-        aria-label={`New name for ${workspace.name}`}
+        aria-label={t("workspace.renameField", named)}
         maxLength={MAX_NAME_LEN}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -154,21 +158,21 @@ function WorkspaceRow({
     return (
       <div className="flex h-7 items-center gap-1 rounded-control border border-danger bg-danger/10 px-2">
         <span className="min-w-0 flex-1 truncate text-xs text-danger">
-          Delete {workspace.name}?
+          {t("workspace.deleteAsk", named)}
         </span>
         <Button
           type="button"
           className={BTN_DANGER_SM}
-          title="The workspace, its layout and its history are removed"
+          title={t("workspace.deleteTitle")}
           onClick={() => {
             setMode("idle");
             onRemove(workspace.id);
           }}
         >
-          Delete
+          {t("workspace.delete")}
         </Button>
         <Button autoFocus type="button" className={BTN_SM} onClick={() => setMode("idle")}>
-          Keep
+          {t("workspace.keep")}
         </Button>
       </div>
     );
@@ -178,21 +182,21 @@ function WorkspaceRow({
     return (
       <div className="flex h-7 items-center gap-1 rounded-control border border-accent bg-accent/10 px-2">
         <span className="min-w-0 flex-1 truncate text-xs">
-          Switch {others === 1 ? "1 other" : `${others} others`} too?
+          {others === 1 ? t("workspace.switchOne") : t("workspace.switchMany", { count: others })}
         </span>
         <Button
           type="button"
           className={BTN_SM}
-          title="One workspace runs per server"
+          title={t("workspace.switchTitle")}
           onClick={() => {
             setMode("idle");
             onActivate(workspace.id);
           }}
         >
-          Switch
+          {t("workspace.switch")}
         </Button>
         <Button autoFocus type="button" className={BTN_SM} onClick={() => setMode("idle")}>
-          Stay
+          {t("workspace.stay")}
         </Button>
       </div>
     );
@@ -220,7 +224,7 @@ function WorkspaceRow({
       <span
         aria-hidden
         className="w-4 text-right font-mono text-2xs text-ink-faint tabular-nums"
-        title={`${workspace.nodes} nodes`}
+        title={t("workspace.nodes", { count: workspace.nodes })}
       >
         {workspace.nodes}
       </span>
@@ -228,8 +232,8 @@ function WorkspaceRow({
         <Button
           type="button"
           className={ICON_BTN_SM}
-          aria-label={`Rename ${workspace.name}`}
-          title="Rename this workspace"
+          aria-label={t("workspace.rename", named)}
+          title={t("workspace.renameTitle")}
           onClick={() => {
             abandoned.current = false;
             setDraft(workspace.name);
@@ -241,8 +245,8 @@ function WorkspaceRow({
         <Button
           type="button"
           className={ICON_BTN_SM}
-          aria-label={`Duplicate ${workspace.name}`}
-          title="Copy this workspace, its patch and the tuning it was left on"
+          aria-label={t("workspace.duplicate", named)}
+          title={t("workspace.duplicateTitle")}
           onClick={() => onClone(workspace.id)}
         >
           <Icon glyph={Copy} size={12} />
@@ -251,16 +255,16 @@ function WorkspaceRow({
           className={ICON_BTN_SM}
           href={workspaceExportUrl(workspace.id)}
           download
-          aria-label={`Export ${workspace.name}`}
-          title="Download this workspace as a file"
+          aria-label={t("workspace.export", named)}
+          title={t("workspace.exportTitle")}
         >
           <Icon glyph={Download} size={12} />
         </a>
         <Button
           type="button"
           className={ICON_BTN_SM}
-          aria-label={`Delete ${workspace.name}`}
-          title="Delete this workspace"
+          aria-label={t("workspace.deleteNamed", named)}
+          title={t("workspace.deleteThis")}
           onClick={() => setMode("confirm")}
         >
           <Icon glyph={X} size={12} />

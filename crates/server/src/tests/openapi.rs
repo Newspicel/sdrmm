@@ -87,6 +87,8 @@ fn openapi_registers_paths_and_ws_schemas() {
         "EventOutputNode",
         "EventOutputTarget",
         "WebhookFormat",
+        "Account",
+        "AccountService",
         "RackLayout",
         "DeviceRef",
         "PatchCatalog",

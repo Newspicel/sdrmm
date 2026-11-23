@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { adoptUrlToken } from "./lib/auth";
 import { installGlobalHandlers } from "./lib/diagnostics";
+import { initPrefs } from "./lib/prefs";
 import { initTheme } from "./lib/theme";
 import { createQueryClient, Root } from "./Root";
 import "@fontsource-variable/jetbrains-mono";
@@ -9,6 +10,7 @@ import "./index.css";
 
 adoptUrlToken(window.location, window.history);
 initTheme();
+initPrefs();
 installGlobalHandlers(window);
 
 const rootEl = document.getElementById("root");

@@ -5,6 +5,7 @@ import { getToken, rejectToken, signalUnauthorized, withToken } from "./auth";
 import { authorKey } from "./presence";
 import type {
   AboutResponse,
+  Account,
   ApiError,
   ArrayRecordingStarted,
   ArrayTuneRequest,
@@ -15,7 +16,6 @@ import type {
   Bookmark,
   ChannelSettings,
   ChannelTypesResponse,
-  ChatAccount,
   CpsCodeplugDetail,
   CpsCodeplugRequest,
   CpsConvertRequest,
@@ -76,7 +76,6 @@ import type {
   SavedRadio,
   SaveNanoVnaMeasurementRequest,
   SaveRadioRequest,
-  Secret,
   SerialDevicesResponse,
   ServerOutputsResponse,
   SkyScanStatus,
@@ -135,7 +134,7 @@ export const CHANNEL_TYPES_KEY = ["get", "/api/channeltypes"] as const;
 export const ENCODER_TYPES_KEY = ["get", "/api/encodertypes"] as const;
 export const PRESETS_KEY = ["get", "/api/presets"] as const;
 export const BOOKMARKS_KEY = ["get", "/api/bookmarks"] as const;
-export const CHAT_ACCOUNTS_KEY = ["get", "/api/chat-accounts"] as const;
+export const ACCOUNTS_KEY = ["get", "/api/accounts"] as const;
 export const SAVED_RADIOS_KEY = ["get", "/api/saved-radios"] as const;
 export const RECORDINGS_KEY = ["get", "/api/recordings"] as const;
 export const AUDIO_RECORDINGS_KEY = ["get", "/api/audiorecordings"] as const;
@@ -308,14 +307,6 @@ export function presetsQuery() {
   });
 }
 
-/** Keeps `value` on this server under a fresh id; a workspace only ever names the id. */
-export async function keepSecret(value: string): Promise<Secret> {
-  if (value.trim() === "") {
-    return "";
-  }
-  return unwrap(await client.POST("/api/secrets", { body: { value } }));
-}
-
 export async function createPreset(name: string): Promise<number> {
   return unwrap(await client.POST("/api/presets", { body: { name } })).id;
 }
@@ -355,29 +346,28 @@ export async function deleteBookmark(id: number): Promise<void> {
   );
 }
 
-export function chatAccountsQuery() {
+export function accountsQuery() {
   return queryOptions({
-    queryKey: CHAT_ACCOUNTS_KEY,
-    queryFn: async (): Promise<ChatAccount[]> =>
-      unwrap(await client.GET("/api/chat-accounts")).accounts,
+    queryKey: ACCOUNTS_KEY,
+    queryFn: async (): Promise<Account[]> => unwrap(await client.GET("/api/accounts")).accounts,
   });
 }
 
-export async function createChatAccount(account: ChatAccount): Promise<ChatAccount> {
-  return unwrap(await client.POST("/api/chat-accounts", { body: account }));
+export async function createAccount(account: Account): Promise<Account> {
+  return unwrap(await client.POST("/api/accounts", { body: account }));
 }
 
-export async function updateChatAccount(account: ChatAccount): Promise<ChatAccount> {
+export async function updateAccount(account: Account): Promise<Account> {
   return unwrap(
-    await client.PUT("/api/chat-accounts/{id}", {
+    await client.PUT("/api/accounts/{id}", {
       params: { path: { id: account.id } },
       body: account,
     }),
   );
 }
 
-export async function deleteChatAccount(id: string): Promise<void> {
-  unwrap(await client.DELETE("/api/chat-accounts/{id}", { params: { path: { id } } }));
+export async function deleteAccount(id: string): Promise<void> {
+  unwrap(await client.DELETE("/api/accounts/{id}", { params: { path: { id } } }));
 }
 
 export function denoiseModelsQuery(enabled: boolean) {

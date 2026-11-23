@@ -9,12 +9,10 @@ const ADMIN_ROUTES: &[(Method, &str)] = &[
     (Method::PUT, "/api/phones/access"),
     (Method::POST, "/api/phones/offers"),
     (Method::DELETE, "/api/phones/offers"),
-    (Method::GET, "/api/chat-accounts"),
-    (Method::POST, "/api/chat-accounts"),
-    (Method::PUT, "/api/chat-accounts/{id}"),
-    (Method::DELETE, "/api/chat-accounts/{id}"),
-    (Method::POST, "/api/secrets"),
-    (Method::PUT, "/api/secrets/{id}"),
+    (Method::GET, "/api/accounts"),
+    (Method::POST, "/api/accounts"),
+    (Method::PUT, "/api/accounts/{id}"),
+    (Method::DELETE, "/api/accounts/{id}"),
     (Method::GET, "/api/diagnostics"),
 ];
 

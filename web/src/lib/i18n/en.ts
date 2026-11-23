@@ -1,0 +1,67 @@
+/** The English text, the source every other language is checked against. */
+export const en = {
+  "library.section": "Library section",
+  "library.templates": "Templates",
+  "library.examples": "Examples",
+  "library.presets": "Presets",
+  "library.bookmarks": "Bookmarks",
+  "library.bands": "Bands",
+  "library.recordings": "Recordings",
+  "library.tools": "Tools",
+  "library.phones": "Phones",
+  "library.accounts": "Accounts",
+  "library.settings": "Settings",
+
+  "prefs.theme": "Theme",
+  "prefs.textSize": "Font size",
+  "prefs.language": "Language",
+
+  "theme.system": "Auto",
+  "theme.dark": "Dark",
+  "theme.light": "Light",
+  "theme.switch": "Theme: {current}. Switch to {next}",
+  "theme.title": "Theme: {current}, click for {next}",
+
+  "bar.noWorkspace": "No workspace",
+  "bar.view": "View",
+  "bar.patch": "Patch",
+  "bar.rack": "Rack",
+  "bar.add": "Add",
+  "bar.addTitle": "Add a node, or double-click the canvas",
+  "bar.history": "History",
+  "bar.undo": "Undo your last change",
+  "bar.redo": "Redo your last undone change",
+  "bar.library": "Library",
+  "bar.help": "Help",
+
+  "workspace.list": "Workspaces",
+  "workspace.newName": "Name for a new workspace",
+  "workspace.newPlaceholder": "New workspace",
+  "workspace.add": "Add",
+  "workspace.import": "Import a workspace file",
+  "workspace.importTitle": "Read a workspace file exported here or on another machine",
+  "workspace.renameField": "New name for {name}",
+  "workspace.deleteAsk": "Delete {name}?",
+  "workspace.deleteTitle": "The workspace, its layout and its history are removed",
+  "workspace.delete": "Delete",
+  "workspace.keep": "Keep",
+  "workspace.switchOne": "Switch 1 other too?",
+  "workspace.switchMany": "Switch {count} others too?",
+  "workspace.switchTitle": "One workspace runs per server",
+  "workspace.switch": "Switch",
+  "workspace.stay": "Stay",
+  "workspace.nodes": "{count} nodes",
+  "workspace.rename": "Rename {name}",
+  "workspace.renameTitle": "Rename this workspace",
+  "workspace.duplicate": "Duplicate {name}",
+  "workspace.duplicateTitle": "Copy this workspace, its patch and the tuning it was left on",
+  "workspace.export": "Export {name}",
+  "workspace.exportTitle": "Download this workspace as a file",
+  "workspace.deleteNamed": "Delete {name}",
+  "workspace.deleteThis": "Delete this workspace",
+};
+
+export type MessageKey = keyof typeof en;
+
+/** A whole language: every English key, so a missing one fails the typecheck. */
+export type Catalog = Readonly<Record<MessageKey, string>>;

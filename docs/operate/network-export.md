@@ -57,9 +57,9 @@ Wire `events` → **Event output** (messages cut at 1,900 chars; rate limits ret
 - **InfluxDB v2/v3:** one point per event (measurement = event kind).
 - **CSV / Text file:** appends under `Recordings/events/` (CSV prefixes formula-like strings with `'`).
 
-### Credentials
+### Accounts
 
-Secrets live only in `sdrmm.db` (never exported with workspaces); re-enter them after importing onto another server.
+Webhook, Matrix, MQTT, PostgreSQL and InfluxDB logins live in **Library > Accounts**, server-wide and never exported. The node picks an account and keeps only its room, topic, table or bucket. After importing onto another server, pick or add the account there.
 
 ## IP data
 

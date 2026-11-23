@@ -211,10 +211,14 @@
       "max": 2.0
     },
     "volume_seed": 1.0,
-    "account_len": 64,
-    "discord_nickname_len": 32,
     "channel_len": 255,
     "allowed": 64,
     "allowed_len": 64
+  },
+  "account": {
+    "name_len": 64,
+    "discord_nickname_len": 32,
+    "url_len": 2048,
+    "secret_len": 4096
   }
 }

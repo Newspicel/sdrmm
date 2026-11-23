@@ -925,6 +925,7 @@ impl Api for FakeApi {
                 device_sets: Vec::new(),
                 trunk_systems: Vec::new(),
                 arrays: Vec::new(),
+                node_streams: Vec::new(),
                 revision: 1,
             })
         })

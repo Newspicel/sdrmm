@@ -36,6 +36,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_accounts"];
+        put?: never;
+        post: operations["create_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["update_account"];
+        post?: never;
+        delete: operations["delete_account"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/arrays": {
         parameters: {
             query?: never;
@@ -367,38 +399,6 @@ export interface paths {
         put?: never;
         post: operations["post_channel_band"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat-accounts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_chat_accounts"];
-        put?: never;
-        post: operations["create_chat_account"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chat-accounts/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["update_chat_account"];
-        post?: never;
-        delete: operations["delete_chat_account"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1460,38 +1460,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/secrets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["create_secret"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/secrets/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["put_secret"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/serial/ports": {
         parameters: {
             query?: never;
@@ -1941,6 +1909,58 @@ export interface components {
             server_id: string;
             server_name: string;
             version: string;
+        };
+        /** @description A login on a service this server talks to. Voice chats and event outputs name it by id. */
+        Account: components["schemas"]["AccountService"] & {
+            id: string;
+            name: string;
+        };
+        /**
+         * @description Where an account signs in and with what. Credentials are [`Secret`]s; everything else is a
+         *     plain setting the account list shows.
+         */
+        AccountService: {
+            nickname?: string;
+            /** @enum {string} */
+            service: "discord";
+            token?: components["schemas"]["Secret"];
+        } | {
+            address: string;
+            identity?: components["schemas"]["Secret"];
+            nickname?: string;
+            password?: components["schemas"]["Secret"];
+            /** @enum {string} */
+            service: "teamspeak";
+        } | {
+            /** @enum {string} */
+            service: "webhook";
+            url?: components["schemas"]["Secret"];
+        } | {
+            access_token?: components["schemas"]["Secret"];
+            homeserver_url: string;
+            /** @enum {string} */
+            service: "matrix";
+        } | {
+            broker_url: string;
+            password?: components["schemas"]["Secret"];
+            /** @enum {string} */
+            service: "mqtt";
+            username?: string;
+        } | {
+            password?: components["schemas"]["Secret"];
+            /** @enum {string} */
+            service: "postgres";
+            url: string;
+            username?: string;
+        } | {
+            org?: string;
+            /** @enum {string} */
+            service: "influx";
+            token?: components["schemas"]["Secret"];
+            url: string;
+        };
+        AccountsResponse: {
+            accounts: components["schemas"]["Account"][];
         };
         /** @description A button a processor face shows for one of its actions. */
         ActionSpec: {
@@ -3094,26 +3114,6 @@ export interface components {
         ChannelTypesResponse: {
             types: components["schemas"]["ChannelDescriptor"][];
         };
-        ChatAccount: components["schemas"]["ChatService"] & {
-            id: string;
-            name: string;
-        };
-        ChatAccountsResponse: {
-            accounts: components["schemas"]["ChatAccount"][];
-        };
-        ChatService: {
-            nickname?: string;
-            /** @enum {string} */
-            service: "discord";
-            token?: components["schemas"]["Secret"];
-        } | {
-            address: string;
-            identity?: components["schemas"]["Secret"];
-            nickname?: string;
-            password?: components["schemas"]["Secret"];
-            /** @enum {string} */
-            service: "teamspeak";
-        };
         ChatTalker: {
             allowed: boolean;
             id: string;
@@ -4044,6 +4044,10 @@ export interface components {
             failed: number;
             node: string;
         };
+        /**
+         * @description Where an output sends. A service that signs in names its account and keeps only the place
+         *     inside it: the room, topic, table or bucket.
+         */
         EventOutputTarget: {
             /** @enum {string} */
             service: "recordings";
@@ -4073,37 +4077,30 @@ export interface components {
             /** @enum {string} */
             service: "tunnel";
         } | {
+            account?: string;
             format?: components["schemas"]["WebhookFormat"];
             /** @enum {string} */
             service: "webhook";
-            url: components["schemas"]["Secret"];
         } | {
-            access_token: components["schemas"]["Secret"];
-            homeserver_url: string;
+            account?: string;
             room_id: string;
             /** @enum {string} */
             service: "matrix";
         } | {
-            broker_url: string;
-            password?: components["schemas"]["Secret"];
+            account?: string;
             /** @enum {string} */
             service: "mqtt";
             topic: string;
-            username?: string;
         } | {
-            password?: components["schemas"]["Secret"];
+            account?: string;
             /** @enum {string} */
             service: "postgres";
             table: string;
-            url: string;
-            username?: string;
         } | {
+            account?: string;
             bucket: string;
-            org?: string;
             /** @enum {string} */
             service: "influx";
-            token?: components["schemas"]["Secret"];
-            url: string;
         };
         ExampleInfo: {
             description: string;
@@ -6682,16 +6679,12 @@ export interface components {
             stop_min: number;
         };
         /**
-         * @description A credential an output needs. The server keeps the value in its own store and a workspace
-         *     names it by id, so an export never carries it and another server asks for it again.
+         * @description A credential an account holds. The server keeps the value in its own store and the account
+         *     names it by id, so a listing never carries it.
          */
         Secret: {
             secret: string;
         } | string;
-        /** @description A credential to keep in the server's store. */
-        SecretValue: {
-            value: string;
-        };
         /**
          * @description How a voice source decides when it is sending.
          * @enum {string}
@@ -8415,6 +8408,152 @@ export interface operations {
             };
         };
     };
+    list_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service logins. Credentials answer as ids, never as values */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountsResponse"];
+                };
+            };
+        };
+    };
+    create_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Account"];
+            };
+        };
+        responses: {
+            /** @description Kept under a fresh id, the id in the request is ignored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Unusable name, address or credential */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    update_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Account"];
+            };
+        };
+        responses: {
+            /** @description Replaced. A credential left stored or empty is kept */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Unusable name, address or credential */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Malformed request body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    delete_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed with its credentials */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Account not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     list_arrays: {
         parameters: {
             query?: never;
@@ -9178,152 +9317,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    list_chat_accounts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Chat accounts. Credentials answer as ids, never as values */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatAccountsResponse"];
-                };
-            };
-        };
-    };
-    create_chat_account: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatAccount"];
-            };
-        };
-        responses: {
-            /** @description Kept under a fresh id, the id in the request is ignored */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatAccount"];
-                };
-            };
-            /** @description Unusable name, server or credential */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    update_chat_account: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Chat account id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatAccount"];
-            };
-        };
-        responses: {
-            /** @description Replaced. A credential left stored or empty is kept */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatAccount"];
-                };
-            };
-            /** @description Unusable name, server or credential */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Chat account not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    delete_chat_account: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Chat account id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Removed with its credentials */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Chat account not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
             };
         };
     };
@@ -12367,91 +12360,6 @@ export interface operations {
             };
             /** @description Saved radio not found */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    create_secret: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SecretValue"];
-            };
-        };
-        responses: {
-            /** @description Kept on this server under a fresh id. A workspace names the id, never the value */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Secret"];
-                };
-            };
-            /** @description Empty or too long */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    put_secret: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Secret id a workspace names */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SecretValue"];
-            };
-        };
-        responses: {
-            /** @description Kept on this server under that id */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unusable id, or the value is empty or too long */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Malformed request body */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

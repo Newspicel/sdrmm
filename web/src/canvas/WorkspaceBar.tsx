@@ -1,17 +1,11 @@
 import { CircleQuestionMark, Plus, Redo2, Undo2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { Button } from "../components/BaseControls";
-import {
-  BTN_PRIMARY,
-  BTN_QUIET,
-  ICON_BTN,
-  type Options,
-  segment,
-  WELL,
-} from "../components/controls";
+import { BTN_PRIMARY, BTN_QUIET, ICON_BTN, segment, WELL } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { Popover } from "../components/Popover";
 import { ThemeControl } from "../components/ThemeControl";
+import { type MessageKey, useT } from "../lib/i18n/translate";
 import { usePeople } from "../lib/presence";
 import type { WorkspaceInfo } from "../lib/types";
 import { useWorkspaceContext } from "./context";
@@ -25,9 +19,9 @@ export type View = "patch" | "rack";
 
 const Library = lazy(() => import("./Library").then((module) => ({ default: module.Library })));
 
-export const VIEWS: Options<View> = [
-  { value: "patch", label: "Patch" },
-  { value: "rack", label: "Rack" },
+export const VIEWS: readonly { value: View; label: MessageKey }[] = [
+  { value: "patch", label: "bar.patch" },
+  { value: "rack", label: "bar.rack" },
 ];
 
 export function WorkspaceBar({
@@ -65,6 +59,7 @@ export function WorkspaceBar({
   onShowHelp: () => void;
   onOpenTool: (id: string) => void;
 }) {
+  const t = useT();
   const workspace = useWorkspaceContext();
   const add = useAddNode();
   const active = workspaces.find((entry) => entry.id === activeWorkspace) ?? null;
@@ -77,7 +72,7 @@ export function WorkspaceBar({
       <span className="mr-1 font-mono text-sm font-medium tracking-tight text-accent">SDRmm</span>
 
       <Popover
-        label={active?.name ?? "No workspace"}
+        label={active?.name ?? t("bar.noWorkspace")}
         triggerClass={`${BTN_QUIET} font-mono`}
         width="w-80"
       >
@@ -112,7 +107,7 @@ export function WorkspaceBar({
 
       <Rule />
 
-      <span className={WELL} role="group" aria-label="View">
+      <span className={WELL} role="group" aria-label={t("bar.view")}>
         {VIEWS.map((option) => (
           <Button
             key={option.value}
@@ -121,7 +116,7 @@ export function WorkspaceBar({
             aria-pressed={view === option.value}
             onClick={() => onView(option.value)}
           >
-            {option.label}
+            {t(option.label)}
             {option.value === "rack" && pinned > 0 && (
               <span aria-hidden className="text-2xs text-ink-faint tabular-nums">
                 {pinned}
@@ -137,10 +132,10 @@ export function WorkspaceBar({
         label={
           <>
             <Icon glyph={Plus} />
-            Add
+            {t("bar.add")}
           </>
         }
-        title="Add a node, or double-click the canvas"
+        title={t("bar.addTitle")}
         triggerClass={`${BTN_PRIMARY} pl-2`}
         width="w-[44rem]"
         padded={false}
@@ -159,11 +154,11 @@ export function WorkspaceBar({
         <LinkQuality />
         <Peers />
         <Rule />
-        <span className="flex items-center" role="group" aria-label="History">
+        <span className="flex items-center" role="group" aria-label={t("bar.history")}>
           <Button
             type="button"
             className={ICON_BTN}
-            aria-label="Undo your last change"
+            aria-label={t("bar.undo")}
             disabled={!canUndo}
             onClick={onUndo}
           >
@@ -172,7 +167,7 @@ export function WorkspaceBar({
           <Button
             type="button"
             className={ICON_BTN}
-            aria-label="Redo your last undone change"
+            aria-label={t("bar.redo")}
             disabled={!canRedo}
             onClick={onRedo}
           >
@@ -181,7 +176,7 @@ export function WorkspaceBar({
         </span>
         <Rule />
         <Popover
-          label="Library"
+          label={t("bar.library")}
           triggerClass={BTN_QUIET}
           align="end"
           width="w-[44rem]"
@@ -204,7 +199,7 @@ export function WorkspaceBar({
         </Popover>
         <Rule />
         <ThemeControl />
-        <Button type="button" className={ICON_BTN} aria-label="Help" onClick={onShowHelp}>
+        <Button type="button" className={ICON_BTN} aria-label={t("bar.help")} onClick={onShowHelp}>
           <Icon glyph={CircleQuestionMark} />
         </Button>
       </span>

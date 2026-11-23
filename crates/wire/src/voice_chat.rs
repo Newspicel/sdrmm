@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::event_output::Secret;
+use crate::account::MAX_ACCOUNT_LEN;
 
 pub const DEFAULT_VOX_THRESHOLD_DB: f64 = -35.0;
 pub const MIN_VOX_THRESHOLD_DB: f64 = -90.0;
@@ -11,9 +11,6 @@ pub const MAX_VOX_HANG_MS: u32 = 5_000;
 pub const DEFAULT_VOICE_VOLUME: f64 = 1.0;
 pub const MIN_VOICE_VOLUME: f64 = 0.0;
 pub const MAX_VOICE_VOLUME: f64 = 2.0;
-pub const MAX_CHAT_ACCOUNT_LEN: usize = 64;
-/// Discord counts a nickname in UTF-16 units.
-pub const MAX_DISCORD_NICKNAME_LEN: usize = 32;
 pub const MAX_CHAT_CHANNEL_LEN: usize = 255;
 pub const MAX_CHAT_ALLOWED: usize = 64;
 pub const MAX_CHAT_ALLOWED_LEN: usize = 64;
@@ -75,7 +72,7 @@ pub struct VoiceChatNode {
 impl VoiceChatNode {
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.account.chars().count() <= MAX_CHAT_ACCOUNT_LEN
+        self.account.chars().count() <= MAX_ACCOUNT_LEN
             && self.channel.chars().count() <= MAX_CHAT_CHANNEL_LEN
             && self.allowed.len() <= MAX_CHAT_ALLOWED
             && self
@@ -86,39 +83,6 @@ impl VoiceChatNode {
                 .into_iter()
                 .all(|gate| gate.valid() && gate.mode != SendMode::PushToTalk)
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(tag = "service", rename_all = "snake_case")]
-pub enum ChatService {
-    Discord {
-        #[serde(default)]
-        token: Secret,
-        #[serde(default)]
-        nickname: String,
-    },
-    Teamspeak {
-        address: String,
-        #[serde(default)]
-        password: Secret,
-        #[serde(default)]
-        nickname: String,
-        #[serde(default)]
-        identity: Secret,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ChatAccount {
-    pub id: String,
-    pub name: String,
-    #[serde(flatten)]
-    pub service: ChatService,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct ChatAccountsResponse {
-    pub accounts: Vec<ChatAccount>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

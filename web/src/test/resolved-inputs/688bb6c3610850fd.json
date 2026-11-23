@@ -1,0 +1,28 @@
+{
+  "name": "688bb6c3610850fd",
+  "test": "EventOutputFace > offers the webhook format beside its account",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "webhook",
+            "account": "a1",
+            "format": "json"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

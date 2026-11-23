@@ -19,12 +19,12 @@ use tower::ServiceExt;
 
 use super::*;
 
+mod accounts;
 mod array;
 mod auth_mcp;
 mod calls;
 mod catalog;
 mod channel_capture;
-mod chat_accounts;
 mod contracts;
 mod cps;
 mod decoderlog;
@@ -41,7 +41,6 @@ mod presets;
 mod rebind;
 mod recordings;
 mod scanning;
-mod secrets;
 mod templates;
 mod tls;
 mod transmit;

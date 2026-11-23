@@ -68,6 +68,165 @@
         }
       }
     },
+    "/api/accounts": {
+      "get": {
+        "operationId": "list_accounts",
+        "responses": {
+          "200": {
+            "description": "Service logins. Credentials answer as ids, never as values",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Account"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Kept under a fresh id, the id in the request is ignored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable name, address or credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts/{id}": {
+      "put": {
+        "operationId": "update_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Account id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Account"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Replaced. A credential left stored or empty is kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Account"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unusable name, address or credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Malformed request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Account id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed with its credentials"
+          },
+          "404": {
+            "description": "Account not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/arrays": {
       "get": {
         "operationId": "list_arrays",
@@ -924,165 +1083,6 @@
           },
           "400": {
             "description": "Settings the decoder refuses"
-          }
-        }
-      }
-    },
-    "/api/chat-accounts": {
-      "get": {
-        "operationId": "list_chat_accounts",
-        "responses": {
-          "200": {
-            "description": "Chat accounts. Credentials answer as ids, never as values",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatAccountsResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "operationId": "create_chat_account",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatAccount"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Kept under a fresh id, the id in the request is ignored",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatAccount"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unusable name, server or credential",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/chat-accounts/{id}": {
-      "put": {
-        "operationId": "update_chat_account",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Chat account id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatAccount"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Replaced. A credential left stored or empty is kept",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatAccount"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unusable name, server or credential",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Chat account not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_chat_account",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Chat account id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Removed with its credentials"
-          },
-          "404": {
-            "description": "Chat account not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
           }
         }
       }
@@ -4719,104 +4719,6 @@
         }
       }
     },
-    "/api/secrets": {
-      "post": {
-        "operationId": "create_secret",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SecretValue"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Kept on this server under a fresh id. A workspace names the id, never the value",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Secret"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Empty or too long",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/secrets/{id}": {
-      "put": {
-        "operationId": "put_secret",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Secret id a workspace names",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SecretValue"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Kept on this server under that id"
-          },
-          "400": {
-            "description": "Unusable id, or the value is empty or too long",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Malformed request body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/serial/ports": {
       "get": {
         "operationId": "get_serial_ports",
@@ -6290,6 +6192,205 @@
           },
           "version": {
             "type": "string"
+          }
+        }
+      },
+      "Account": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AccountService"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "A login on a service this server talks to. Voice chats and event outputs name it by id."
+      },
+      "AccountService": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "service"
+            ],
+            "properties": {
+              "nickname": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "discord"
+                ]
+              },
+              "token": {
+                "$ref": "#/components/schemas/Secret"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "address",
+              "service"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "identity": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "nickname": {
+                "type": "string"
+              },
+              "password": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "teamspeak"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "service"
+            ],
+            "properties": {
+              "service": {
+                "type": "string",
+                "enum": [
+                  "webhook"
+                ]
+              },
+              "url": {
+                "$ref": "#/components/schemas/Secret"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "homeserver_url",
+              "service"
+            ],
+            "properties": {
+              "access_token": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "homeserver_url": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "matrix"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "broker_url",
+              "service"
+            ],
+            "properties": {
+              "broker_url": {
+                "type": "string"
+              },
+              "password": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "mqtt"
+                ]
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "url",
+              "service"
+            ],
+            "properties": {
+              "password": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "postgres"
+                ]
+              },
+              "url": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "url",
+              "service"
+            ],
+            "properties": {
+              "org": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string",
+                "enum": [
+                  "influx"
+                ]
+              },
+              "token": {
+                "$ref": "#/components/schemas/Secret"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "Where an account signs in and with what. Credentials are [`Secret`]s; everything else is a\nplain setting the account list shows."
+      },
+      "AccountsResponse": {
+        "type": "object",
+        "required": [
+          "accounts"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Account"
+            }
           }
         }
       },
@@ -10414,93 +10515,6 @@
           }
         }
       },
-      "ChatAccount": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/ChatService"
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "name"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "type": "string"
-              }
-            }
-          }
-        ]
-      },
-      "ChatAccountsResponse": {
-        "type": "object",
-        "required": [
-          "accounts"
-        ],
-        "properties": {
-          "accounts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ChatAccount"
-            }
-          }
-        }
-      },
-      "ChatService": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "service"
-            ],
-            "properties": {
-              "nickname": {
-                "type": "string"
-              },
-              "service": {
-                "type": "string",
-                "enum": [
-                  "discord"
-                ]
-              },
-              "token": {
-                "$ref": "#/components/schemas/Secret"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "address",
-              "service"
-            ],
-            "properties": {
-              "address": {
-                "type": "string"
-              },
-              "identity": {
-                "$ref": "#/components/schemas/Secret"
-              },
-              "nickname": {
-                "type": "string"
-              },
-              "password": {
-                "$ref": "#/components/schemas/Secret"
-              },
-              "service": {
-                "type": "string",
-                "enum": [
-                  "teamspeak"
-                ]
-              }
-            }
-          }
-        ]
-      },
       "ChatTalker": {
         "type": "object",
         "required": [
@@ -14199,11 +14213,14 @@
           },
           {
             "type": "object",
+            "description": "The format shapes the message and decides whether the node keeps call audio, so it stays\non the node.",
             "required": [
-              "url",
               "service"
             ],
             "properties": {
+              "account": {
+                "type": "string"
+              },
               "format": {
                 "$ref": "#/components/schemas/WebhookFormat"
               },
@@ -14212,25 +14229,17 @@
                 "enum": [
                   "webhook"
                 ]
-              },
-              "url": {
-                "$ref": "#/components/schemas/Secret"
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "homeserver_url",
               "room_id",
-              "access_token",
               "service"
             ],
             "properties": {
-              "access_token": {
-                "$ref": "#/components/schemas/Secret"
-              },
-              "homeserver_url": {
+              "account": {
                 "type": "string"
               },
               "room_id": {
@@ -14247,16 +14256,12 @@
           {
             "type": "object",
             "required": [
-              "broker_url",
               "topic",
               "service"
             ],
             "properties": {
-              "broker_url": {
+              "account": {
                 "type": "string"
-              },
-              "password": {
-                "$ref": "#/components/schemas/Secret"
               },
               "service": {
                 "type": "string",
@@ -14266,22 +14271,18 @@
               },
               "topic": {
                 "type": "string"
-              },
-              "username": {
-                "type": "string"
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "url",
               "table",
               "service"
             ],
             "properties": {
-              "password": {
-                "$ref": "#/components/schemas/Secret"
+              "account": {
+                "type": "string"
               },
               "service": {
                 "type": "string",
@@ -14291,27 +14292,20 @@
               },
               "table": {
                 "type": "string"
-              },
-              "url": {
-                "type": "string"
-              },
-              "username": {
-                "type": "string"
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "url",
               "bucket",
               "service"
             ],
             "properties": {
-              "bucket": {
+              "account": {
                 "type": "string"
               },
-              "org": {
+              "bucket": {
                 "type": "string"
               },
               "service": {
@@ -14319,16 +14313,11 @@
                 "enum": [
                   "influx"
                 ]
-              },
-              "token": {
-                "$ref": "#/components/schemas/Secret"
-              },
-              "url": {
-                "type": "string"
               }
             }
           }
-        ]
+        ],
+        "description": "Where an output sends. A service that signs in names its account and keeps only the place\ninside it: the room, topic, table or bucket."
       },
       "ExampleInfo": {
         "type": "object",
@@ -24302,22 +24291,10 @@
           },
           {
             "type": "string",
-            "description": "A value written in place, as older workspaces held it. Saving the workspace moves it\ninto the server's store."
+            "description": "A value a client sends to replace the stored one. Saving the account moves it into the\nserver's store."
           }
         ],
-        "description": "A credential an output needs. The server keeps the value in its own store and a workspace\nnames it by id, so an export never carries it and another server asks for it again."
-      },
-      "SecretValue": {
-        "type": "object",
-        "description": "A credential to keep in the server's store.",
-        "required": [
-          "value"
-        ],
-        "properties": {
-          "value": {
-            "type": "string"
-          }
-        }
+        "description": "A credential an account holds. The server keeps the value in its own store and the account\nnames it by id, so a listing never carries it."
       },
       "SendMode": {
         "type": "string",

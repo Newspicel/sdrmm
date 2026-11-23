@@ -2,7 +2,7 @@ import type { Options } from "../../components/controls";
 import { VOICE_CHAT_LIMITS } from "../../lib/limits";
 import type { Form, Settings } from "../../lib/settingsForm";
 import type {
-  ChatAccount,
+  Account,
   PatchNode,
   PatchNodeOf,
   SendMode,
@@ -12,7 +12,6 @@ import type {
 
 export type VoiceChatSettings = PatchNodeOf<"voice_chat">["data"];
 export type GateDirection = "to_air" | "to_chat";
-export type ChatServiceKind = ChatAccount["service"];
 
 export const SEND_MODES: Options<SendMode> = [
   { value: "push_to_talk", label: "Push to talk", title: "Sends while the key is held" },
@@ -24,18 +23,6 @@ export const SEND_MODES: Options<SendMode> = [
 export const KEYLESS_SEND_MODES: Options<SendMode> = SEND_MODES.filter(
   (mode) => mode.value !== "push_to_talk",
 );
-
-export const SERVICE_LABEL: Record<ChatServiceKind, string> = {
-  discord: "Discord",
-  teamspeak: "TeamSpeak",
-};
-
-export const SERVICES: Options<ChatServiceKind> = [
-  { value: "discord", label: SERVICE_LABEL.discord, title: "Discord bot" },
-  { value: "teamspeak", label: SERVICE_LABEL.teamspeak, title: "TeamSpeak client" },
-];
-
-export const NO_ACCOUNT = "";
 
 export const ALLOWED_ITEM: Form = [
   {
@@ -65,23 +52,7 @@ export function withGate(
     : node;
 }
 
-/** The account a node names, or none when this server does not know the id. */
-export function accountOf(accounts: readonly ChatAccount[], id: string): ChatAccount | undefined {
-  return accounts.find((account) => account.id === id);
-}
-
-export function accountOptions(accounts: readonly ChatAccount[]): Options<string> {
-  return [
-    { value: NO_ACCOUNT, label: "none" },
-    ...accounts.map((account) => ({
-      value: account.id,
-      label: account.name,
-      title: SERVICE_LABEL[account.service],
-    })),
-  ];
-}
-
-export function channelTitle(account: ChatAccount | undefined): string {
+export function channelTitle(account: Account | undefined): string {
   if (account?.service === "teamspeak") {
     return "TeamSpeak channel name or path, empty for the default channel";
   }
@@ -96,12 +67,4 @@ export function allowedOf(entries: readonly Settings[]): string[] {
   return entries
     .map((entry) => (typeof entry.id === "string" ? entry.id.trim() : ""))
     .filter((id) => id !== "");
-}
-
-/** A blank account of `service`. The server makes a TeamSpeak identity when none is given. */
-export function newChatAccount(service: ChatServiceKind): ChatAccount {
-  if (service === "teamspeak") {
-    return { id: "", name: "", service, address: "", nickname: "" };
-  }
-  return { id: "", name: "", service, nickname: "" };
 }

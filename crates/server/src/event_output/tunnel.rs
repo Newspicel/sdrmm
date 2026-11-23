@@ -243,11 +243,7 @@ mod tests {
             address: std::net::Ipv4Addr::new(10, 23, 0, 1),
             prefix: 24,
         };
-        let binding = Binding {
-            message: String::new(),
-            node: "out".to_owned(),
-            target: target.clone(),
-        };
+        let binding = Binding::plain("out", target.clone());
         let (sender, mut receiver) = mpsc::channel(1);
         let statuses = Statuses::default();
         statuses.configure(std::slice::from_ref(&binding));

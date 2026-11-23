@@ -2,7 +2,7 @@ use std::collections::{HashMap, hash_map::Entry};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use sdrmm_voicechat::{Link, Service, Session};
-use sdrmm_wire::{ChatAccount, ChatService, event_output::Secret};
+use sdrmm_wire::{Account, AccountService, Secret};
 
 use crate::Store;
 
@@ -10,11 +10,11 @@ const DEFAULT_NICKNAME: &str = "sdrmm";
 
 /// Where voice channels come from: the chat services, or a fake in tests.
 pub(crate) trait Links: Send + Sync {
-    fn join(&self, account: &ChatAccount, channel: &str) -> Result<Link, String>;
+    fn join(&self, account: &Account, channel: &str) -> Result<Link, String>;
 
     /// Keeps a session only for the accounts in `used`, as they read now. Answers the accounts
     /// whose session it closed, so every link joined through one of them is gone.
-    fn settle(&self, used: &[ChatAccount]) -> Vec<String>;
+    fn settle(&self, used: &[Account]) -> Vec<String>;
 }
 
 /// One live session per chat account in use, shared by every node on that account.
@@ -36,13 +36,13 @@ impl Sessions {
     }
 
     /// The account with its credentials read from this server's store.
-    fn service(&self, account: &ChatAccount) -> Result<Service, String> {
+    fn service(&self, account: &Account) -> Result<Service, String> {
         match &account.service {
-            ChatService::Discord { token, nickname } => Ok(Service::Discord {
+            AccountService::Discord { token, nickname } => Ok(Service::Discord {
                 token: self.required(token, "Token")?,
                 nickname: nickname.trim().to_owned(),
             }),
-            ChatService::Teamspeak {
+            AccountService::Teamspeak {
                 address,
                 password,
                 nickname,
@@ -56,6 +56,11 @@ impl Sessions {
                 },
                 identity: self.required(identity, "Identity")?,
             }),
+            other => Err(format!(
+                "{} is a {} account, not a chat",
+                account.name,
+                other.kind().label()
+            )),
         }
     }
 
@@ -77,7 +82,7 @@ impl Sessions {
 }
 
 impl Links for Sessions {
-    fn join(&self, account: &ChatAccount, channel: &str) -> Result<Link, String> {
+    fn join(&self, account: &Account, channel: &str) -> Result<Link, String> {
         let service = self.service(account)?;
         let mut held = self.lock();
         let session = match held.entry(account.id.clone()) {
@@ -93,7 +98,7 @@ impl Links for Sessions {
         session.join(channel).map_err(|error| error.to_string())
     }
 
-    fn settle(&self, used: &[ChatAccount]) -> Vec<String> {
+    fn settle(&self, used: &[Account]) -> Vec<String> {
         let mut now: HashMap<&str, Option<Service>> = used
             .iter()
             .map(|account| (account.id.as_str(), self.service(account).ok()))

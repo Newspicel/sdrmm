@@ -26,7 +26,7 @@ fn value(
         "station" => view.entity.clone(),
         "freq" => Some(megahertz(record.freq_hz)),
         "time" => Some(record.at.clone()),
-        "kind" => Some(record.event.kind().name().to_string()),
+        "kind" => Some(record.event.kind().name().clone()),
         "channel" => Some(record.channel.to_string()),
         _ => name
             .strip_prefix("record.")

@@ -6,12 +6,19 @@ import { FaceFault } from "../../components/face/Fault";
 import { MeterBar, MeterRow } from "../../components/face/Meter";
 import { TextChip } from "../../components/face/TextChip";
 import { ListChip } from "../../components/ListChip";
-import { chatAccountsQuery } from "../../lib/api";
+import {
+  ACCOUNT_SPECS,
+  accountOf,
+  accountOptions,
+  accountsOf,
+  CHAT_KINDS,
+} from "../../lib/accounts";
+import { accountsQuery } from "../../lib/api";
 import { copyText } from "../../lib/copyText";
 import { VOICE_CHAT_LIMITS } from "../../lib/limits";
 import { pushToast, toastError } from "../../lib/toasts";
 import type {
-  ChatAccount,
+  Account,
   ChatTalker,
   PatchNode,
   PatchNodeOf,
@@ -25,21 +32,17 @@ import { GateControls, gateUnit } from "./GateControls";
 import { FaceBody, NodeShell } from "./NodeShell";
 import {
   ALLOWED_ITEM,
-  accountOf,
-  accountOptions,
   allowedEntries,
   allowedOf,
   channelTitle,
   type GateDirection,
   KEYLESS_SEND_MODES,
-  NO_ACCOUNT,
-  SERVICE_LABEL,
   STATE_TEXT,
   withGate,
   withVoiceChat,
 } from "./voiceChat";
 
-const NO_ACCOUNTS: readonly ChatAccount[] = [];
+const NO_ACCOUNTS: readonly Account[] = [];
 const NO_TALKERS: readonly ChatTalker[] = [];
 
 export function VoiceChatFace({ node }: { node: PatchNode }) {
@@ -70,7 +73,7 @@ function useVoiceChatStatus(node: string): VoiceChatStatus | null {
 
 function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
   const workspace = useWorkspaceContext();
-  const accounts = useQuery(chatAccountsQuery()).data ?? NO_ACCOUNTS;
+  const accounts = accountsOf(useQuery(accountsQuery()).data ?? NO_ACCOUNTS, CHAT_KINDS);
   const status = useVoiceChatStatus(node.id);
   const account = accountOf(accounts, node.data.account);
   const edit = (change: (current: PatchNode) => PatchNode): void =>
@@ -100,7 +103,7 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
       title="Voice chat"
       category="output"
       subtitle={status === null ? undefined : STATE_TEXT[status.state]}
-      badge={account === undefined ? undefined : SERVICE_LABEL[account.service]}
+      badge={account === undefined ? undefined : ACCOUNT_SPECS[account.service].label}
     >
       <FaceBody>
         <div className="flex flex-col px-2 py-2">
@@ -126,8 +129,8 @@ function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
             <ChoiceChip
               label="Account"
               title="Chat account, from the Accounts list"
-              value={account?.id ?? NO_ACCOUNT}
-              options={accountOptions(accounts)}
+              value={node.data.account}
+              options={accountOptions(accounts, node.data.account)}
               quiet={account === undefined}
               onChange={(id) => edit((current) => withVoiceChat(current, { account: id }))}
             />

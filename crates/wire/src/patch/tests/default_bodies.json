@@ -111,7 +111,7 @@
     "data": {
       "target": {
         "service": "webhook",
-        "url": "",
+        "account": "",
         "format": "json"
       }
     }

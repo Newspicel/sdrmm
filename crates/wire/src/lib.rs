@@ -1,6 +1,7 @@
 pub mod monitor;
 pub use monitor::{EventOrigin, SpectrumMonitorNode, Transmission, TransmissionState};
 pub mod about;
+pub mod account;
 pub mod aim;
 pub mod array;
 pub mod audio;
@@ -67,6 +68,10 @@ pub mod workspace_state;
 pub mod ws;
 
 pub use about::{API_PROTOCOL, AboutResponse, Attribution, ComponentSource, LicenseTextResponse};
+pub use account::{
+    Account, AccountKind, AccountService, AccountsResponse, MAX_ACCOUNT_LEN,
+    MAX_DISCORD_NICKNAME_LEN, MAX_MQTT_USERNAME_LEN, MAX_SECRET_LEN, MAX_URL_LEN, Secret,
+};
 pub use aim::{AimNode, AimParams, AimStatus, MAX_AIM_ENTITY_LEN};
 pub use array::{
     ArrayCal, ArrayCalRecord, ArrayCalSource, ArrayElement, ArrayFailure, ArrayGain, ArrayGeometry,
@@ -139,9 +144,8 @@ pub use doctor::{CheckStatus, DoctorCheck, DoctorReport};
 pub use encoder::{EncoderDescriptor, EncoderInput, EncoderTypesResponse};
 pub use event_output::{
     DEFAULT_POSTGRES_TABLE, EventOutputNode, EventOutputTarget, MAX_EVENT_FILE_LEN,
-    MAX_INFLUX_NAME_LEN, MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_MQTT_USERNAME_LEN,
-    MAX_OUTPUT_SECRET_LEN, MAX_OUTPUT_URL_LEN, MAX_SQL_IDENTIFIER_LEN, WebhookFormat,
-    event_file_name, valid_event_file, valid_sql_identifier,
+    MAX_INFLUX_NAME_LEN, MAX_MATRIX_ROOM_ID_LEN, MAX_MQTT_TOPIC_LEN, MAX_SQL_IDENTIFIER_LEN,
+    WebhookFormat, event_file_name, valid_event_file, valid_sql_identifier,
 };
 pub use filter::{
     EventFilterNode, FilterMode, MAX_FILTER_DURATION_MS, MAX_FILTER_IDS, MAX_FILTER_KINDS,
@@ -318,9 +322,8 @@ pub use transmit::{
     encode_microphone_pcm, microphone_pcm,
 };
 pub use voice_chat::{
-    ChatAccount, ChatAccountsResponse, ChatService, ChatTalker, DEFAULT_VOX_HANG_MS,
-    DEFAULT_VOX_THRESHOLD_DB, MAX_CHAT_ACCOUNT_LEN, MAX_CHAT_ALLOWED, MAX_CHAT_ALLOWED_LEN,
-    MAX_CHAT_CHANNEL_LEN, MAX_DISCORD_NICKNAME_LEN, MAX_VOX_HANG_MS, SendMode, VoiceChatNode,
+    ChatTalker, DEFAULT_VOX_HANG_MS, DEFAULT_VOX_THRESHOLD_DB, MAX_CHAT_ALLOWED,
+    MAX_CHAT_ALLOWED_LEN, MAX_CHAT_CHANNEL_LEN, MAX_VOX_HANG_MS, SendMode, VoiceChatNode,
     VoiceChatState, VoiceChatStatus, VoiceGateSettings,
 };
 pub use workspace::{
