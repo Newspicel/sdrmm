@@ -428,6 +428,7 @@ mod tests {
         let busy = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut outputs = Outputs::default();
         outputs.configure(&[Binding {
+            message: String::new(),
             node: "busy".to_owned(),
             target: beast(busy.local_addr().unwrap().to_string()),
         }]);
@@ -447,6 +448,7 @@ mod tests {
 
     fn binding(node: &str, address: &str) -> Binding {
         Binding {
+            message: String::new(),
             node: node.to_owned(),
             target: beast(address.to_owned()),
         }
@@ -495,6 +497,7 @@ mod tests {
     async fn a_format_no_decoder_offers_is_a_wait_not_a_fault() {
         let mut outputs = Outputs::default();
         outputs.configure(&[Binding {
+            message: String::new(),
             node: "odd".to_owned(),
             target: EventOutputTarget::Feed {
                 format: "nope".to_owned(),

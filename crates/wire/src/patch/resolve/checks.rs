@@ -95,7 +95,7 @@ fn settings_valid(body: &NodeBody) -> bool {
         NodeBody::Propagation(settings) => settings.valid(),
         NodeBody::Recorder(settings) => settings.valid(),
         NodeBody::Trunk(settings) => settings.valid(),
-        NodeBody::EventOutput(settings) => settings.target.valid(),
+        NodeBody::EventOutput(settings) => settings.valid(),
         NodeBody::Satellite(satellite) => satellite.valid(),
         NodeBody::Rotator(rotator) => rotator.valid(),
         NodeBody::Aim(aim) => aim.settings.valid(),

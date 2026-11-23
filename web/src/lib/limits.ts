@@ -32,6 +32,7 @@ export const MAX_FILTER_KINDS = limits.filter.kinds;
 export const MAX_FILTER_IDS = limits.filter.ids;
 export const MAX_FILTER_DURATION_MS = limits.filter.duration_ms;
 export const MAX_FILTER_TEXT_LEN = limits.filter.text_len;
+export const MESSAGE_LIMITS = limits.message;
 export const CHANNEL_FREQUENCY_SEED_HZ = limits.channel_frequency_seed_hz;
 export const AUDIO = limits.audio;
 export const AUDIO_RATE_HZ = limits.audio.rate_hz;

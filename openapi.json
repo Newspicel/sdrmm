@@ -14007,6 +14007,10 @@
           "target"
         ],
         "properties": {
+          "message": {
+            "type": "string",
+            "description": "The operator's own layout for outputs that send text. Empty keeps the usual one."
+          },
           "target": {
             "$ref": "#/components/schemas/EventOutputTarget"
           }

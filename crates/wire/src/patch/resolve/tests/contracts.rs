@@ -55,7 +55,13 @@ fn map(id: &str) -> PatchNode {
 }
 
 fn output(id: &str, target: EventOutputTarget) -> PatchNode {
-    node(id, NodeBody::EventOutput(EventOutputNode { target }))
+    node(
+        id,
+        NodeBody::EventOutput(EventOutputNode {
+            target,
+            message: String::new(),
+        }),
+    )
 }
 
 #[test]
@@ -254,10 +260,13 @@ fn an_event_output_takes_what_its_target_sends() {
 #[test]
 fn only_an_event_output_that_sends_audio_keeps_clips() {
     let keeps = |target: EventOutputTarget| {
-        NodeBody::EventOutput(crate::EventOutputNode { target })
-            .ports(None)
-            .iter()
-            .any(|port| port.keeps.contains(&Keeps::Clips))
+        NodeBody::EventOutput(crate::EventOutputNode {
+            target,
+            message: String::new(),
+        })
+        .ports(None)
+        .iter()
+        .any(|port| port.keeps.contains(&Keeps::Clips))
     };
     let webhook = |format| EventOutputTarget::Webhook {
         url: crate::event_output::Secret::Inline("https://example.com/hook".to_owned()),

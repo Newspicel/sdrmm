@@ -244,6 +244,7 @@ mod tests {
             prefix: 24,
         };
         let binding = Binding {
+            message: String::new(),
             node: "out".to_owned(),
             target: target.clone(),
         };

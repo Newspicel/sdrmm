@@ -40,6 +40,23 @@ describe("EventOutputFace", () => {
     expect(html).toContain(">pager<");
   });
 
+  it("offers a message layout where a person reads the result", () => {
+    expect(render({ service: "webhook", url: "", format: "discord" })).toContain(">Message<");
+    expect(render({ service: "desktop" })).toContain(">usual<");
+    expect(render({ service: "csv", file: "adsb" })).not.toContain(">Message<");
+  });
+
+  it("shows the first line of a written layout", () => {
+    const node: PatchNode = {
+      id: "out",
+      kind: "event_output",
+      data: { target: { service: "desktop" }, message: "{headline}\n{summary}" },
+      position: { x: 0, y: 0 },
+    };
+    const html = renderFace(EventOutputFace, node, { graph: { nodes: [node], edges: [] } });
+    expect(html).toContain(">{headline}<");
+  });
+
   it("never shows a secret on its chip", () => {
     const html = render({ service: "webhook", url: "https://hooks.example/abc", format: "json" });
     expect(html).not.toContain("hooks.example");

@@ -4,7 +4,6 @@ import type { EventKind, Feed } from "../../lib/types";
 import { CATALOG } from "../../test/catalog";
 import { PROBE_CATALOG } from "../../test/kinds";
 import {
-  filterSaid,
   formatIds,
   fromTriState,
   offeredBy,
@@ -133,34 +132,6 @@ describe("parseWords", () => {
 
   it("drops empties", () => {
     expect(parseWords(" , ,  ")).toEqual([]);
-  });
-});
-
-describe("filterSaid", () => {
-  it("says it keeps everything when nothing is set", () => {
-    expect(filterSaid({})).toBe("keep every event");
-  });
-
-  it("names each predicate that is set", () => {
-    const said = filterSaid({
-      kinds: ["call"],
-      talkgroups: [505],
-      radios: [1001],
-      encrypted: false,
-      emergency: true,
-      min_duration_ms: 1_500,
-    });
-    expect(said).toBe("keep call · TG 505 · radio 1001 · clear · emergency · over 1.5 s");
-  });
-
-  it("leads with drop when the filter removes what matches", () => {
-    expect(filterSaid({ mode: "drop", kinds: ["probe_pager"], contains: "TEST" })).toBe(
-      'drop probe_pager · "TEST"',
-    );
-  });
-
-  it("admits that an empty drop filter drops nothing", () => {
-    expect(filterSaid({ mode: "drop" })).toBe("drop nothing");
   });
 });
 

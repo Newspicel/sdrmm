@@ -29,6 +29,7 @@ pub(crate) mod csv;
 mod feed;
 mod file;
 mod influx;
+mod layout;
 mod postgres;
 mod status;
 pub(crate) mod text;
@@ -53,6 +54,7 @@ const MQTTS_PORT: u16 = 8_883;
 struct Binding {
     node: String,
     target: EventOutputTarget,
+    message: String,
 }
 
 #[derive(Default)]
@@ -75,6 +77,8 @@ struct OutputMessage {
     audio: Option<OutputAudio>,
     audio_error: Option<String>,
     facts: EventFacts,
+    /// The body follows the operator's layout rather than the usual one.
+    laid_out: bool,
 }
 
 struct EventFacts {
@@ -290,7 +294,14 @@ fn decoded_deliveries(
                 node: binding.node.clone(),
                 target: binding.target.clone(),
                 event: event_label(record, &view),
-                message: decoded_message(&binding.node, record, sequence, view, clip),
+                message: decoded_message(
+                    &binding.node,
+                    record,
+                    sequence,
+                    view,
+                    clip,
+                    &binding.message,
+                ),
             }
         })
         .filter(recordable)
@@ -371,6 +382,11 @@ fn routing_of(resolved: &Resolved) -> Routing {
                 .then(|| Binding {
                     node: node.id.clone(),
                     target: settings.target.clone(),
+                    message: if settings.target.takes_message() {
+                        settings.message.clone()
+                    } else {
+                        String::new()
+                    },
                 })
         })
         .collect();
@@ -933,12 +949,14 @@ fn escape_html(text: &str) -> String {
     escaped
 }
 
+fn headline(record: &DecodedRecord, view: &Presentation) -> String {
+    view.headline
+        .clone()
+        .unwrap_or_else(|| format!("{} decode", record.event.kind().name()))
+}
+
 fn message_lines(record: &DecodedRecord, view: &Presentation) -> Vec<String> {
-    let mut lines = vec![
-        view.headline
-            .clone()
-            .unwrap_or_else(|| format!("{} decode", record.event.kind().name())),
-    ];
+    let mut lines = vec![headline(record, view)];
     if !view.summary.trim().is_empty() {
         lines.push(view.summary.clone());
     }
@@ -968,11 +986,19 @@ fn format_html(lines: &[String]) -> String {
     html
 }
 
-fn event_payload(output_node: &str, record: &DecodedRecord, text: &str) -> serde_json::Value {
-    let encoded = serde_json::to_value(record).unwrap_or_else(|error| {
+fn encoded_record(record: &DecodedRecord) -> serde_json::Value {
+    serde_json::to_value(record).unwrap_or_else(|error| {
         tracing::error!(%error, "could not encode a decoded record for an event output");
         serde_json::Value::Null
-    });
+    })
+}
+
+fn event_payload(
+    output_node: &str,
+    record: &DecodedRecord,
+    text: &str,
+    encoded: &serde_json::Value,
+) -> serde_json::Value {
     json!({
         "output": output_node,
         "kind": record.event.kind(),
@@ -1004,27 +1030,28 @@ fn decoded_message(
     sequence: u64,
     view: Presentation,
     audio: Option<OutputAudio>,
+    layout: &str,
 ) -> OutputMessage {
-    let lines = message_lines(record, &view);
-    let body = bounded_message(lines.join("\n"));
-    let payload = event_payload(output_node, record, &body);
-    let encoded = payload_record(&payload);
+    let encoded = encoded_record(record);
+    let laid_out = !layout.trim().is_empty();
+    let (body, html) = if laid_out {
+        let body = layout::written(layout, record, &view, &encoded);
+        (bounded_message(body), None)
+    } else {
+        let lines = message_lines(record, &view);
+        let html = bounded_message(format_html(&lines));
+        (bounded_message(lines.join("\n")), Some(html))
+    };
     OutputMessage {
-        html: Some(bounded_message(format_html(&lines))),
-        payload,
+        payload: event_payload(output_node, record, &body, &encoded),
+        html,
         body,
         transaction: decoded_transaction(output_node, record, sequence),
         audio,
         audio_error: view.audio_error.clone(),
         facts: event_facts(record, view, &encoded),
+        laid_out,
     }
-}
-
-fn payload_record(payload: &serde_json::Value) -> serde_json::Value {
-    payload
-        .get("record")
-        .cloned()
-        .unwrap_or(serde_json::Value::Null)
 }
 
 fn bounded_message(message: String) -> String {

@@ -78,6 +78,7 @@ pub struct Limits {
     pub name_len: usize,
     pub note_len: usize,
     pub filter: FilterLimits,
+    pub message: MessageLimits,
     pub channel_frequency_seed_hz: f64,
     pub audio: AudioLimits,
     pub if_filter: IfFilterLimits,
@@ -107,6 +108,12 @@ pub struct FilterLimits {
     pub ids: usize,
     pub duration_ms: u32,
     pub text_len: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct MessageLimits {
+    pub len: usize,
+    pub placeholders: &'static [&'static str],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -393,6 +400,10 @@ pub const LIMITS: Limits = Limits {
         ids: crate::filter::MAX_FILTER_IDS,
         duration_ms: crate::filter::MAX_FILTER_DURATION_MS,
         text_len: crate::filter::MAX_FILTER_TEXT_LEN,
+    },
+    message: MessageLimits {
+        len: crate::message::MAX_MESSAGE_LEN,
+        placeholders: crate::message::MESSAGE_PLACEHOLDERS,
     },
     channel_frequency_seed_hz: crate::channel::DEFAULT_FREQUENCY_HZ,
     audio: AUDIO_LIMITS,

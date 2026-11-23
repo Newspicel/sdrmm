@@ -1,6 +1,6 @@
 {
   "name": "75e98d0a661798a8",
-  "test": "EventOutputFace > shows the CSV file name",
+  "test": "EventOutputFace > offers a message layout where a person reads the result",
   "graph": {
     "nodes": [
       {

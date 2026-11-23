@@ -332,6 +332,19 @@ impl EventOutputTarget {
         }
     }
 
+    /// Whether this service sends a message a person reads, so a layout can shape it.
+    #[must_use]
+    pub const fn takes_message(&self) -> bool {
+        matches!(
+            self,
+            Self::Desktop
+                | Self::Text { .. }
+                | Self::Webhook { .. }
+                | Self::Matrix { .. }
+                | Self::Mqtt { .. }
+        )
+    }
+
     #[must_use]
     pub const fn keeps_clips(&self) -> bool {
         matches!(
@@ -538,6 +551,16 @@ fn redacted_if_credentialed(value: &str) -> &str {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct EventOutputNode {
     pub target: EventOutputTarget,
+    /// The operator's own layout for outputs that send text. Empty keeps the usual one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+}
+
+impl EventOutputNode {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.target.valid() && crate::message::valid_message(&self.message)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

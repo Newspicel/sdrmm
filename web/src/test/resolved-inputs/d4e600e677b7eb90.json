@@ -1,6 +1,6 @@
 {
   "name": "d4e600e677b7eb90",
-  "test": "EventOutputFace > names a notification output",
+  "test": "EventOutputFace > offers a message layout where a person reads the result",
   "graph": {
     "nodes": [
       {

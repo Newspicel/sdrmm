@@ -4014,6 +4014,8 @@ export interface components {
             transmission: number;
         };
         EventOutputNode: {
+            /** @description The operator's own layout for outputs that send text. Empty keeps the usual one. */
+            message?: string;
             target: components["schemas"]["EventOutputTarget"];
         };
         EventOutputStatus: {

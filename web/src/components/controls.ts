@@ -86,6 +86,8 @@ export const FIELD = `${FIELD_BASE} h-7 px-2 text-xs`;
 
 export const FIELD_SM = `${FIELD_BASE} h-5 px-1.5 text-2xs`;
 
+export const FIELD_AREA = `${FIELD_BASE} px-2 py-1.5 text-xs leading-snug`;
+
 export const CONTROL_W = "w-full max-w-52";
 
 export const WRAPPED_LABEL = "inline-flex items-center gap-2 font-mono text-2xs text-ink-faint";

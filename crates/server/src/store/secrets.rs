@@ -227,6 +227,7 @@ mod tests {
         snapshot.graph.nodes.push(PatchNode {
             id: "out".to_owned(),
             body: NodeBody::EventOutput(EventOutputNode {
+                message: String::new(),
                 target: matrix(Secret::Inline(token.to_owned())),
             }),
             position: Position { x: 0.0, y: 400.0 },

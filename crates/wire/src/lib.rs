@@ -26,6 +26,7 @@ pub use pipeline::{LinkHealth, PipelineQueue, PipelineStage, QueueHealth};
 pub mod hunt;
 pub mod labels;
 pub mod limits;
+pub mod message;
 pub mod mission;
 pub mod network;
 pub mod node_action;

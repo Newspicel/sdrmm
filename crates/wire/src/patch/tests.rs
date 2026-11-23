@@ -166,6 +166,7 @@ fn a_channel_can_reach_an_event_output_through_a_filter() {
             node(
                 "output",
                 NodeBody::EventOutput(EventOutputNode {
+                    message: String::new(),
                     target: crate::EventOutputTarget::Webhook {
                         url: crate::event_output::Secret::Inline(
                             "https://discord.com/api/webhooks/1/token".to_owned(),
@@ -483,6 +484,7 @@ fn an_event_output_accepts_decoder_and_completed_call_events() {
     let output = node(
         "output",
         NodeBody::EventOutput(EventOutputNode {
+            message: String::new(),
             target: crate::EventOutputTarget::Webhook {
                 url: crate::event_output::Secret::Inline(
                     "https://discord.com/api/webhooks/1/token".to_owned(),

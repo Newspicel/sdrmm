@@ -120,6 +120,19 @@
     "duration_ms": 600000,
     "text_len": 128
   },
+  "message": {
+    "len": 2000,
+    "placeholders": [
+      "headline",
+      "summary",
+      "station",
+      "freq",
+      "time",
+      "kind",
+      "channel",
+      "record."
+    ]
+  },
   "channel_frequency_seed_hz": 100000000.0,
   "audio": {
     "rate_hz": 48000,

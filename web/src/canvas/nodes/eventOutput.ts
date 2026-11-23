@@ -43,6 +43,38 @@ export const WEBHOOK_FORMATS = [
   { value: "discord", label: "Discord" },
 ] as const;
 
+/** Services that send a message a person reads, so a layout can shape it. */
+export function takesMessage(service: EventOutputTarget["service"]): boolean {
+  return (
+    service === "desktop" ||
+    service === "text" ||
+    service === "webhook" ||
+    service === "matrix" ||
+    service === "mqtt"
+  );
+}
+
+export function placeholderToken(name: string): string {
+  return `{${name}}`;
+}
+
+/** `text` with `token` put over the selection, and where the caret lands after it. */
+export function insertAt(
+  text: string,
+  start: number,
+  end: number,
+  token: string,
+): { text: string; caret: number } {
+  const caret = token.endsWith(".}") ? start + token.length - 1 : start + token.length;
+  return { text: text.slice(0, start) + token + text.slice(end), caret };
+}
+
+/** The layout's first line, as its chip shows it. */
+export function messageShown(layout: string): string {
+  const first = layout.trim().split("\n")[0] ?? "";
+  return first === "" ? "usual" : first;
+}
+
 export function newOutputTarget(
   service: EventOutputTarget["service"],
   feeds: readonly FeedEntry[] = [],

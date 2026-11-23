@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { FeedEntry } from "../../lib/types";
-import { eventOutputConfigured, feedTarget, newOutputTarget, outputServices } from "./eventOutput";
+import {
+  eventOutputConfigured,
+  feedTarget,
+  insertAt,
+  messageShown,
+  newOutputTarget,
+  outputServices,
+  takesMessage,
+} from "./eventOutput";
 
 const PROBE_FEED: FeedEntry = {
   format: "probe",
@@ -133,5 +141,24 @@ describe("event output configuration", () => {
       expect(target.service).toBe(service);
       expect(eventOutputConfigured(target)).toBe(false);
     }
+  });
+});
+
+describe("message layouts", () => {
+  it("go only on services a person reads", () => {
+    expect(takesMessage("webhook")).toBe(true);
+    expect(takesMessage("desktop")).toBe(true);
+    expect(takesMessage("csv")).toBe(false);
+    expect(takesMessage("postgres")).toBe(false);
+  });
+
+  it("show their first line, or usual when empty", () => {
+    expect(messageShown("")).toBe("usual");
+    expect(messageShown(" {headline}\n{freq}")).toBe("{headline}");
+  });
+
+  it("put a placeholder over the selection", () => {
+    expect(insertAt("on  MHz", 3, 3, "{freq}")).toEqual({ text: "on {freq} MHz", caret: 9 });
+    expect(insertAt("x", 0, 1, "{record.}")).toEqual({ text: "{record.}", caret: 8 });
   });
 });

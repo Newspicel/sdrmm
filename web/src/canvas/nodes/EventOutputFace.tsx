@@ -11,9 +11,11 @@ import {
   feedTarget,
   newOutputTarget,
   outputServices,
+  takesMessage,
   WEBHOOK_FORMATS,
 } from "./eventOutput";
 import { FeedOutputControls } from "./FeedOutputControls";
+import { MessageChip } from "./MessageChip";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { OutputDelivery } from "./OutputDelivery";
 import { SecretChip } from "./SecretChip";
@@ -33,14 +35,17 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const inputs = useFeeds(node.id, "events").length;
   const configured = eventOutputConfigured(target);
   const audio = portOn(workspace.resolved, node.id, "audio", "in") !== undefined;
-  const editTarget = (next: EventOutputTarget) => {
+  const editOutput = (next: Partial<PatchNodeOf<"event_output">["data"]>) => {
     workspace.edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
-        current.kind === "event_output" ? { ...current, data: { target: next } } : current,
+        current.kind === "event_output"
+          ? { ...current, data: { ...current.data, ...next } }
+          : current,
       ),
     }));
   };
+  const editTarget = (next: EventOutputTarget) => editOutput({ target: next });
   return (
     <NodeShell node={node} title="Event output" category="output">
       <FaceBody>
@@ -53,6 +58,12 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
             onChange={(service) => editTarget(newOutputTarget(service, feeds))}
           />
           <TargetChips target={target} feeds={feeds} onEdit={editTarget} />
+          {takesMessage(target.service) && (
+            <MessageChip
+              value={node.data.message ?? ""}
+              onCommit={(message) => editOutput({ message })}
+            />
+          )}
         </Chips>
         {target.service === "feed" ? (
           <FeedOutputControls

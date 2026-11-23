@@ -1,0 +1,27 @@
+{
+  "name": "4b2ed6cd2e2f4317",
+  "test": "EventOutputFace > shows the first line of a written layout",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "desktop"
+          },
+          "message": "{headline}\n{summary}"
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

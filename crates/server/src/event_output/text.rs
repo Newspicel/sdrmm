@@ -18,6 +18,13 @@ pub(crate) fn line(
     line
 }
 
+/// The operator's own layout, kept to one line like every other event.
+pub(crate) fn written(body: &str) -> String {
+    let mut line = flat(body);
+    line.push('\n');
+    line
+}
+
 fn flat(value: &str) -> String {
     value
         .split(['\n', '\r', '\t'])

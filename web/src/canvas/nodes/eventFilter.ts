@@ -101,40 +101,6 @@ export function filterMode(filter: EventFilterNode): FilterMode {
   return filter.mode ?? "keep";
 }
 
-export function filterSaid(filter: EventFilterNode): string {
-  const parts: string[] = [];
-  const kinds = filter.kinds ?? [];
-  parts.push(kinds.length === 0 ? "every event" : kinds.join(", "));
-  if ((filter.stations ?? []).length > 0) {
-    parts.push(formatWords(filter.stations));
-  }
-  if ((filter.contains ?? "") !== "") {
-    parts.push(`"${filter.contains}"`);
-  }
-  if (filter.has_position != null) {
-    parts.push(filter.has_position ? "with a fix" : "without a fix");
-  }
-  if ((filter.talkgroups ?? []).length > 0) {
-    parts.push(`TG ${formatIds(filter.talkgroups)}`);
-  }
-  if ((filter.radios ?? []).length > 0) {
-    parts.push(`radio ${formatIds(filter.radios)}`);
-  }
-  if (filter.encrypted != null) {
-    parts.push(filter.encrypted ? "encrypted" : "clear");
-  }
-  if (filter.emergency != null) {
-    parts.push(filter.emergency ? "emergency" : "routine");
-  }
-  if ((filter.min_duration_ms ?? 0) > 0) {
-    parts.push(`over ${((filter.min_duration_ms ?? 0) / 1000).toFixed(1)} s`);
-  }
-  if (filterMode(filter) === "drop" && parts.length === 1 && kinds.length === 0) {
-    return "drop nothing";
-  }
-  return `${filterMode(filter)} ${parts.join(" · ")}`;
-}
-
 export type PredicateKey =
   | "stations"
   | "contains"

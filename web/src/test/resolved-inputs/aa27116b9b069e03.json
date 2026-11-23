@@ -1,0 +1,28 @@
+{
+  "name": "aa27116b9b069e03",
+  "test": "EventOutputFace > offers a message layout where a person reads the result",
+  "graph": {
+    "nodes": [
+      {
+        "id": "out",
+        "kind": "event_output",
+        "data": {
+          "target": {
+            "service": "webhook",
+            "url": "",
+            "format": "discord"
+          }
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    ],
+    "edges": []
+  },
+  "live": {
+    "device_sets": [],
+    "revision": 0
+  }
+}

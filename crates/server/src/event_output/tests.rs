@@ -100,7 +100,7 @@ fn call_record() -> DecodedRecord {
 }
 
 fn message(node: &str, record: &DecodedRecord) -> OutputMessage {
-    decoded_message(node, record, 1, view_of(record), None)
+    decoded_message(node, record, 1, view_of(record), None, "")
 }
 
 fn clip_message(node: &str, bytes: Bytes) -> OutputMessage {
@@ -111,7 +111,7 @@ fn clip_message(node: &str, bytes: Bytes) -> OutputMessage {
         stem: clip_stem(&record, &view),
         duration_ms: view.duration_ms.unwrap_or_default(),
     };
-    decoded_message(node, &record, 1, view, Some(audio))
+    decoded_message(node, &record, 1, view, Some(audio), "")
 }
 
 fn call_text(call: &VoiceCall) -> OutputMessage {
@@ -308,6 +308,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
             node(
                 "configured",
                 NodeBody::EventOutput(EventOutputNode {
+                    message: String::new(),
                     target: configured.clone(),
                 }),
             ),
@@ -350,6 +351,7 @@ fn resolve_maps_configured_outputs_and_the_events_port() {
 fn routing_for() -> Routing {
     Routing {
         bindings: vec![Binding {
+            message: String::new(),
             node: "matched".to_owned(),
             target: discord_webhook(),
         }],
@@ -362,10 +364,12 @@ fn decoded_records_route_only_to_outputs_the_record_reached() {
     let routing = Routing {
         bindings: vec![
             Binding {
+                message: String::new(),
                 node: "matched".to_owned(),
                 target: target.clone(),
             },
             Binding {
+                message: String::new(),
                 node: "other".to_owned(),
                 target,
             },
@@ -399,6 +403,7 @@ fn a_completed_call_travels_the_events_wire_like_any_other_decode() {
 fn recordings_routing() -> Routing {
     Routing {
         bindings: vec![Binding {
+            message: String::new(),
             node: "matched".to_owned(),
             target: EventOutputTarget::Recordings,
         }],
@@ -644,6 +649,7 @@ async fn a_panicking_delivery_fails_its_batch_and_spares_the_worker() {
 fn a_stopped_delivery_worker_is_reported_on_every_output() {
     let statuses = status::Statuses::default();
     statuses.configure(&[Binding {
+        message: String::new(),
         node: "hook".to_owned(),
         target: json_webhook("https://a.test/".to_owned()),
     }]);
@@ -969,10 +975,12 @@ async fn delivery_outcomes_reach_the_output_status() {
     let statuses = status::Statuses::default();
     statuses.configure(&[
         Binding {
+            message: String::new(),
             node: "good".to_owned(),
             target: good.clone(),
         },
         Binding {
+            message: String::new(),
             node: "bad".to_owned(),
             target: bad.clone(),
         },
@@ -1027,6 +1035,7 @@ async fn a_stored_credential_is_read_from_this_servers_store() {
     let target = influx_with(format!("{base}/influx"), Secret::stored(id));
     let statuses = status::Statuses::default();
     let binding = Binding {
+        message: String::new(),
         node: "influx".to_owned(),
         target: target.clone(),
     };
@@ -1052,6 +1061,7 @@ async fn a_stored_credential_is_read_from_this_servers_store() {
 async fn a_credential_missing_on_this_server_shows_until_it_is_set() {
     let store = Arc::new(crate::Store::open(None).expect("store"));
     let binding = Binding {
+        message: String::new(),
         node: "influx".to_owned(),
         target: influx_with("http://127.0.0.1:9".to_owned(), Secret::stored("elsewhere")),
     };
@@ -1112,6 +1122,7 @@ impl NativeShell for Notifications {
 async fn notify_once(shell: Option<Arc<dyn NativeShell>>) -> status::Statuses {
     let statuses = status::Statuses::default();
     statuses.configure(&[Binding {
+        message: String::new(),
         node: "desk".to_owned(),
         target: EventOutputTarget::Desktop,
     }]);
@@ -1162,6 +1173,7 @@ fn a_full_delivery_queue_counts_the_dropped_event() {
     let target = json_webhook("http://127.0.0.1:9/hook".to_owned());
     let statuses = status::Statuses::default();
     statuses.configure(&[Binding {
+        message: String::new(),
         node: "hook".to_owned(),
         target: target.clone(),
     }]);
@@ -1182,6 +1194,7 @@ fn a_full_delivery_queue_counts_the_dropped_event() {
 fn a_changed_target_starts_a_fresh_status() {
     let statuses = status::Statuses::default();
     let binding = |url: &str| Binding {
+        message: String::new(),
         node: "hook".to_owned(),
         target: json_webhook(url.to_owned()),
     };
@@ -1496,6 +1509,7 @@ fn beast_listener_requires_an_event_wire_and_explicit_enable() {
     let active = store.active_workspace().unwrap().unwrap();
     let beast = |enabled| {
         NodeBody::EventOutput(EventOutputNode {
+            message: String::new(),
             target: EventOutputTarget::Feed {
                 format: "beast".to_owned(),
                 address: "127.0.0.1:30005".to_owned(),
@@ -1890,4 +1904,29 @@ fn routing_over(store: &crate::Store) -> Routing {
         &crate::problems::ProblemBoard::default(),
     );
     routing_of(&hub.current())
+}
+
+#[test]
+fn a_layout_writes_the_message_the_operator_asked_for() {
+    let record = decoded();
+    let layout = "**{headline}** on {freq} MHz ch {record.channel}{nope}";
+    let message = decoded_message("chat", &record, 1, view_of(&record), None, layout);
+    assert_eq!(message.body, "**RTTY decode** on 14.08 MHz ch 2");
+    assert!(message.html.is_none());
+    assert!(message.laid_out);
+    assert_eq!(message.payload["text"], json!(message.body));
+}
+
+#[test]
+fn a_blank_layout_keeps_the_usual_message() {
+    let record = decoded();
+    let blank = decoded_message("chat", &record, 1, view_of(&record), None, "  ");
+    assert_eq!(blank.body, message("chat", &record).body);
+    assert!(blank.html.is_some());
+    assert!(!blank.laid_out);
+}
+
+#[test]
+fn a_laid_out_text_line_stays_on_one_line() {
+    assert_eq!(text::written("a\nb\tc"), "a b c\n");
 }

@@ -41,6 +41,7 @@ impl Format {
         let facts = &delivery.message.facts;
         match self {
             Self::Csv => csv::row(&delivery.node, facts),
+            Self::Text if delivery.message.laid_out => text::written(&delivery.message.body),
             Self::Text => text::line(
                 &facts.at,
                 &facts.kind,
