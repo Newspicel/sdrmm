@@ -19,7 +19,9 @@ import {
   deviceExportSource,
   networkExportControlsLocked,
   networkExportMutationOptions,
+  nodeExportSource,
 } from "../../components/networkExport";
+import { ownSourceOf } from "../../lib/resolved";
 import type { NetworkExportStatus, PatchNode, PatchNodeOf } from "../../lib/types";
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
@@ -51,16 +53,20 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
   const workspace = useWorkspaceContext();
   const set = runningSetOf(workspace, node.id);
   const channel = basebandSourceOf(workspace.resolved, workspace.deviceSets, node.id);
+  const encoder = ownSourceOf(workspace.resolved, node.id, "baseband");
   const owner =
     channel === null
       ? set
       : ([...workspace.devices.values()].find((bound) => bound.id === channel.deviceSet) ?? null);
   const wired =
     hasFeed(workspace.resolved, node.id, "iq") || hasFeed(workspace.resolved, node.id, "baseband");
-  const control = deriveNetworkExportControl(
-    channel === null ? deviceExportSource(set) : channelExportSource(owner, channel.channel),
-    node.id,
-  );
+  const source =
+    encoder !== null
+      ? nodeExportSource(workspace.nodeStreams.find((stream) => stream.node === encoder) ?? null)
+      : channel === null
+        ? deviceExportSource(set)
+        : channelExportSource(owner, channel.channel);
+  const control = deriveNetworkExportControl(source, node.id);
   const settings = {
     transport: node.data.transport,
     format: node.data.format,
@@ -83,7 +89,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
   return (
     <NodeShell
       node={node}
-      title={channel === null ? "Network IQ" : "Network baseband"}
+      title={channel === null && encoder === null ? "Network IQ" : "Network baseband"}
       category="output"
     >
       <Inspect node={node.id}>

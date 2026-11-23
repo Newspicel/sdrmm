@@ -290,6 +290,7 @@ pub enum ProblemSource {
     Apply,
     Calls,
     Recorder,
+    Encoder,
     Transmit,
     Speaker,
     VoiceChat,

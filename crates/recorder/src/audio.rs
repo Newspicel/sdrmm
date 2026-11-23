@@ -173,16 +173,29 @@ impl AudioWriter {
 
 #[must_use]
 pub fn audio_stem(started_at: jiff::Timestamp, mode: &str, freq_hz: f64) -> String {
-    let mode: String = mode
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .collect::<String>()
-        .to_ascii_uppercase();
     format!(
-        "{}_{mode}_{}MHz",
+        "{}_{}_{}MHz",
         started_at.strftime("%Y%m%dT%H%M%SZ"),
+        label(mode),
         megahertz(freq_hz)
     )
+}
+
+/// The name of a take from a source no radio tunes, such as a microphone or a voice chat.
+#[must_use]
+pub fn source_stem(started_at: jiff::Timestamp, source: &str) -> String {
+    format!(
+        "{}_{}",
+        started_at.strftime("%Y%m%dT%H%M%SZ"),
+        label(source)
+    )
+}
+
+fn label(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect::<String>()
+        .to_ascii_uppercase()
 }
 
 fn megahertz(freq_hz: f64) -> String {
@@ -540,6 +553,7 @@ mod tests {
             audio_stem(at, "D-STAR/x", 438_012_500.0),
             "20261001T223105Z_D-STARX_438.0125MHz"
         );
+        assert_eq!(source_stem(at, "mic 2"), "20261001T223105Z_MIC2");
     }
 
     #[test]

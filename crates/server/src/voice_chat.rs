@@ -54,7 +54,7 @@ const CLASH: &str = "Another node is in this channel";
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Tuning {
     node: VoiceChatNode,
-    /// The out port reaches an armed transmitter.
+    /// The out port feeds a running encoder.
     keying: bool,
 }
 
@@ -134,7 +134,7 @@ pub(crate) fn follow(state: &AppState) {
     )))));
     let mut accounts = state.store.subscribe_chat_accounts();
     accounts.mark_changed();
-    let mut armed = state.transmit.subscribe_armed();
+    let mut armed = state.encoders.subscribe_changes();
     let held = chats.clone();
     let handle = runtime.clone();
     crate::resolved::follow(state, "voice chat", move |state| {
@@ -195,11 +195,11 @@ impl VoiceChats {
         }
         let current = state.resolved.current();
         let engine = &state.engine;
-        let keying = |node: &str| crate::transmit::reaches_armed(engine, &current, node);
+        let keying = |node: &str| crate::encoders::feeds_encoder(engine, &current, node);
         let air = |node: &str| -> Air {
             let (state, node) = (state.clone(), node.to_owned());
             let lane = lane_of(&node);
-            Arc::new(move |pcm: &[f32]| crate::transmit::speak_as(&state, &node, lane, pcm))
+            Arc::new(move |pcm: &[f32]| crate::encoders::speak_as(&state, &node, lane, pcm))
         };
         let ctx = Ctx {
             engine,
@@ -477,7 +477,7 @@ impl Joined {
                 wire.abort();
                 if run
                     .feeds
-                    .try_send(Feed::Gone(crate::transmit::route_lane(route)))
+                    .try_send(Feed::Gone(crate::encoders::route_lane(route)))
                     .is_err()
                 {
                     tracing::debug!(?route, "voice chat mix forgets the wire on its own");
@@ -492,7 +492,7 @@ impl Joined {
             let Some(pcm) = subscribe(ctx, route)? else {
                 continue;
             };
-            let lane = crate::transmit::route_lane(route);
+            let lane = crate::encoders::route_lane(route);
             let wire = ctx
                 .runtime
                 .spawn(to_chat::forward(pcm, lane, run.feeds.clone()));

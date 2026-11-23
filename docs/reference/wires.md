@@ -163,7 +163,7 @@ Turns audio or a message into a signal
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `audio` | in | Audio | channel, voice | many. Voice for an analog mode |
-| `baseband` | out | Baseband | encoder | one |
+| `baseband` | out | Baseband | encoder | many |
 
 ## Tools
 
@@ -385,11 +385,11 @@ Records a radio's full IQ, with an optional pre-roll
 
 ### Audio recorder
 
-Records channel audio to WAV
+Records audio to WAV
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `audio` | in | Audio | channel | many |
+| `audio` | in | Audio | channel, voice | many |
 | `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Baseband recorder
@@ -398,7 +398,7 @@ Records one channel's IQ
 
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
-| `baseband` | in | Baseband | channel | many |
+| `baseband` | in | Baseband | channel, encoder | many |
 | `control` | in | Control | run | many. Armed, it records only while a schedule or satellite says so |
 
 ### Network IQ
@@ -408,7 +408,7 @@ Streams IQ to other programs
 | Port | Way | Type | Carries | Wires |
 |---|---|---|---|---|
 | `iq` | in | IQ | radio, synthetic, derived | one |
-| `baseband` | in | Baseband | channel | one |
+| `baseband` | in | Baseband | channel, encoder | one |
 
 ### Stream out
 

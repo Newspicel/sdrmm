@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use sdrmm_wire::{
-    AudioRecordingStatus, AudioRoute, DeviceSetStatus, NetworkExportSettings, NetworkExportStatus,
-    ServerEvent, StateScope,
+    AudioFrom, AudioRecordingStatus, AudioRoute, DeviceSetStatus, NetworkExportSettings,
+    NetworkExportStatus, ServerEvent, StateScope,
 };
 
 use crate::{
@@ -181,10 +181,14 @@ impl Engine {
         if !route.fx.is_empty() {
             route.validate().map_err(EngineError::Recording)?;
         }
-        let Some((device_set, channel)) = route.channel_addr() else {
-            return Err(EngineError::Recording(
-                "a voice records on the server, not in a radio".to_owned(),
-            ));
+        let (device_set, channel) = match &route.from {
+            AudioFrom::Channel {
+                device_set,
+                channel,
+            } => (*device_set, *channel),
+            AudioFrom::Voice { node: voice, .. } => {
+                return self.start_voice_recording(node, voice, skip_silence);
+            }
         };
         let take = AudioTake {
             node: node.to_owned(),

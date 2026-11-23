@@ -796,7 +796,7 @@ fn two_voice_chats_bridge_one_way_but_never_loop() {
 }
 
 #[test]
-fn every_audio_input_but_the_recorder_takes_a_voice() {
+fn every_audio_input_takes_a_voice() {
     let chat = || NodeBody::VoiceChat(crate::VoiceChatNode::default());
     let into = |source: PatchNode, sink: NodeBody| {
         let graph = PatchGraph {
@@ -825,10 +825,8 @@ fn every_audio_input_but_the_recorder_takes_a_voice() {
     assert_eq!(into(microphone(), speaker()), None);
     assert_eq!(into(node("src", chat()), speaker()), None);
     let recorder = || NodeBody::AudioRecorder(crate::AudioRecorderNode::default());
-    assert_eq!(
-        into(microphone(), recorder()),
-        Some("Audio recorder takes channel audio".to_owned())
-    );
+    assert_eq!(into(microphone(), recorder()), None);
+    assert_eq!(into(node("src", chat()), recorder()), None);
 }
 
 fn wire_allowed(from: &NodeTypeInfo, out: &PortSpec, to: &NodeTypeInfo, input: &PortSpec) -> bool {

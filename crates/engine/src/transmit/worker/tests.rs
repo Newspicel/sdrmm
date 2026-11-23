@@ -1,6 +1,5 @@
 use std::sync::Mutex;
 
-use sdrmm_decoder::encoder::EncoderError;
 use sdrmm_device::DeviceError;
 
 use super::*;
@@ -46,46 +45,20 @@ impl TxStream for FakeRadio {
     }
 }
 
-/// A carrier for as many samples as it was handed audio or frame octets.
-#[derive(Default)]
-struct Carrier {
-    left: usize,
-    endless: bool,
-}
-
-impl Modulator for Carrier {
-    fn submit(&mut self, payload: TxPayload) -> Result<(), EncoderError> {
-        self.left += match payload {
-            TxPayload::Audio(pcm) => pcm.len(),
-            TxPayload::Frame(frame) => frame.len(),
-        };
-        Ok(())
-    }
-
-    fn generate(&mut self, out: &mut [Sample]) -> usize {
-        let take = if self.endless {
-            out.len()
-        } else {
-            out.len().min(self.left)
-        };
-        out[..take].fill(Sample::new(1.0, 0.0));
-        self.left = self.left.saturating_sub(take);
-        take
-    }
-}
-
 struct Rig {
     aired: Arc<Mutex<Aired>>,
     shared: Arc<TxShared>,
     commands: mpsc::Sender<TxCommand>,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
+    air: Option<AirTap>,
 }
 
 impl Rig {
-    fn with(source: Source, settings: TransmitSettings) -> Self {
-        let aired = Arc::new(Mutex::new(Aired::default()));
+    fn encoded(settings: TransmitSettings) -> Self {
         let shared = Arc::new(TxShared::default());
+        let (air, source) = encoded(RATE, &shared);
+        let aired = Arc::new(Mutex::new(Aired::default()));
         let radio = FakeRadio {
             aired: aired.clone(),
             takes: 1_000,
@@ -101,15 +74,16 @@ impl Rig {
             commands,
             stop,
             thread: Some(thread),
+            air: Some(air),
         }
     }
 
-    fn encoder(carrier: Carrier, settings: TransmitSettings) -> Self {
-        let source = Source::Encoder {
-            tx: Box::new(carrier),
-            rate: RATE,
-        };
-        Self::with(source, settings)
+    /// A keyed burst of `len` full-scale samples, then the end of it.
+    fn burst(&mut self, len: usize) {
+        let air = self.air.as_mut().expect("an encoder feeds this rig");
+        let ones = vec![Sample::new(1.0, 0.0); len];
+        assert!(air.push(&ones, len));
+        assert!(air.push(&[Sample::new(0.0, 0.0)], 0));
     }
 
     fn status(&self) -> TransmitStatus {
@@ -142,15 +116,11 @@ impl Drop for Rig {
     }
 }
 
-fn frame(octets: usize) -> TxCommand {
-    TxCommand::Payload(TxPayload::Frame(vec![0; octets]))
-}
-
 #[test]
-fn a_frame_goes_out_as_one_burst_at_the_set_level_and_ends_it() {
-    let mut rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
+fn a_burst_goes_out_at_the_set_level_and_ends_when_the_encoder_unkeys() {
+    let mut rig = Rig::encoded(TransmitSettings::default());
     assert_eq!(rig.status().phase, TransmitPhase::Idle);
-    rig.commands.send(frame(4_800)).expect("queued");
+    rig.burst(4_800);
     let done = rig.until("ended the burst", |status| {
         status.bursts == 1 && status.phase == TransmitPhase::Idle && status.samples > 0
     });
@@ -176,31 +146,21 @@ fn a_frame_goes_out_as_one_burst_at_the_set_level_and_ends_it() {
 }
 
 #[test]
-fn a_message_is_paced_to_real_time_a_stall_ahead() {
-    let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
-    rig.commands.send(frame(48_000)).expect("queued");
-    rig.until("keyed", |status| status.phase == TransmitPhase::OnAir);
-    std::thread::sleep(Duration::from_millis(200));
-    let sent = rig.status().samples as f64 / RADIO.sample_rate;
-    let ahead = sent - 0.2;
-    assert!(
-        (MESSAGE_LEAD_S - 0.05..MESSAGE_LEAD_S + 0.25).contains(&ahead),
-        "{sent} s sent after 0.2 s"
-    );
-}
-
-#[test]
 fn a_transmission_past_its_timeout_ends_and_disarms_with_the_reason() {
-    let endless = Carrier {
-        left: 0,
-        endless: true,
-    };
     let settings = TransmitSettings {
         timeout_s: 1,
         ..TransmitSettings::default()
     };
-    let rig = Rig::encoder(endless, settings);
-    let tripped = rig.until("tripped", |status| status.error.is_some());
+    let mut rig = Rig::encoded(settings);
+    let mut air = rig.air.take().expect("an encoder feeds this rig");
+    let block = vec![Sample::new(1.0, 0.0); 960];
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rig.status().error.is_none() {
+        assert!(Instant::now() < deadline, "never tripped");
+        let _ = air.push(&block, block.len());
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    let tripped = rig.status();
     assert!(tripped.error.expect("reason").contains("1 s; disarmed"));
     rig.until("stopped", |_| rig.shared.stopped());
     assert_eq!(rig.status().phase, TransmitPhase::Idle);
@@ -213,8 +173,8 @@ fn a_frequency_the_radio_cannot_reach_mutes_the_transmitter_until_it_moves_back(
         frequency_hz: Some(RADIO.center_hz + 500_000.0),
         ..TransmitSettings::default()
     };
-    let rig = Rig::encoder(Carrier::default(), settings);
-    rig.commands.send(frame(2_400)).expect("queued");
+    let mut rig = Rig::encoded(settings);
+    rig.burst(2_400);
     let muted = rig.until("refused the frequency", |status| status.error.is_some());
     assert_eq!(muted.frequency_hz, RADIO.center_hz + 500_000.0);
     std::thread::sleep(Duration::from_millis(50));
@@ -227,34 +187,10 @@ fn a_frequency_the_radio_cannot_reach_mutes_the_transmitter_until_it_moves_back(
     rig.commands
         .send(TxCommand::Settings(reachable))
         .expect("retuned");
-    rig.commands.send(frame(2_400)).expect("queued");
+    std::thread::sleep(Duration::from_millis(50));
+    rig.burst(2_400);
     let sent = rig.until("sent after the retune", |status| status.bursts == 1);
     assert_eq!(sent.error, None);
-}
-
-/// Short audio may key once the hang time has passed, so a status read only counts while the
-/// test thread is provably still inside it.
-#[test]
-fn held_audio_waits_for_a_prefill_then_flows() {
-    let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
-    let short = (PREFILL_S * RATE) as usize / 3;
-    let sent = Instant::now();
-    rig.commands
-        .send(TxCommand::Payload(TxPayload::Audio(vec![0.0; short])))
-        .expect("audio");
-    while sent.elapsed() < HANG / 2 {
-        let bursts = rig.status().bursts;
-        if sent.elapsed() < HANG {
-            assert_eq!(bursts, 0, "keyed before the prefill");
-        }
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    for _ in 0..3 {
-        rig.commands
-            .send(TxCommand::Payload(TxPayload::Audio(vec![0.0; short])))
-            .expect("audio");
-    }
-    rig.until("keyed", |status| status.bursts == 1);
 }
 
 #[test]
@@ -308,37 +244,4 @@ fn a_lane_is_sent_as_it_arrives_and_what_does_not_fit_is_counted() {
     thread.join().expect("worker");
     drop(commands);
     assert!(!tap.push(&block), "a tap with no transmitter lets go");
-}
-
-/// A gap past the hang time rightly drops the carrier, so only gaps the scheduler made that long
-/// excuse a re-key.
-#[test]
-fn audio_that_arrives_late_is_bridged_and_the_carrier_stays_up() {
-    let rig = Rig::encoder(Carrier::default(), TransmitSettings::default());
-    let chunk = (RATE / 50.0) as usize;
-    let mut stalls = 0;
-    let mut last = Instant::now();
-    for _ in 0..25 {
-        let sending = Instant::now();
-        rig.commands
-            .send(TxCommand::Payload(TxPayload::Audio(vec![0.0; chunk])))
-            .expect("audio");
-        if last.elapsed() > HANG {
-            stalls += 1;
-        }
-        last = sending;
-        std::thread::sleep(Duration::from_millis(26));
-    }
-    let spoken = rig.status();
-    if stalls == 0 && last.elapsed() < HANG {
-        assert_eq!(spoken.phase, TransmitPhase::OnAir);
-    }
-    rig.until("unkeyed after the hang time", |status| {
-        status.bursts > 0 && status.phase == TransmitPhase::Idle
-    });
-    let bursts = rig.status().bursts;
-    assert!(
-        bursts <= 1 + stalls,
-        "slow audio keyed the carrier {bursts} times with {stalls} stalls"
-    );
 }

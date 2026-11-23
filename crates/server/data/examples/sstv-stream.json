@@ -1,0 +1,134 @@
+{
+  "version": 2,
+  "name": "SSTV stream",
+  "snapshot": {
+    "version": 4,
+    "graph": {
+      "nodes": [
+        {
+          "id": "dev",
+          "kind": "device",
+          "data": {},
+          "position": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "id": "sstv",
+          "kind": "channel",
+          "data": {
+            "channel_type": "sstv",
+            "tuning_locked": false
+          },
+          "position": {
+            "x": 520,
+            "y": 0
+          }
+        },
+        {
+          "id": "pictures",
+          "kind": "video",
+          "position": {
+            "x": 1040,
+            "y": -80
+          }
+        },
+        {
+          "id": "obs",
+          "kind": "stream_out",
+          "data": {
+            "transport": "http",
+            "address": "127.0.0.1:5004"
+          },
+          "position": {
+            "x": 1040,
+            "y": 300
+          }
+        },
+        {
+          "id": "note",
+          "kind": "note",
+          "data": {
+            "text": "## SSTV stream\n\nPictures from 14.230 MHz, live in VLC or OBS at http://127.0.0.1:5004."
+          },
+          "position": {
+            "x": 0,
+            "y": 420
+          },
+          "size": {
+            "w": 440,
+            "h": 200
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": {
+            "node": "dev",
+            "port": "iq"
+          },
+          "to": {
+            "node": "sstv",
+            "port": "iq"
+          }
+        },
+        {
+          "from": {
+            "node": "sstv",
+            "port": "video"
+          },
+          "to": {
+            "node": "pictures",
+            "port": "video"
+          }
+        },
+        {
+          "from": {
+            "node": "sstv",
+            "port": "video"
+          },
+          "to": {
+            "node": "obs",
+            "port": "video"
+          }
+        }
+      ]
+    },
+    "rack": {
+      "slots": [
+        {
+          "node": "note",
+          "x": 0,
+          "y": 0,
+          "w": 4,
+          "h": 3
+        }
+      ]
+    }
+  },
+  "state": {
+    "version": 2,
+    "devices": [
+      {
+        "node": "dev",
+        "settings": {
+          "center_hz": 14230000,
+          "sample_rate": 192000
+        }
+      }
+    ],
+    "channels": [
+      {
+        "node": "sstv",
+        "settings": {
+          "frequency_hz": 14230000,
+          "params": {
+            "type": "sstv",
+            "settings": {}
+          }
+        }
+      }
+    ]
+  }
+}

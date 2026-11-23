@@ -26,22 +26,27 @@ export function transmitterOf(
   return null;
 }
 
-/** A voice source's audio reaches, through an Encoder, a transmitter that is armed. */
-/** Whether anything hears `node`'s audio: an armed transmitter, or any other audio input. */
+/**
+ * Whether anything hears `node`'s audio: any audio input, or an encoder whose baseband goes
+ * somewhere other than a transmitter, or to one that is armed.
+ */
 export function reachesListener(
   patch: ResolvedPatch | null,
   nodes: readonly PatchNode[],
   sets: readonly Pick<DeviceSet, "transmit">[],
   node: string,
 ): boolean {
-  const encoder = (id: string): boolean =>
-    nodes.some((candidate) => candidate.id === id && candidate.kind === "encoder");
-  return (
-    reachesOf(patch, node, "audio").some((reach) => !encoder(reach.sink)) ||
-    reachesArmedTransmitter(patch, nodes, sets, node)
+  const kindOf = (id: string) => nodes.find((candidate) => candidate.id === id)?.kind;
+  const heard = (encoder: string): boolean =>
+    reachesOf(patch, encoder, "baseband").some(
+      (reach) => kindOf(reach.sink) !== "transmit" || transmitStatusOf(sets, reach.sink) !== null,
+    );
+  return reachesOf(patch, node, "audio").some(
+    (reach) => kindOf(reach.sink) !== "encoder" || heard(reach.sink),
   );
 }
 
+/** A voice source's audio reaches, through an Encoder, a transmitter that is armed. */
 export function reachesArmedTransmitter(
   patch: ResolvedPatch | null,
   nodes: readonly PatchNode[],

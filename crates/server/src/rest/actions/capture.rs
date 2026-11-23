@@ -1,6 +1,6 @@
 use sdrmm_wire::{
     BASEBAND_PORT, DeviceRef, DeviceSet, IQ_PORT, NetworkExportAction, NetworkExportSettings,
-    NetworkExportStatus, NodeBody, PlaybackRequest, PlaybackStatus,
+    NetworkExportStatus, NodeBody, PlaybackRequest, PlaybackStatus, Tap,
 };
 
 use super::{node_of, takes_no_such_action};
@@ -47,14 +47,20 @@ fn start_export(
     if let Some((set, stream)) = fed_lane(resolved, node) {
         return Ok(engine.start_network_export(set, node, stream, &settings)?);
     }
-    let channel = resolved
+    let tap = resolved
         .patch
         .feeds(node, BASEBAND_PORT)
         .iter()
-        .find_map(|feed| feed.tap.as_ref()?.channels().into_iter().next())
-        .ok_or_else(|| {
-            AppError::bad_request("Wire a radio's IQ or a channel's baseband into it")
-        })?;
+        .find_map(|feed| feed.tap.as_ref())
+        .ok_or_else(|| AppError::bad_request("Nothing wired is running"))?;
+    if let Tap::Node { node: encoder, .. } = tap {
+        return Ok(engine.start_encoder_network_export(encoder, node.to_owned(), settings)?);
+    }
+    let channel = tap
+        .channels()
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::bad_request("Nothing wired is running"))?;
     Ok(engine.start_channel_network_export(
         channel.device_set,
         channel.channel,
@@ -72,6 +78,17 @@ fn stop_export(state: &AppState, node: &str) -> Result<NetworkExportStatus, AppE
     };
     if let Some(set) = live.device_sets.iter().find(|set| exports(set)) {
         return Ok(state.engine.stop_network_export(set.id, node)?);
+    }
+    let encoder = live.node_streams.iter().find(|stream| {
+        stream
+            .network_export
+            .as_ref()
+            .is_some_and(|export| export.node == node)
+    });
+    if let Some(encoder) = encoder {
+        return Ok(state
+            .engine
+            .stop_encoder_network_export(&encoder.node, node)?);
     }
     let channel = live.device_sets.iter().find_map(|set| {
         set.channels

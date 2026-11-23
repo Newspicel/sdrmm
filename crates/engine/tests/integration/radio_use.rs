@@ -9,7 +9,9 @@ use sdrmm_channels::NfmParams;
 use sdrmm_decoder::encoder::EncoderParams;
 use sdrmm_device::DeviceRegistry;
 use sdrmm_device_virtual::VirtualDriver;
-use sdrmm_engine::{Engine, EngineError, SET_TO_RECEIVE, TransmitRequest, TransmitSource};
+use sdrmm_engine::{
+    Engine, EngineError, SET_TO_RECEIVE, TransmitRequest, TransmitSource, encoders::EncoderSpec,
+};
 use sdrmm_wire::{
     ChannelParams, ChannelSettings, DeviceSet, RadioActivity, RadioUse, Squelch, TransmitSettings,
 };
@@ -32,12 +34,19 @@ fn set(engine: &Engine, ds: u32) -> DeviceSet {
         .expect("open radio")
 }
 
-fn nfm_request() -> TransmitRequest {
+fn nfm_request(engine: &Engine) -> TransmitRequest {
+    let spec = EncoderSpec {
+        params: EncoderParams::bare("nfm"),
+        audio: Default::default(),
+    };
+    engine.run_encoder("enc", &spec).expect("encoder");
     TransmitRequest {
         node: "tx".to_owned(),
-        source: TransmitSource::Encoder(EncoderParams::bare("nfm")),
+        source: TransmitSource::Encoded {
+            node: "enc".to_owned(),
+            type_id: "nfm".to_owned(),
+        },
         settings: TransmitSettings::default(),
-        audio: Default::default(),
     }
 }
 
@@ -78,13 +87,15 @@ fn a_radio_set_to_receive_refuses_to_key() {
         [RadioUse::Receive, RadioUse::Send, RadioUse::Both]
     );
     assert_eq!(open.activity, RadioActivity::Receiving);
-    match engine.arm_transmitter(ds, &nfm_request()) {
+    match engine.arm_transmitter(ds, &nfm_request(&engine)) {
         Err(EngineError::Transmit(reason)) => assert_eq!(reason, SET_TO_RECEIVE),
         other => panic!("must be refused, got {other:?}"),
     }
 
     engine.set_radio_use(ds, RadioUse::Both).expect("both");
-    engine.arm_transmitter(ds, &nfm_request()).expect("armed");
+    engine
+        .arm_transmitter(ds, &nfm_request(&engine))
+        .expect("armed");
     engine
         .set_radio_use(ds, RadioUse::Receive)
         .expect("receive");

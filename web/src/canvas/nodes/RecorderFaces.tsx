@@ -278,7 +278,7 @@ function AudioRecorder({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
   const recording = node.data?.recording ?? false;
   const takes = inputs.map((input) => ({
     input,
-    status: input.channel === null ? null : ownRecording(input.channel, node.id),
+    status: ownRecording(input.channel ?? input.own, node.id),
   }));
   const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (
@@ -349,7 +349,7 @@ function BasebandRecorder({ node }: { node: PatchNodeOf<"baseband_recorder"> }) 
   const recording = node.data?.recording ?? false;
   const takes = inputs.map((input) => ({
     input,
-    status: input.channel?.baseband_recording ?? null,
+    status: (input.channel ?? input.own)?.baseband_recording ?? null,
   }));
   const held = takes.flatMap(({ status }) => (status === null ? [] : [status]));
   return (

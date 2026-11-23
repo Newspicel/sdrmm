@@ -986,7 +986,7 @@
             },
             {
               "direction": "out",
-              "multi": "one",
+              "multi": "many",
               "name": "baseband",
               "payload": {
                 "origins": [
@@ -2257,7 +2257,7 @@
             },
             {
               "direction": "out",
-              "multi": "one",
+              "multi": "many",
               "name": "baseband",
               "payload": {
                 "origins": [

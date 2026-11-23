@@ -28,6 +28,13 @@ export function channelExportSource(
     : { running: set.status === "running", active: channel.network_export };
 }
 
+/** A stream a node makes itself, such as an encoder's baseband: running while it is wired. */
+export function nodeExportSource(
+  stream: { network_export?: NetworkExportStatus | null } | null,
+): NetworkExportSource {
+  return { running: true, active: stream?.network_export };
+}
+
 export function deriveNetworkExportControl(
   source: NetworkExportSource | null,
   node: string,

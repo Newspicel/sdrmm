@@ -1,5 +1,5 @@
 //! Voices the server carries into the patch, a microphone or a voice chat, as audio any audio
-//! input subscribes to the way it subscribes to a channel.
+//! input subscribes to the way it subscribes to a channel, and records the way it records one.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -7,20 +7,74 @@ use std::{
     thread::JoinHandle,
 };
 
+use sdrmm_wire::{AudioRecordingStatus, NodeStream, ServerEvent, StateScope};
 use tokio::sync::broadcast;
 
 use crate::{
     AudioPacket, EngineError, PcmBlock, PcmPayload,
     audio::{AUDIO_CHANNEL_CAP, spawn_encoder},
+    audio_recording::{self, AudioRecorderTap, AudioRecordingShared},
 };
 
 /// Twenty-millisecond frames a listener may fall behind by: a second and a quarter.
 const VOICE_QUEUE: usize = 64;
 
+/// One recorder's take of a voice.
+pub(crate) struct VoiceRecording {
+    pub(crate) recorder: String,
+    pub(crate) file: String,
+    pub(crate) started_at: String,
+    pub(crate) tap: AudioRecorderTap,
+    pub(crate) shared: Arc<AudioRecordingShared>,
+    pub(crate) writer: JoinHandle<()>,
+}
+
+impl VoiceRecording {
+    fn status(&self) -> AudioRecordingStatus {
+        AudioRecordingStatus {
+            node: self.recorder.clone(),
+            fx: Vec::new(),
+            file: self.file.clone(),
+            started_at: self.started_at.clone(),
+            channels: 1,
+            frames: self.shared.frames(),
+            bytes: self.shared.bytes(),
+            error: self.shared.error(),
+        }
+    }
+
+    /// Lets the writer run out and close the file.
+    pub(crate) fn finish(self) -> AudioRecordingStatus {
+        let Self {
+            recorder,
+            file,
+            started_at,
+            tap,
+            shared,
+            writer,
+        } = self;
+        drop(tap);
+        if writer.join().is_err() {
+            tracing::error!(%file, "the voice recording writer panicked");
+        }
+        AudioRecordingStatus {
+            node: recorder,
+            fx: Vec::new(),
+            file,
+            started_at,
+            channels: 1,
+            frames: shared.frames(),
+            bytes: shared.bytes(),
+            error: shared.error(),
+        }
+    }
+}
+
 struct VoiceStream {
     pcm_tx: broadcast::Sender<PcmBlock>,
     audio_tx: broadcast::Sender<AudioPacket>,
     next_frame: u64,
+    recordings: Vec<VoiceRecording>,
     /// Ends on its own once `pcm_tx` drops.
     _encoder: JoinHandle<()>,
 }
@@ -34,8 +88,17 @@ impl VoiceStream {
             pcm_tx,
             audio_tx,
             next_frame: 0,
+            recordings: Vec::new(),
             _encoder: encoder,
         })
+    }
+
+    fn node_stream(&self, node: &str) -> NodeStream {
+        NodeStream {
+            node: node.to_owned(),
+            audio_recordings: self.recordings.iter().map(VoiceRecording::status).collect(),
+            ..NodeStream::default()
+        }
     }
 }
 
@@ -46,12 +109,12 @@ pub(crate) struct VoiceHub {
 }
 
 impl VoiceHub {
-    fn stream(&mut self, node: &str) -> Result<&VoiceStream, EngineError> {
+    fn stream(&mut self, node: &str) -> Result<&mut VoiceStream, EngineError> {
         if !self.streams.contains_key(node) {
             self.streams.insert(node.to_owned(), VoiceStream::open()?);
         }
         self.streams
-            .get(node)
+            .get_mut(node)
             .ok_or_else(|| EngineError::Audio(format!("voice `{node}` vanished")))
     }
 
@@ -81,14 +144,182 @@ impl VoiceHub {
             payload: PcmPayload::Samples(Arc::from(pcm)),
         };
         stream.next_frame = stream.next_frame.wrapping_add(pcm.len() as u64);
+        for recording in &stream.recordings {
+            if !recording.tap.push(block.clone()) {
+                tracing::debug!(node, recorder = %recording.recorder, "a voice take fell behind");
+            }
+        }
         if stream.pcm_tx.send(block).is_err() {
             tracing::debug!(node, "a voice spoke after its encoder stopped");
         }
     }
 
-    /// Closes the voices of nodes no longer in the patch; their listeners see the end.
-    pub(crate) fn retain(&mut self, nodes: &HashSet<String>) {
-        self.streams.retain(|node, _| nodes.contains(node));
+    pub(crate) fn records(&self, voice: &str, recorder: &str) -> bool {
+        self.streams.get(voice).is_some_and(|stream| {
+            stream
+                .recordings
+                .iter()
+                .any(|recording| recording.recorder == recorder)
+        })
+    }
+
+    pub(crate) fn record(
+        &mut self,
+        voice: &str,
+        recording: VoiceRecording,
+    ) -> Result<AudioRecordingStatus, (EngineError, Box<VoiceRecording>)> {
+        if self.records(voice, &recording.recorder) {
+            return Err((
+                EngineError::Recording("this recorder already records this voice".to_owned()),
+                Box::new(recording),
+            ));
+        }
+        match self.stream(voice) {
+            Ok(stream) => {
+                let status = recording.status();
+                stream.recordings.push(recording);
+                Ok(status)
+            }
+            Err(error) => Err((error, Box::new(recording))),
+        }
+    }
+
+    pub(crate) fn stop_recording(&mut self, voice: &str, recorder: &str) -> Option<VoiceRecording> {
+        let stream = self.streams.get_mut(voice)?;
+        let at = stream
+            .recordings
+            .iter()
+            .position(|recording| recording.recorder == recorder)?;
+        Some(stream.recordings.remove(at))
+    }
+
+    pub(crate) fn skip_silence(&self, voice: &str, recorder: &str, skip: bool) -> bool {
+        self.streams
+            .get(voice)
+            .and_then(|stream| {
+                stream
+                    .recordings
+                    .iter()
+                    .find(|recording| recording.recorder == recorder)
+            })
+            .map(|recording| recording.shared.set_skip_silence(skip))
+            .is_some()
+    }
+
+    /// Closes the voices of nodes no longer in the patch; their listeners see the end and their
+    /// takes come back to be finished.
+    pub(crate) fn retain(&mut self, nodes: &HashSet<String>) -> Vec<VoiceRecording> {
+        let gone: Vec<String> = self
+            .streams
+            .keys()
+            .filter(|node| !nodes.contains(*node))
+            .cloned()
+            .collect();
+        gone.iter()
+            .filter_map(|node| self.streams.remove(node))
+            .flat_map(|stream| stream.recordings)
+            .collect()
+    }
+
+    pub(crate) fn node_streams(&self) -> Vec<NodeStream> {
+        self.streams
+            .iter()
+            .filter(|(_, stream)| !stream.recordings.is_empty())
+            .map(|(node, stream)| stream.node_stream(node))
+            .collect()
+    }
+}
+
+impl crate::Engine {
+    /// Starts `recorder`'s take of the voice `voice` as a mono WAV.
+    pub(crate) fn start_voice_recording(
+        &self,
+        recorder: &str,
+        voice: &str,
+        skip_silence: bool,
+    ) -> Result<AudioRecordingStatus, EngineError> {
+        if self.voices().records(voice, recorder) {
+            return Err(EngineError::Recording(
+                "this recorder already records this voice".to_owned(),
+            ));
+        }
+        let dir = self.audio_recordings_dir().ok_or_else(|| {
+            EngineError::Recording("no recordings directory configured".to_owned())
+        })?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| EngineError::RecordingIo(format!("create {}: {e}", dir.display())))?;
+        let started_at = jiff::Timestamp::now();
+        let writer = audio_recording::create_writer(
+            &dir,
+            &sdrmm_recorder::source_stem(started_at, voice),
+            sdrmm_decoder::AUDIO_RATE,
+            1,
+        )?;
+        let file = writer
+            .path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        let (tap, blocks, shared) =
+            audio_recording::create_tap(f64::from(sdrmm_decoder::AUDIO_RATE), skip_silence);
+        let writer = audio_recording::spawn_writer(writer, blocks, shared.clone())?;
+        let take = VoiceRecording {
+            recorder: recorder.to_owned(),
+            file,
+            started_at: started_at.to_string(),
+            tap,
+            shared,
+            writer,
+        };
+        let recorded = self.voices().record(voice, take);
+        match recorded {
+            Ok(status) => {
+                self.voice_changed();
+                Ok(status)
+            }
+            Err((error, take)) => {
+                take.finish();
+                Err(error)
+            }
+        }
+    }
+
+    pub fn stop_voice_recording(
+        &self,
+        recorder: &str,
+        voice: &str,
+    ) -> Result<AudioRecordingStatus, EngineError> {
+        let take = self
+            .voices()
+            .stop_recording(voice, recorder)
+            .ok_or_else(|| EngineError::Recording("not recording".to_owned()))?;
+        let status = take.finish();
+        self.voice_changed();
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::Recordings,
+        });
+        Ok(status)
+    }
+
+    pub fn set_voice_skip_silence(
+        &self,
+        recorder: &str,
+        voice: &str,
+        skip: bool,
+    ) -> Result<(), EngineError> {
+        if self.voices().skip_silence(voice, recorder, skip) {
+            Ok(())
+        } else {
+            Err(EngineError::Recording("not recording".to_owned()))
+        }
+    }
+
+    fn voice_changed(&self) {
+        self.lock().revision += 1;
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::All,
+        });
     }
 }
 
@@ -124,6 +355,27 @@ mod tests {
             heard.try_recv(),
             Err(broadcast::error::TryRecvError::Closed)
         ));
+    }
+
+    #[test]
+    fn a_recorder_takes_what_the_voice_says_into_a_wav() {
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let engine = crate::Engine::new(Some(dir.path().to_path_buf()));
+        let started = engine
+            .start_voice_recording("rec", "mic", false)
+            .expect("recording");
+        assert_eq!(started.node, "rec");
+        assert!(engine.start_voice_recording("rec", "mic", false).is_err());
+        engine.speak_voice("mic", &[0.25; 960]);
+        let live = engine.snapshot();
+        assert_eq!(live.node_streams[0].node, "mic");
+        assert_eq!(live.node_streams[0].audio_recordings[0].node, "rec");
+        let done = engine.stop_voice_recording("rec", "mic").expect("stopped");
+        assert_eq!((done.frames, done.error), (960, None));
+        let wav = dir.path().join("audio").join(&done.file);
+        let info = sdrmm_recorder::read_audio_info(&wav).expect("a wav");
+        assert_eq!((info.channels, info.frames), (1, 960));
+        assert!(engine.snapshot().node_streams.is_empty());
     }
 
     #[test]

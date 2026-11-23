@@ -9,6 +9,7 @@ import type {
   EventKind,
   Feed,
   NodeProblem,
+  NodeStream,
   PortDirection,
   Reach,
   ResolvedNode,
@@ -300,9 +301,11 @@ export function channelOwners(patch: ResolvedPatch | null): Map<string, string> 
 export interface Input {
   node: string;
   source: string;
-  /** Null for a stream the source node makes itself, such as a voice. */
+  /** Null for a stream the source node makes itself, a voice or an encoder's baseband. */
   deviceSet: number | null;
   channel: ChannelInfo | null;
+  /** The sinks on a stream the source node makes itself, once any run. */
+  own: NodeStream | null;
 }
 
 function feedSource(feed: Feed, index: number): string {
@@ -314,10 +317,19 @@ export function inputsOf(
   sets: readonly DeviceSet[],
   node: string,
   port: string,
+  streams: readonly NodeStream[] = [],
 ): Input[] {
   return feedsOf(patch, node, port).flatMap((feed) =>
     feed.tap?.tap === "node"
-      ? [{ node: feed.source, source: feedSource(feed, 0), deviceSet: null, channel: null }]
+      ? [
+          {
+            node: feed.source,
+            source: feedSource(feed, 0),
+            deviceSet: null,
+            channel: null,
+            own: streams.find((stream) => stream.node === feed.source) ?? null,
+          },
+        ]
       : channelInputs(feed, sets),
   );
 }
@@ -333,14 +345,24 @@ function channelInputs(feed: Feed, sets: readonly DeviceSet[]): Input[] {
             source: feedSource(feed, index),
             deviceSet: addr.device_set,
             channel,
+            own: null,
           },
         ];
   });
 }
 
+/** The node whose own stream feeds `port`, a voice or an encoder, if one does. */
+export function ownSourceOf(
+  patch: ResolvedPatch | null,
+  node: string,
+  port: string,
+): string | null {
+  return feedsOf(patch, node, port).find((feed) => feed.tap?.tap === "node")?.source ?? null;
+}
+
 export function useInputs(node: string, port: string): Input[] {
   const workspace = useWorkspaceContext();
-  return inputsOf(workspace.resolved, workspace.deviceSets, node, port);
+  return inputsOf(workspace.resolved, workspace.deviceSets, node, port, workspace.nodeStreams);
 }
 
 export function useFeeds(node: string, port: string): readonly Feed[] {

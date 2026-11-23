@@ -161,8 +161,8 @@ impl AudioOrigin {
     pub const ALL: &'static [Self] = &[Self::Channel, Self::Voice];
 }
 
-/// Where baseband comes from: a channel the engine runs, or an encoder, which runs only inside
-/// the transmitter it feeds.
+/// Where baseband comes from: a channel a radio runs, or an encoder running on its own clock.
+/// Every baseband input takes both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BasebandOrigin {
@@ -327,15 +327,13 @@ impl Payload {
                 [verb] => Some(verb.noun().to_owned()),
                 _ => None,
             },
-            Self::Baseband { origins } => match origins.as_slice() {
-                [BasebandOrigin::Channel] => Some("channel baseband".to_owned()),
-                _ => None,
-            },
-            Self::Audio { origins } => match origins.as_slice() {
-                [AudioOrigin::Channel] => Some("channel audio".to_owned()),
-                _ => None,
-            },
-            Self::Video | Self::Position | Self::Array | Self::Bearing | Self::Transmit => None,
+            Self::Baseband { .. }
+            | Self::Audio { .. }
+            | Self::Video
+            | Self::Position
+            | Self::Array
+            | Self::Bearing
+            | Self::Transmit => None,
         }
     }
 }

@@ -1,7 +1,11 @@
 import type { AudioRecordingStatus, ChannelInfo, PatchNode, PatchNodeOf } from "../../lib/types";
 
-export function ownRecording(channel: ChannelInfo, node: string): AudioRecordingStatus | null {
-  return (channel.audio_recordings ?? []).find((status) => status.node === node) ?? null;
+/** The take `node` records from a channel or from a stream a node makes itself. */
+export function ownRecording(
+  source: Pick<ChannelInfo, "audio_recordings"> | null,
+  node: string,
+): AudioRecordingStatus | null {
+  return (source?.audio_recordings ?? []).find((status) => status.node === node) ?? null;
 }
 
 export type RecorderNodeOf = PatchNodeOf<"recorder" | "audio_recorder" | "baseband_recorder">;

@@ -253,6 +253,19 @@ const fn is_zero(value: &u64) -> bool {
     *value == 0
 }
 
+/// A stream a node makes itself, outside any radio: a voice, an encoder's baseband. Its sinks
+/// show here the way a channel's do.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct NodeStream {
+    pub node: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audio_recordings: Vec<AudioRecordingStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseband_recording: Option<RecordingStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_export: Option<crate::network::NetworkExportStatus>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct StateSnapshot {
     pub device_sets: Vec<DeviceSet>,
@@ -260,6 +273,8 @@ pub struct StateSnapshot {
     pub trunk_systems: Vec<TrunkSystemStatus>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arrays: Vec<crate::array::ArrayStatus>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub node_streams: Vec<NodeStream>,
     pub revision: u64,
 }
 

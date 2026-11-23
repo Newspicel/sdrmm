@@ -8,7 +8,7 @@ use sdrmm_dsp::audio::mix::MixBus;
 use sdrmm_wire::AudioProcessing;
 use tokio::sync::watch;
 
-use super::worker::TxCommand;
+use super::run::Command;
 use crate::{
     EngineError,
     audio_fx::{Stage, report},
@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// A voice encoder's audio chain. It runs on its own thread so a heavy denoiser never stalls
-/// the modulator, and ends when the transmitter drops it.
+/// the modulator, and ends when the encoder drops it.
 pub(crate) struct Voice {
     pcm: mpsc::Sender<(u64, Vec<f32>)>,
     settings: watch::Sender<AudioProcessing>,
@@ -26,14 +26,14 @@ impl Voice {
     pub(crate) fn spawn(
         settings: AudioProcessing,
         models: Arc<DenoiseModels>,
-        out: mpsc::Sender<TxCommand>,
+        out: mpsc::Sender<Command>,
     ) -> Result<Self, EngineError> {
         let (pcm, received) = mpsc::channel();
         let (settings, watched) = watch::channel(settings);
         std::thread::Builder::new()
-            .name("sdrmm-tx-voice".to_owned())
+            .name("sdrmm-encoder-voice".to_owned())
             .spawn(move || run(&received, Stage::new(watched, models), &out))
-            .map_err(|error| EngineError::Transmit(format!("spawn voice thread: {error}")))?;
+            .map_err(|error| EngineError::Audio(format!("spawn voice thread: {error}")))?;
         Ok(Self { pcm, settings })
     }
 
@@ -56,11 +56,7 @@ impl Voice {
 const MAX_LANE_LAG: usize = 4_800;
 const FLUSH_AFTER: Duration = Duration::from_millis(40);
 
-fn run(
-    received: &mpsc::Receiver<(u64, Vec<f32>)>,
-    mut stage: Stage,
-    out: &mpsc::Sender<TxCommand>,
-) {
+fn run(received: &mpsc::Receiver<(u64, Vec<f32>)>, mut stage: Stage, out: &mpsc::Sender<Command>) {
     let mut failed = false;
     let mut bus = MixBus::new(MAX_LANE_LAG);
     let mut drained = Vec::new();
@@ -85,7 +81,7 @@ fn run(
         if let Err(error) = stage.process(&mut pcm) {
             report(&mut failed, &error);
         }
-        if out.send(TxCommand::Payload(TxPayload::Audio(pcm))).is_err() {
+        if out.send(Command::Payload(TxPayload::Audio(pcm))).is_err() {
             return;
         }
     }
@@ -124,11 +120,11 @@ mod tests {
         }
     }
 
-    fn heard(commands: &mpsc::Receiver<TxCommand>, blocks: usize) -> Vec<f32> {
+    fn heard(commands: &mpsc::Receiver<Command>, blocks: usize) -> Vec<f32> {
         let mut out = Vec::new();
         for _ in 0..blocks {
             match commands.recv_timeout(Duration::from_secs(5)) {
-                Ok(TxCommand::Payload(TxPayload::Audio(pcm))) => out.extend(pcm),
+                Ok(Command::Payload(TxPayload::Audio(pcm))) => out.extend(pcm),
                 Ok(_) => panic!("the voice sent something other than audio"),
                 Err(error) => panic!("no audio reached the modulator: {error}"),
             }

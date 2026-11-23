@@ -38,6 +38,7 @@ pub mod denoise_models;
 pub(crate) mod df_fusion;
 pub mod diagnostics;
 pub mod doctor;
+mod encoders;
 mod event_output;
 mod events;
 mod examples;
@@ -142,7 +143,7 @@ pub(crate) struct AppState {
     pub(crate) reports: Arc<reports::ReportHub>,
     pub(crate) surfaces: Arc<surfaces::SurfaceHub>,
     pub(crate) survey: Arc<survey::SurveyHub>,
-    pub(crate) transmit: Arc<transmit::TransmitHub>,
+    pub(crate) encoders: Arc<encoders::EncoderLinks>,
     pub(crate) phones: Arc<phones::Phones>,
     pub(crate) gate: Arc<phones::gate::PhoneGate>,
     pub(crate) server_id: Arc<str>,
@@ -201,7 +202,7 @@ impl AppState {
             reports: Arc::default(),
             surfaces: Arc::default(),
             survey: Arc::default(),
-            transmit: Arc::default(),
+            encoders: Arc::default(),
             phones,
             gate: Arc::default(),
             server_id,
@@ -351,7 +352,7 @@ fn start_runtime(state: &AppState) -> Background {
         state.satellites.reconcile(state);
     });
     resolved::follow(state, "rotators", |state| state.rotators.reconcile(state));
-    resolved::follow(state, "transmitters", transmit::reconcile);
+    resolved::follow(state, "encoders and transmitters", transmit::reconcile);
     resolved::follow(state, "control", |state| {
         state
             .control

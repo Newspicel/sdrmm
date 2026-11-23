@@ -146,12 +146,21 @@ impl Engine {
         self.voices().speak(node, pcm);
     }
 
-    /// Closes every voice but those of `nodes`.
+    /// Closes every voice but those of `nodes`, finishing their takes.
     pub fn retain_voices(&self, nodes: &HashSet<String>) {
-        self.voices().retain(nodes);
+        let ended = self.voices().retain(nodes);
+        if ended.is_empty() {
+            return;
+        }
+        for take in ended {
+            take.finish();
+        }
+        self.emit(ServerEvent::StateChanged {
+            scope: StateScope::Recordings,
+        });
     }
 
-    fn voices(&self) -> std::sync::MutexGuard<'_, crate::voices::VoiceHub> {
+    pub(crate) fn voices(&self) -> std::sync::MutexGuard<'_, crate::voices::VoiceHub> {
         self.voices
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

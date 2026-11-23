@@ -9158,7 +9158,7 @@
       },
       "BasebandOrigin": {
         "type": "string",
-        "description": "Where baseband comes from: a channel the engine runs, or an encoder, which runs only inside\nthe transmitter it feeds.",
+        "description": "Where baseband comes from: a channel a radio runs, or an encoder running on its own clock.\nEvery baseband input takes both.",
         "enum": [
           "channel",
           "encoder"
@@ -19169,6 +19169,44 @@
           }
         }
       },
+      "NodeStream": {
+        "type": "object",
+        "description": "A stream a node makes itself, outside any radio: a voice, an encoder's baseband. Its sinks\nshow here the way a channel's do.",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "audio_recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AudioRecordingStatus"
+            }
+          },
+          "baseband_recording": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RecordingStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "network_export": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NetworkExportStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node": {
+            "type": "string"
+          }
+        }
+      },
       "NodeTypeInfo": {
         "type": "object",
         "required": [
@@ -21313,6 +21351,7 @@
           "apply",
           "calls",
           "recorder",
+          "encoder",
           "transmit",
           "speaker",
           "voice_chat",
@@ -26519,6 +26558,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DeviceSet"
+            }
+          },
+          "node_streams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeStream"
             }
           },
           "revision": {

@@ -119,6 +119,7 @@ export type RecordingInfo = components["schemas"]["RecordingInfo"];
 export type RecordingAnnotation = components["schemas"]["RecordingAnnotation"];
 export type RecordingsResponse = components["schemas"]["RecordingsResponse"];
 export type TrunkSystemStatus = components["schemas"]["TrunkSystemStatus"];
+export type NodeStream = components["schemas"]["NodeStream"];
 export type TrunkFollower = components["schemas"]["TrunkFollower"];
 export type TrunkProblem = components["schemas"]["TrunkProblem"];
 export type TrunkChannel = components["schemas"]["TrunkChannel"];

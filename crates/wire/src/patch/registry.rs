@@ -503,20 +503,20 @@ nodes! {
                 run_in(RUN_TAKE),
             ]),
             (AudioRecorder(AudioRecorderNode), "audio_recorder", Output, "Audio recorder",
-                "Records channel audio to WAV", Role::Plain, Face::fit(340), [
-                audio_in(CHANNEL_AUDIO),
+                "Records audio to WAV", Role::Plain, Face::fit(340), [
+                audio_in(ANY_AUDIO),
                 run_in(RUN_TAKE),
             ]),
             (BasebandRecorder(BasebandRecorderNode), "baseband_recorder", Output,
                 "Baseband recorder",
                 "Records one channel's IQ", Role::Plain, Face::fit(340), [
-                input(BASEBAND_PORT, Payload::baseband(CHANNEL_BASEBAND)).many(),
+                input(BASEBAND_PORT, Payload::baseband(ANY_BASEBAND)).many(),
                 run_in(RUN_TAKE),
             ]),
             (NetworkExport(NetworkExportNode), "network_export", Output, "Network IQ",
                 "Streams IQ to other programs", Role::Plain, Face::fit(380), [
                 iq_in().group(NETWORK_SOURCE),
-                input(BASEBAND_PORT, Payload::baseband(CHANNEL_BASEBAND)).group(NETWORK_SOURCE),
+                input(BASEBAND_PORT, Payload::baseband(ANY_BASEBAND)).group(NETWORK_SOURCE),
             ]),
             (StreamOut(StreamOutNode), "stream_out", Output, "Stream out",
                 "Video for VLC, OBS and other players", Role::Plain, Face::fit(340), [
@@ -594,7 +594,7 @@ nodes! {
             (Encoder(EncoderNode), "encoder", Encoder, "Encoder",
                 "Turns audio or a message into a signal", Role::Plain, Face::fit(320).dial(), [
                 audio_in(ANY_AUDIO).noted("Voice for an analog mode"),
-                output(BASEBAND_PORT, Payload::baseband(ENCODED)).one(),
+                output(BASEBAND_PORT, Payload::baseband(ENCODED)),
             ]),
             (Transmit(TransmitNode), "transmit", Output, "Transmitter",
                 "Puts an encoder or a lane on the air", Role::Plain, Face::fit(320).dial(), [

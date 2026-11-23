@@ -5,8 +5,8 @@ use std::{
 
 use sdrmm_engine::Engine;
 use sdrmm_wire::{
-    AUDIO_PORT, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, NodeProblem, PatchGraph,
-    ProblemSource, RecorderNode, ResolvedPatch, StateScope, StateSnapshot,
+    AUDIO_PORT, AudioFrom, AudioRoute, BASEBAND_PORT, IQ_PORT, NodeBody, NodeKind, NodeProblem,
+    PatchGraph, ProblemSource, RecorderNode, ResolvedPatch, StateScope, StateSnapshot,
 };
 
 use crate::{
@@ -28,11 +28,32 @@ const ONE_TAKE_PER_CHANNEL: &str = "Records each channel once";
 const ONE_TAKE_PER_RADIO: &str = "Another recorder holds this radio";
 const ONE_HISTORY_PER_RADIO: &str = "Another recorder holds this radio's pre-roll";
 
+/// Where a recorder's take comes from: a radio channel, or a voice the server carries.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Heard {
+    Channel { device_set: u32, channel: u32 },
+    Voice(String),
+}
+
+impl Heard {
+    fn of(route: &AudioRoute) -> Self {
+        match &route.from {
+            AudioFrom::Channel {
+                device_set,
+                channel,
+            } => Self::Channel {
+                device_set: *device_set,
+                channel: *channel,
+            },
+            AudioFrom::Voice { node, .. } => Self::Voice(node.clone()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct AudioTake {
     node: String,
-    device_set: u32,
-    channel: u32,
+    heard: Heard,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +67,7 @@ enum Target {
     Audio(AudioTake),
     Iq { device_set: u32 },
     Baseband { device_set: u32, channel: u32 },
+    Encoded { encoder: String },
     History { device_set: u32 },
 }
 
@@ -81,6 +103,12 @@ impl Recorders {
             .problems
             .replace(engine, ProblemSource::Recorder, &doubled);
         self.audio(&mut tick, audio, &snapshot, &mut wanted_targets);
+        self.encoded(
+            &mut tick,
+            wanted_encoded(graph, patch),
+            &snapshot,
+            &mut wanted_targets,
+        );
         self.baseband(
             &mut tick,
             wanted_baseband(graph, patch),
@@ -106,22 +134,38 @@ impl Recorders {
             if wanted.get(take).is_some_and(|want| want.route.fx == *fx) {
                 continue;
             }
-            match tick
-                .engine
-                .stop_audio_recording(&take.node, take.device_set, take.channel)
-            {
+            let stopped = match &take.heard {
+                Heard::Channel {
+                    device_set,
+                    channel,
+                } => tick
+                    .engine
+                    .stop_audio_recording(&take.node, *device_set, *channel),
+                Heard::Voice(voice) => tick.engine.stop_voice_recording(&take.node, voice),
+            };
+            match stopped {
                 Ok(_) => tick.finished = true,
                 Err(error) => tracing::warn!(?take, %error, "could not stop an audio recording"),
             }
         }
         for (take, want) in &wanted {
             if current.get(take) == Some(&want.route.fx) {
-                if let Err(error) = tick.engine.set_audio_skip_silence(
-                    &take.node,
-                    take.device_set,
-                    take.channel,
-                    want.skip_silence,
-                ) {
+                let skipped = match &take.heard {
+                    Heard::Channel {
+                        device_set,
+                        channel,
+                    } => tick.engine.set_audio_skip_silence(
+                        &take.node,
+                        *device_set,
+                        *channel,
+                        want.skip_silence,
+                    ),
+                    Heard::Voice(voice) => {
+                        tick.engine
+                            .set_voice_skip_silence(&take.node, voice, want.skip_silence)
+                    }
+                };
+                if let Err(error) = skipped {
                     tracing::warn!(?take, %error, "could not set silence skipping");
                 }
                 continue;
@@ -174,6 +218,41 @@ impl Recorders {
                     device_set,
                     channel,
                 }),
+        );
+    }
+
+    fn encoded(
+        &mut self,
+        tick: &mut Tick<'_>,
+        wanted: HashSet<String>,
+        snapshot: &StateSnapshot,
+        targets: &mut HashSet<Target>,
+    ) {
+        let current = running_encoded(snapshot);
+        for encoder in current.difference(&wanted) {
+            match tick.engine.stop_encoder_baseband_recording(encoder) {
+                Ok(_) => tick.finished = true,
+                Err(error) => {
+                    tracing::warn!(encoder, %error, "could not stop an encoder recording");
+                }
+            }
+        }
+        for encoder in wanted.difference(&current) {
+            let result = tick
+                .engine
+                .start_encoder_baseband_recording(encoder)
+                .map(|_| ());
+            self.outcome(
+                Target::Encoded {
+                    encoder: encoder.clone(),
+                },
+                result,
+            );
+        }
+        targets.extend(
+            wanted
+                .into_iter()
+                .map(|encoder| Target::Encoded { encoder }),
         );
     }
 
@@ -320,20 +399,32 @@ fn switched_on(graph: &PatchGraph, kind: NodeKind) -> impl Iterator<Item = &sdrm
 }
 
 fn running_audio(snapshot: &StateSnapshot) -> HashMap<AudioTake, Vec<String>> {
-    snapshot
-        .device_sets
-        .iter()
-        .flat_map(|set| {
-            set.channels.iter().flat_map(move |channel| {
-                channel.audio_recordings.iter().map(move |status| {
-                    let take = AudioTake {
-                        node: status.node.clone(),
-                        device_set: set.id,
-                        channel: channel.id,
-                    };
-                    (take, status.fx.clone())
-                })
-            })
+    let channels = snapshot.device_sets.iter().flat_map(|set| {
+        set.channels.iter().flat_map(move |channel| {
+            let heard = Heard::Channel {
+                device_set: set.id,
+                channel: channel.id,
+            };
+            channel
+                .audio_recordings
+                .iter()
+                .map(move |status| (heard.clone(), status))
+        })
+    });
+    let voices = snapshot.node_streams.iter().flat_map(|stream| {
+        stream
+            .audio_recordings
+            .iter()
+            .map(|status| (Heard::Voice(stream.node.clone()), status))
+    });
+    channels
+        .chain(voices)
+        .map(|(heard, status)| {
+            let take = AudioTake {
+                node: status.node.clone(),
+                heard,
+            };
+            (take, status.fx.clone())
         })
         .collect()
 }
@@ -352,14 +443,10 @@ fn wanted_audio(
             .iter()
             .flat_map(|feed| feed.audio_routes(graph));
         for route in routes {
-            let Some((device_set, channel)) = route.channel_addr() else {
-                continue;
-            };
             {
                 let take = AudioTake {
                     node: node.id.clone(),
-                    device_set,
-                    channel,
+                    heard: Heard::of(&route),
                 };
                 if wanted.contains_key(&take) {
                     twice = true;
@@ -383,6 +470,26 @@ fn wanted_audio(
         }
     }
     (wanted, doubled)
+}
+
+/// The encoders whose baseband a recorder records.
+fn running_encoded(snapshot: &StateSnapshot) -> HashSet<String> {
+    snapshot
+        .node_streams
+        .iter()
+        .filter(|stream| stream.baseband_recording.is_some())
+        .map(|stream| stream.node.clone())
+        .collect()
+}
+
+fn wanted_encoded(graph: &PatchGraph, patch: &ResolvedPatch) -> HashSet<String> {
+    switched_on(graph, NodeKind::BasebandRecorder)
+        .flat_map(|node| patch.feeds(&node.id, BASEBAND_PORT))
+        .filter_map(|feed| match &feed.tap {
+            Some(sdrmm_wire::Tap::Node { node, .. }) => Some(node.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn running_baseband(snapshot: &StateSnapshot) -> HashSet<(u32, u32)> {
@@ -646,8 +753,10 @@ mod tests {
     fn take(node: &str, ds: u32, ch: u32) -> AudioTake {
         AudioTake {
             node: node.to_owned(),
-            device_set: ds,
-            channel: ch,
+            heard: Heard::Channel {
+                device_set: ds,
+                channel: ch,
+            },
         }
     }
 

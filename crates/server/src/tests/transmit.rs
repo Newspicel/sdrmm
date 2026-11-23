@@ -119,9 +119,12 @@ async fn an_armed_transmitter_sends_the_message_its_encoder_is_handed() {
     assert_eq!(transmitting(&app).await, None, "nothing transmits unasked");
 
     let hello = send(&serde_json::json!({"source": "N0CALL-7", "text": ">hello"}));
-    let (status, body) = act(&app, "mod", hello.clone()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("Arm the transmitter"), "{body}");
+    assert_eq!(acted(&app, "mod", hello.clone()).await, NodeActed::Sent);
+    assert_eq!(
+        transmitting(&app).await,
+        None,
+        "an unarmed transmitter stays quiet"
+    );
 
     let NodeActed::Armed(armed) = acted(&app, "tx", arm()).await else {
         panic!("arming answers with the status");
@@ -202,7 +205,7 @@ async fn an_armed_transmitter_follows_the_patch() {
     let mut snapshot = station("nfm");
     on_the_bench(&app, &snapshot).await;
     acted(&app, "tx", arm()).await;
-    let spoken = crate::transmit::speak(&state, "mic", &vec![0.1; 4_800]);
+    let spoken = crate::encoders::speak(&state, "mic", &vec![0.1; 4_800]);
     assert_eq!(spoken, 1, "the microphone reaches its transmitter");
     until(&app, "keyed on voice", |status| status.bursts == 1).await;
 
@@ -235,11 +238,26 @@ async fn an_armed_transmitter_follows_the_patch() {
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    assert_eq!(crate::transmit::speak(&state, "mic", &[0.0; 480]), 0);
+    assert_eq!(
+        crate::encoders::speak(&state, "mic", &[0.0; 480]),
+        1,
+        "the encoder still feeds the transmitter wired to it"
+    );
+    snapshot
+        .graph
+        .edges
+        .retain(|edge| edge.to.port != "baseband");
+    put_active_workspace(&app, &snapshot).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while state.engine.runs_encoder("mod") {
+        assert!(Instant::now() < deadline, "an unwired encoder kept running");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(crate::encoders::speak(&state, "mic", &[0.0; 480]), 0);
 }
 
 #[tokio::test]
-async fn an_encoders_audio_settings_follow_into_its_armed_transmitter() {
+async fn an_encoders_audio_settings_follow_into_the_running_encoder() {
     let (app, state) = test_router_with_state();
     let mut snapshot = station("nfm");
     on_the_bench(&app, &snapshot).await;
@@ -255,14 +273,18 @@ async fn an_encoders_audio_settings_follow_into_its_armed_transmitter() {
     }
     put_active_workspace(&app, &snapshot).await;
     let deadline = Instant::now() + Duration::from_secs(20);
-    while state.engine.transmitters()[0].1.audio != notched {
+    while state
+        .engine
+        .encoder_spec("mod")
+        .is_none_or(|spec| spec.audio != notched)
+    {
         assert!(
             Instant::now() < deadline,
             "the audio settings never arrived"
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    assert_eq!(crate::transmit::speak(&state, "mic", &vec![0.1; 4_800]), 1);
+    assert_eq!(crate::encoders::speak(&state, "mic", &vec![0.1; 4_800]), 1);
     let keyed = until(&app, "keyed through the chain", |status| status.bursts == 1).await;
     assert_eq!(keyed.error, None);
 }
@@ -378,7 +400,7 @@ async fn voice_activity_microphone_drops_quiet_frames() {
     on_the_bench(&app, &snapshot).await;
     acted(&app, "tx", arm()).await;
     assert_eq!(
-        crate::transmit::speak(&state, "mic", &vec![0.0005; 4_800]),
+        crate::encoders::speak(&state, "mic", &vec![0.0005; 4_800]),
         0
     );
 }
@@ -416,7 +438,7 @@ async fn voice_activity_microphone_opens_on_a_loud_voice() {
     acted(&app, "tx", arm()).await;
     let taken: usize = voiced(100 * 960)
         .chunks(960)
-        .map(|frame| crate::transmit::speak(&state, "mic", frame))
+        .map(|frame| crate::encoders::speak(&state, "mic", frame))
         .sum();
     assert!(taken > 0, "a loud voice never opened the microphone");
 }
@@ -429,31 +451,106 @@ async fn continuous_microphone_passes_quiet_frames() {
     on_the_bench(&app, &snapshot).await;
     acted(&app, "tx", arm()).await;
     assert_eq!(
-        crate::transmit::speak(&state, "mic", &vec![0.0005; 4_800]),
+        crate::encoders::speak(&state, "mic", &vec![0.0005; 4_800]),
         1
     );
 }
 
 #[tokio::test]
-async fn a_source_reaches_armed_only_while_its_transmitter_is_armed() {
+async fn a_source_feeds_an_encoder_while_the_encoder_is_wired() {
     let (app, state) = test_router_with_state();
-    on_the_bench(&app, &station("nfm")).await;
-    let reaches =
-        || crate::transmit::reaches_armed(&state.engine, &state.resolved.current(), "mic");
-    let mut armed = state.transmit.subscribe_armed();
-    armed.mark_unchanged();
-    assert!(!reaches(), "nothing is armed yet");
-    acted(&app, "tx", arm()).await;
-    assert!(reaches());
-    assert!(
-        armed.has_changed().expect("hub"),
-        "arming wakes who keys it"
-    );
-    assert!(!crate::transmit::reaches_armed(
+    let mut snapshot = station("nfm");
+    on_the_bench(&app, &snapshot).await;
+    let feeds = || crate::encoders::feeds_encoder(&state.engine, &state.resolved.current(), "mic");
+    assert!(feeds(), "a wired encoder runs armed or not");
+    assert!(!crate::encoders::feeds_encoder(
         &state.engine,
         &state.resolved.current(),
         "mod"
     ));
-    acted(&app, "tx", disarm()).await;
-    assert!(!reaches());
+    let mut changes = state.encoders.subscribe_changes();
+    changes.mark_unchanged();
+    snapshot
+        .graph
+        .edges
+        .retain(|edge| edge.to.port != "baseband");
+    put_active_workspace(&app, &snapshot).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while feeds() {
+        assert!(
+            Instant::now() < deadline,
+            "the unwired encoder kept running"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        changes.has_changed().expect("hub"),
+        "an encoder stopping wakes who feeds it"
+    );
+}
+
+/// An encoder wired only to a recorder, its microphone wired only to another.
+fn studio() -> WorkspaceSnapshot {
+    let mut snapshot = virtual_snapshot("transceiver", &[]);
+    snapshot.graph.nodes.extend([
+        node("mic", NodeBody::Microphone(MicrophoneNode::default())),
+        node("mod", encoder("nfm")),
+        node(
+            "base",
+            NodeBody::BasebandRecorder(sdrmm_wire::BasebandRecorderNode { recording: true }),
+        ),
+        node(
+            "takes",
+            NodeBody::AudioRecorder(sdrmm_wire::AudioRecorderNode {
+                recording: true,
+                ..Default::default()
+            }),
+        ),
+    ]);
+    snapshot.graph.edges.extend([
+        wire(("mic", "audio"), ("mod", "audio")),
+        wire(("mic", "audio"), ("takes", "audio")),
+        wire(("mod", "baseband"), ("base", "baseband")),
+    ]);
+    snapshot
+}
+
+#[tokio::test]
+async fn an_encoder_and_a_microphone_record_with_no_radio_in_the_way() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let (app, state) = recording_router_with_state(dir.path());
+    on_the_bench(&app, &studio()).await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let streams = get_state(&app).await.node_streams;
+        let encoded = streams
+            .iter()
+            .any(|stream| stream.node == "mod" && stream.baseband_recording.is_some());
+        let voiced = streams
+            .iter()
+            .any(|stream| stream.node == "mic" && !stream.audio_recordings.is_empty());
+        if encoded && voiced {
+            break;
+        }
+        assert!(Instant::now() < deadline, "never recorded: {streams:?}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(crate::encoders::speak(&state, "mic", &vec![0.1; 4_800]), 1);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        let streams = get_state(&app).await.node_streams;
+        let frames = streams
+            .iter()
+            .flat_map(|stream| &stream.audio_recordings)
+            .map(|take| take.frames)
+            .sum::<u64>();
+        if frames >= 4_800 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the voice never reached its take"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }

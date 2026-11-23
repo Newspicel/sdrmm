@@ -276,7 +276,7 @@ pub use sink::{
 pub use sky_scan::{MAX_SKY_CELLS, SkyCell, SkyScanNode, SkyScanParams, SkyScanStatus};
 pub use state::{
     AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
-    PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,
+    NodeStream, PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,
     TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem, TrunkSystemStatus,
 };
 pub use stream_out::{

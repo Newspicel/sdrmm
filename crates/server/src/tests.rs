@@ -197,6 +197,13 @@ fn recording_router_without_reconcilers(dir: &Path) -> (Router, Arc<Engine>) {
     (app(&state, auth::ListenerRole::Main, false), engine)
 }
 
+pub(crate) fn recording_router_with_state(dir: &Path) -> (Router, AppState) {
+    let state = recording_state(dir);
+    let (router, background) = router_with_state(state.clone(), &ServerOptions::default());
+    background.detach();
+    (router, state)
+}
+
 fn recording_router(dir: &Path) -> Router {
     let (router, background) = router_with_state(recording_state(dir), &ServerOptions::default());
     background.detach();

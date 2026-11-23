@@ -40,6 +40,7 @@ mod device_ops;
 mod device_plugins;
 mod discovery;
 mod doppler;
+pub mod encoders;
 #[cfg(feature = "gpu-fft")]
 mod gpu;
 mod history;
@@ -303,6 +304,8 @@ pub enum EngineError {
     NetworkExport(String),
     #[error("transmit: {0}")]
     Transmit(String),
+    #[error("encoder {0} is not running")]
+    EncoderNotRunning(String),
     #[error("scan: {0}")]
     Scan(String),
     #[error("{0}")]
@@ -336,6 +339,7 @@ impl EngineError {
                 | Self::ChannelNotFound(..)
                 | Self::ArrayNotFound(_)
                 | Self::ProcessorNotFound(_)
+                | Self::EncoderNotRunning(_)
         ) || matches!(self, Self::Device(DeviceError::NotFound(_)))
     }
 
@@ -1148,6 +1152,7 @@ pub struct Engine {
     inner: Mutex<Inner>,
     audio_fx: Mutex<audio_fx::AudioFxHub>,
     voices: Mutex<voices::VoiceHub>,
+    encoders: Mutex<encoders::EncoderHub>,
     denoise_models: Arc<DenoiseModels>,
     event_tx: broadcast::Sender<ServerEvent>,
     fault_tx: mpsc::Sender<(u32, DeviceError)>,
@@ -1190,6 +1195,7 @@ impl Engine {
             inner: Mutex::new(Inner::default()),
             audio_fx: Mutex::new(audio_fx::AudioFxHub::new(Arc::clone(&denoise_models))),
             voices: Mutex::new(voices::VoiceHub::default()),
+            encoders: Mutex::new(encoders::EncoderHub::default()),
             denoise_models,
             event_tx,
             fault_tx,
@@ -1649,6 +1655,12 @@ impl Engine {
                 .collect(),
             trunk_systems,
             arrays,
+            node_streams: self
+                .voices()
+                .node_streams()
+                .into_iter()
+                .chain(self.encoders().node_streams())
+                .collect(),
             revision: inner.revision,
         }
     }

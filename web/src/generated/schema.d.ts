@@ -2721,8 +2721,8 @@ export interface components {
             kind: "manual";
         };
         /**
-         * @description Where baseband comes from: a channel the engine runs, or an encoder, which runs only inside
-         *     the transmitter it feeds.
+         * @description Where baseband comes from: a channel a radio runs, or an encoder running on its own clock.
+         *     Every baseband input takes both.
          * @enum {string}
          */
         BasebandOrigin: "channel" | "encoder";
@@ -5315,6 +5315,16 @@ export interface components {
             source: components["schemas"]["ProblemSource"];
             text: string;
         };
+        /**
+         * @description A stream a node makes itself, outside any radio: a voice, an encoder's baseband. Its sinks
+         *     show here the way a channel's do.
+         */
+        NodeStream: {
+            audio_recordings?: components["schemas"]["AudioRecordingStatus"][];
+            baseband_recording?: components["schemas"]["RecordingStatus"] | null;
+            network_export?: components["schemas"]["NetworkExportStatus"] | null;
+            node: string;
+        };
         NodeTypeInfo: {
             category: components["schemas"]["NodeCategory"];
             default_body: components["schemas"]["NodeBody"];
@@ -5855,7 +5865,7 @@ export interface components {
             version: number;
         };
         /** @enum {string} */
-        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "transmit" | "speaker" | "voice_chat" | "sweep" | "array_recorder";
+        ProblemSource: "bind" | "position" | "monitor" | "apply" | "calls" | "recorder" | "encoder" | "transmit" | "speaker" | "voice_chat" | "sweep" | "array_recorder";
         /**
          * @description Something an operator asks a running processor to do.
          * @enum {string}
@@ -7272,6 +7282,7 @@ export interface components {
         StateSnapshot: {
             arrays?: components["schemas"]["ArrayStatus"][];
             device_sets: components["schemas"]["DeviceSet"][];
+            node_streams?: components["schemas"]["NodeStream"][];
             /** Format: int64 */
             revision: number;
             trunk_systems?: components["schemas"]["TrunkSystemStatus"][];

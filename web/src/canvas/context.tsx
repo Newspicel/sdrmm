@@ -4,6 +4,7 @@ import type {
   ChannelSettings,
   DeviceSet,
   NodeProblem,
+  NodeStream,
   PatchGraph,
   RackLayout,
   ResolvedPatch,
@@ -25,6 +26,8 @@ export interface Workspace {
   problems: readonly NodeProblem[];
   deviceSets: readonly DeviceSet[];
   trunks: readonly TrunkSystemStatus[];
+  /** Streams nodes make themselves, a voice or an encoder's baseband, with their sinks. */
+  nodeStreams: readonly NodeStream[];
   devices: ReadonlyMap<string, DeviceSet>;
   channels: ReadonlyMap<string, ChannelInfo>;
   owners: ReadonlyMap<string, string>;

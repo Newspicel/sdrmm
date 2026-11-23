@@ -21,6 +21,7 @@ pub(crate) fn follow(state: &AppState) {
     };
     let recorders = Mutex::new(Recorders::default());
     resolved::follow(state, "audio FX and recorders", move |state| {
+        crate::encoders::settle(state);
         let current = state.resolved.current();
         apply(&state.engine, &current.graph);
         state.engine.retain_voices(&voices(&current.patch));

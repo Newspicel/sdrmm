@@ -10,6 +10,7 @@ import type {
   DeviceSet,
   EncoderDescriptor,
   NodeProblem,
+  NodeStream,
   PatchCatalog,
   PatchGraph,
   PatchNode,
@@ -32,6 +33,7 @@ export interface FaceHarness {
   problems?: readonly NodeProblem[];
   selected?: string | null;
   trunks?: readonly TrunkSystemStatus[];
+  nodeStreams?: readonly NodeStream[];
   /** Draws the face as inspected, its inspector content in place. */
   inspected?: boolean;
 }
@@ -59,6 +61,7 @@ export function stubWorkspace(harness: FaceHarness): Workspace {
     problems: harness.problems ?? [],
     deviceSets: [...devices.values()],
     trunks: harness.trunks ?? [],
+    nodeStreams: harness.nodeStreams ?? [],
     devices,
     channels: harness.channels ?? new Map(),
     owners: harness.owners ?? new Map(),

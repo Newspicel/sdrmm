@@ -70,7 +70,7 @@ pub(crate) fn act(
             crate::transmit::disarm(state, node).map(|()| NodeActed::Disarmed)
         }
         NodeAction::Send(sent) => {
-            crate::transmit::send(state, node, &sent.message).map(|()| NodeActed::Sent)
+            crate::encoders::send(state, node, &sent.message).map(|()| NodeActed::Sent)
         }
         NodeAction::Processor(action) => {
             processor(state, node, action).map(|()| NodeActed::Processed)

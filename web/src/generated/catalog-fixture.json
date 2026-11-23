@@ -1482,7 +1482,7 @@
       "kind": "audio_recorder",
       "name": "Audio recorder",
       "category": "output",
-      "summary": "Records channel audio to WAV",
+      "summary": "Records audio to WAV",
       "role": {
         "role": "plain"
       },
@@ -1498,11 +1498,11 @@
           "payload": {
             "type": "audio",
             "origins": [
-              "channel"
+              "channel",
+              "voice"
             ]
           },
-          "multi": "many",
-          "takes": "channel audio"
+          "multi": "many"
         },
         {
           "name": "control",
@@ -1547,11 +1547,11 @@
           "payload": {
             "type": "baseband",
             "origins": [
-              "channel"
+              "channel",
+              "encoder"
             ]
           },
-          "multi": "many",
-          "takes": "channel baseband"
+          "multi": "many"
         },
         {
           "name": "control",
@@ -1610,12 +1610,12 @@
           "payload": {
             "type": "baseband",
             "origins": [
-              "channel"
+              "channel",
+              "encoder"
             ]
           },
           "multi": "one",
-          "group": "source",
-          "takes": "channel baseband"
+          "group": "source"
         }
       ],
       "default_body": {
@@ -2771,7 +2771,7 @@
               "encoder"
             ]
           },
-          "multi": "one"
+          "multi": "many"
         }
       ],
       "picks": "encoder",

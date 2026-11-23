@@ -115,6 +115,7 @@ export function App() {
   const tuneNode = useNodeTune();
   const deviceSets = useMemo(() => state.data?.device_sets ?? [], [state.data?.device_sets]);
   const trunks = useMemo(() => state.data?.trunk_systems ?? [], [state.data?.trunk_systems]);
+  const nodeStreams = useMemo(() => state.data?.node_streams ?? [], [state.data?.node_streams]);
   const resolved = useMemo(
     () => activePatch(resolvedState.data, activeId),
     [resolvedState.data, activeId],
@@ -200,6 +201,7 @@ export function App() {
               problems,
               deviceSets,
               trunks,
+              nodeStreams,
               devices,
               channels,
               owners,

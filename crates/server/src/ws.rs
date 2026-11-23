@@ -197,7 +197,7 @@ impl Session {
         };
         let state = self.state.clone();
         let spoken =
-            tokio::task::spawn_blocking(move || crate::transmit::speak(&state, &node, &pcm)).await;
+            tokio::task::spawn_blocking(move || crate::encoders::speak(&state, &node, &pcm)).await;
         if let Err(error) = spoken {
             tracing::error!(%error, "carrying microphone audio stopped");
         }

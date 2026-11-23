@@ -59,6 +59,12 @@ static EXAMPLES: &[Example] = &[
         body: packed_data!("examples/trunked-talkgroups.json"),
     },
     Example {
+        id: "sstv-stream",
+        name: "SSTV stream",
+        description: "Decoded pictures, live in VLC or OBS.",
+        body: packed_data!("examples/sstv-stream.json"),
+    },
+    Example {
         id: "network-feed",
         name: "Network feed",
         description: "Decodes to a file, a webhook, and raw IQ over the network.",

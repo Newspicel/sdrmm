@@ -10,7 +10,6 @@ use std::{
 use arc_swap::ArcSwapOption;
 use num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
-use sdrmm_decoder::encoder::{Modulator, TxPayload};
 use sdrmm_device::TxStream;
 use sdrmm_dsp::{Duc, EmissionMeter};
 use sdrmm_wire::{TransmitPhase, TransmitSettings, TransmitStatus};
@@ -18,17 +17,11 @@ use sdrmm_wire::{TransmitPhase, TransmitSettings, TransmitStatus};
 type Sample = Complex<f32>;
 
 const TICK: Duration = Duration::from_millis(5);
-/// How far live audio runs ahead of the air: its latency, so kept short.
-const LEAD_S: f64 = 0.06;
-/// A message is known whole up front, so it runs further ahead and rides out a scheduler stall
-/// this long without a hole in the burst.
-const MESSAGE_LEAD_S: f64 = 0.2;
 const BLOCK_S: f64 = 0.02;
 const PREFILL_S: f64 = 0.06;
 const TAIL_S: f64 = 0.005;
 const FEED_RING_S: f64 = 0.5;
 const FEED_RING_MIN: usize = 1 << 16;
-const MAX_HELD_AUDIO_S: f64 = 5.0;
 const HANG: Duration = Duration::from_millis(120);
 const WRITE_TIMEOUT: Duration = Duration::from_millis(100);
 const STALL: Duration = Duration::from_secs(3);
@@ -46,7 +39,6 @@ pub(crate) enum TxCommand {
     Radio(Band),
     Feed(Band),
     Settings(TransmitSettings),
-    Payload(TxPayload),
 }
 
 /// What the worker reports, read by snapshots without stopping it.
@@ -142,53 +134,142 @@ pub(crate) fn feed(band: Band, shared: &Arc<TxShared>) -> (TxFeedTap, Source) {
     )
 }
 
+/// The encoder side of a transmitter: the encoder pushes each keyed stretch here, already
+/// paced to real time, and says when its burst is over.
+pub(crate) struct AirTap {
+    samples: Producer<Sample>,
+    keyed: Arc<AtomicBool>,
+    shared: Arc<TxShared>,
+}
+
+impl AirTap {
+    /// Hands over the first `keyed` samples of `block`; fewer than all of them ends the burst.
+    /// False once the transmitter is gone.
+    #[must_use]
+    pub(crate) fn push(&mut self, block: &[Sample], keyed: usize) -> bool {
+        if self.samples.is_abandoned() {
+            return false;
+        }
+        if keyed > 0 {
+            if self.samples.push_entire_slice(&block[..keyed]).is_err() {
+                self.shared.underruns.fetch_add(1, Ordering::Relaxed);
+            }
+            self.keyed.store(true, Ordering::Release);
+        }
+        if keyed < block.len() {
+            self.keyed.store(false, Ordering::Release);
+        }
+        true
+    }
+}
+
+/// A transmitter fed by an encoder running at `rate`.
+pub(crate) fn encoded(rate: f64, shared: &Arc<TxShared>) -> (AirTap, Source) {
+    let capacity = ((rate * FEED_RING_S) as usize).max(FEED_RING_MIN);
+    let (producer, consumer) = RingBuffer::new(capacity);
+    let keyed = Arc::new(AtomicBool::new(false));
+    let tap = AirTap {
+        samples: producer,
+        keyed: keyed.clone(),
+        shared: shared.clone(),
+    };
+    (
+        tap,
+        Source::Encoded {
+            ring: consumer,
+            rate,
+            keyed,
+        },
+    )
+}
+
+/// An air tap and a reader of what reached it: the samples keyed so far and whether the
+/// encoder still keys.
+#[cfg(test)]
+pub(crate) fn encoded_for_tests(
+    rate: f64,
+    shared: &Arc<TxShared>,
+) -> (AirTap, impl FnMut() -> (usize, bool)) {
+    let (tap, source) = encoded(rate, shared);
+    let Source::Encoded {
+        mut ring, keyed, ..
+    } = source
+    else {
+        unreachable!("an encoded source");
+    };
+    let mut seen = 0;
+    let read = move || {
+        seen += ring.slots();
+        if let Ok(chunk) = ring.read_chunk(ring.slots()) {
+            chunk.commit_all();
+        }
+        (seen, keyed.load(Ordering::Acquire))
+    };
+    (tap, read)
+}
+
 pub(crate) enum Source {
-    Encoder { tx: Box<dyn Modulator>, rate: f64 },
-    Feed { ring: Consumer<Sample>, band: Band },
+    Encoded {
+        ring: Consumer<Sample>,
+        rate: f64,
+        keyed: Arc<AtomicBool>,
+    },
+    Feed {
+        ring: Consumer<Sample>,
+        band: Band,
+    },
 }
 
 impl Source {
     fn rate(&self) -> f64 {
         match self {
-            Self::Encoder { rate, .. } => *rate,
+            Self::Encoded { rate, .. } => *rate,
             Self::Feed { band, .. } => band.sample_rate,
         }
     }
 
     fn center_hz(&self) -> Option<f64> {
         match self {
-            Self::Encoder { .. } => None,
+            Self::Encoded { .. } => None,
             Self::Feed { band, .. } => Some(band.center_hz),
         }
     }
 
-    /// A modulator makes samples as fast as it is asked, so the worker paces it; a lane arrives
-    /// at its own pace.
-    const fn paced(&self) -> bool {
-        matches!(self, Self::Encoder { .. })
+    /// Whether the burst on the air is over: the encoder unkeyed and everything it sent is out,
+    /// or a lane went quiet past the hang time.
+    fn over(&self, fed: Instant) -> bool {
+        match self {
+            Self::Encoded { ring, keyed, .. } => {
+                !keyed.load(Ordering::Acquire) && ring.slots() == 0
+            }
+            Self::Feed { .. } => fed.elapsed() > HANG,
+        }
     }
 
     fn fill(&mut self, out: &mut [Sample], on_air: bool) -> usize {
         match self {
-            Self::Encoder { tx, .. } => tx.generate(out),
+            Self::Encoded { ring, .. } => read(ring, out),
             Self::Feed { ring, band } => {
-                let ready = ring.slots();
                 let prefill = (PREFILL_S * band.sample_rate) as usize;
-                if !on_air && ready < prefill {
+                if !on_air && ring.slots() < prefill {
                     return 0;
                 }
-                let take = ready.min(out.len());
-                let Ok(chunk) = ring.read_chunk(take) else {
-                    return 0;
-                };
-                let (first, second) = chunk.as_slices();
-                out[..first.len()].copy_from_slice(first);
-                out[first.len()..take].copy_from_slice(second);
-                chunk.commit_all();
-                take
+                read(ring, out)
             }
         }
     }
+}
+
+fn read(ring: &mut Consumer<Sample>, out: &mut [Sample]) -> usize {
+    let take = ring.slots().min(out.len());
+    let Ok(chunk) = ring.read_chunk(take) else {
+        return 0;
+    };
+    let (first, second) = chunk.as_slices();
+    out[..first.len()].copy_from_slice(first);
+    out[first.len()..take].copy_from_slice(second);
+    chunk.commit_all();
+    take
 }
 
 struct Burst {
@@ -209,10 +290,6 @@ pub(crate) struct Worker {
     burst: Option<Burst>,
     baseband: Vec<Sample>,
     out: Vec<Sample>,
-    held_audio: Vec<f32>,
-    flowing: bool,
-    voiced: i64,
-    heard: Instant,
     meter: EmissionMeter,
 }
 
@@ -235,10 +312,6 @@ impl Worker {
             burst: None,
             baseband: Vec::new(),
             out: Vec::new(),
-            held_audio: Vec::new(),
-            flowing: false,
-            voiced: 0,
-            heard: Instant::now(),
             meter: EmissionMeter::new(1.0),
         };
         worker.plan();
@@ -307,8 +380,6 @@ impl Worker {
                     self.gain = gain_of(&self.settings);
                 }
             }
-            TxCommand::Payload(TxPayload::Audio(pcm)) => self.hold_audio(&pcm),
-            TxCommand::Payload(frame) => self.submit(frame),
         }
     }
 
@@ -356,86 +427,23 @@ impl Worker {
         }
     }
 
-    fn submit(&mut self, payload: TxPayload) {
-        let Source::Encoder { tx, .. } = &mut self.source else {
-            self.shared
-                .fail("a lane takes no messages or audio".to_owned());
-            return;
-        };
-        if let Err(error) = tx.submit(payload) {
-            self.shared.fail(error.to_string());
-        }
-    }
-
-    fn hold_audio(&mut self, pcm: &[f32]) {
-        let limit = (MAX_HELD_AUDIO_S * self.source.rate()) as usize;
-        if self.held_audio.len() + pcm.len() > limit {
-            self.shared.underruns.fetch_add(1, Ordering::Relaxed);
-            return;
-        }
-        self.held_audio.extend_from_slice(pcm);
-        self.heard = Instant::now();
-    }
-
-    /// Hands held audio to the modulator once enough has gathered to ride out arrival jitter, or
-    /// the speaker has already stopped.
-    fn release_audio(&mut self) {
-        if self.held_audio.is_empty() {
-            return;
-        }
-        let prefill = (PREFILL_S * self.source.rate()) as usize;
-        if self.flowing || self.held_audio.len() >= prefill || self.heard.elapsed() > HANG {
-            self.flowing = true;
-            let pcm = std::mem::take(&mut self.held_audio);
-            self.voiced += pcm.len() as i64;
-            self.submit(TxPayload::Audio(pcm));
-        }
-    }
-
-    /// Covers audio that is late by less than the hang time with silence, so a speaker's
-    /// jitter leaves a short quiet patch instead of dropping the carrier.
-    fn bridge(&mut self, want: usize) {
-        if !self.flowing || self.heard.elapsed() > HANG {
-            return;
-        }
-        let short = want as i64 - self.voiced;
-        if short > 0 {
-            self.voiced += short;
-            self.submit(TxPayload::Audio(vec![0.0; short as usize]));
-        }
-    }
-
     #[expect(
         clippy::large_stack_arrays,
         reason = "stack scratch keeps the TX loop allocation free"
     )]
     fn step(&mut self) -> Result<bool, String> {
         if self.duc.is_none() {
-            self.held_audio.clear();
             let mut scrap = [Sample::new(0.0, 0.0); 4_096];
             return Ok(self.source.fill(&mut scrap, true) > 0);
         }
-        self.release_audio();
-        let rate = self.source.rate();
-        let block = ((BLOCK_S * rate) as usize).max(1);
-        let want = match &self.burst {
-            Some(burst) if self.source.paced() => {
-                let lead_s = if self.flowing { LEAD_S } else { MESSAGE_LEAD_S };
-                let due = ((burst.started.elapsed().as_secs_f64() + lead_s) * rate) as u64;
-                (due.saturating_sub(burst.produced) as usize).min(4 * block)
-            }
-            Some(_) => 4 * block,
-            None => block,
+        let block = ((BLOCK_S * self.source.rate()) as usize).max(1);
+        let want = if self.burst.is_some() {
+            4 * block
+        } else {
+            block
         };
-        if want == 0 {
-            return Ok(false);
-        }
-        self.bridge(want);
         self.baseband.resize(want, Sample::new(0.0, 0.0));
         let got = self.source.fill(&mut self.baseband, self.burst.is_some());
-        if self.flowing {
-            self.voiced -= got as i64;
-        }
         if got > 0 {
             self.send(got)?;
         }
@@ -443,12 +451,7 @@ impl Worker {
         else {
             return Ok(false);
         };
-        let over = if self.source.paced() {
-            got < want
-        } else {
-            fed.elapsed() > HANG
-        };
-        if over {
+        if self.source.over(fed) {
             self.end_burst()?;
             return Ok(true);
         }
@@ -509,8 +512,6 @@ impl Worker {
     fn end_burst(&mut self) -> Result<(), String> {
         self.measure();
         self.burst = None;
-        self.flowing = false;
-        self.voiced = 0;
         let tail = (TAIL_S * self.source.rate()) as usize;
         self.baseband.clear();
         self.baseband.resize(tail, Sample::new(0.0, 0.0));

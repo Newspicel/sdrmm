@@ -130,7 +130,7 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
           <Button
             type="button"
             className={FACE_BTN}
-            title="Sends this message once through the armed transmitter"
+            title="Sends this message once"
             disabled={send.isPending}
             onClick={() => send.mutate()}
           >

@@ -7,29 +7,29 @@ use std::{
     thread::JoinHandle,
 };
 
-use sdrmm_decoder::encoder::{EncoderParams, encoder};
 use sdrmm_wire::{
-    AudioProcessing, DeviceSetStatus, Direction, EncoderInput, ServerEvent, StateScope,
-    TransmitPhase, TransmitSettings, TransmitStatus,
+    DeviceSetStatus, Direction, ServerEvent, StateScope, TransmitPhase, TransmitSettings,
+    TransmitStatus,
 };
 
 use crate::{
-    DeviceSetState, Engine, EngineError, Inner, center_of, denoise_models::DenoiseModels,
+    DeviceSetState, Engine, EngineError, Inner, center_of, encoders::EncodedBand,
     runtime::DspCommand, sample_rate_of,
 };
 
-mod voice;
 mod worker;
 
-use voice::Voice;
-pub(crate) use worker::TxFeedTap;
-use worker::{Band, Source, TxCommand, TxShared, Worker};
+pub(crate) use worker::TxShared;
+#[cfg(test)]
+pub(crate) use worker::encoded_for_tests;
+pub(crate) use worker::{AirTap, TxFeedTap};
+use worker::{Band, TxCommand, Worker};
 
 /// What a transmitter sends.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TransmitSource {
-    /// An encoder, fed audio or messages.
-    Encoder(EncoderParams),
+    /// A running encoder node, in the mode it runs.
+    Encoded { node: String, type_id: String },
     /// A lane as it is received: a recording, a generator or another radio.
     Lane { device_set: u32, stream: u32 },
     /// One channel's filtered baseband, as its decoder sees it.
@@ -41,8 +41,6 @@ pub struct TransmitRequest {
     pub node: String,
     pub source: TransmitSource,
     pub settings: TransmitSettings,
-    /// What a voice encoder's audio runs through before it is modulated.
-    pub audio: AudioProcessing,
 }
 
 /// What changed since the state was last published.
@@ -55,19 +53,12 @@ struct Seen {
 
 pub(crate) struct TransmitState {
     request: TransmitRequest,
-    encodes: Option<Encodes>,
-    voice: Option<Voice>,
     feed: Option<FeedFrom>,
     commands: mpsc::Sender<TxCommand>,
     shared: Arc<TxShared>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
     seen: Seen,
-}
-
-/// The encoder a transmitter runs.
-struct Encodes {
-    type_id: String,
 }
 
 impl TransmitState {
@@ -98,16 +89,6 @@ impl TransmitState {
 
     fn send(&self, command: TxCommand) -> Result<(), EngineError> {
         if self.shared.stopped() || self.commands.send(command).is_err() {
-            return Err(self.disarmed());
-        }
-        Ok(())
-    }
-
-    fn speak(&self, lane: u64, pcm: Vec<f32>) -> Result<(), EngineError> {
-        let Some(voice) = &self.voice else {
-            return Err(refused("this transmitter takes no audio"));
-        };
-        if self.shared.stopped() || !voice.speak(lane, pcm) {
             return Err(self.disarmed());
         }
         Ok(())
@@ -166,16 +147,8 @@ struct Plan {
 }
 
 enum Planned {
-    Encoder {
-        params: EncoderParams,
-        rate: f64,
-        audio: bool,
-        width_hz: f64,
-    },
-    Feed {
-        from: FeedFrom,
-        band: Band,
-    },
+    Encoded { node: String, band: EncodedBand },
+    Feed { from: FeedFrom, band: Band },
 }
 
 fn refused(reason: impl Into<String>) -> EngineError {
@@ -211,7 +184,12 @@ impl Inner {
             .ok_or_else(|| refused("the transmitter is not armed"))
     }
 
-    fn plan(&self, ds: u32, request: &TransmitRequest) -> Result<Plan, EngineError> {
+    fn plan(
+        &self,
+        ds: u32,
+        request: &TransmitRequest,
+        encoded: Option<EncodedBand>,
+    ) -> Result<Plan, EngineError> {
         let state = self.running(ds)?;
         if !state.capabilities.duplex.supports(Direction::Tx) {
             return Err(refused("this radio does not transmit"));
@@ -230,16 +208,10 @@ impl Inner {
             )));
         }
         let source = match &request.source {
-            TransmitSource::Encoder(params) => {
-                let encoder = encoder(&params.type_id)?;
-                let descriptor = encoder.descriptor();
-                Planned::Encoder {
-                    params: params.clone(),
-                    rate: descriptor.rate_hz,
-                    audio: descriptor.input == EncoderInput::Audio,
-                    width_hz: encoder.width_hz(params)?,
-                }
-            }
+            TransmitSource::Encoded { node, .. } => Planned::Encoded {
+                node: node.clone(),
+                band: encoded.ok_or_else(|| EngineError::EncoderNotRunning(node.clone()))?,
+            },
             TransmitSource::Lane { device_set, stream } => {
                 let lane = self.running(*device_set)?;
                 lane.dsp_sender(*stream)?;
@@ -309,42 +281,23 @@ impl Inner {
 struct Started {
     state: TransmitState,
     tap: Option<(FeedFrom, TxFeedTap)>,
+    air: Option<(String, AirTap)>,
 }
 
-fn start(
-    plan: Plan,
-    request: &TransmitRequest,
-    models: &Arc<DenoiseModels>,
-) -> Result<Started, EngineError> {
+fn start(plan: Plan, request: &TransmitRequest) -> Result<Started, EngineError> {
     let shared = Arc::new(TxShared::default());
-    let (source, encodes, tap) = match plan.source {
-        Planned::Encoder {
-            params,
-            rate,
-            audio,
-            width_hz,
-        } => {
-            shared.declare_channel(width_hz);
-            let tx = encoder(&params.type_id)?.open(&params)?;
-            let source = Source::Encoder { tx, rate };
-            let type_id = params.type_id;
-            (source, Some((Encodes { type_id }, audio)), None)
+    let (source, tap, air) = match plan.source {
+        Planned::Encoded { node, band } => {
+            shared.declare_channel(band.width_hz);
+            let (air, source) = worker::encoded(band.rate, &shared);
+            (source, None, Some((node, air)))
         }
         Planned::Feed { from, band } => {
             let (tap, source) = worker::feed(band, &shared);
-            (source, None, Some((from, tap)))
+            (source, Some((from, tap)), None)
         }
     };
     let (commands, received) = mpsc::channel();
-    let voice = match encodes {
-        Some((_, true)) => Some(Voice::spawn(
-            request.audio.clone(),
-            Arc::clone(models),
-            commands.clone(),
-        )?),
-        _ => None,
-    };
-    let encodes = encodes.map(|(encodes, _)| encodes);
     let stream = plan.runtime.lock().tx_start()?;
     let stop = Arc::new(AtomicBool::new(false));
     let worker = Worker::new(
@@ -365,8 +318,6 @@ fn start(
     let feed = tap.as_ref().map(|(from, _)| *from);
     let state = TransmitState {
         request: request.clone(),
-        encodes,
-        voice,
         feed,
         commands,
         shared,
@@ -378,7 +329,7 @@ fn start(
             failed: false,
         },
     };
-    Ok(Started { state, tap })
+    Ok(Started { state, tap, air })
 }
 
 impl Engine {
@@ -391,10 +342,19 @@ impl Engine {
         if let Some(problem) = request.settings.problem() {
             return Err(refused(problem));
         }
-        request.audio.validate().map_err(refused)?;
-        let plan = self.lock().plan(ds, request)?;
+        let encoded = match &request.source {
+            TransmitSource::Encoded { node, .. } => Some(self.encoders().band(node)?),
+            TransmitSource::Lane { .. } | TransmitSource::Channel { .. } => None,
+        };
+        let plan = self.lock().plan(ds, request, encoded)?;
         self.halt_transmitter(ds);
-        let Started { state, tap } = start(plan, request, &self.denoise_models)?;
+        let Started { state, tap, air } = start(plan, request)?;
+        if let Some((node, air)) = air
+            && let Err(error) = self.encoders().attach_air(&node, air)
+        {
+            state.halt();
+            return Err(error);
+        }
         let mut inner = self.lock();
         let free = inner
             .running(ds)
@@ -463,12 +423,10 @@ impl Engine {
         ds: u32,
         node: &str,
         settings: TransmitSettings,
-        audio: AudioProcessing,
     ) -> Result<TransmitStatus, EngineError> {
         if let Some(problem) = settings.problem() {
             return Err(refused(problem));
         }
-        audio.validate().map_err(refused)?;
         let mut inner = self.lock();
         inner.transmitter(ds, node)?;
         let Some(transmit) = inner
@@ -479,11 +437,7 @@ impl Engine {
             return Err(refused("the transmitter is not armed"));
         };
         transmit.send(TxCommand::Settings(settings.clone()))?;
-        if let Some(voice) = &transmit.voice {
-            voice.set(audio.clone());
-        }
         transmit.request.settings = settings;
-        transmit.request.audio = audio;
         let status = transmit.status();
         inner.revision += 1;
         drop(inner);
@@ -501,33 +455,5 @@ impl Engine {
             .iter()
             .filter_map(|(ds, state)| Some((*ds, state.transmit.as_ref()?.request.clone())))
             .collect()
-    }
-
-    /// Sends one message, shaped by the form its encoder declares.
-    pub fn transmit_message(
-        &self,
-        ds: u32,
-        node: &str,
-        message: &serde_json::Value,
-    ) -> Result<(), EngineError> {
-        let inner = self.lock();
-        let transmit = inner.transmitter(ds, node)?;
-        let Some(encodes) = &transmit.encodes else {
-            return Err(refused("a lane takes no messages"));
-        };
-        let payload = encoder(&encodes.type_id)?.compose(message)?;
-        transmit.send(TxCommand::Payload(payload))
-    }
-
-    /// Feeds mono audio at the encoder's rate to a voice transmitter. Audio from different
-    /// `lane`s is summed in time.
-    pub fn transmit_audio(
-        &self,
-        ds: u32,
-        node: &str,
-        lane: u64,
-        pcm: Vec<f32>,
-    ) -> Result<(), EngineError> {
-        self.lock().transmitter(ds, node)?.speak(lane, pcm)
     }
 }

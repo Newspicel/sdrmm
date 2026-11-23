@@ -106,4 +106,16 @@ describe("reachesListener", () => {
     );
     expect(reachesListener(reaching([]), nodes, idle, "mic")).toBe(false);
   });
+
+  it("holds for an encoder whose baseband goes to a recorder, armed or not", () => {
+    const recorded = reaching(["enc"]);
+    const enc = recorded.nodes.find((held) => held.id === "enc");
+    const out = enc?.ports.find((port) => port.name === "baseband");
+    out?.reaches?.push({ port: "baseband", sink: "rec" } as never);
+    const withRecorder = [
+      ...nodes,
+      { id: "rec", kind: "baseband_recorder", position: { x: 0, y: 0 }, data: {} },
+    ] as unknown as PatchNode[];
+    expect(reachesListener(recorded, withRecorder, idle, "mic")).toBe(true);
+  });
 });
