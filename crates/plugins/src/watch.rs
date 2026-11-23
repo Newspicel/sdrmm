@@ -285,7 +285,9 @@ impl PluginWatcher {
         plugins.reload();
         let (tx, rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |event| {
-            let _ = tx.send(event);
+            if changes_plugins(&event) {
+                let _ = tx.send(event);
+            }
         })
         .map_err(|error| PluginError::Dir(error.to_string()))?;
         watcher
@@ -299,6 +301,12 @@ impl PluginWatcher {
     }
 }
 
+/// Whether an event can change what the directory loads. Reading the directory opens it, so
+/// inotify reports every reload as an access, and reacting to those would reload forever.
+fn changes_plugins(event: &notify::Result<notify::Event>) -> bool {
+    !event.as_ref().is_ok_and(|event| event.kind.is_access())
+}
+
 fn settle_and_reload(
     plugins: &mut PluginDir,
     rx: &mpsc::Receiver<notify::Result<notify::Event>>,
@@ -307,5 +315,29 @@ fn settle_and_reload(
     while rx.recv().is_ok() {
         while rx.recv_timeout(SETTLE).is_ok() {}
         reloaded(&plugins.reload().replaced);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use notify::{
+        Event, EventKind,
+        event::{AccessKind, AccessMode, CreateKind},
+    };
+
+    use super::changes_plugins;
+
+    #[test]
+    fn reading_the_directory_is_no_change() {
+        let open = Event::new(EventKind::Access(AccessKind::Open(AccessMode::Any)));
+        let close = Event::new(EventKind::Access(AccessKind::Close(AccessMode::Read)));
+        assert!(!changes_plugins(&Ok(open)));
+        assert!(!changes_plugins(&Ok(close)));
+    }
+
+    #[test]
+    fn a_new_file_is_a_change() {
+        let create = Event::new(EventKind::Create(CreateKind::File));
+        assert!(changes_plugins(&Ok(create)));
     }
 }
