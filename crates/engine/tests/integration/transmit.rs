@@ -161,7 +161,7 @@ async fn a_message_sent_from_a_half_duplex_radio_is_decoded_by_another() {
             &serde_json::json!({
                 "source": "DL1ABC-9",
                 "path": "WIDE1-1",
-                "text": ">on the air from sdr--",
+                "text": ">on the air from sdrmm",
             }),
         )
         .expect("queued");
@@ -181,7 +181,7 @@ async fn a_message_sent_from_a_half_duplex_radio_is_decoded_by_another() {
     .expect("the packet within the timeout");
     assert_eq!(packet.source, "DL1ABC-9");
     assert_eq!(packet.destination, "APRS");
-    assert_eq!(packet.info, ">on the air from sdr--");
+    assert_eq!(packet.info, ">on the air from sdrmm");
 
     let done = settled(&engine, talker, |now| {
         now.bursts == 1 && now.phase == TransmitPhase::Idle

@@ -1,6 +1,6 @@
 [package]
 name = "sdrmm-voicechat"
-description = "Discord and TeamSpeak voice links for sdr--"
+description = "Discord and TeamSpeak voice links for sdrmm"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

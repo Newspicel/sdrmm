@@ -10,7 +10,7 @@ use super::{INPUT_RATE_HZ, PRECODING, ROLL_OFF, SPS};
 
 pub const IMAGE_NAME: &str = "OR_ABI-L2-CMIPF-M6C13_G19_s20251772230205_e20251772239525.lrit";
 pub const ADMIN_NAME: &str = "GOES_EAST_Admin_message.lrit";
-pub const ADMIN_TEXT: &str = "SDR-- GOES HRIT TEST MESSAGE";
+pub const ADMIN_TEXT: &str = "SDRmm GOES HRIT TEST MESSAGE";
 pub const WIDTH: u16 = 320;
 pub const SEGMENT_LINES: u16 = 60;
 pub const SEGMENTS: u16 = 2;
