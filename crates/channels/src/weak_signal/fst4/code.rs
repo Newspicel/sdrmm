@@ -265,7 +265,7 @@ mod tests {
             .iter()
             .fold(0u32, |acc, &bit| (acc << 1) | u32::from(bit));
         assert_eq!(crc, crc_of_leading_one(74));
-        let mut damaged = message.clone();
+        let mut damaged = message;
         damaged[7] ^= true;
         assert_ne!(crc24(&damaged), 0);
     }

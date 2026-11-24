@@ -159,10 +159,12 @@ impl RtlRadio {
     }
 
     fn link(&self) -> Result<Arc<Connection>, DeviceError> {
-        if let Some(stale) = lock(&self.connection).take() {
+        let stale = lock(&self.connection).take();
+        if let Some(stale) = stale {
             stale.close();
         }
-        if let Some(greeted) = lock(&self.greeted).take() {
+        let greeted = lock(&self.greeted).take();
+        if let Some(greeted) = greeted {
             if greeted.at.elapsed() < GREETING_HANDOFF {
                 return Ok(greeted.connection);
             }
@@ -188,10 +190,12 @@ impl CaptureRadio for RtlRadio {
     }
 
     fn disarm(&self) {
-        if let Some(greeted) = lock(&self.greeted).take() {
+        let greeted = lock(&self.greeted).take();
+        if let Some(greeted) = greeted {
             greeted.connection.close();
         }
-        if let Some(connection) = lock(&self.connection).take() {
+        let connection = lock(&self.connection).take();
+        if let Some(connection) = connection {
             connection.close();
         }
     }

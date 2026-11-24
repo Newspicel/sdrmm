@@ -56,7 +56,7 @@ mod tests {
                 assert_eq!(pair, clean, "pair at {bit}");
             }
         }
-        let mut scattered = clean.clone();
+        let mut scattered = clean;
         scattered[2] ^= 0x11;
         assert!(!hdlc_repair(&mut scattered));
     }

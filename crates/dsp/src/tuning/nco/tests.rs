@@ -236,7 +236,7 @@ fn mixing_in_place_matches_mixing_into_a_buffer() {
 
     let mut copied = vec![Complex::new(0.0, 0.0); tone.len()];
     Nco::new(-1_000.0, fs).mix_into(&tone, &mut copied);
-    let mut in_place = tone.clone();
+    let mut in_place = tone;
     Nco::new(-1_000.0, fs).mix(&mut in_place);
 
     let worst = copied

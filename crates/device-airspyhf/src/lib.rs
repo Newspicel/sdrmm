@@ -155,7 +155,8 @@ impl CaptureRadio for AirspyHfRadio {
     }
 
     fn disarm(&self) {
-        if let Err(e) = self.lock().set_mode_off() {
+        let stopped = self.lock().set_mode_off();
+        if let Err(e) = stopped {
             tracing::debug!("airspy hf+ stop failed: {e}");
         }
     }

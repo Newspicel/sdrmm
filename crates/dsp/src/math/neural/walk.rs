@@ -19,14 +19,14 @@ pub(super) struct Walk<const K: usize> {
 
 impl<const K: usize> Walk<K> {
     pub(super) fn new(shape: &[usize], strides: [&[usize]; K]) -> Self {
-        let mut dims: Vec<(usize, [usize; K])> = shape
+        let dims: Vec<(usize, [usize; K])> = shape
             .iter()
             .enumerate()
             .filter(|&(_, &len)| len != 1)
             .map(|(axis, &len)| (len, strides.map(|s| s[axis])))
             .collect();
         let mut merged: Vec<(usize, [usize; K])> = Vec::with_capacity(dims.len());
-        for (len, step) in dims.drain(..) {
+        for (len, step) in dims {
             match merged.last_mut() {
                 Some((last_len, last_step)) if (0..K).all(|k| last_step[k] == step[k] * len) => {
                     *last_len *= len;

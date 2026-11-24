@@ -14,11 +14,11 @@ pub enum Reasm {
 impl Reasm {
     pub fn assstat(&self) -> &'static str {
         match self {
-            Reasm::Complete(_) => "complete",
-            Reasm::InProgress => "in progress",
-            Reasm::Skipped => "skipped",
-            Reasm::Duplicate => "duplicate",
-            Reasm::Incomplete => "out of sequence",
+            Self::Complete(_) => "complete",
+            Self::InProgress => "in progress",
+            Self::Skipped => "skipped",
+            Self::Duplicate => "duplicate",
+            Self::Incomplete => "out of sequence",
         }
     }
 }

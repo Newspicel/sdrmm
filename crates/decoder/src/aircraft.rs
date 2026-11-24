@@ -154,7 +154,7 @@ mod model_tests {
             ..AdsbMessage::default()
         };
         assert_eq!(
-            presented(&DecoderEvent::of(&a.clone()))
+            presented(&DecoderEvent::of(&a))
                 .place
                 .map(|place| (place.at.lat, place.at.lon)),
             None

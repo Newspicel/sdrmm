@@ -586,7 +586,7 @@ fn saturation_and_hue_apply_without_losing_lock() {
     assert!(chan.sync.locked());
     let grey = AtvParams {
         saturation_pct: 0.0,
-        ..p.clone()
+        ..p
     };
     chan.apply(settings(ChannelParams::of(&grey).expect("atv settings")))
         .expect("apply");

@@ -179,6 +179,7 @@ mod tests {
 
     #[tokio::test]
     async fn links_beyond_the_cap_are_not_opened() {
+        #[expect(clippy::collection_is_never_read, reason = "keeps the listeners open")]
         let mut listeners = Vec::new();
         let mut links = TcpLinks::new();
         for _ in 0..=MAX_LINKS {

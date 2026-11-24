@@ -60,8 +60,8 @@ impl Cfar {
         if count == 0 {
             return (0.0, spec.alpha);
         }
-        let total = self.rect(outer_rows.clone(), outer.clone())
-            - self.rect(guard_rows.clone(), guard.clone());
+        let total =
+            self.rect(outer_rows.clone(), outer.clone()) - self.rect(guard_rows, guard.clone());
         let mean = (total / count as f64) as f32;
         let left = outer.start..guard.start;
         let right = guard.end..outer.end;
@@ -74,7 +74,7 @@ impl Cfar {
                     (self.rect(outer_rows.clone(), gates.clone())
                         / (outer_rows.len() * gates.len()) as f64) as f32
                 };
-                (side(left.clone()).max(side(right.clone())), spec.alpha)
+                (side(left).max(side(right)), spec.alpha)
             }
             CfarStatistic::Os { rank } => {
                 self.gather_plane(power, row, &outer, &guard);

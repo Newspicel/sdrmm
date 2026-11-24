@@ -974,7 +974,7 @@ fn the_hub_fetches_missions_when_live_and_publishes_its_state() {
         "Shack".to_owned(),
         PHONE.to_owned(),
         "127.0.0.1:8443".to_owned(),
-        api.clone(),
+        api,
     ));
     inbound_tx
         .try_send(Inbound::Live(session))

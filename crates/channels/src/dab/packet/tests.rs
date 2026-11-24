@@ -70,7 +70,7 @@ fn packet_mode_reassembles_groups_checks_continuity_and_ignores_other_addresses(
 fn packet_fec_repairs_bursts_before_packet_crc_and_preserves_fragment_boundaries() {
     let data: Vec<u8> = (0..200).collect();
     let clean = frame(&data);
-    let mut damaged = clean.clone();
+    let mut damaged = clean;
     for byte in &mut damaged[96..96 + 96] {
         *byte ^= 0x5a;
     }

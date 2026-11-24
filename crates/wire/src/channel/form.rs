@@ -67,7 +67,7 @@ pub enum Control {
     /// has any, the fallback control stands in.
     Live {
         #[schema(no_recursion)]
-        fallback: Box<Control>,
+        fallback: Box<Self>,
     },
     List {
         #[schema(no_recursion)]
@@ -306,7 +306,7 @@ impl Control {
     }
 
     #[must_use]
-    pub fn live(fallback: impl Into<Control>) -> Self {
+    pub fn live(fallback: impl Into<Self>) -> Self {
         Self::Live {
             fallback: Box::new(fallback.into()),
         }

@@ -3,6 +3,7 @@ use std::{f64::consts::TAU, sync::LazyLock};
 use num_complex::Complex;
 use sdrmm_dsp::{
     filter::fir::kaiser_beta,
+    madd,
     math::special::{bessel_i0, sinc},
 };
 
@@ -134,7 +135,6 @@ impl Extractor {
 
 const MIX_RUN: usize = 64;
 const LANES: usize = 16;
-const FUSED: bool = cfg!(any(target_arch = "aarch64", target_feature = "fma"));
 
 /// `N` neighbouring outputs from interleaved samples and taps doubled to match, each in
 /// independent lanes the compiler keeps in vector registers; the outputs share each tap load.
@@ -147,11 +147,7 @@ fn filtered<const N: usize>(samples: &[f32], taps: &[f32; 2 * TAPS]) -> [Complex
                 continue;
             };
             for lane in 0..LANES {
-                acc[lane] = if FUSED {
-                    values[lane].mul_add(weights[lane], acc[lane])
-                } else {
-                    acc[lane] + values[lane] * weights[lane]
-                };
+                acc[lane] = madd(values[lane], weights[lane], acc[lane]);
             }
         }
     }

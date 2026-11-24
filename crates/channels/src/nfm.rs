@@ -977,7 +977,7 @@ mod tests {
         ] {
             let built = NfmChannel::new(
                 ctx(),
-                settings(ChannelParams::of(&p.clone()).expect("nfm settings")),
+                settings(ChannelParams::of(&p).expect("nfm settings")),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),
@@ -1099,7 +1099,7 @@ mod tests {
         ] {
             let built = NfmChannel::new(
                 ctx(),
-                settings(ChannelParams::of(&p.clone()).expect("nfm settings")),
+                settings(ChannelParams::of(&p).expect("nfm settings")),
             );
             assert!(
                 matches!(built, Err(ChannelError::InvalidSettings(_))),

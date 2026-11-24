@@ -67,6 +67,7 @@ fn benchmark_profile() {
             for _ in 0..batches {
                 copy.copy_from_slice(std::hint::black_box(&input));
             }
+            std::hint::black_box(&copy);
             start.elapsed()
         });
         println!(

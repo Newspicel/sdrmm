@@ -227,7 +227,7 @@ mod tests {
     fn the_pinned_verifier_refuses_another_certificate_and_reports_what_it_saw() {
         let pinned = StubIdentity::generate();
         let other = StubIdentity::generate();
-        let verifier = PinnedVerifier::new(vec![pinned.pin.clone()], provider());
+        let verifier = PinnedVerifier::new(vec![pinned.pin], provider());
         let refused = verify(&verifier, &other).expect_err("another key");
         assert_eq!(pin_mismatch_in(&refused), Some(other.pin));
     }

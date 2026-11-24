@@ -457,10 +457,7 @@ impl Registry {
             .clone();
         let kinds = self.decoders.iter().flat_map(|decoder| decoder.kinds());
         let feeds = self.decoders.iter().flat_map(|decoder| decoder.feeds());
-        sdrmm_wire::install_catalog(
-            kinds.chain(plugin_kinds).collect::<Vec<_>>(),
-            feeds.collect::<Vec<_>>(),
-        );
+        sdrmm_wire::install_catalog(kinds.chain(plugin_kinds), feeds);
     }
 }
 

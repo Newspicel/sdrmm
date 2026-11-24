@@ -600,6 +600,10 @@ mod tests {
     fn an_empty_buffer_pool_is_counted_as_exact_missing() {
         let fake = FakeBulkIn::default();
         let (mut pump, tx, rx) = pump(fake.clone());
+        #[expect(
+            clippy::collection_is_never_read,
+            reason = "holds every buffer so the pool runs dry"
+        )]
         let mut held = Vec::new();
         for value in 0..=DEPTH {
             fake.push_data([value as u8; 4]);

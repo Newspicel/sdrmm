@@ -78,7 +78,7 @@ pub(crate) fn device_infos(descriptors: &[Listing]) -> Vec<DeviceInfo> {
             let profile = Some(capabilities_of(d.board, lane.as_ref(), &[]).profile());
             let (key, serial) = match serial {
                 Some(serial) => (serial.clone(), Some(serial.clone())),
-                None => (location.clone(), None),
+                None => (location, None),
             };
             DeviceInfo {
                 driver: DRIVER_ID,

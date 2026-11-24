@@ -110,7 +110,8 @@ impl Connection {
 
     fn read_secure(&self, session: &Mutex<ClientConnection>, buf: &mut [u8]) -> Read {
         loop {
-            match tls::plaintext(&mut lock(session), buf) {
+            let plain = tls::plaintext(&mut lock(session), buf);
+            match plain {
                 Plain::Got(n) => return Read::Got(n),
                 Plain::Closed => return self.fail("the server closed the connection".to_string()),
                 Plain::Broken(reason) => return self.fail(reason),
@@ -121,7 +122,8 @@ impl Connection {
                 Read::Got(n) => n,
                 other => return other,
             };
-            if let Err(reason) = tls::absorb(&mut lock(session), &self.socket, &raw[..n]) {
+            let absorbed = tls::absorb(&mut lock(session), &self.socket, &raw[..n]);
+            if let Err(reason) = absorbed {
                 return self.fail(reason);
             }
         }

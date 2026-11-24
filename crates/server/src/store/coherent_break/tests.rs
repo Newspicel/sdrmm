@@ -149,7 +149,7 @@ fn upgrade_drops_old_coherent_nodes_with_their_edges_and_slots() {
     assert_eq!(
         broken.notices(),
         vec![WorkspaceNoticeKind::DroppedNodes {
-            nodes: broken.dropped.clone()
+            nodes: broken.dropped
         }]
     );
     assert_eq!(node_ids(&snapshot), vec!["device", "scope", "log"]);

@@ -237,7 +237,7 @@ mod tests {
         );
         unsafe {
             release(raw.key);
-            for value in values.drain(..) {
+            for value in values {
                 release(value);
             }
         }

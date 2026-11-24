@@ -11,33 +11,28 @@ pub(super) enum OceanRegion {
 }
 
 impl OceanRegion {
-    const ALL: [OceanRegion; 4] = [
-        OceanRegion::AorW,
-        OceanRegion::AorE,
-        OceanRegion::Ior,
-        OceanRegion::Por,
-    ];
+    const ALL: [Self; 4] = [Self::AorW, Self::AorE, Self::Ior, Self::Por];
 
     fn code(self) -> &'static str {
         match self {
-            OceanRegion::AorW => "AOR-W",
-            OceanRegion::AorE => "AOR-E",
-            OceanRegion::Ior => "IOR",
-            OceanRegion::Por => "POR",
+            Self::AorW => "AOR-W",
+            Self::AorE => "AOR-E",
+            Self::Ior => "IOR",
+            Self::Por => "POR",
         }
     }
 
     fn center_deg(self) -> f64 {
         match self {
-            OceanRegion::AorW => -54.0,
-            OceanRegion::AorE => -15.5,
-            OceanRegion::Ior => 64.0,
-            OceanRegion::Por => 178.0,
+            Self::AorW => -54.0,
+            Self::AorE => -15.5,
+            Self::Ior => 64.0,
+            Self::Por => 178.0,
         }
     }
 
-    pub(super) fn classify(longitude_signed: f64) -> Option<OceanRegion> {
-        let mut best: Option<(OceanRegion, f64)> = None;
+    pub(super) fn classify(longitude_signed: f64) -> Option<Self> {
+        let mut best: Option<(Self, f64)> = None;
         for region in Self::ALL {
             let mut distance = (longitude_signed - region.center_deg()).abs();
             if distance > 180.0 {

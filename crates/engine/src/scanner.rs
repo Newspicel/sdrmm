@@ -987,7 +987,7 @@ mod tests {
     #[test]
     fn a_window_waits_past_its_deadline_for_the_first_frame() {
         let (tx, mut rx) = tokio::sync::broadcast::channel(8);
-        let feeder = tx.clone();
+        let feeder = tx;
         let sender = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(150));
             let _ = feeder.send(carrier_at_125_khz());

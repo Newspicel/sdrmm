@@ -153,7 +153,8 @@ impl CaptureRadio for KiwiSdrRadio {
     }
 
     fn disarm(&self) {
-        if let Some(socket) = lock(&self.socket).take() {
+        let socket = lock(&self.socket).take();
+        if let Some(socket) = socket {
             socket.close();
         }
     }

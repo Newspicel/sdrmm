@@ -296,7 +296,7 @@ fn range_doppler_frame_decode_checks_shape() {
     let owned = range_doppler();
     let buf = owned.frame().encode().expect("encode");
     assert_eq!(RangeDopplerFrame::decode(&buf), Ok(owned.frame()));
-    let mut short = buf.clone();
+    let mut short = buf;
     short.pop();
     assert_eq!(RangeDopplerFrame::decode(&short), Err(FrameError::Shape));
     let empty = RangeDopplerOwned {

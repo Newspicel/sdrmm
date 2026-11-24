@@ -93,24 +93,25 @@ mod tests {
     fn pi4_dqpsk_differences_land_on_the_rotated_qpsk_table() {
         let differences = tables::psk_rotated(4, tables::PI_4_ROTATION).unwrap();
         let mut rng = Rng::new(0x914);
-        let mut encoder = DifferentialSymbolEncoder::new(4);
         let mut phase = 0.0f64;
         let mut wave = vec![Complex::new(1.0f32, 0.0)];
         let mut steps = Vec::new();
         for _ in 0..200 {
             let data = (rng.next_u64() % 4) as u32;
             steps.push(data);
-            let _ = encoder.encode(data);
             phase += FRAC_PI_2 * f64::from(data) + tables::PI_4_ROTATION;
             wave.push(phasor(phase));
         }
         let mut products = Vec::new();
         differential_detect(&wave, &mut products);
-        for &z in &products {
+        assert_eq!(products.len(), steps.len());
+        for (&z, &data) in products.iter().zip(&steps) {
             assert!(
                 (z - differences.nearest(z)).norm() < 1e-5,
                 "product {z} is not on the difference table"
             );
+            let sent = phasor(FRAC_PI_2 * f64::from(data) + tables::PI_4_ROTATION);
+            assert!((z - sent).norm() < 1e-5, "product {z} is not step {data}");
         }
     }
 

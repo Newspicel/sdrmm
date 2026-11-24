@@ -14,9 +14,9 @@ enum Phase<T> {
     Fir(StreamFir<T, f32>),
 }
 
-impl<T: Copy + Default + std::ops::Mul<f32, Output = T>> Phase<T>
+impl<T> Phase<T>
 where
-    T: crate::filter::fir::Accumulate<f32>,
+    T: Copy + Default + std::ops::Mul<f32, Output = T> + crate::filter::fir::Accumulate<f32>,
 {
     fn new(taps: &[f32]) -> Self {
         let mut nonzero = taps.iter().enumerate().filter(|&(_, &tap)| tap != 0.0);

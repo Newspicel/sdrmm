@@ -400,7 +400,7 @@ fn another_user_forgets_the_session() {
     let signed_in = store.account(&made.id).expect("read").expect("found");
     let (session, key) = managed_of(&signed_in);
 
-    let mut renamed = signed_in.clone();
+    let mut renamed = signed_in;
     if let AccountService::Matrix { nickname, .. } = &mut renamed.service {
         "Relay".clone_into(nickname);
     }

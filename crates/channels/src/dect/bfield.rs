@@ -218,7 +218,7 @@ mod tests {
             flipped[tested] = !flipped[tested];
             assert!(!BField::from_bits(flipped).x_crc_ok(), "bit {tested}");
         }
-        let mut untested = bits.clone();
+        let mut untested = bits;
         untested[0] = !untested[0];
         assert!(BField::from_bits(untested).x_crc_ok());
     }

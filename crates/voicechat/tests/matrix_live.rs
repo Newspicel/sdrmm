@@ -51,7 +51,8 @@ fn account(store: &Path) -> MatrixAccount {
 fn keep_saved(mut saved: watch::Receiver<Option<String>>, path: PathBuf) {
     tokio::spawn(async move {
         loop {
-            if let Some(json) = saved.borrow_and_update().clone() {
+            let json = saved.borrow_and_update().clone();
+            if let Some(json) = json {
                 std::fs::write(&path, json).unwrap();
             }
             if saved.changed().await.is_err() {

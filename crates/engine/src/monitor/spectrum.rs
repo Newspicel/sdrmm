@@ -259,8 +259,8 @@ impl SpectrumMonitor {
             ));
         }
         self.overloaded = overflow;
-        let mut tracks = std::mem::take(&mut self.tracks);
-        for mut track in tracks.drain(..) {
+        let tracks = std::mem::take(&mut self.tracks);
+        for mut track in tracks {
             if end.saturating_sub(track.last_seen) as f64 >= self.rate * HANG_SECONDS
                 || !self.refresh(&mut track, end, output)
             {

@@ -52,7 +52,7 @@ impl Sample for f32 {
         use std::arch::aarch64::{vld2q_f32, vst1q_f32};
         let n = src.len().min(r0.len()).min(r1.len()) & !3;
         unsafe {
-            let sp = src.as_ptr().cast::<f32>();
+            let sp = src.as_ptr().cast::<Self>();
             let d0 = r0.as_mut_ptr();
             let d1 = r1.as_mut_ptr();
             let mut i = 0;
@@ -83,7 +83,7 @@ impl Sample for f32 {
             .min(r3.len())
             & !3;
         unsafe {
-            let sp = src.as_ptr().cast::<f32>();
+            let sp = src.as_ptr().cast::<Self>();
             let (d0, d1, d2, d3) = (
                 r0.as_mut_ptr(),
                 r1.as_mut_ptr(),
@@ -176,7 +176,7 @@ impl Sample for Complex<f32> {
     const FLOATS: usize = 2;
 
     fn zero() -> Self {
-        Complex::new(0.0, 0.0)
+        Self::new(0.0, 0.0)
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -312,12 +312,12 @@ pub(crate) trait Accumulate<C>: Sample {
     fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<C>, out: &mut [Self]);
 }
 
-impl Accumulate<f32> for f32 {
-    fn add_product(self, sample: Self, coefficient: f32) -> Self {
+impl Accumulate<Self> for f32 {
+    fn add_product(self, sample: Self, coefficient: Self) -> Self {
         madd(sample, coefficient, self)
     }
 
-    fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<f32>, out: &mut [Self]) {
+    fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<Self>, out: &mut [Self]) {
         let whole = out.len() - out.len() % (Self::LANES * GROUP_BLOCKS);
         let (full, tail) = out.split_at_mut(whole);
         isa.real_blocks::<FOLD>(window, plan, full);
@@ -349,7 +349,7 @@ impl Accumulate<f32> for Complex<f32> {
     }
 }
 
-impl Accumulate<Complex<f32>> for Complex<f32> {
+impl Accumulate<Self> for Complex<f32> {
     fn add_product(self, sample: Self, coefficient: Self) -> Self {
         Self::new(
             madd(
@@ -365,12 +365,7 @@ impl Accumulate<Complex<f32>> for Complex<f32> {
         )
     }
 
-    fn blocks<const FOLD: bool>(
-        isa: Isa,
-        window: &[Self],
-        plan: &Plan<Complex<f32>>,
-        out: &mut [Self],
-    ) {
+    fn blocks<const FOLD: bool>(isa: Isa, window: &[Self], plan: &Plan<Self>, out: &mut [Self]) {
         let whole = out.len() - out.len() % (Self::LANES * GROUP_BLOCKS);
         let (full, tail) = out.split_at_mut(whole);
         isa.complex_blocks::<FOLD>(floats(window), plan, floats_mut(full));

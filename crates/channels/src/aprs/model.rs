@@ -297,7 +297,7 @@ mod model_tests {
             ..AprsPacket::default()
         };
         assert_eq!(
-            DecoderEvent::of(&packet.clone()).present().summary,
+            DecoderEvent::of(&packet).present().summary,
             "DL1ABC-9>S32U6T:`(_fn\"Oj/"
         );
         packet.mic_e_message = Some("Returning".to_owned());

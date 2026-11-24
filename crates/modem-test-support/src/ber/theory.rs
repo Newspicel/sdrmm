@@ -463,45 +463,45 @@ fn two_prod(a: f64, b: f64) -> Dd {
 }
 
 impl Dd {
-    const ZERO: Dd = Dd { hi: 0.0, lo: 0.0 };
-    const ONE: Dd = Dd { hi: 1.0, lo: 0.0 };
+    const ZERO: Self = Self { hi: 0.0, lo: 0.0 };
+    const ONE: Self = Self { hi: 1.0, lo: 0.0 };
 
-    fn product(a: f64, b: f64) -> Dd {
+    fn product(a: f64, b: f64) -> Self {
         two_prod(a, b)
     }
 
-    fn from_u64(v: u64) -> Dd {
+    fn from_u64(v: u64) -> Self {
         let hi = v as f64;
         #[allow(clippy::cast_possible_truncation)]
         let lo = (i128::from(v) - hi as i128) as f64;
-        Dd { hi, lo }
+        Self { hi, lo }
     }
 
-    fn neg(self) -> Dd {
-        Dd {
+    fn neg(self) -> Self {
+        Self {
             hi: -self.hi,
             lo: -self.lo,
         }
     }
 
-    fn add(self, o: Dd) -> Dd {
+    fn add(self, o: Self) -> Self {
         let s = two_sum(self.hi, o.hi);
         let t = two_sum(self.lo, o.lo);
         let u = quick_two_sum(s.hi, s.lo + t.hi);
         quick_two_sum(u.hi, u.lo + t.lo)
     }
 
-    fn mul(self, o: Dd) -> Dd {
+    fn mul(self, o: Self) -> Self {
         let p = two_prod(self.hi, o.hi);
         quick_two_sum(p.hi, p.lo + (self.hi * o.lo + self.lo * o.hi))
     }
 
-    fn mul_f64(self, m: f64) -> Dd {
+    fn mul_f64(self, m: f64) -> Self {
         let p = two_prod(self.hi, m);
         quick_two_sum(p.hi, p.lo + self.lo * m)
     }
 
-    fn div_f64(self, d: f64) -> Dd {
+    fn div_f64(self, d: f64) -> Self {
         let q1 = self.hi / d;
         let p = two_prod(q1, d);
         let s = two_sum(self.hi, -p.hi);
@@ -509,18 +509,18 @@ impl Dd {
         quick_two_sum(q1, q2)
     }
 
-    fn exp(self) -> Dd {
+    fn exp(self) -> Self {
         debug_assert!(
             self.hi <= 0.0,
             "Dd::exp is written for the e^-x of a decay term"
         );
         if self.hi < -708.0 {
-            return Dd::ZERO;
+            return Self::ZERO;
         }
         let k = (self.hi / LN2_DD.hi).round();
         let r = self.add(LN2_DD.mul_f64(-k));
-        let mut sum = Dd::ONE;
-        let mut term = Dd::ONE;
+        let mut sum = Self::ONE;
+        let mut term = Self::ONE;
         let mut i = 1.0f64;
         loop {
             term = term.mul(r).div_f64(i);
@@ -532,7 +532,7 @@ impl Dd {
         }
         #[allow(clippy::cast_possible_truncation)]
         let scale = 2f64.powi(k as i32);
-        Dd {
+        Self {
             hi: sum.hi * scale,
             lo: sum.lo * scale,
         }

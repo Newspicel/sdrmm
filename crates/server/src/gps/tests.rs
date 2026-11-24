@@ -134,7 +134,7 @@ fn the_picker_is_offered_receivers_alone_unless_there_are_none() {
     let puck = named("/dev/cu.usbmodem11401", Some("u-blox GNSS receiver"));
 
     assert_eq!(
-        offered_ports(vec![board.clone(), bare.clone(), puck.clone()])
+        offered_ports(vec![board.clone(), bare.clone(), puck])
             .iter()
             .map(|port| port.path.as_str())
             .collect::<Vec<_>>(),
@@ -157,7 +157,7 @@ fn every_serial_port_stays_listed_when_a_receiver_is_attached() {
     };
     let rotator = named("/dev/cu.usbserial-A901", Some("FT232R USB UART"));
     let puck = named("/dev/cu.usbmodem11401", Some("u-blox GNSS receiver"));
-    let listed = offered_ports(vec![rotator.clone(), puck.clone()]);
+    let listed = offered_ports(vec![rotator.clone(), puck]);
     assert_eq!(
         listed
             .iter()

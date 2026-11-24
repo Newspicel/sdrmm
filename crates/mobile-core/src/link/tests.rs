@@ -116,7 +116,8 @@ impl FakeDialer {
     }
 
     fn end(&self, error: DialError) {
-        if let Some(end) = lock(&self.ends).pop() {
+        let end = lock(&self.ends).pop();
+        if let Some(end) = end {
             let _ = end.send(error);
         }
     }

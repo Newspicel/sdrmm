@@ -280,7 +280,7 @@ mod model_tests {
     #[test]
     fn a_newer_sonde_frame_wins_where_it_has_a_value() {
         let first: RadiosondeFrame = serde_json::from_str(SONDE).expect("sonde fixture");
-        let mut sonde = DecoderEvent::of(&first.clone());
+        let mut sonde = DecoderEvent::of(&first);
         let climbed = DecoderEvent::of(&RadiosondeFrame {
             altitude_m: Some(12_050.0),
             lat: None,

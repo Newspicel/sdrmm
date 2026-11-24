@@ -33,19 +33,19 @@ impl Decibels for f64 {
 
 impl Decibels for f32 {
     fn power_to_db(self) -> Self {
-        POWER_DB_PER_DECADE as f32 * self.log10()
+        POWER_DB_PER_DECADE as Self * self.log10()
     }
 
     fn db_to_power(self) -> Self {
-        10f32.powf(self / POWER_DB_PER_DECADE as f32)
+        10f32.powf(self / POWER_DB_PER_DECADE as Self)
     }
 
     fn amplitude_to_db(self) -> Self {
-        AMPLITUDE_DB_PER_DECADE as f32 * self.log10()
+        AMPLITUDE_DB_PER_DECADE as Self * self.log10()
     }
 
     fn db_to_amplitude(self) -> Self {
-        10f32.powf(self / AMPLITUDE_DB_PER_DECADE as f32)
+        10f32.powf(self / AMPLITUDE_DB_PER_DECADE as Self)
     }
 }
 

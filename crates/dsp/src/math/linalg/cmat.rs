@@ -126,7 +126,7 @@ impl CMat {
         diagonal + 2.0 * cross.re
     }
 
-    pub fn copy_block(&self, start: usize, len: usize, out: &mut CMat) -> Result<(), LinalgError> {
+    pub fn copy_block(&self, start: usize, len: usize, out: &mut Self) -> Result<(), LinalgError> {
         if len == 0 || start.checked_add(len).is_none_or(|end| end > self.n) {
             return Err(LinalgError::Order(len));
         }
@@ -139,7 +139,7 @@ impl CMat {
         Ok(())
     }
 
-    pub fn permuted(&self, map: &[usize], out: &mut CMat) -> Result<(), LinalgError> {
+    pub fn permuted(&self, map: &[usize], out: &mut Self) -> Result<(), LinalgError> {
         if let Some(&bad) = map.iter().find(|&&index| index >= self.n) {
             return Err(LinalgError::Order(bad));
         }

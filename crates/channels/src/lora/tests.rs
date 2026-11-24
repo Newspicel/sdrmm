@@ -293,7 +293,7 @@ fn malformed_keys_and_layout_changes_are_refused() {
     };
     let mut channel = LoraChannel::new(
         ctx,
-        settings(ChannelParams::new("lora", &default.clone()).expect("lora settings")),
+        settings(ChannelParams::new("lora", &default).expect("lora settings")),
     )
     .expect("builds");
     let wider = LoraParams {

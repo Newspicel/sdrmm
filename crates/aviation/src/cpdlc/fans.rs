@@ -800,7 +800,7 @@ mod composite_tests {
     struct Builder(Vec<u8>, usize);
     impl Builder {
         fn new() -> Self {
-            Builder(vec![0u8; 64], 0)
+            Self(vec![0u8; 64], 0)
         }
         fn push(&mut self, v: u32, n: usize) {
             for k in (0..n).rev() {
@@ -858,7 +858,7 @@ mod route_tests {
     struct Builder(Vec<u8>, usize);
     impl Builder {
         fn new() -> Self {
-            Builder(vec![0u8; 96], 0)
+            Self(vec![0u8; 96], 0)
         }
         fn push(&mut self, v: u32, n: usize) {
             for k in (0..n).rev() {

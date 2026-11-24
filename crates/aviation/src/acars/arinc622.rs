@@ -26,12 +26,12 @@ impl Imi {
     #[cfg(test)]
     pub fn as_str(self) -> &'static str {
         match self {
-            Imi::At1 => "AT1",
-            Imi::Cr1 => "CR1",
-            Imi::Cc1 => "CC1",
-            Imi::Dr1 => "DR1",
-            Imi::Ads => "ADS",
-            Imi::Dis => "DIS",
+            Self::At1 => "AT1",
+            Self::Cr1 => "CR1",
+            Self::Cc1 => "CC1",
+            Self::Dr1 => "DR1",
+            Self::Ads => "ADS",
+            Self::Dis => "DIS",
         }
     }
 }

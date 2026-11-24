@@ -22,7 +22,7 @@ pub(crate) fn bytes(text: &str) -> Vec<u8> {
 fn a_sniffed_long_range_advert_passes_the_crc() {
     let frame = bytes(BT5_LONG_RANGE_PDU);
     assert!(crc_ok(&frame));
-    let mut broken = frame.clone();
+    let mut broken = frame;
     broken[40] ^= 0x04;
     assert!(!crc_ok(&broken));
 }

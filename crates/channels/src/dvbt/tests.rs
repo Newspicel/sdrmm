@@ -13,7 +13,7 @@ fn carrier_grid_and_permutations_match_the_standard() {
         for phase in &map.data {
             assert_eq!(phase.len(), 1512 * n / 2048);
         }
-        let mut permutation = map.permutation.clone();
+        let mut permutation = map.permutation;
         permutation.sort_unstable();
         assert_eq!(permutation, (0..1512 * n / 2048).collect::<Vec<_>>());
     }

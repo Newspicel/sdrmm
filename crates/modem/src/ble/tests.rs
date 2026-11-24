@@ -77,7 +77,7 @@ fn every_phy_loops_back_with_an_offset_carrier() {
     for phy in [BlePhy::Le1m, BlePhy::CodedS8, BlePhy::CodedS2] {
         let pdu = pdu(37);
         let found = receive(&on_air(&pdu, 12, phy, 61e3, 25.0, 3), 12);
-        assert_eq!(found.packets, vec![(pdu.clone(), phy)], "{phy:?}");
+        assert_eq!(found.packets, vec![(pdu, phy)], "{phy:?}");
     }
 }
 
@@ -134,7 +134,7 @@ fn whitening_follows_the_spec_register_for_every_channel() {
 fn the_crc_covers_the_pdu_least_significant_byte_first() {
     let pdu = pdu(10);
     let crc = crc24(&pdu);
-    let mut framed = pdu.clone();
+    let mut framed = pdu;
     framed.extend_from_slice(&crc.to_le_bytes()[..3]);
     assert!(crc_ok(&framed));
     framed[4] ^= 0x10;

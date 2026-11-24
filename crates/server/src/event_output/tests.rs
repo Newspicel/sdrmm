@@ -423,7 +423,7 @@ fn recordings_take_the_clip_the_event_brings() {
         audio: Some(audio),
         ..analog_call()
     };
-    let wired = from_voice(DecoderEvent::of(&clipped.clone()));
+    let wired = from_voice(DecoderEvent::of(&clipped));
     let delivered = decoded_deliveries(&routing, &wired, 1, &calls);
     assert_eq!(delivered.len(), 1);
     assert!(delivered[0].message.audio.is_some());

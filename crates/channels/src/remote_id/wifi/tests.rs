@@ -50,7 +50,7 @@ fn a_real_parrot_anafi_beacon_reports_its_position() {
     assert_eq!(location.height_m, Some(0.0));
     assert_eq!(location.height_reference, HeightReference::Takeoff);
     assert_eq!(location.seconds_after_hour, Some(929.1));
-    let mut broken = mpdu.clone();
+    let mut broken = mpdu;
     broken[60] ^= 1;
     assert!(!fcs_ok(&broken));
 }

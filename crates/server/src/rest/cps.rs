@@ -356,7 +356,7 @@ pub(super) async fn merge_cps_codeplug(
         };
         let (fitted, mut report) = fit(&merged, &target.info.model_id, &radio.limits());
         report.issues.extend(notes);
-        report.source_model = Some(source.info.model_id.clone());
+        report.source_model = Some(source.info.model_id);
         store.update_cps_codeplug(
             id,
             &CpsCodeplugRequest {

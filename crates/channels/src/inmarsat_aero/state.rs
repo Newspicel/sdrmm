@@ -15,9 +15,9 @@ pub(super) enum CarrierState {
 impl CarrierState {
     fn as_str(self) -> &'static str {
         match self {
-            CarrierState::Searching => "searching",
-            CarrierState::Acquiring => "acquiring",
-            CarrierState::Locked => "locked",
+            Self::Searching => "searching",
+            Self::Acquiring => "acquiring",
+            Self::Locked => "locked",
         }
     }
 }

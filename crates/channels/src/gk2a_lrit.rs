@@ -341,8 +341,7 @@ impl Files {
         out.video.push(picture.clone());
         out.images.push(DecodedImage {
             source: SOURCE.into(),
-            mode: ["GK-2A".to_owned()]
-                .into_iter()
+            mode: std::iter::once("GK-2A".to_owned())
                 .chain(channel)
                 .collect::<Vec<_>>()
                 .join(" "),

@@ -395,7 +395,7 @@ mod tests {
         let stem = dir.path().join("lossy");
         let writer = SigmfWriter::create(&stem, 48_000.0, 100_000_000.0, "hw").unwrap();
         let (tap, position, messages, shared) = create_tap(48_000.0);
-        let handle = spawn_writer(writer, messages, shared.clone()).unwrap();
+        let handle = spawn_writer(writer, messages, shared).unwrap();
         let resumed = SystemTime::UNIX_EPOCH + Duration::from_hours(500000);
 
         assert!(tap.push(&block(16), 0, 100_000_000.0));

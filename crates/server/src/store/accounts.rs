@@ -9,7 +9,8 @@ impl Store {
     }
 
     pub fn account(&self, id: &str) -> Result<Option<Account>, StoreError> {
-        match read(&self.lock(), id) {
+        let found = read(&self.lock(), id);
+        match found {
             Ok(account) => Ok(Some(account)),
             Err(StoreError::AccountNotFound(_)) => Ok(None),
             Err(error) => Err(error),

@@ -124,7 +124,8 @@ impl MobileCore {
     }
 
     pub fn shutdown(&self) {
-        if let Some(link) = self.inner.link().take() {
+        let link = self.inner.link().take();
+        if let Some(link) = link {
             link.send(LinkCmd::Stop);
         }
         self.inner.events.close();

@@ -171,7 +171,7 @@ mod tests {
         let applied = Complex::new(0.1, -0.05);
         let x = white(&mut Rng::new(0xdc), 200_000);
         let reference = rms(&x);
-        let mut y = x.clone();
+        let mut y = x;
         DcOffset::new(applied).apply(&mut y, &mut Rng::new(0));
         let n = y.len() as f64;
         let mean = Complex::new(

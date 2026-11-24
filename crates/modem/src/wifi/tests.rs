@@ -165,7 +165,7 @@ fn a_rejected_frame_control_is_never_handed_over() {
 fn the_frame_check_sequence_is_the_ieee_crc() {
     let frame = mpdu(0x80, 10);
     assert!(fcs_ok(&frame));
-    let mut broken = frame.clone();
+    let mut broken = frame;
     broken[3] ^= 1;
     assert!(!fcs_ok(&broken));
     assert!(!fcs_ok(&[1, 2]));

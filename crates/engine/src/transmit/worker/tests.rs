@@ -201,10 +201,7 @@ fn a_frequency_the_radio_cannot_reach_mutes_the_transmitter_until_it_moves_back(
 #[test]
 fn a_lane_is_sent_as_it_arrives_and_what_does_not_fit_is_counted() {
     let shared = Arc::new(TxShared::default());
-    let band = Band {
-        center_hz: RADIO.center_hz,
-        sample_rate: RADIO.sample_rate,
-    };
+    let band = RADIO;
     let (mut tap, source) = feed(band, &shared);
     let aired = Arc::new(Mutex::new(Aired::default()));
     let radio = FakeRadio {

@@ -113,7 +113,8 @@ impl CaptureRadio for RxRadio {
     }
 
     fn disarm(&self) {
-        if let Some(stopper) = lock(&self.armed).take() {
+        let armed = lock(&self.armed).take();
+        if let Some(stopper) = armed {
             sdrmm_device::StopHandle::stop(&stopper);
         }
     }

@@ -145,7 +145,8 @@ impl ArrayControl for LastOwner {
     }
 
     fn rebuild_processors(&self, _node: &str) -> Result<(), EngineError> {
-        if let Some(runtime) = lock(&self.runtime).take() {
+        let runtime = lock(&self.runtime).take();
+        if let Some(runtime) = runtime {
             drop(runtime);
             self.dropped.store(true, Ordering::SeqCst);
         }

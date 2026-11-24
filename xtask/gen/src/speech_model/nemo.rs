@@ -153,12 +153,12 @@ enum Py {
     Int(i64),
     Float,
     Str(String),
-    Tuple(Vec<Py>),
-    List(Vec<Py>),
-    Dict(Vec<(Py, Py)>),
+    Tuple(Vec<Self>),
+    List(Vec<Self>),
+    Dict(Vec<(Self, Self)>),
     Global(String),
-    Call(String, Vec<Py>),
-    Persistent(Vec<Py>),
+    Call(String, Vec<Self>),
+    Persistent(Vec<Self>),
     Mark,
 }
 

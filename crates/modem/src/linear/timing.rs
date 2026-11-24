@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn the_estimate_survives_noise_over_a_long_burst() {
         let table = tables::qam_square(256).unwrap();
-        let p = LinearParams::new(table.clone(), rrc(), SPS).unwrap();
+        let p = LinearParams::new(table, rrc(), SPS).unwrap();
         let mut wave = LinearMod::transmission(&p, &draws(4_000, 256, 0x7e));
         Awgn::with_sigma((0.5 * 10f64.powf(-3.0)).sqrt()).apply(&mut wave, &mut Rng::new(0x91));
         let mut tier = FeedforwardTiming::new(&p, &rrc());

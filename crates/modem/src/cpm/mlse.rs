@@ -361,7 +361,7 @@ mod tests {
         let got = detect(&mut detector, &observed);
         assert_eq!(got.len(), sent.len(), "one decision per observation");
         let span = response.lead()..sent.len() - response.lead();
-        let errors = span.clone().filter(|&i| got[i] != sent[i]).count();
+        let errors = span.filter(|&i| got[i] != sent[i]).count();
         assert_eq!(errors, 0, "sequence errors on a noiseless partial response");
     }
 

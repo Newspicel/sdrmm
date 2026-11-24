@@ -216,7 +216,7 @@ mod tests {
         let found = vertex(&profile).expect("a vertex");
         assert!((found.deg - 2.3).abs() < 1e-3, "{found:?}");
         assert!((found.sigma_deg - 0.4).abs() < 1e-3, "{found:?}");
-        let mut edge = profile.clone();
+        let mut edge = profile;
         edge[0] = 10.0;
         assert_eq!(vertex(&edge), None);
         assert_eq!(vertex(&[0.0; 21]), None);

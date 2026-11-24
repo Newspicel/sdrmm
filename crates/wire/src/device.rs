@@ -1175,7 +1175,7 @@ impl Capabilities {
     /// The same radio seen through a converter: every frequency it reaches, moved by the
     /// converter's local oscillator.
     #[must_use]
-    pub fn shifted_by(&self, offset_hz: f64) -> Capabilities {
+    pub fn shifted_by(&self, offset_hz: f64) -> Self {
         if offset_hz == 0.0 {
             return self.clone();
         }
@@ -1305,7 +1305,7 @@ pub struct StreamSettings {
 }
 
 impl StreamSettings {
-    fn merge_from(&mut self, delta: &StreamSettings) {
+    fn merge_from(&mut self, delta: &Self) {
         if delta.agc.is_some() {
             self.agc.clone_from(&delta.agc);
         }
@@ -1342,7 +1342,7 @@ fn merge_gains(gains: &mut Vec<GainValue>, delta: &[GainValue]) {
 }
 
 impl DeviceSettings {
-    pub fn merge_from(&mut self, delta: &DeviceSettings) {
+    pub fn merge_from(&mut self, delta: &Self) {
         if delta.center_hz.is_some() {
             self.center_hz = delta.center_hz;
         }
@@ -1398,11 +1398,11 @@ impl DeviceSettings {
     /// no other receiver's gain stages; dropping what the radio never offered lets the rest of the
     /// settings land instead of the whole patch being refused.
     #[must_use]
-    pub fn supported_by(&self, capabilities: &Capabilities) -> DeviceSettings {
+    pub fn supported_by(&self, capabilities: &Capabilities) -> Self {
         let scope = capabilities.per_stream;
         let offset_hz = self.offset_hz.filter(|_| capabilities.tunes());
         let offset = offset_hz.unwrap_or(0.0);
-        DeviceSettings {
+        Self {
             center_hz: self
                 .center_hz
                 .filter(|hz| reaches(&capabilities.freq_ranges, *hz - offset)),
@@ -1487,16 +1487,16 @@ impl DeviceSettings {
     }
 
     #[must_use]
-    pub fn calibration(&self) -> DeviceSettings {
-        DeviceSettings {
+    pub fn calibration(&self) -> Self {
+        Self {
             ppm: self.ppm,
             offset_hz: self.offset_hz,
-            ..DeviceSettings::default()
+            ..Self::default()
         }
     }
 
     #[must_use]
-    pub fn calibrated(mut self, calibration: &DeviceSettings) -> DeviceSettings {
+    pub fn calibrated(mut self, calibration: &Self) -> Self {
         self.ppm = calibration.ppm.or(self.ppm);
         self.offset_hz = calibration.offset_hz.or(self.offset_hz);
         self
@@ -1517,7 +1517,7 @@ impl DeviceSettings {
     /// The settings the driver is handed: the front end's own controls stay with the engine and
     /// every frequency is the one the radio itself has to reach.
     #[must_use]
-    pub fn to_hardware(&self) -> DeviceSettings {
+    pub fn to_hardware(&self) -> Self {
         let mut hardware = self.clone();
         hardware.dc_block = None;
         hardware.tuning = None;
@@ -1531,7 +1531,7 @@ impl DeviceSettings {
 
     /// What a radio reports back, seen through the converter in front of it.
     #[must_use]
-    pub fn from_hardware(mut hardware: DeviceSettings, offset_hz: Option<f64>) -> DeviceSettings {
+    pub fn from_hardware(mut hardware: Self, offset_hz: Option<f64>) -> Self {
         shift_centers(&mut hardware, offset_hz.unwrap_or(0.0));
         hardware.offset_hz = offset_hz;
         hardware
@@ -1539,7 +1539,7 @@ impl DeviceSettings {
 
     /// Gives a delta the converter offset it is applied under. A delta that moves the offset
     /// without naming a frequency leaves the radio where it is, so what is shown moves instead.
-    pub fn carry_offset(&self, delta: &mut DeviceSettings) {
+    pub fn carry_offset(&self, delta: &mut Self) {
         let Some(offset_hz) = delta.offset_hz else {
             delta.offset_hz = self.offset_hz;
             return;
@@ -1565,8 +1565,8 @@ impl DeviceSettings {
     }
 
     #[must_use]
-    pub fn for_stream(&self, index: u32, scope: &StreamScope) -> DeviceSettings {
-        let mut resolved = DeviceSettings {
+    pub fn for_stream(&self, index: u32, scope: &StreamScope) -> Self {
+        let mut resolved = Self {
             streams: Vec::new(),
             ..self.clone()
         };

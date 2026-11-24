@@ -52,7 +52,7 @@ impl Store {
              {AIRTIME} FROM {}{} GROUP BY {key} ORDER BY MAX(decoder_log.at) DESC LIMIT ?",
             predicate.from, predicate.clause
         ))?;
-        let mut params = predicate.params.clone();
+        let mut params = predicate.params;
         params.push(Value::Integer(i64::from(limit)));
         let tallies = stmt
             .query_map(params_from_iter(params), |row| {

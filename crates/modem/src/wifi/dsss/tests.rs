@@ -102,7 +102,7 @@ fn the_shared_cck_codebook_follows_the_802_11_codeword_table() {
 fn the_header_check_is_ones_complement_ccitt() {
     let header: Vec<bool> = (0..32).map(|bit| bit % 3 == 0).collect();
     let crc = header_crc(&header);
-    let mut with_crc = header.clone();
+    let mut with_crc = header;
     with_crc.extend((0..16).map(|bit| crc >> (15 - bit) & 1 == 1));
     assert_ne!(crc, 0);
     assert_eq!(header_crc(&with_crc[..32]), crc);

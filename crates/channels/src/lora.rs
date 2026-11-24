@@ -261,7 +261,7 @@ impl NativeChannel for LoraChannel {
         &DESCRIPTOR
     }
     fn new(ctx: ChannelCtx, settings: ChannelSettings) -> Result<Self, ChannelError> {
-        let params = params(&settings)?.clone();
+        let params = params(&settings)?;
         params.validate().map_err(ChannelError::InvalidSettings)?;
         check_rate(ctx, &DESCRIPTOR, input_rate(&params))?;
         Ok(Self {
@@ -284,7 +284,7 @@ impl Channel for LoraChannel {
         }
         self.keys = Keyring::new(&next.keys).map_err(ChannelError::InvalidSettings)?;
         self.decoder.retune(settings.frequency_hz);
-        self.params = next.clone();
+        self.params = next;
         Ok(())
     }
 

@@ -404,10 +404,7 @@ fn a_lane_whose_radio_restarted_is_a_lease_to_replace() {
             port: kept.clone(),
             id: 1,
         }),
-        Some(Lease {
-            port: dead.clone(),
-            id: 1,
-        }),
+        Some(Lease { port: dead, id: 1 }),
     ];
     assert_eq!(survey.restarted(&held), vec![1]);
     let matched = vec![

@@ -157,7 +157,7 @@ const LINK: Fields = Fields::station(&["tail", "src", "icao"]);
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum Body<'a, C: Serialize> {
+enum Body<'a, C> {
     Acars(&'a C),
     Vdl2 { kind: String, details: Value },
 }

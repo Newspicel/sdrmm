@@ -196,7 +196,7 @@ mod tests {
                 push_indices(chips, setting.cols(), setting.col_shift()),
                 pop_indices(chips, setting.cols()),
             ] {
-                let mut sorted = indices.clone();
+                let mut sorted = indices;
                 sorted.sort_unstable();
                 assert!(sorted.iter().enumerate().all(|(i, &v)| i == v));
             }

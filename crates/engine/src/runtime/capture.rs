@@ -658,11 +658,11 @@ fn lane_sink(
             SinkItem::Event(event) => writer.event(event),
         },
         move |error| {
-            if let Some(report) = fatal
+            let report = fatal
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take()
-            {
+                .take();
+            if let Some(report) = report {
                 report(error);
             }
         },

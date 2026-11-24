@@ -116,7 +116,7 @@ impl Engine {
             }
             let frame = LiveFrame {
                 center_hz: tune.center_hz,
-                lane_centers_hz: plan.lane_centers_hz.clone(),
+                lane_centers_hz: plan.lane_centers_hz,
                 ..state.frame.clone()
             };
             let config = ControlConfig {

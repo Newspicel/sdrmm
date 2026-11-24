@@ -442,7 +442,7 @@ mod tests {
         });
         let bits = encode(&sdc, 47, 399).expect("fits");
         assert_eq!(Sdc::parse(&bits, 47), Some(sdc));
-        let mut damaged = bits.clone();
+        let mut damaged = bits;
         damaged[100] = !damaged[100];
         assert_eq!(Sdc::parse(&damaged, 47), None);
     }

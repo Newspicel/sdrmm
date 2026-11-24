@@ -690,7 +690,7 @@ fn a_tokenless_main_listener_checks_the_host_wherever_it_is_bound() {
             .allowed_hosts
             .is_some_and(|names| names.contains(&"radio.example".to_owned()))
     );
-    let mut guarded = loopback.clone();
+    let mut guarded = loopback;
     guarded.auth = guarded.auth.configured(Some("secret"), None);
     assert!(!checks(&guarded, ListenerRole::Main));
     let lan = bound_on(std::net::Ipv4Addr::UNSPECIFIED.into());

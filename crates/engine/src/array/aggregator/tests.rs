@@ -812,7 +812,7 @@ fn a_panicking_aggregator_is_reported_as_stopped() {
     let rig = rig(2, frame(2));
     let board = rig.board.clone();
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = spawn("sdrmm-array-test".to_owned(), rig.aggregator, stop.clone()).expect("spawn");
+    let handle = spawn("sdrmm-array-test".to_owned(), rig.aggregator, stop).expect("spawn");
     rig.queue
         .send(Command::Hold(Box::new(|| panic!("the aggregator broke"))))
         .expect("queued");

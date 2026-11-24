@@ -140,7 +140,7 @@ mod tests {
     fn parity_appended_to_its_message_leaves_an_all_ones_remainder() {
         let info: Vec<bool> = (0..BLOCK_INFO).map(|k| k % 3 == 0 || k % 7 == 1).collect();
         let parity = fire_parity(&info);
-        let mut word = info.clone();
+        let mut word = info;
         word.extend((0..FIRE_PARITY).rev().map(|k| parity >> k & 1 == 1));
         assert_eq!(remainder(&word, FIRE_POLY, FIRE_DEGREE), ones(FIRE_DEGREE));
     }

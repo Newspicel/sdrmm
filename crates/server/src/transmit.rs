@@ -149,7 +149,7 @@ pub(crate) fn reconcile(state: &AppState) {
         };
         if let Err(error) = followed {
             problems.push(NodeProblem {
-                node: armed.node.clone(),
+                node: armed.node,
                 source: ProblemSource::Transmit,
                 text: error.to_string(),
             });

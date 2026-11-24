@@ -184,7 +184,7 @@ fn a_setting_sent_again_never_touches_the_analyser() {
         .apply(&DeviceSettings {
             center_hz: held.center_hz,
             sample_rate: held.sample_rate,
-            gains: held.gains.clone(),
+            gains: held.gains,
             ..DeviceSettings::default()
         })
         .expect("apply");

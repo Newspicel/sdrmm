@@ -149,9 +149,7 @@ impl OtfsReceiver {
         let o = self.offsets.len();
         for symbol in 0..self.grid.doppler {
             let row = symbol * o..(symbol + 1) * o;
-            let fit = self
-                .carrier
-                .observe(x, symbol, &mut self.received[row.clone()]);
+            let fit = self.carrier.observe(x, symbol, &mut self.received[row]);
             self.initial_row(symbol, fit);
         }
         self.noise_var = self.carrier.channel().noise_var().max(MIN_NOISE_VAR);
@@ -346,7 +344,7 @@ mod tests {
     fn paths_with_opposite_doppler_are_tracked_through_the_frame() {
         let (sent, clean) = burst(17, 0x74);
         let wave = paths(&clean, &[(0, 0.8, 0.3, 1.5e-4), (5, 0.6, -1.2, -1.5e-4)]);
-        let mut noisy = wave.clone();
+        let mut noisy = wave;
         Awgn::with_sigma(0.05).apply(&mut noisy, &mut Rng::new(0x74));
         let tracked = errors(&sent, &decode(&mut receiver(), &noisy));
         let static_only = errors(&sent, &decode(&mut receiver().with_iterations(0), &noisy));

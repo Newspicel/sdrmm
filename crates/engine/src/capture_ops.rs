@@ -222,7 +222,8 @@ impl Engine {
             let fx_control = if route.fx.is_empty() {
                 None
             } else {
-                match self.fx_hub().control(route, || self.fx_source(route)) {
+                let control = self.fx_hub().control(route, || self.fx_source(route));
+                match control {
                     Ok(control) => Some(control),
                     Err(error) => {
                         abandon_audio(tap, thread, &path);

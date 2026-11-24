@@ -173,7 +173,8 @@ impl SpyRadio {
     }
 
     fn link(&self) -> Result<Arc<Connection>, DeviceError> {
-        if let Some(connection) = lock(&self.handshook).take() {
+        let handshook = lock(&self.handshook).take();
+        if let Some(connection) = handshook {
             return Ok(connection);
         }
         Ok(Arc::new(connect(&self.endpoint)?.0))
@@ -205,10 +206,12 @@ impl CaptureRadio for SpyRadio {
     }
 
     fn disarm(&self) {
-        if let Some(connection) = lock(&self.handshook).take() {
+        let handshook = lock(&self.handshook).take();
+        if let Some(connection) = handshook {
             connection.close();
         }
-        if let Some(connection) = lock(&self.connection).take() {
+        let streaming = lock(&self.connection).take();
+        if let Some(connection) = streaming {
             let _ = connection.send(&setting(Setting::StreamingEnabled, 0));
             connection.close();
         }

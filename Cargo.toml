@@ -358,6 +358,16 @@ assert_is_empty = "allow"
 match_same_arms = "allow"
 format_push_string = "allow"
 format_collect = "allow"
+# The nursery lints that found real problems here. The rest of the group is noise or slower
+# code: mul_add and hypot cost 3x to 36x on hot paths without native FMA.
+significant_drop_in_scrutinee = "warn"
+collection_is_never_read = "warn"
+redundant_clone = "warn"
+iter_on_single_items = "warn"
+trait_duplication_in_bounds = "warn"
+type_repetition_in_bounds = "warn"
+unnecessary_struct_initialization = "warn"
+use_self = "warn"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

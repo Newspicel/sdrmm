@@ -188,7 +188,8 @@ impl Slot {
     async fn take(&self) -> Bytes {
         loop {
             let ready = self.ready.notified();
-            if let Some(frame) = self.held().frame.take() {
+            let frame = self.held().frame.take();
+            if let Some(frame) = frame {
                 return frame;
             }
             ready.await;

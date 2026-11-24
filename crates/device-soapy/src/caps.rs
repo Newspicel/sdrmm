@@ -630,8 +630,7 @@ mod tests {
     fn named(hardware: &str, channels: usize) -> DirectionalCapabilities {
         DirectionalCapabilities {
             rx: (0..channels).map(|_| channel(24e6, false)).collect(),
-            hardware_info: [("hardware".to_string(), hardware.to_string())]
-                .into_iter()
+            hardware_info: std::iter::once(("hardware".to_string(), hardware.to_string()))
                 .collect(),
             ..DirectionalCapabilities::default()
         }

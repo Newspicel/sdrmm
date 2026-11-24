@@ -1345,7 +1345,7 @@ mod tests {
     struct Bits(Vec<u8>);
     impl Bits {
         fn new() -> Self {
-            Bits(Vec::new())
+            Self(Vec::new())
         }
         fn push(&mut self, v: u64, n: usize) {
             for k in (0..n).rev() {
@@ -1885,7 +1885,7 @@ mod arg_tests {
     struct Bb(Vec<u8>);
     impl Bb {
         fn new() -> Self {
-            Bb(Vec::new())
+            Self(Vec::new())
         }
         fn push(&mut self, v: u64, n: usize) {
             for k in (0..n).rev() {

@@ -417,7 +417,7 @@ mod tests {
             &record.key(),
             Ok(serde_json::to_vec(&ServerRecord {
                 hosts: full.clone(),
-                ..record.clone()
+                ..record
             })
             .expect("json")),
         );

@@ -105,7 +105,8 @@ impl DeviceDriver for PluginDriver {
         let table = self.table;
         let own = json(table, |out| (table.health)(table.driver, out));
         let own = self.settle("health", own, None);
-        match lock(&self.failure).clone() {
+        let failure = lock(&self.failure).clone();
+        match failure {
             Some((_, detail)) => Some(DoctorCheck {
                 id: format!("plugins.device.{}.failure", self.spec.backend),
                 name: format!("{} plugin", self.spec.label),

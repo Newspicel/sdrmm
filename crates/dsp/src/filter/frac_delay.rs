@@ -1,3 +1,5 @@
+use crate::math::fastmath::madd;
+
 #[derive(Clone, Copy, Debug)]
 enum Mode {
     Linear { frac: f32 },
@@ -66,7 +68,7 @@ impl FracDelay {
                 let x0 = self.ring[(pos + length - self.whole) % length];
                 let x1 = self.ring[(pos + length - self.whole - 1) % length];
                 let x2 = self.ring[(pos + length - self.whole - 2) % length];
-                c[0].mul_add(xm1, c[1].mul_add(x0, c[2].mul_add(x1, c[3] * x2)))
+                madd(c[0], xm1, madd(c[1], x0, madd(c[2], x1, c[3] * x2)))
             }
         };
         let next = pos + 1;

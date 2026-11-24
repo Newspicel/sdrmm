@@ -36,7 +36,7 @@ impl DecodedFrame {
         }
     }
 
-    fn merge(mut self, other: DecodedFrame, prefer_other_header: bool) -> Self {
+    fn merge(mut self, other: Self, prefer_other_header: bool) -> Self {
         for (unit, alternative) in self.units.iter_mut().zip(other.units) {
             if unit.is_none() {
                 *unit = alternative;

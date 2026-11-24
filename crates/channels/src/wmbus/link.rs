@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(raw_len(WmbusFormat::A, 78), Some(raw.len()));
         let unpacked = unpack(WmbusFormat::A, &raw).unwrap();
         assert_eq!(unpacked.as_slice(), payload.as_slice());
-        let mut broken = raw.clone();
+        let mut broken = raw;
         broken[40] ^= 0x10;
         assert_eq!(unpack(WmbusFormat::A, &broken), None);
     }
@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(raw.len(), 150);
         let unpacked = unpack(WmbusFormat::B, &raw).unwrap();
         assert_eq!(unpacked.as_slice(), payload.as_slice());
-        let mut broken = raw.clone();
+        let mut broken = raw;
         broken[140] ^= 1;
         assert_eq!(unpack(WmbusFormat::B, &broken), None);
         assert_eq!(raw_len(WmbusFormat::B, 11), None);

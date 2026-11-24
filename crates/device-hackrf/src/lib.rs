@@ -170,7 +170,8 @@ impl CaptureRadio for HackRfRadio {
     }
 
     fn disarm(&self) {
-        if let Err(e) = self.lock().set_mode_off() {
+        let stopped = self.lock().set_mode_off();
+        if let Err(e) = stopped {
             tracing::debug!("hackrf stop failed: {e}");
         }
     }
@@ -364,7 +365,8 @@ impl SdrDevice for HackRfDevice {
 impl HackRfDevice {
     pub fn sweep_start(&mut self, plan: &SweepPlan) -> Result<HackRfSweep, DeviceError> {
         lock(&self.duplex).claim(Direction::Rx)?;
-        match self.radio.lock().start_rx_sweep(plan) {
+        let started = self.radio.lock().start_rx_sweep(plan);
+        match started {
             Ok(stream) => Ok(HackRfSweep {
                 radio: self.radio.clone(),
                 duplex: self.duplex.clone(),
@@ -502,7 +504,8 @@ impl HackRfTx {
         if let Some(hold) = &self.hold {
             hold.hold(RX_YIELD_TIMEOUT)?;
         }
-        match self.radio.lock().start_tx() {
+        let started = self.radio.lock().start_tx();
+        match started {
             Ok(queue) => {
                 self.queue = Some(queue);
                 Ok(())

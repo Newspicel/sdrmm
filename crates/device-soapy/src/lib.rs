@@ -286,7 +286,7 @@ fn query_channel(
         iq_balance: optional("IQ balance", device.has_iq_balance(direction, channel)),
         full_duplex: optional("full duplex", device.full_duplex(direction, channel)),
         stream_formats: formats.iter().map(ToString::to_string).collect(),
-        native_stream_format: native.map(|(format, _)| format.clone()),
+        native_stream_format: native.map(|(format, _)| format),
         stream_args: caps::argument_infos(&optional(
             "stream arguments",
             device.stream_args_info(direction, channel),
@@ -1278,8 +1278,7 @@ mod tests {
         };
         caps::capabilities(DirectionalCapabilities {
             rx: vec![channel(0), channel(1)],
-            hardware_info: [("name".to_string(), "LimeSDR-USB".to_string())]
-                .into_iter()
+            hardware_info: std::iter::once(("name".to_string(), "LimeSDR-USB".to_string()))
                 .collect(),
             ..DirectionalCapabilities::default()
         })

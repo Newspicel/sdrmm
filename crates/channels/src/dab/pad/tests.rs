@@ -29,7 +29,7 @@ fn labels_reassemble_out_of_order_check_crc_and_remove() {
     }
     assert!(matches!(&events[..], [Event::Label(text)] if text == "Hello world"));
     events.clear();
-    let mut damaged = first.clone();
+    let mut damaged = first;
     damaged[2] ^= 1;
     pad.process(&xpad(2, &damaged), [0x20, 2], true, &mut events);
     assert!(matches!(

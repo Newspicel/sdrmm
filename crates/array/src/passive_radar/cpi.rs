@@ -441,7 +441,7 @@ impl CpiStage {
         let clutter = centre.saturating_sub(half)..(centre + half + 1).min(rows);
         let min_gate = self.live.cfar.min_gate.min(gates.saturating_sub(1));
         let mut usable_rows = rows - clutter.len();
-        let mut skip = clutter.clone();
+        let mut skip = clutter;
         if usable_rows == 0 {
             usable_rows = rows;
             skip = 0..0;

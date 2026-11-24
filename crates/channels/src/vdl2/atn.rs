@@ -1293,7 +1293,7 @@ impl CotpReassembler {
             self.pending.insert(
                 dst_ref,
                 CotpPending {
-                    data: user.clone(),
+                    data: user,
                     next_seq: 1,
                     last: now,
                 },

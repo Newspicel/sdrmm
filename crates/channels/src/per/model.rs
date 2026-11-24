@@ -187,7 +187,7 @@ mod model_tests {
         assert_eq!(per.summary(), "PER 1.00% · 990/1000 · BER 3.1e-4");
         let clean = PerReport {
             ber: Some(0.0),
-            ..per.clone()
+            ..per
         };
         assert!(clean.summary().ends_with("BER 0"), "{}", clean.summary());
     }

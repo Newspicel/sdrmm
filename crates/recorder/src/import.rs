@@ -52,7 +52,7 @@ pub fn import_pair(
         SIGMF_VERSION.clone_into(&mut meta.global.version);
     }
     if meta.global.name.is_none() {
-        meta.global.name = Some(name.clone());
+        meta.global.name = Some(name);
     }
     if let Err(err) = publish_meta(&stem, &meta) {
         let _ = fs::remove_file(data_path(&stem));

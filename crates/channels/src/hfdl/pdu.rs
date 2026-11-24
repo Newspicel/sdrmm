@@ -523,7 +523,7 @@ fn performance_data(h: &[u8], who: &Value) -> HfdlEvent {
         "flight": fix.flight,
         "lat": fix.lat, "lon": fix.lon,
         "utc_s": fix.utc_s,
-        "utc": fix.utc.clone(),
+        "utc": fix.utc,
         "version": h[15],
         "flight_leg": h[16],
         "gs_id": h[17] & 0x7F,
@@ -573,7 +573,7 @@ fn frequency_data(h: &[u8], who: &Value) -> HfdlEvent {
         "flight": fix.flight,
         "lat": fix.lat, "lon": fix.lon,
         "utc_s": fix.utc_s,
-        "utc": fix.utc.clone(),
+        "utc": fix.utc,
         "freq_data": freq_data,
         "who": who,
     });

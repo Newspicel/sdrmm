@@ -491,7 +491,7 @@ mod tests {
 
         let mut dev = FilePlayback::open(&stem).unwrap();
         let control = dev.playback().unwrap();
-        let seen = control.clone();
+        let seen = control;
         let (tx, rx) = mpsc::channel();
         let mut delivered = 0u64;
         dev.rx_start(vec![RxSink::new(move |s: &[Complex<f32>], _| {

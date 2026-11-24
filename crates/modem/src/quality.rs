@@ -49,7 +49,7 @@ impl Reference for Constellation {
     type Sample = Complex<f32>;
 
     fn is_empty(&self) -> bool {
-        Constellation::is_empty(self)
+        Self::is_empty(self)
     }
 
     fn power(sample: Complex<f32>) -> f64 {

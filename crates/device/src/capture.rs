@@ -620,7 +620,8 @@ mod tests {
         }
 
         fn next_block(&self, _timeout: Duration) -> Next<Vec<u8>> {
-            match lock(&self.steps).pop_front() {
+            let step = lock(&self.steps).pop_front();
+            match step {
                 Some(Step::Block(bytes)) => Next::Block(bytes),
                 Some(Step::AfterGap(gap, bytes)) => {
                     *lock(&self.gap) = Some(gap);
@@ -1312,7 +1313,7 @@ mod tests {
         assert_eq!(radio.disarms(), after, "a stopped capture holds no radio");
         capture
             .start(
-                radio.clone(),
+                radio,
                 FakeConverter::default(),
                 RxSink::new(|_, _| {}),
                 config(),

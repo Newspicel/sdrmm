@@ -980,7 +980,7 @@ mod tests {
                 let Some(m) = event.read::<AdsbMessage>() else {
                     panic!("adsb channel emitted {}", event.kind())
                 };
-                messages.push(m.clone());
+                messages.push(m);
             }
             pos = end;
         }

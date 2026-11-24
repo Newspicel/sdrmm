@@ -80,7 +80,7 @@ fn variable_length_must_match_the_carrier() {
     logical.resize(2 + 12, 0);
     let field = transmitted(&logical);
     assert!(variable(&field[1..], true).is_err());
-    let mut padded = field.clone();
+    let mut padded = field;
     padded.insert(0, 0);
     assert!(variable(&padded, true).is_err());
     assert_eq!(variable(&padded, false).unwrap().field_length, 14);

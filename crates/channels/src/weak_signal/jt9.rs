@@ -269,7 +269,7 @@ pub(crate) fn jt9_decoder() -> Native<WsjtParams> {
 
 impl MinuteDecoder for Jt9Decoder {
     fn decode(&mut self, samples: &[f32], low_hz: f32, high_hz: f32, limit: usize) -> Vec<Heard> {
-        Jt9Decoder::decode(self, samples, low_hz, high_hz, limit)
+        Self::decode(self, samples, low_hz, high_hz, limit)
     }
 }
 

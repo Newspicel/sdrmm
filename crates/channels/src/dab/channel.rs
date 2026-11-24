@@ -1195,7 +1195,7 @@ mod tests {
         out.reset();
         channel.report(&mut out);
         assert!(channel.rejected() > 0);
-        let error = status(&out).audio_error.clone().expect("an audio error");
+        let error = status(&out).audio_error.expect("an audio error");
         assert!(error.contains("sub-channel fragment"), "{error}");
     }
 
@@ -1467,7 +1467,7 @@ mod tests {
             let iq = sdrmm_decoder_test_support::frequency_shift(&clean, offset_hz, INPUT_RATE_HZ);
             let mut channel = automatic(Some(synth::dab::MUSIC_SERVICE));
             let mut out = run(&mut channel, &iq);
-            let status = status(&out).clone();
+            let status = status(&out);
             assert!(status.locked, "{transmission:?}: {status:?}");
             assert_eq!(
                 status.transmission_mode_label.as_deref(),
@@ -1514,7 +1514,7 @@ mod tests {
             let iq = sdrmm_decoder_test_support::at_snr(&shifted, 15.0, 11);
             let mut channel = automatic(Some(synth::dab::MUSIC_SERVICE));
             let mut out = run(&mut channel, &iq);
-            let status = status(&out).clone();
+            let status = status(&out);
             assert!(status.locked, "{transmission:?}: {status:?}");
             assert_eq!(
                 status.transmission_mode_label.as_deref(),

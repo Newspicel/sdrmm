@@ -94,7 +94,7 @@ fn test_router() -> Router {
 
 fn test_router_with_store() -> (Router, Arc<Store>) {
     let (router, state) = test_router_with_state();
-    (router, state.store.clone())
+    (router, state.store)
 }
 
 pub(crate) fn test_router_with_state() -> (Router, AppState) {

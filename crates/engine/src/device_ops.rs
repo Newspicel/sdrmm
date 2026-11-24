@@ -150,7 +150,8 @@ impl Engine {
             .map(|(id, state)| (*id, state.runtime.clone()))
             .collect();
         for (device_set, runtime) in running {
-            match lock_runtime(&runtime).readouts() {
+            let readouts = lock_runtime(&runtime).readouts();
+            match readouts {
                 Ok(readouts) if readouts.is_empty() => {}
                 Ok(readouts) => self.emit(ServerEvent::DeviceReadouts {
                     device_set,
@@ -173,7 +174,8 @@ impl Engine {
             .collect();
         for (ds, agc, runtime) in running {
             let gains = if agc {
-                match lock_runtime(&runtime).agc_gains() {
+                let read_back = lock_runtime(&runtime).agc_gains();
+                match read_back {
                     Ok(gains) => gains,
                     Err(error) => {
                         tracing::warn!(ds, %error, "reading back the AGC gain failed");
@@ -530,12 +532,13 @@ impl Engine {
                 lock_runtime(&runtime).stop();
                 return;
             }
-            let early_fault = match std::mem::replace(
+            let gate_was = std::mem::replace(
                 &mut *gate
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner),
                 FaultGate::Armed,
-            ) {
+            );
+            let early_fault = match gate_was {
                 FaultGate::Pending(slot) => slot,
                 FaultGate::Armed => None,
             };
@@ -769,7 +772,8 @@ impl Engine {
     }
 
     pub(crate) fn refuse_reopen(&self, device_id: &str) -> Result<(), EngineError> {
-        match opened_as(&self.lock(), device_id) {
+        let opened = opened_as(&self.lock(), device_id);
+        match opened {
             Some(ds) => Err(EngineError::DeviceAlreadyOpen(device_id.to_owned(), ds)),
             None => Ok(()),
         }
@@ -1117,7 +1121,8 @@ impl Engine {
                     .collect()
             };
             let old_capabilities = state.capabilities.clone();
-            if let Some(current) = lock_runtime(&state.runtime).capabilities() {
+            let current = lock_runtime(&state.runtime).capabilities();
+            if let Some(current) = current {
                 state.capabilities = current.shifted_by(state.settings.offset());
             }
             let settings = state.settings.clone();

@@ -148,7 +148,7 @@ async fn a_minted_cert_pin_equals_the_pair_uri_fp() {
     let uri = sdrmm_wire::PairUri {
         hosts: vec![format!("{}", handle.local_addr)],
         code: "48210937".to_owned(),
-        pin: served.pin.clone(),
+        pin: served.pin,
         protocol: sdrmm_wire::about::API_PROTOCOL,
         name: None,
     }

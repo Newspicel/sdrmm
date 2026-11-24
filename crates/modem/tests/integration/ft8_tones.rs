@@ -157,7 +157,7 @@ fn a_full_frame_round_trips_tone_for_tone() {
 fn the_costas_arrays_locate_the_frame_under_noise() {
     let symbols = frame(0xc057);
     let lead = 5usize;
-    let mut wave = transmit(&[vec![0u8; lead], symbols.clone()].concat());
+    let mut wave = transmit(&[vec![0u8; lead], symbols].concat());
     let es: f64 = SPS;
     add_noise(&mut wave, 0xc057, es / 10f64.powf(0.8));
 

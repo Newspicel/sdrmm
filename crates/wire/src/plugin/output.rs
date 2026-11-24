@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn a_plane_reads_back_from_its_code() {
-        for plane in [None].into_iter().chain(SymbolPlane::ALL.map(Some)) {
+        for plane in std::iter::once(None).chain(SymbolPlane::ALL.map(Some)) {
             assert_eq!(plane_of(plane_code(plane)), Ok(plane));
         }
         assert_eq!(plane_code(Some(SymbolPlane::Carriers)), 3);

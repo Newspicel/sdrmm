@@ -196,7 +196,7 @@ mod tests {
         let received = impose(&sent, gain, freq);
         let indices: Vec<usize> = (0..word.len()).collect();
         let fit = PhaseAnchor::fit(&indices, &received[..word.len()], &word).unwrap();
-        let mut corrected = received.clone();
+        let mut corrected = received;
         fit.correct_block(0, &mut corrected);
         let worst = corrected
             .iter()

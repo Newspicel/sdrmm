@@ -221,8 +221,7 @@ pub(super) fn steer(
 
 fn nearest_turn(azimuth: f64, reference: f64, azimuth_max_deg: f64) -> f64 {
     let base = azimuth.rem_euclid(TURN);
-    [base + TURN]
-        .into_iter()
+    std::iter::once(base + TURN)
         .filter(|candidate| *candidate <= azimuth_max_deg)
         .fold(base, |best, candidate| {
             if (candidate - reference).abs() < (best - reference).abs() {

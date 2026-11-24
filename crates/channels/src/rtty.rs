@@ -474,10 +474,7 @@ mod tests {
         let normal = burst("TEST DE RTTY", &p);
         let inverted: Vec<Complex<f32>> = normal.iter().map(Complex::conj).collect();
 
-        let flagged = RttyParams {
-            invert: true,
-            ..p.clone()
-        };
+        let flagged = RttyParams { invert: true, ..p };
         assert_eq!(decode(&flagged, &inverted), "TEST DE RTTY");
         assert_ne!(decode(&p, &inverted), "TEST DE RTTY");
     }

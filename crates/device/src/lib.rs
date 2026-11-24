@@ -311,7 +311,8 @@ pub struct FatalHandle(Arc<Mutex<Option<FatalFn>>>);
 
 impl FatalHandle {
     pub fn fail(&self, err: DeviceError) {
-        if let Some(fatal_fn) = lock(&self.0).take() {
+        let fatal_fn = lock(&self.0).take();
+        if let Some(fatal_fn) = fatal_fn {
             fatal_fn(err);
         }
     }

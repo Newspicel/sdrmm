@@ -1657,7 +1657,7 @@ fn workspace_crud_roundtrip() {
     assert_eq!(detail.info.revision, 1);
     assert_eq!(detail.info.created_at, detail.info.updated_at);
 
-    let mut edited = snapshot.clone();
+    let mut edited = snapshot;
     edited.graph.nodes.retain(|node| node.id != "speaker");
     let info = store
         .update_workspace(

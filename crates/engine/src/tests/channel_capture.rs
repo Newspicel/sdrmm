@@ -214,7 +214,7 @@ async fn a_channel_network_export_carries_that_channel_and_not_the_radio() {
     assert_eq!(live.node, "net");
     assert!(
         engine
-            .start_channel_network_export(ds, ch, "other".to_owned(), settings.clone())
+            .start_channel_network_export(ds, ch, "other".to_owned(), settings)
             .is_err(),
         "one export per channel"
     );
