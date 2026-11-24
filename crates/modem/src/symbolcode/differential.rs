@@ -1,3 +1,5 @@
+use crate::soft::soft_xor;
+
 #[derive(Clone, Debug, Default)]
 pub struct DifferentialEncoder {
     last: bool,
@@ -46,6 +48,30 @@ impl DifferentialDecoder {
 
     pub fn reset(&mut self) {
         self.last = false;
+    }
+}
+
+/// [`DifferentialDecoder`] on soft bits, positive is one: each bit is the [`soft_xor`] of a
+/// value and the one before. Its sign is the hard decision; its size says how sure it is.
+#[derive(Clone, Debug, Default)]
+pub struct SoftDifferentialDecoder {
+    last: f32,
+}
+
+impl SoftDifferentialDecoder {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn decode(&mut self, value: f32) -> f32 {
+        let out = soft_xor(value, self.last);
+        self.last = value;
+        out
+    }
+
+    pub fn reset(&mut self) {
+        self.last = 0.0;
     }
 }
 

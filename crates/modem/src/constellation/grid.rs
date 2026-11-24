@@ -57,6 +57,17 @@ impl Grid {
         self.step
     }
 
+    #[must_use]
+    pub(super) fn side(&self) -> usize {
+        self.side
+    }
+
+    /// The index of the point in column `col` and row `row`, counted from the lowest.
+    #[must_use]
+    pub(super) fn point_at(&self, col: usize, row: usize) -> usize {
+        self.index_at[row * self.side + col] as usize
+    }
+
     fn cell(&self, offset: f32) -> usize {
         (offset / self.step)
             .round()

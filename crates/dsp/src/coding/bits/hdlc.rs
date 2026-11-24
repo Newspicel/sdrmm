@@ -9,6 +9,14 @@ const ABORT_ONES: u8 = 7;
 /// a byte boundary.
 const FLAG_TAIL_BITS: [u8; 2] = [5, 6];
 
+/// A closed frame and how sure each of its bits was: bit `i` is bit `i % 8` of byte `i / 8`,
+/// the order HDLC sends them.
+#[derive(Clone, Copy, Debug)]
+pub struct SoftFrame<'a> {
+    pub bytes: &'a [u8],
+    pub reliability: &'a [f32],
+}
+
 /// Bits in, HDLC frames out. A closed frame is lent from a buffer the next frame reuses, so a
 /// frame costs no allocation.
 #[derive(Clone, Debug)]
@@ -20,6 +28,8 @@ pub struct HdlcDeframer {
     nbits: u8,
     frame: Vec<u8>,
     closed: Vec<u8>,
+    reliability: Vec<f32>,
+    closed_reliability: Vec<f32>,
     in_frame: bool,
     overflow: bool,
 }
@@ -39,28 +49,43 @@ impl HdlcDeframer {
             nbits: 0,
             frame: Vec::with_capacity(max_bytes),
             closed: Vec::with_capacity(max_bytes),
+            reliability: Vec::with_capacity(max_bytes * 8),
+            closed_reliability: Vec::with_capacity(max_bytes * 8),
             in_frame: false,
             overflow: false,
         }
     }
 
     pub fn push(&mut self, bit: bool) -> Option<&[u8]> {
+        self.step(bit, 1.0).then_some(self.closed.as_slice())
+    }
+
+    /// Takes one soft bit, positive is one; a closed frame comes with each bit's magnitude.
+    pub fn push_soft(&mut self, value: f32) -> Option<SoftFrame<'_>> {
+        self.step(value > 0.0, value.abs()).then_some(SoftFrame {
+            bytes: &self.closed,
+            reliability: &self.closed_reliability,
+        })
+    }
+
+    /// `true` when the bit closed a frame, now in `closed`.
+    fn step(&mut self, bit: bool, reliability: f32) -> bool {
         match self.ones {
             0..STUFF_ONES => {
                 self.ones = if bit { self.ones + 1 } else { 0 };
-                self.append(bit);
-                None
+                self.append(bit, reliability);
+                false
             }
             STUFF_ONES => {
                 self.ones = if bit { FLAG_ONES } else { 0 };
-                None
+                false
             }
             FLAG_ONES if !bit => self.close(),
             _ => {
                 self.ones = if bit { ABORT_ONES } else { 0 };
                 self.in_frame = false;
                 self.discard();
-                None
+                false
             }
         }
     }
@@ -71,9 +96,12 @@ impl HdlcDeframer {
         self.discard();
     }
 
-    fn append(&mut self, bit: bool) {
+    fn append(&mut self, bit: bool, reliability: f32) {
         if !self.in_frame {
             return;
+        }
+        if self.reliability.len() < self.max_bytes * 8 {
+            self.reliability.push(reliability);
         }
         self.byte |= u8::from(bit) << self.nbits;
         self.nbits += 1;
@@ -90,24 +118,27 @@ impl HdlcDeframer {
 
     fn discard(&mut self) {
         self.frame.clear();
+        self.reliability.clear();
         self.byte = 0;
         self.nbits = 0;
         self.overflow = false;
     }
 
-    fn close(&mut self) -> Option<&[u8]> {
+    fn close(&mut self) -> bool {
         let aligned = FLAG_TAIL_BITS.contains(&self.nbits);
         let keep = self.in_frame
             && aligned
             && !self.overflow
             && (self.min_bytes..=self.max_bytes).contains(&self.frame.len());
         if keep {
+            self.reliability.truncate(self.frame.len() * 8);
             std::mem::swap(&mut self.frame, &mut self.closed);
+            std::mem::swap(&mut self.reliability, &mut self.closed_reliability);
         }
         self.ones = 0;
         self.in_frame = true;
         self.discard();
-        keep.then_some(self.closed.as_slice())
+        keep
     }
 }
 
@@ -286,6 +317,28 @@ mod tests {
         deframer.reset();
         assert!(deframe(&mut deframer, &bits[split..]).is_empty());
         assert_eq!(deframe(&mut deframer, &bits), vec![payload.to_vec()]);
+    }
+
+    #[test]
+    fn a_soft_frame_carries_each_data_bit_its_magnitude() {
+        let payload = [0xFFu8, 0x81, 0x3C];
+        let mut bits = Vec::new();
+        let mut framer = HdlcFramer::new();
+        framer.push_flags(&mut bits, 1);
+        framer.push_bytes(&mut bits, &payload);
+        framer.push_flags(&mut bits, 1);
+        let mut deframer = HdlcDeframer::new(2, 64);
+        let mut heard = None;
+        for (index, &bit) in bits.iter().enumerate() {
+            let size = 1.0 + index as f32;
+            if let Some(frame) = deframer.push_soft(if bit { size } else { -size }) {
+                heard = Some((frame.bytes.to_vec(), frame.reliability.to_vec()));
+            }
+        }
+        let (bytes, reliability) = heard.expect("the frame closes");
+        assert_eq!(bytes, payload);
+        assert_eq!(reliability.len(), payload.len() * 8);
+        assert_eq!(&reliability[..6], &[9.0, 10.0, 11.0, 12.0, 13.0, 15.0]);
     }
 
     #[test]

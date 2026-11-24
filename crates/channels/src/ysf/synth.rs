@@ -223,7 +223,7 @@ fn payload(
     (out, needed)
 }
 
-fn vd2_voice(info: &[bool; 49]) -> [bool; 104] {
+pub(crate) fn vd2_voice(info: &[bool; 49]) -> [bool; 104] {
     let mut protected = [false; 104];
     for i in 0..27 {
         protected[i * 3..i * 3 + 3].fill(info[i]);
@@ -257,7 +257,7 @@ fn vfr_voice(annex_h: &[bool; 144]) -> [bool; 144] {
     std::array::from_fn(|i| raw[VFR_INTERLEAVE[i]])
 }
 
-fn fich_bits(fich: &Fich) -> Vec<bool> {
+pub(crate) fn fich_bits(fich: &Fich) -> Vec<bool> {
     let mut info = [0u8; 6];
     info[0] = fich.frame_type << 6 | 2 << 4;
     info[1] = (fich.frame_number & 0x07) << 3 | fich.frame_total & 0x07;

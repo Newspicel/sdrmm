@@ -1,6 +1,7 @@
 use super::*;
 use air::{
-    ISCH_DIBITS, PACKET_DIBITS, S_ISCH, SLOT_CHANNEL, SLOTS, duid_codeword, info_isch_codeword,
+    ISCH_DIBITS, PACKET_DIBITS, S_ISCH, SLOT_CHANNEL, SLOTS, duid_codeword, firm,
+    info_isch_codeword,
 };
 use scrambler::Identity;
 use sdrmm_codec::voice::testutil::half_rate_frames;
@@ -91,6 +92,11 @@ fn only_the_sites_own_seed_decodes_the_recording() {
         if packet.burst() != (Burst::Sacch { scrambled: true }) {
             continue;
         }
+        let reliability: Vec<f32> = packet
+            .body()
+            .iter()
+            .map(|&phasor| demod::reliability(phasor))
+            .collect();
         for (masks, count) in [(&site, &mut right), (&other, &mut wrong)] {
             let body: Vec<u8> = packet
                 .body()
@@ -98,7 +104,7 @@ fn only_the_sites_own_seed_decodes_the_recording() {
                 .zip(masks.body(packet.slot))
                 .map(|(&phasor, &scramble)| dibit(phasor) ^ scramble)
                 .collect();
-            if mac::decode(&body, &SACCH).is_some() {
+            if mac::decode(&body, &reliability, &SACCH).is_some() {
                 *count += 1;
             }
         }
@@ -123,12 +129,48 @@ fn the_isch_and_duid_codes_match_the_published_tables() {
     }
     for slot in [0usize, 1, 4, 5, 8, 9] {
         let word = info_isch_codeword((slot % 4) << 5 | (slot / 4) << 3 | 2) ^ 0b1_0101 << 20;
-        assert_eq!(air::info_isch(word).map(air::InfoIsch::slot), Some(slot));
+        assert_eq!(
+            air::info_isch(&firm(word)).map(air::InfoIsch::slot),
+            Some(slot)
+        );
     }
-    assert!(air::info_isch(S_ISCH).is_none());
-    assert_eq!(air::burst_of(0x9A), Burst::Facch { scrambled: true });
-    assert_eq!(air::burst_of(0x9A ^ 0x40), Burst::Facch { scrambled: true });
-    assert_eq!(air::burst_of(0x03), Burst::Unknown);
+    assert!(air::info_isch(&firm(S_ISCH)).is_none());
+    assert_eq!(air::burst_of(firm(0x9A)), Burst::Facch { scrambled: true });
+    assert_eq!(
+        air::burst_of(firm(0x9A ^ 0x40)),
+        Burst::Facch { scrambled: true }
+    );
+    assert_eq!(air::burst_of(firm(0x03)), Burst::Unknown);
+}
+
+/// `word`'s soft bits with those under `flips` weakly wrong.
+fn weakly_flipped<const N: usize>(word: u64, flips: u64) -> [i8; N] {
+    let mut soft = firm(word);
+    for (at, value) in soft.iter_mut().enumerate() {
+        if flips >> (N - 1 - at) & 1 == 1 {
+            *value = -*value / 4;
+        }
+    }
+    soft
+}
+
+#[test]
+fn soft_isch_and_duid_decode_past_the_hard_radius() {
+    let slot = 5;
+    let word = info_isch_codeword((slot % 4) << 5 | (slot / 4) << 3);
+    let flips: u64 = 0x11_1111_1111 & !0x10;
+    assert_eq!(flips.count_ones(), 9);
+    assert_ne!(
+        air::info_isch(&firm(word ^ flips)).map(air::InfoIsch::slot),
+        Some(slot)
+    );
+    let soft = weakly_flipped(word, flips);
+    assert_eq!(air::info_isch(&soft).map(air::InfoIsch::slot), Some(slot));
+    let codeword = u64::from(duid_codeword(DUID_FACCH));
+    let flips = 0b1000_0001;
+    assert_eq!(air::burst_of(firm(codeword ^ flips)), Burst::Unknown);
+    let soft = weakly_flipped(codeword, flips);
+    assert_eq!(air::burst_of(soft), Burst::Facch { scrambled: true });
 }
 
 #[test]

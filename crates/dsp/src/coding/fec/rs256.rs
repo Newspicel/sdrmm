@@ -1,3 +1,5 @@
+mod gmd;
+
 const SIZE: usize = 256;
 const ORDER: usize = SIZE - 1;
 

@@ -193,21 +193,30 @@ fn decodes_an_extended_addressing_grant() {
     );
 }
 
+fn soft(bits: &[bool]) -> Vec<f32> {
+    bits.iter()
+        .map(|&bit| if bit { 1.0 } else { -1.0 })
+        .collect()
+}
+
 #[test]
 fn one_spoilt_copy_is_outvoted_and_three_spoil_the_message() {
     let first = tx::codeword(tx::group_update(765, 9));
-    let mut spoilt = tx::frame(&first, &first)[SYNC_BITS as usize..].to_vec();
-    for bit in &mut spoilt[..MESSAGE_BITS] {
-        *bit = !*bit;
+    let mut spoilt = soft(&tx::frame(&first, &first)[SYNC_BITS as usize..]);
+    for value in &mut spoilt[..MESSAGE_BITS] {
+        *value = -*value;
     }
-    let (voted, disagreements) = vote(&spoilt[..COPIES * MESSAGE_BITS]);
-    assert_eq!(voted.to_vec(), first);
+    let (summed, disagreements) = vote(&spoilt[..COPIES * MESSAGE_BITS]);
+    assert_eq!(
+        summed.iter().map(|&value| value > 0.0).collect::<Vec<_>>(),
+        first
+    );
     assert_eq!(disagreements, MESSAGE_BITS as u32);
 
     for copy in 0..COPIES {
         for bit in [3, 17, 29] {
             let at = copy * MESSAGE_BITS + bit;
-            spoilt[at] = !spoilt[at];
+            spoilt[at] = -spoilt[at];
         }
     }
     let mut framer = Framer::new();
@@ -217,6 +226,27 @@ fn one_spoilt_copy_is_outvoted_and_three_spoil_the_message() {
             .word(0)
             .is_none_or(|word| word.data != tx::group_update(765, 9))
     );
+}
+
+#[test]
+fn a_confident_copy_outweighs_two_weak_spoilt_ones() {
+    let message = tx::group_update(765, 9);
+    let first = tx::codeword(message);
+    let mut copies = soft(&tx::frame(&first, &first)[SYNC_BITS as usize..]);
+    for copy in [0, 2] {
+        for bit in [3, 17, 29, 35] {
+            let at = copy * MESSAGE_BITS + bit;
+            copies[at] *= -0.2;
+        }
+    }
+    let signs: Vec<f32> = copies.iter().map(|value| value.signum()).collect();
+    let (majority, _) = vote(&signs[..COPIES * MESSAGE_BITS]);
+    let mut voted = majority.map(|value| value > 0.0);
+    let hard = Bch::new(BCH_FIELD_BITS, BCH_PRIMITIVE, BCH_CORRECTS).decode(&mut voted);
+    assert!(hard.is_none() || voted.to_vec() != first);
+    let mut framer = Framer::new();
+    framer.frame.copy_from_slice(&copies);
+    assert_eq!(framer.word(0).map(|word| word.data), Some(message));
 }
 
 #[test]

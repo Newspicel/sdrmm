@@ -1,3 +1,4 @@
+mod acceptance;
 mod bch;
 pub mod block;
 pub mod bptc;
@@ -19,6 +20,7 @@ pub mod prbs;
 mod remainder;
 mod rs129;
 pub mod rs256;
+mod soft_ml;
 pub mod syndrome;
 mod tail_biting;
 #[cfg(test)]
@@ -27,7 +29,7 @@ mod trellis;
 
 pub use bch::{Bch, BchScratch, ShortBch};
 pub use burst::BurstCode;
-pub use chase::chase;
+pub use chase::{Acceptance, ChaseWord, chase};
 pub use crc::{
     crc_msb_bits, crc4_msb, crc8_msb, crc8_msb_table, crc8_msb_tabled, crc16_ccitt, crc16_genibus,
     crc16_genibus_ok, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected, crc32_ieee,
@@ -35,8 +37,8 @@ pub use crc::{
 };
 pub use crc_parity::CrcParity;
 pub use digest::{lfsr_digest8, lfsr_digest8_reflect, lfsr_digest16};
-pub use golay::{golay23_correct, golay23_encode, golay23_ok};
-pub use hdlc::{hdlc_fcs_ok, hdlc_repair};
+pub use golay::{golay23_correct, golay23_decode_soft, golay23_encode, golay23_ok};
+pub use hdlc::{REPAIR_BITS, crc_repair, hdlc_fcs_ok, hdlc_repair};
 pub use rs129::rs129_parity;
 pub use tail_biting::TailBitingViterbi;
 pub use trellis::TrellisCode;

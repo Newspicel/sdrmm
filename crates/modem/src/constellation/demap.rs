@@ -1,20 +1,30 @@
 use num_complex::Complex;
 
-use super::{Constellation, MAX_BITS_PER_SYMBOL, squared_distance};
+use super::{Constellation, MAX_BITS_PER_SYMBOL, log_sum::LogSum, squared_distance};
 use crate::soft::Llr;
 
 const MAX_BITS: usize = MAX_BITS_PER_SYMBOL as usize;
 
-#[derive(Clone, Copy)]
-struct LogSum {
-    max: f64,
-    sum: f64,
+pub fn max_log_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
+    assert_eq!(c.bits_per_symbol(), out.len(), "one LLR slot per label bit");
+    assert_variance(noise_var);
+    match &c.separable {
+        Some(axes) => axes.max_log(y, noise_var, out),
+        None => scanned_max_log(y, c, noise_var, out),
+    }
 }
 
-pub fn max_log_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
-    let bits = c.bits_per_symbol();
-    assert_eq!(bits, out.len(), "one LLR slot per label bit");
+pub fn exact_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
+    assert_eq!(c.bits_per_symbol(), out.len(), "one LLR slot per label bit");
     assert_variance(noise_var);
+    match &c.separable {
+        Some(axes) => axes.exact(y, noise_var, out),
+        None => scanned_exact(y, c, noise_var, out),
+    }
+}
+
+fn scanned_max_log(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
+    let bits = c.bits_per_symbol();
     let mut min0 = [f64::INFINITY; MAX_BITS];
     let mut min1 = [f64::INFINITY; MAX_BITS];
     for (p, &label) in c.points().iter().zip(c.labels()) {
@@ -32,10 +42,8 @@ pub fn max_log_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mu
     }
 }
 
-pub fn exact_llrs(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
+fn scanned_exact(y: Complex<f32>, c: &Constellation, noise_var: f64, out: &mut [Llr]) {
     let bits = c.bits_per_symbol();
-    assert_eq!(bits, out.len(), "one LLR slot per label bit");
-    assert_variance(noise_var);
     let mut sum0 = [LogSum::EMPTY; MAX_BITS];
     let mut sum1 = [LogSum::EMPTY; MAX_BITS];
     for (p, &label) in c.points().iter().zip(c.labels()) {
@@ -102,26 +110,6 @@ fn assert_variance(noise_var: f64) {
     );
 }
 
-impl LogSum {
-    const EMPTY: Self = Self {
-        max: f64::NEG_INFINITY,
-        sum: 0.0,
-    };
-
-    fn add(&mut self, x: f64) {
-        if x > self.max {
-            self.sum = self.sum * (self.max - x).exp() + 1.0;
-            self.max = x;
-        } else {
-            self.sum += (x - self.max).exp();
-        }
-    }
-
-    fn value(self) -> f64 {
-        self.max + self.sum.ln()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use sdrmm_modem_test_support::ber::{
@@ -131,7 +119,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::constellation::fixtures::gray_4pam;
+    use crate::constellation::{fixtures::gray_4pam, tables};
 
     fn bpsk() -> Constellation {
         Constellation::from_points(
@@ -318,5 +306,82 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn spread_points(count: usize, seed: u64) -> Vec<Complex<f32>> {
+        let mut rng = Rng::new(seed);
+        (0..count)
+            .map(|_| {
+                let mut draw = || (rng.next_u64() % 10_000) as f32 / 10_000.0 * 3.0 - 1.5;
+                Complex::new(draw(), draw())
+            })
+            .collect()
+    }
+
+    fn assert_close(fast: &[Llr], full: &[Llr], what: &str) {
+        for (k, (a, b)) in fast.iter().zip(full).enumerate() {
+            let tolerance = 1e-4 * b.0.abs().max(1.0);
+            assert!(
+                (a.0 - b.0).abs() <= tolerance,
+                "{what} bit {k}: {} vs {}",
+                a.0,
+                b.0
+            );
+        }
+    }
+
+    #[test]
+    fn square_qam_soft_bits_match_the_full_search() {
+        for order in [16u32, 64, 256, 1024] {
+            let c = tables::qam_square(order).unwrap();
+            assert!(c.separable.is_some(), "{order}-QAM");
+            let bits = c.bits_per_symbol();
+            let noise_var = c.min_distance().powi(2) * 0.3;
+            for y in spread_points(300, u64::from(order)) {
+                let (mut fast, mut full) = (vec![Llr(0.0); bits], vec![Llr(0.0); bits]);
+                max_log_llrs(y, &c, noise_var, &mut fast);
+                scanned_max_log(y, &c, noise_var, &mut full);
+                assert_close(&fast, &full, &format!("{order}-QAM max-log at {y}"));
+                exact_llrs(y, &c, noise_var, &mut fast);
+                scanned_exact(y, &c, noise_var, &mut full);
+                assert_close(&fast, &full, &format!("{order}-QAM exact at {y}"));
+            }
+        }
+    }
+
+    #[test]
+    fn only_tables_with_one_axis_per_bit_take_the_short_path() {
+        for c in [
+            tables::psk(8).unwrap(),
+            tables::qam_cross(32).unwrap(),
+            tables::apsk16_dvbs2(2.57).unwrap(),
+        ] {
+            assert!(c.separable.is_none(), "{} points", c.len());
+        }
+        let square = tables::qam_square(16).unwrap();
+        let mut labels = square.labels().to_vec();
+        labels.swap(0, 5);
+        let scrambled = Constellation::from_points(square.points().to_vec(), labels).unwrap();
+        assert!(scrambled.is_square_grid() && scrambled.separable.is_none());
+    }
+
+    #[test]
+    fn dense_grid_soft_bits_agree_with_the_slicer_and_allocate_nothing() {
+        let c = tables::qam_square(65_536).unwrap();
+        let noise_var = c.min_distance().powi(2) * 0.1;
+        let mut out = [Llr(0.0); 16];
+        for y in spread_points(200, 0x65536) {
+            max_log_llrs(y, &c, noise_var, &mut out);
+            let from_signs = out
+                .iter()
+                .enumerate()
+                .fold(0u32, |label, (k, llr)| label | (u32::from(llr.bit()) << k));
+            assert_eq!(from_signs, c.hard_slice(y), "at {y}");
+        }
+        let y = Complex::new(0.31f32, -0.12);
+        assert_no_alloc("max_log_llrs 65536-QAM", || {
+            max_log_llrs(y, &c, noise_var, &mut out);
+            std::hint::black_box(&out);
+        });
     }
 }

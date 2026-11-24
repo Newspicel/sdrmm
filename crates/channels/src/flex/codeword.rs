@@ -1,4 +1,7 @@
-use sdrmm_dsp::{ShortBch, coding::fec::chase};
+use sdrmm_dsp::{
+    ShortBch,
+    coding::fec::{Acceptance, chase},
+};
 
 /// BCH(31,21) plus an even parity bit, sent LSB first.
 const BCH: ShortBch<31> = ShortBch::new(0x769, 10);
@@ -6,6 +9,7 @@ const BCH: ShortBch<31> = ShortBch::new(0x769, 10);
 pub const WORDS: usize = 88;
 pub const PHASE_BITS: usize = WORDS * 32;
 const CHASE_BITS: usize = 4;
+const CORRECTABLE: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Word {
@@ -105,15 +109,15 @@ pub fn decode(received: &Received) -> Word {
 }
 
 fn chase_word(received: &Received) -> Word {
-    let raw = u64::from(received.raw);
-    let repair = |word: u64| repaired(word as u32).map(u64::from);
-    chase(raw, &received.reliability, CHASE_BITS, repair).map_or(Word::Lost, |candidate| {
-        let candidate = candidate as u32;
-        Word::Soft {
+    let acceptance = Acceptance::Radius(CORRECTABLE);
+    let raw = received.raw;
+    chase(raw, &received.reliability, CHASE_BITS, acceptance, repaired).map_or(
+        Word::Lost,
+        |candidate| Word::Soft {
             data: data_of(candidate),
-            errors: (candidate ^ received.raw).count_ones(),
-        }
-    })
+            errors: (candidate ^ raw).count_ones(),
+        },
+    )
 }
 
 #[cfg(test)]

@@ -381,10 +381,9 @@ impl Decoder {
     fn late_entry(&mut self, coded: &[Soft]) -> Option<DvFrame> {
         let mut decoded = [false; 48];
         for block in 0..4 {
-            let word = coded[block * 24..(block + 1) * 24]
-                .iter()
-                .fold(0u64, |acc, &bit| acc << 1 | u64::from(bit > 0));
-            let Some((info, _)) = CyclicCode::GOLAY_24_12.decode(word) else {
+            let Some((info, _)) =
+                CyclicCode::GOLAY_24_12.decode_soft(&coded[block * 24..(block + 1) * 24])
+            else {
                 self.reject();
                 return None;
             };
@@ -622,6 +621,34 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn a_lich_word_decodes_four_weak_errors() {
+        let chunk = 0x12_3456_789A_u64 << 8 | 2 << 5;
+        let coded: Vec<Soft> = (0..4)
+            .flat_map(|block| {
+                let word =
+                    CyclicCode::GOLAY_24_12.encode((chunk >> (36 - 12 * block) & 0xFFF) as u32);
+                (0..24)
+                    .rev()
+                    .map(move |bit| sdrmm_dsp::soft(word >> bit & 1 == 1))
+            })
+            .collect();
+        for (weak, joined) in [(false, 0), (true, 1 << 2)] {
+            let mut damaged = coded.clone();
+            for place in [1, 7, 12, 22] {
+                damaged[place] = if weak {
+                    -damaged[place] / 4
+                } else {
+                    -damaged[place]
+                };
+            }
+            let mut decoder = Decoder::new();
+            assert!(decoder.late_entry(&damaged).is_none());
+            assert_eq!(decoder.late_chunks, joined);
+            assert_eq!(decoder.rejected(), u32::from(!weak));
+        }
     }
 
     #[test]

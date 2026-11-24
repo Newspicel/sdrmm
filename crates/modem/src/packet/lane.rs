@@ -1,10 +1,12 @@
 use std::ops::RangeInclusive;
 
-use sdrmm_dsp::{BitSync, HdlcDeframer, NrziDecoder};
+use sdrmm_dsp::{BitSync, HdlcDeframer, SoftFrame};
+
+use crate::symbolcode::{NrziConvention, SoftNrziDecoder};
 
 pub(super) struct Lane {
     pub(super) sync: BitSync,
-    nrzi: NrziDecoder,
+    nrzi: SoftNrziDecoder,
     deframer: HdlcDeframer,
     pub(super) space_gain: f32,
 }
@@ -18,14 +20,14 @@ impl Lane {
     ) -> Self {
         Self {
             sync: BitSync::new(rate, baud),
-            nrzi: NrziDecoder::new(),
+            nrzi: SoftNrziDecoder::new(NrziConvention::TransitionOnZero),
             deframer: HdlcDeframer::new(*bytes.start(), *bytes.end()),
             space_gain,
         }
     }
 
-    pub(super) fn push(&mut self, sample: f32, heard: &mut impl FnMut(&[u8])) {
-        if let Some(level) = self.sync.push(sample) {
+    pub(super) fn push(&mut self, sample: f32, heard: &mut impl FnMut(SoftFrame<'_>)) {
+        if let Some(level) = self.sync.push_soft(sample) {
             self.push_level(level, heard);
         }
     }
@@ -34,16 +36,17 @@ impl Lane {
         &mut self,
         sample: f32,
         levels: &mut Vec<f32>,
-        heard: &mut impl FnMut(&[u8]),
+        heard: &mut impl FnMut(SoftFrame<'_>),
     ) {
         if let Some(level) = self.sync.push_soft(sample) {
             levels.push(level);
-            self.push_level(level >= 0.0, heard);
+            self.push_level(level, heard);
         }
     }
 
-    pub(super) fn push_level(&mut self, level: bool, heard: &mut impl FnMut(&[u8])) {
-        if let Some(frame) = self.deframer.push(self.nrzi.decode(level)) {
+    /// Takes one soft line level, mark positive.
+    pub(super) fn push_level(&mut self, level: f32, heard: &mut impl FnMut(SoftFrame<'_>)) {
+        if let Some(frame) = self.deframer.push_soft(self.nrzi.decode(level)) {
             heard(frame);
         }
     }

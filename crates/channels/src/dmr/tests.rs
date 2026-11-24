@@ -8,6 +8,7 @@ use sdrmm_codec::voice::testutil::{half_rate_frames, natural_half_rate_frames};
 use sdrmm_decoder::voice::Speaker;
 use sdrmm_decoder::{AUDIO_RATE, ChannelOutputs};
 use sdrmm_decoder_test_support::{frames::decode, settings};
+use sdrmm_modem::synth::filler;
 use sdrmm_wire::ChannelParams;
 
 fn channel(slots: DmrSlots) -> DmrChannel {
@@ -30,6 +31,19 @@ fn channel(slots: DmrSlots) -> DmrChannel {
     .expect("dmr channel")
 }
 
+fn soften(bits: &[bool]) -> Vec<Soft> {
+    bits.iter().map(|&bit| sdrmm_dsp::soft(bit)).collect()
+}
+
+/// Flips `places` of `soft`, to full confidence or weakly.
+fn flipped(soft: &[Soft], places: &[usize], weak: bool) -> Vec<Soft> {
+    let mut out = soft.to_vec();
+    for &place in places {
+        out[place] = if weak { -out[place] / 4 } else { -out[place] };
+    }
+    out
+}
+
 fn put(bits: &mut [bool], at: usize, width: usize, value: u64) {
     for index in 0..width {
         bits[at + index] = value >> (width - index - 1) & 1 == 1;
@@ -49,6 +63,58 @@ fn decodes_a_trellis_coded_data_block() {
         .expect("a rate 3/4 data block");
     assert_eq!(block.color_code, Some(3));
     assert_eq!(block.data.as_deref(), Some(hex(&payload).as_str()));
+}
+
+#[test]
+fn the_rate_three_quarter_trellis_rides_out_weak_errors() {
+    let payload: [bool; 144] = std::array::from_fn(|index| (index * 7 + index / 5) % 3 == 0);
+    let burst = soften(&tx::trellis_burst(&tx::Call::default(), &payload));
+    let places: Vec<usize> = (0..98).chain(166..BURST_BITS).step_by(12).collect();
+    let decoded = |weak| decode_rate_three_quarter(&flipped(&burst, &places, weak)).map(|d| d.0);
+    assert_ne!(decoded(false), Some(payload));
+    assert_eq!(decoded(true), Some(payload));
+}
+
+#[test]
+fn slot_type_and_emb_decode_weak_errors_past_the_hard_radius() {
+    let mut bits = vec![false; BURST_BITS];
+    let sent = CyclicCode::GOLAY_20_8.encode(0x3 << 4 | u32::from(DT_CSBK));
+    put(&mut bits, 98, 10, sent >> 10);
+    put(&mut bits, 156, 10, sent & 0x3FF);
+    let emb = CyclicCode::QR_16_7.encode(5 << 3 | LCSS_FIRST);
+    put(&mut bits, 108, 8, emb >> 8);
+    put(&mut bits, 148, 8, emb & 0xFF);
+    let soft = soften(&bits);
+    let slot_errors = [98, 101, 157, 165];
+    assert_eq!(slot_type(&flipped(&soft, &slot_errors, false)), None);
+    assert_eq!(
+        slot_type(&flipped(&soft, &slot_errors, true)),
+        Some((0x3 << 4 | u32::from(DT_CSBK), 4))
+    );
+    let emb_errors = [108, 112, 150];
+    assert_eq!(
+        embedded_signalling_type(&flipped(&soft, &emb_errors, false)),
+        None
+    );
+    assert_eq!(
+        embedded_signalling_type(&flipped(&soft, &emb_errors, true)),
+        Some((5 << 3 | LCSS_FIRST, 3))
+    );
+}
+
+#[test]
+fn the_cach_tact_decodes_two_weak_errors() {
+    let mut tact = [true, true, false, true, false, false, false];
+    ParityCode::HAMMING_7_4.encode(&mut tact);
+    let mut cach = [false; CACH_BITS];
+    for (&place, &bit) in [0, 4, 8, 12, 14, 18, 22].iter().zip(&tact) {
+        cach[place] = bit;
+    }
+    let soft = soften(&cach);
+    let errors = [4, 18];
+    assert!(read_cach(&flipped(&soft, &errors, false)).is_none_or(|(slot, ..)| slot != 2));
+    let (slot, lcss, _) = read_cach(&flipped(&soft, &errors, true)).expect("TACT");
+    assert_eq!((slot, lcss), (2, 0b01));
 }
 
 #[test]
@@ -1057,10 +1123,10 @@ fn embedded_burst_bits(color_code: u8, lcss: u32, fragment: &[bool; 32]) -> Vec<
 #[test]
 fn an_embedded_link_control_that_never_terminates_stops_growing() {
     let mut decoder = Decoder::new(DmrParams::default());
-    decoder.bits = embedded_burst_bits(1, LCSS_FIRST, &[true; 32]);
+    decoder.coded = soften(&embedded_burst_bits(1, LCSS_FIRST, &[true; 32]));
     assert!(decoder.embedded_signalling(0, Some(1)).is_none());
     for _ in 0..200 {
-        decoder.bits = embedded_burst_bits(1, LCSS_CONTINUATION, &[true; 32]);
+        decoder.coded = soften(&embedded_burst_bits(1, LCSS_CONTINUATION, &[true; 32]));
         assert!(decoder.embedded_signalling(0, Some(1)).is_none());
     }
 
@@ -1075,9 +1141,9 @@ fn an_embedded_link_control_that_never_terminates_stops_growing() {
 #[test]
 fn an_embedded_last_fragment_at_the_wrong_length_clears_the_buffer() {
     let mut decoder = Decoder::new(DmrParams::default());
-    decoder.bits = embedded_burst_bits(1, LCSS_FIRST, &[true; 32]);
+    decoder.coded = soften(&embedded_burst_bits(1, LCSS_FIRST, &[true; 32]));
     decoder.embedded_signalling(0, Some(1));
-    decoder.bits = embedded_burst_bits(1, LCSS_LAST, &[true; 32]);
+    decoder.coded = soften(&embedded_burst_bits(1, LCSS_LAST, &[true; 32]));
 
     assert!(decoder.embedded_signalling(0, Some(1)).is_none());
     assert!(
@@ -1090,9 +1156,9 @@ fn an_embedded_last_fragment_at_the_wrong_length_clears_the_buffer() {
 #[test]
 fn a_short_lc_that_never_terminates_stops_growing() {
     let mut assembler = ShortLc::default();
-    assembler.push(0b01, [true; 17]);
+    assembler.push(0b01, [sdrmm_dsp::CONFIDENT; 17]);
     for _ in 0..200 {
-        assembler.push(0b11, [true; 17]);
+        assembler.push(0b11, [sdrmm_dsp::CONFIDENT; 17]);
     }
 
     assert!(
@@ -1106,9 +1172,9 @@ fn a_short_lc_that_never_terminates_stops_growing() {
 #[test]
 fn a_short_lc_last_fragment_at_the_wrong_length_clears_the_buffer() {
     let mut assembler = ShortLc::default();
-    assembler.push(0b01, [true; 17]);
+    assembler.push(0b01, [sdrmm_dsp::CONFIDENT; 17]);
 
-    assert!(assembler.push(0b10, [true; 17]).is_none());
+    assert!(assembler.push(0b10, [sdrmm_dsp::CONFIDENT; 17]).is_none());
     assert!(
         assembler.payload.is_empty(),
         "a short message was left for the next one to append to"
@@ -1513,8 +1579,7 @@ fn a_simplex_call_keeps_every_burst_on_the_speaker() {
     );
 }
 
-#[test]
-fn short_lc_reports_activity_on_both_slots() {
+fn short_lc_air() -> Vec<Soft> {
     let mut message = [false; 36];
     write_bits(&mut message, 0, 4, 1);
     write_bits(&mut message, 4, 4, 8);
@@ -1537,15 +1602,31 @@ fn short_lc_reports_activity_on_both_slots() {
     let transmitted: Vec<bool> = (0..17)
         .flat_map(|column| (0..4).map(move |row| matrix[row][column]))
         .collect();
+    soften(&transmitted)
+}
+
+fn assemble_short_lc(transmitted: &[Soft]) -> Option<DvFrame> {
     let mut decoder = ShortLc::default();
     let mut frame = None;
     for (index, lcss) in [1, 3, 3, 2].into_iter().enumerate() {
-        let payload: [bool; 17] = transmitted[index * 17..(index + 1) * 17]
+        let payload: [Soft; 17] = transmitted[index * 17..(index + 1) * 17]
             .try_into()
             .expect("CACH row");
         frame = decoder.push(lcss, payload).or(frame);
     }
-    let frame = frame.expect("decoded Short LC");
+    frame
+}
+
+#[test]
+fn short_lc_rows_decode_weak_double_errors() {
+    let errors = [0, 20, 49, 57];
+    assert!(assemble_short_lc(&flipped(&short_lc_air(), &errors, false)).is_none());
+    assert!(assemble_short_lc(&flipped(&short_lc_air(), &errors, true)).is_some());
+}
+
+#[test]
+fn short_lc_reports_activity_on_both_slots() {
+    let frame = assemble_short_lc(&short_lc_air()).expect("decoded Short LC");
     assert_eq!(frame.slot_activity.len(), 2);
     assert_eq!(frame.slot_activity[0].activity, "group voice");
     assert_eq!(frame.slot_activity[0].destination_hash, Some(0xA5));
@@ -1883,4 +1964,105 @@ fn a_vocoder_chip_needs_chip_support_in_the_build() {
     .err()
     .expect("no chip support installed in tests");
     assert!(matches!(error, ChannelError::Unsupported(_)), "{error}");
+}
+
+/// Decodes `iq` and a second of hiss after it, so a lost call has time to be noticed.
+fn decode_then_hiss(iq: &[Complex<f32>]) -> (Vec<DvFrame>, u32) {
+    let mut chan = channel(DmrSlots::Both);
+    let mut iq = iq.to_vec();
+    iq.extend(sdrmm_decoder_test_support::complex_noise(
+        0x7a11,
+        0.5,
+        INPUT_RATE_HZ as usize,
+    ));
+    let frames = decode(&mut chan, &iq);
+    (frames, chan.rejected())
+}
+
+fn terminators(frames: &[DvFrame], slot: u8) -> usize {
+    frames
+        .iter()
+        .filter(|frame| frame.kind == DvFrameKind::Terminator && frame.slot == Some(slot))
+        .count()
+}
+
+fn without_terminator(call: &tx::Call) -> Vec<Vec<bool>> {
+    let mut bursts = tx::call_bursts(call);
+    bursts.pop();
+    bursts
+}
+
+#[test]
+fn a_call_that_ends_with_its_terminator_counts_nothing() {
+    let call = tx::Call::default();
+    for iq in [
+        tx::transmission(&call, INPUT_RATE_HZ),
+        tx::repeater_slots(&tx::call_bursts(&call), &[], INPUT_RATE_HZ),
+    ] {
+        let (frames, rejected) = decode_then_hiss(&iq);
+        assert_eq!(terminators(&frames, 1), 1);
+        assert_eq!(rejected, 0);
+    }
+}
+
+#[test]
+fn a_lost_terminator_is_counted_once() {
+    let iq = tx::repeater_slots(
+        &without_terminator(&tx::Call::default()),
+        &[],
+        INPUT_RATE_HZ,
+    );
+    let (frames, rejected) = decode_then_hiss(&iq);
+    assert_eq!(terminators(&frames, 1), 0);
+    assert_eq!(rejected, 1);
+}
+
+#[test]
+fn a_new_call_over_one_that_lost_its_terminator_counts_the_lost_one() {
+    let call = tx::Call::default();
+    let mut bursts = without_terminator(&call);
+    bursts.extend(tx::call_bursts(&call));
+    let (frames, rejected) = decode_then_hiss(&tx::repeater_slots(&bursts, &[], INPUT_RATE_HZ));
+    assert_eq!(terminators(&frames, 1), 1);
+    assert_eq!(rejected, 1);
+}
+
+#[test]
+fn each_slot_keeps_its_own_call() {
+    let first = tx::Call::default();
+    let second = tx::Call {
+        destination: 202,
+        source: 2_000_002,
+        ..tx::Call::default()
+    };
+    let mut long = tx::call_bursts(&second);
+    let terminator = long.split_off(long.len() - 1);
+    let superframe = long[1..].to_vec();
+    for _ in 0..3 {
+        long.extend_from_slice(&superframe);
+    }
+    long.extend(terminator);
+    let iq = tx::repeater_slots(&without_terminator(&first), &long, INPUT_RATE_HZ);
+    let (frames, rejected) = decode_then_hiss(&iq);
+    assert_eq!(terminators(&frames, 2), 1);
+    assert_eq!(rejected, 1, "slot 2 talking kept slot 1's lost call open");
+
+    let iq = tx::repeater_slots(&tx::call_bursts(&first), &long, INPUT_RATE_HZ);
+    assert_eq!(decode_then_hiss(&iq).1, 0);
+}
+
+#[test]
+fn a_late_terminator_is_not_counted_twice() {
+    let call = tx::Call::default();
+    let idle = |bursts: usize| {
+        let mut late = tx::call_bursts(&call);
+        let terminator = late.split_off(late.len() - 1);
+        late.extend(std::iter::repeat_n(filler(264, 7), bursts));
+        late.extend(terminator);
+        decode_then_hiss(&tx::repeater_slots(&late, &[], INPUT_RATE_HZ))
+    };
+    let (frames, rejected) = idle(2);
+    assert_eq!((terminators(&frames, 1), rejected), (1, 0));
+    let (frames, rejected) = idle(12);
+    assert_eq!((terminators(&frames, 1), rejected), (1, 1));
 }

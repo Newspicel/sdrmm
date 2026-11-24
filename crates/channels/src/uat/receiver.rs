@@ -50,7 +50,9 @@ pub(crate) struct Receiver {
     rejected: u32,
     failed: Option<u64>,
     adsb: [[u8; LONG_BYTES]; SAMPLES_PER_BIT],
+    adsb_reliability: [f32; LONG_BYTES],
     raw: [u8; UPLINK_BYTES],
+    reliability: [f32; UPLINK_BYTES],
     blocks: [u8; UPLINK_BYTES],
     uplinks: [[u8; UPLINK_DATA]; SAMPLES_PER_BIT],
     tapping: bool,
@@ -92,7 +94,9 @@ impl Receiver {
             rejected: 0,
             failed: None,
             adsb: [[0; LONG_BYTES]; SAMPLES_PER_BIT],
+            adsb_reliability: [0.0; LONG_BYTES],
             raw: [0; UPLINK_BYTES],
+            reliability: [0.0; UPLINK_BYTES],
             blocks: [0; UPLINK_BYTES],
             uplinks: [[0; UPLINK_DATA]; SAMPLES_PER_BIT],
             tapping: false,
@@ -217,8 +221,9 @@ impl Receiver {
                 continue;
             };
             let frame = &mut self.adsb[offset];
-            slice(&self.steps[start + offset + SYNC_SPAN..], centre, frame);
-            if let Some(decoded) = self.codes.downlink(frame)
+            let steps = &self.steps[start + offset + SYNC_SPAN..];
+            slice(steps, centre, frame, &mut self.adsb_reliability);
+            if let Some(decoded) = self.codes.downlink(frame, &self.adsb_reliability)
                 && best.is_none_or(|(kept, _)| decoded.corrected < kept.corrected)
             {
                 best = Some((decoded, offset));
@@ -237,11 +242,14 @@ impl Receiver {
                 &self.steps[start + offset + SYNC_SPAN..],
                 centre,
                 &mut self.raw,
+                &mut self.reliability,
             );
-            if let Some(corrected) =
-                self.codes
-                    .uplink(&self.raw, &mut self.blocks, &mut self.uplinks[offset])
-                && best.is_none_or(|(kept, _)| corrected < kept)
+            if let Some(corrected) = self.codes.uplink(
+                &self.raw,
+                &self.reliability,
+                &mut self.blocks,
+                &mut self.uplinks[offset],
+            ) && best.is_none_or(|(kept, _)| corrected < kept)
             {
                 best = Some((corrected, offset));
             }
@@ -298,10 +306,19 @@ fn centre(steps: &[f32], word: u64) -> Option<f32> {
     (errors as u32 <= SYNC_ERRORS).then_some(centre)
 }
 
-fn slice(steps: &[f32], centre: f32, out: &mut [u8]) {
-    for (index, byte) in out.iter_mut().enumerate() {
-        *byte = (0..8).fold(0u8, |acc, bit| {
-            acc << 1 | u8::from(steps[(index * 8 + bit) * SAMPLES_PER_BIT] > centre)
+/// Each byte's bits, first sent most significant, and its reliability: the distance of its
+/// least sure bit from the threshold.
+fn slice(steps: &[f32], centre: f32, out: &mut [u8], reliability: &mut [f32]) {
+    for (index, (byte, sure)) in out.iter_mut().zip(reliability.iter_mut()).enumerate() {
+        let bits = steps[index * 8 * SAMPLES_PER_BIT..]
+            .iter()
+            .step_by(SAMPLES_PER_BIT)
+            .take(8);
+        (*byte, *sure) = bits.fold((0u8, f32::INFINITY), |(acc, sure), &step| {
+            (
+                acc << 1 | u8::from(step > centre),
+                sure.min((step - centre).abs()),
+            )
         });
     }
 }
@@ -321,6 +338,20 @@ mod tests {
     fn the_uplink_sync_word_is_the_downlink_one_inverted() {
         assert_eq!(UPLINK_SYNC, 0x1_5322_5B1D);
         assert_eq!(hamming_distance(ADSB_SYNC, UPLINK_SYNC), 36);
+    }
+
+    #[test]
+    fn a_byte_is_as_reliable_as_its_least_sure_bit() {
+        let steps: Vec<f32> = [0.9, -0.8, 0.05, 1.0, -1.0, 0.7, -0.6, 0.8, -0.3, 0.4]
+            .iter()
+            .chain(&[0.5; 6])
+            .flat_map(|&step| [step + 0.1; SAMPLES_PER_BIT])
+            .collect();
+        let (mut bytes, mut reliability) = ([0u8; 2], [0.0f32; 2]);
+        slice(&steps, 0.1, &mut bytes, &mut reliability);
+        assert_eq!(bytes, [0b1011_0101, 0b0111_1111]);
+        assert!((reliability[0] - 0.05).abs() < 1e-6, "{reliability:?}");
+        assert!((reliability[1] - 0.3).abs() < 1e-6, "{reliability:?}");
     }
 
     #[test]

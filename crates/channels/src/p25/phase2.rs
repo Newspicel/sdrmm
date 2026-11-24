@@ -30,7 +30,7 @@ pub use model::*;
 
 use super::trunk::BandPlan;
 use air::{BODY_DIBITS, Burst, Framer, Packet};
-use demod::{Demod, INPUT_RATE_HZ, SYMBOL_RATE, dibit, soft_bits};
+use demod::{Demod, INPUT_RATE_HZ, SYMBOL_RATE, dibit, reliability, soft_bits};
 use frames::{CallState, Heard};
 use mac::{FACCH, LCCH, Layout, SACCH};
 use scrambler::{Masks, solve_identity};
@@ -117,6 +117,7 @@ impl NativeChannel for P25p2Channel {
                 rejected: 0,
                 frames: Vec::new(),
                 hard: [0; BODY_DIBITS],
+                reliability: [0.0; BODY_DIBITS],
             },
         })
     }
@@ -176,6 +177,7 @@ struct Receiver {
     rejected: u32,
     frames: Vec<DvFrame>,
     hard: [u8; BODY_DIBITS],
+    reliability: [f32; BODY_DIBITS],
 }
 
 impl Receiver {
@@ -263,8 +265,14 @@ impl Receiver {
         scrambled: bool,
         out: &mut ChannelOutputs,
     ) {
-        for (hard, &phasor) in self.hard.iter_mut().zip(packet.body()) {
+        for ((hard, confidence), &phasor) in self
+            .hard
+            .iter_mut()
+            .zip(&mut self.reliability)
+            .zip(packet.body())
+        {
             *hard = dibit(phasor);
+            *confidence = reliability(phasor);
         }
         let lane = packet.channel();
         if scrambled {
@@ -279,7 +287,7 @@ impl Receiver {
                 *hard ^= scramble;
             }
         }
-        let Some(pdu) = mac::decode(&self.hard, layout) else {
+        let Some(pdu) = mac::decode(&self.hard, &self.reliability, layout) else {
             self.reject();
             if scrambled {
                 self.seed_misses += 1;
@@ -321,7 +329,7 @@ impl Receiver {
         for (hard, &scramble) in descrambled.iter_mut().zip(masks.body(packet.slot)) {
             *hard ^= scramble;
         }
-        if mac::decode(&descrambled, layout).is_none() {
+        if mac::decode(&descrambled, &self.reliability, layout).is_none() {
             return;
         }
         self.masks = Some(masks);

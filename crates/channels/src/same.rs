@@ -164,8 +164,8 @@ impl Channel for SameChannel {
             .levels(&self.symbols, &[], &self.rail, SAME_BAUD, 0.0);
         self.clock += iq.len() as u64;
         for &symbol in &self.symbols {
-            if let Some(text) = self.framer.push(symbol >= 0.0) {
-                self.bursts.received(self.clock, text);
+            if let Some(burst) = self.framer.push(symbol) {
+                self.bursts.received(self.clock, burst);
             }
         }
         self.bursts.expire(self.clock);

@@ -177,8 +177,8 @@ impl Downlink {
         while let Some(&value) = soft.get(*at) {
             *at += 1;
             let pushed = match self {
-                Self::Meteor(link) => link.push(value > 0.0),
-                Self::Noaa(link) => link.push(value > 0.0),
+                Self::Meteor(link) => link.push(value),
+                Self::Noaa(link) => link.push(value),
                 Self::Metop(_) => Pushed::default(),
             };
             if pushed.cadu.is_some() {

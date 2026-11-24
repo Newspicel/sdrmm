@@ -57,10 +57,18 @@ fn with_fcs(body: &[u8]) -> Vec<u8> {
 }
 
 fn heard(frames: &[Vec<u8>]) -> (Vec<BssPacket>, u32) {
+    let sure: Vec<Vec<f32>> = frames
+        .iter()
+        .map(|frame| vec![1.0; frame.len() * 8])
+        .collect();
+    heard_soft(frames, &sure)
+}
+
+fn heard_soft(frames: &[Vec<u8>], reliability: &[Vec<f32>]) -> (Vec<BssPacket>, u32) {
     let mut rx = channel();
     let mut out = ChannelOutputs::default();
-    for frame in frames {
-        rx.listener.hear(frame, &mut out);
+    for (bytes, reliability) in frames.iter().zip(reliability) {
+        rx.listener.hear(SoftFrame { bytes, reliability }, &mut out);
     }
     (packets(&out.events), rx.rejected())
 }
@@ -194,10 +202,12 @@ fn ax25_and_corrupt_frames_are_not_ours() {
 }
 
 #[test]
-fn one_flipped_bit_is_repaired() {
+fn one_weak_flipped_bit_is_repaired() {
     let mut frame = with_fcs(&hex_bytes("01 07204E3043414C4C 0624 68656C6C6F"));
     frame[12] ^= 0x01;
-    let (packets, _) = heard(&[frame]);
+    let mut reliability = vec![1.0; frame.len() * 8];
+    reliability[12 * 8] = 0.2;
+    let (packets, _) = heard_soft(&[frame], &[reliability]);
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].message.as_deref(), Some("hello"));
 }

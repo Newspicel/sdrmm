@@ -10,9 +10,10 @@ use sdrmm_crypto::hex_bits;
 use sdrmm_wire::FilterSpec;
 use std::sync::LazyLock;
 
+use blip25_vocoder::fullrate::frame::decode_frame_soft;
 use num_complex::Complex;
 use sdrmm_dsp::{
-    CyclicCode, ParityCode, Permutation, ReedSolomon, TrellisCode, crc16_msb, word_msb,
+    CyclicCode, ParityCode, Permutation, ReedSolomon, Soft, TrellisCode, crc16_msb, word_msb,
 };
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
@@ -20,8 +21,8 @@ use sdrmm_wire::{
     DecoderFamily, DvFrame, DvFrameKind, EventKind, Vendor,
 };
 
+use sdrmm_codec::voice::MbeDecoder;
 use sdrmm_codec::voice::chip::ChipRate;
-use sdrmm_codec::voice::{MbeDecoder, full_frame};
 use sdrmm_decoder::voice::{Speaker, open_chip};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
@@ -190,7 +191,8 @@ struct Decoder {
     window: DibitWindow,
     countdown: usize,
     hunting: bool,
-    bits: Vec<bool>,
+    soft: Vec<Soft>,
+    vocoder_soft: Vec<i8>,
     last_duid: Option<u8>,
     pending_duid: Option<u8>,
     pending_nac: u16,
@@ -200,7 +202,7 @@ struct Decoder {
     keys: CipherKeys,
     privacy: Privacy,
     vocoder: MbeDecoder,
-    logical: Vec<bool>,
+    logical: Vec<Soft>,
     rejected: u32,
     bands: trunk::BandPlan,
 }
@@ -211,7 +213,8 @@ impl Decoder {
             window: DibitWindow::new(MAX_FRAME_SYMBOLS),
             countdown: 0,
             hunting: true,
-            bits: Vec::with_capacity(NID_BITS + 2),
+            soft: Vec::with_capacity(MAX_FRAME_BITS),
+            vocoder_soft: Vec::with_capacity(MAX_FRAME_BITS),
             last_duid: None,
             pending_duid: None,
             pending_nac: 0,
@@ -294,19 +297,21 @@ impl Decoder {
     }
 
     fn nid(&mut self) -> Option<(u8, Option<DvFrame>)> {
-        self.window.bits(0, NID_SYMBOLS, &mut self.bits);
-        let mut word = 0u64;
-        for (i, &bit) in self.bits.iter().enumerate() {
-            let frame_bit = SYNC_BITS as usize + i;
-            if is_status(frame_bit) {
-                continue;
-            }
-            word = word << 1 | u64::from(bit);
+        self.window.soft_bits(0, NID_SYMBOLS, &mut self.soft);
+        let mut received = [0 as Soft; NID_BITS];
+        for (slot, value) in received
+            .iter_mut()
+            .zip(without_status(&self.soft, SYNC_BITS as usize))
+        {
+            *slot = value;
         }
-        let Some((info, _)) = CyclicCode::BCH_63_16.decode(word) else {
+        let Some((info, _)) = CyclicCode::BCH_63_16.decode_soft(&received) else {
             self.reject();
             return None;
         };
+        let word = received
+            .iter()
+            .fold(0u64, |word, &value| word << 1 | u64::from(value > 0));
         let errors =
             ((CyclicCode::BCH_63_16.encode(info) ^ word) & !NID_ROUND_OUT_BIT).count_ones();
         let nac = (info >> 4) as u16 & 0x0FFF;
@@ -346,18 +351,16 @@ impl Decoder {
             return;
         }
         self.next_imbe += 1;
-        self.window.bits(0, ready - first, &mut self.bits);
-        let mut dibits = [0u8; IMBE_BITS / 2];
-        let mut info = self
-            .bits
-            .iter()
-            .enumerate()
-            .filter(|&(i, _)| !is_status(first * 2 + i))
-            .map(|(_, &bit)| u8::from(bit));
-        for slot in &mut dibits {
-            *slot = info.next().unwrap_or(0) << 1 | info.next().unwrap_or(0);
+        self.window
+            .vocoder_soft_bits(0, ready - first, &mut self.vocoder_soft);
+        let mut soft = [0i8; IMBE_BITS];
+        for (slot, value) in soft
+            .iter_mut()
+            .zip(without_status(&self.vocoder_soft, first * 2))
+        {
+            *slot = value;
         }
-        let mut frame = full_frame(&dibits);
+        let mut frame = decode_frame_soft(&soft);
         let ldu = usize::from(duid == DUID_LDU2);
         let index = ldu * IMBE_PER_LDU + self.next_imbe - 1;
         let playable = match self.encryption {
@@ -374,14 +377,9 @@ impl Decoder {
 
     fn logical_frame(&mut self, duid: u8) {
         let total_symbols = frame_bits(duid) / 2;
-        self.window.bits(0, total_symbols, &mut self.bits);
+        self.window.soft_bits(0, total_symbols, &mut self.soft);
         self.logical.clear();
-        for (index, &bit) in self.bits.iter().enumerate() {
-            if is_status(index) {
-                continue;
-            }
-            self.logical.push(bit);
-        }
+        self.logical.extend(without_status(&self.soft, 0));
     }
 
     fn metadata(&mut self, duid: u8) -> Vec<DvFrame> {
@@ -396,38 +394,36 @@ impl Decoder {
         }
     }
 
-    fn signalling_symbols(&self) -> Option<([u8; 24], u32)> {
-        let mut coded = [false; 240];
+    /// The 24 hexbits a voice data unit's signalling carries, Reed-Solomon corrected: a hexbit
+    /// whose Hamming word fails is an erasure.
+    fn signalling_symbols(&self, code: &ReedSolomon) -> Option<([u8; 24], u32)> {
+        let mut coded = [0 as Soft; 240];
         for (chunk, voice_index) in coded.as_chunks_mut::<40>().0.iter_mut().zip(1usize..=6) {
             let start = BODY_START + (IMBE_OFFSETS[voice_index] + 72) * 2;
             chunk.copy_from_slice(self.logical.get(start..start + 40)?);
         }
-        let mut symbols = [0u8; 24];
+        let mut hexbits = [None; 24];
         let mut errors = 0;
-        for (symbol, word) in symbols
-            .iter_mut()
-            .zip(coded.as_slice().as_chunks::<10>().0.iter())
-        {
-            let mut word = *word;
-            errors += ParityCode::HAMMING_10_6.decode(&mut word)?;
-            *symbol = bits_value(&word[..6]) as u8;
+        for (hexbit, soft) in hexbits.iter_mut().zip(coded.as_chunks::<10>().0) {
+            let mut word = [false; 10];
+            if let Some(overturned) = ParityCode::HAMMING_10_6.decode_soft(soft, &mut word) {
+                errors += overturned;
+                *hexbit = Some(bits_value(&word[..6]) as u8);
+            }
         }
-        Some((symbols, errors))
+        let (symbols, rs_errors) = correct_hexbits(code, hexbits)?;
+        Some((symbols, errors + rs_errors))
     }
 
     fn ldu_link_control(&mut self) -> Option<DvFrame> {
-        let Some((mut symbols, hamming_errors)) = self.signalling_symbols() else {
-            self.reject();
-            return None;
-        };
-        let Some(rs_errors) = RS_LINK_CONTROL.decode(&mut symbols) else {
+        let Some((symbols, errors)) = self.signalling_symbols(&RS_LINK_CONTROL) else {
             self.reject();
             return None;
         };
         let bits = symbols_to_bits(&symbols[..12]);
         let mut frame = decode_p25_link_control(&bits);
         frame.kind = DvFrameKind::Voice;
-        self.finish_metadata(&mut frame, hamming_errors + rs_errors);
+        self.finish_metadata(&mut frame, errors);
         if frame.encrypted.is_some() {
             self.encryption = frame.encrypted;
         }
@@ -436,13 +432,7 @@ impl Decoder {
     }
 
     fn ldu_encryption_sync(&mut self) -> Option<DvFrame> {
-        let decoded = self
-            .signalling_symbols()
-            .and_then(|(mut symbols, hamming)| {
-                let rs_errors = RS_ENCRYPTION_SYNC.decode(&mut symbols)?;
-                Some((symbols, rs_errors, hamming))
-            });
-        let Some((symbols, rs_errors, hamming_errors)) = decoded else {
+        let Some((symbols, errors)) = self.signalling_symbols(&RS_ENCRYPTION_SYNC) else {
             self.reject();
             self.privacy.sync_lost();
             return None;
@@ -454,7 +444,7 @@ impl Decoder {
         self.encryption = frame.encrypted;
         self.sync_privacy(&frame, &bits);
         frame.cipher = self.privacy.label(&self.keys);
-        self.finish_metadata(&mut frame, hamming_errors + rs_errors);
+        self.finish_metadata(&mut frame, errors);
         (frame.encrypted == Some(true)).then_some(frame)
     }
 
@@ -469,19 +459,27 @@ impl Decoder {
         }
     }
 
-    fn header_data_unit(&mut self) -> Option<DvFrame> {
+    /// The header's 36 hexbits, Reed-Solomon corrected: a hexbit whose Golay word fails is an
+    /// erasure.
+    fn header_symbols(&self) -> Option<([u8; 36], u32)> {
         let body = self.logical.get(BODY_START..BODY_START + 36 * 18)?;
-        let mut symbols = [0u8; 36];
+        let mut hexbits = [None; 36];
         let mut golay_errors = 0;
-        for (symbol, word) in symbols.iter_mut().zip(body.as_chunks::<18>().0.iter()) {
-            let received = word
-                .iter()
-                .fold(0u64, |value, &bit| value << 1 | u64::from(bit));
-            let (data, errors) = CyclicCode::GOLAY_18_6.decode(received)?;
-            *symbol = data as u8;
-            golay_errors += errors;
+        for (hexbit, word) in hexbits.iter_mut().zip(body.as_chunks::<18>().0) {
+            if let Some((data, errors)) = CyclicCode::GOLAY_18_6.decode_soft(word) {
+                *hexbit = Some(data as u8);
+                golay_errors += errors;
+            }
         }
-        let rs_errors = RS_HEADER.decode(&mut symbols)?;
+        let (symbols, rs_errors) = correct_hexbits(&RS_HEADER, hexbits)?;
+        Some((symbols, golay_errors + rs_errors))
+    }
+
+    fn header_data_unit(&mut self) -> Option<DvFrame> {
+        let Some((symbols, errors)) = self.header_symbols() else {
+            self.reject();
+            return None;
+        };
         let bits = symbols_to_bits(&symbols[..20]);
         let mut frame = dv_frame(DvFrameKind::Header);
         frame.opcode = Some("header data unit".to_owned());
@@ -494,7 +492,7 @@ impl Decoder {
         frame.group_call = Some(true);
         self.encryption = frame.encrypted;
         self.sync_privacy(&frame, &bits);
-        self.finish_metadata(&mut frame, golay_errors + rs_errors);
+        self.finish_metadata(&mut frame, errors);
         Some(frame)
     }
 
@@ -505,7 +503,7 @@ impl Decoder {
             let Some(coded) = self.logical.get(start..start + 196) else {
                 break;
             };
-            let Some(payload) = decode_p25_trellis(coded) else {
+            let Some((payload, overturned)) = decode_p25_trellis(coded) else {
                 self.rejected = self.rejected.saturating_add(1);
                 continue;
             };
@@ -525,7 +523,7 @@ impl Decoder {
             self.bands.place(&mut frame);
             trunk::mark(&mut frame);
             frame.color_code = Some(self.pending_nac);
-            frame.errors_corrected = self.pending_errors;
+            frame.errors_corrected = self.pending_errors + u32::from(overturned);
             frames.push(frame);
             if payload[0] {
                 break;
@@ -537,9 +535,11 @@ impl Decoder {
     fn packet_data(&self) -> DvFrame {
         let mut frame = dv_frame(DvFrameKind::Data);
         frame.opcode = Some("packet data unit".to_owned());
-        frame.data = Some(hex_bits(
-            &self.logical[BODY_START.min(self.logical.len())..],
-        ));
+        let bits: Vec<bool> = self.logical[BODY_START.min(self.logical.len())..]
+            .iter()
+            .map(|&value| value > 0)
+            .collect();
+        frame.data = Some(hex_bits(&bits));
         frame.color_code = Some(self.pending_nac);
         frame.errors_corrected = self.pending_errors;
         frame
@@ -549,6 +549,35 @@ impl Decoder {
         frame.color_code = Some(self.pending_nac);
         frame.errors_corrected = self.pending_errors + errors;
     }
+}
+
+/// The values of a run of frame bits from `first_bit` on, status symbols left out.
+fn without_status<T: Copy>(values: &[T], first_bit: usize) -> impl Iterator<Item = T> + '_ {
+    values
+        .iter()
+        .enumerate()
+        .filter(move |&(index, _)| !is_status(first_bit + index))
+        .map(|(_, &value)| value)
+}
+
+/// Reed-Solomon over hexbits whose inner code may have refused some: those are erasures.
+fn correct_hexbits<const N: usize>(
+    code: &ReedSolomon,
+    hexbits: [Option<u8>; N],
+) -> Option<([u8; N], u32)> {
+    let mut symbols = [0u8; N];
+    let mut erasures = [0usize; N];
+    let mut erased = 0;
+    for (at, (symbol, hexbit)) in symbols.iter_mut().zip(hexbits).enumerate() {
+        if let Some(value) = hexbit {
+            *symbol = value;
+        } else {
+            erasures[erased] = at;
+            erased += 1;
+        }
+    }
+    let corrected = code.decode_with_erasures(&mut symbols, &erasures[..erased])?;
+    Some((symbols, corrected))
 }
 
 fn bits_value(bits: &[bool]) -> u32 {
@@ -629,23 +658,20 @@ pub(crate) const DATA_STEPS: usize = DATA_DIBITS / 2;
 pub(crate) static DATA_ORDER: LazyLock<Permutation> =
     LazyLock::new(|| Permutation::columns(&[26, 24, 24, 24], 2));
 
-fn decode_p25_trellis(coded: &[bool]) -> Option<[bool; 96]> {
-    let coded: &[bool; DATA_DIBITS * 2] = coded.try_into().ok()?;
-    let mut air = [0u8; DATA_DIBITS];
-    for (dibit, pair) in air.iter_mut().zip(coded.as_chunks::<2>().0) {
-        *dibit = u8::from(pair[0]) << 1 | u8::from(pair[1]);
-    }
-    let mut dibits = [0u8; DATA_DIBITS];
-    DATA_ORDER.gather(&air, &mut dibits);
-    let steps: &[[u8; 2]; DATA_STEPS] = dibits.as_chunks::<2>().0.try_into().ok()?;
+/// The 96 payload bits of a data block and the decisions the trellis overturned.
+fn decode_p25_trellis(coded: &[Soft]) -> Option<([bool; 96], u16)> {
+    let coded: &[Soft; DATA_DIBITS * 2] = coded.try_into().ok()?;
+    let mut dibits = [[0 as Soft; 2]; DATA_DIBITS];
+    DATA_ORDER.gather(coded.as_chunks::<2>().0, &mut dibits);
+    let steps: &[[[Soft; 2]; 2]; DATA_STEPS] = dibits.as_chunks::<2>().0.try_into().ok()?;
     let mut input = [0u8; DATA_STEPS];
-    DATA_TRELLIS.decode(steps, 0, &mut input);
+    let overturned = DATA_TRELLIS.decode_soft(steps, 0, &mut input);
     let mut payload = [false; 96];
     for (pair, &dibit) in payload.as_chunks_mut::<2>().0.iter_mut().zip(&input[..48]) {
         pair[0] = dibit & 2 != 0;
         pair[1] = dibit & 1 != 0;
     }
-    Some(payload)
+    Some((payload, overturned))
 }
 
 fn decode_tsbk(payload: &[bool; 96]) -> DvFrame {
@@ -1128,6 +1154,183 @@ mod tests {
             assert_eq!(frame.color_code, Some(nac as u16));
             assert_eq!(frame.errors_corrected, 0, "NAC {nac:#05X}");
         }
+    }
+
+    /// A symbol just across the boundary toward `dibit` with `bit` flipped, 0 the high bit
+    /// and 1 the low: the hard decision is wrong, the soft one next to nothing.
+    fn weak_symbol(dibit: u8, bit: usize) -> f32 {
+        let level = spec_symbol(dibit);
+        let target = spec_symbol(dibit ^ (2 >> bit));
+        f32::midpoint(level, target) + (target - level) * 0.005
+    }
+
+    fn holding(logical: &[bool]) -> Decoder {
+        let mut decoder = Decoder::new(Vec::new(), MbeDecoder::full_rate());
+        decoder.logical = logical.iter().map(|&bit| sdrmm_dsp::soft(bit)).collect();
+        decoder
+    }
+
+    fn weaken(value: &mut Soft) {
+        *value = -*value / 4;
+    }
+
+    fn hard_word(soft: &[Soft]) -> u64 {
+        soft.iter()
+            .fold(0u64, |word, &value| word << 1 | u64::from(value > 0))
+    }
+
+    #[test]
+    fn weak_flips_past_the_hard_radius_still_name_the_network() {
+        let info = 0x293 << 4 | u32::from(DUID_HEADER);
+        let word = CyclicCode::BCH_63_16.encode(info);
+        let mut decoder = Decoder::new(Vec::new(), MbeDecoder::full_rate());
+        let mut taken = 0;
+        let mut flipped = 0u64;
+        for symbol in 0..NID_SYMBOLS {
+            if is_status(SYNC_BITS as usize + symbol * 2) {
+                decoder.window.push(spec_symbol(0b11));
+                continue;
+            }
+            taken += 2;
+            let dibit = (word >> (NID_BITS - taken)) as u8 & 0b11;
+            if dibit & 1 == 1 && flipped.count_ones() < 12 {
+                flipped |= 1 << (NID_BITS - taken);
+                decoder.window.push(weak_symbol(dibit, 1));
+            } else {
+                decoder.window.push(spec_symbol(dibit));
+            }
+        }
+        assert_eq!(flipped.count_ones(), 12);
+        let hard = CyclicCode::BCH_63_16.decode(word ^ flipped);
+        assert_ne!(hard.map(|(decoded, _)| decoded), Some(info));
+        let (duid, frame) = decoder.nid().expect("soft network identifier");
+        assert_eq!(duid, DUID_HEADER);
+        assert_eq!(frame.and_then(|frame| frame.color_code), Some(0x293));
+    }
+
+    #[test]
+    fn failed_golay_words_become_reed_solomon_erasures() {
+        let mut decoder = holding(&tx::logical_bits(0x293, DUID_HEADER, 0x80));
+        let body = &mut decoder.logical[BODY_START..BODY_START + 36 * 18];
+        for at in [0, 5, 10, 15] {
+            weaken(&mut body[at]);
+        }
+        assert!(
+            CyclicCode::GOLAY_18_6
+                .decode(hard_word(&body[..18]))
+                .is_none()
+        );
+        body[2 * 18..14 * 18].fill(0);
+        let frame = decoder.header_data_unit().expect("header");
+        assert_eq!(frame.destination, Some(0x1201));
+        assert_eq!(frame.key_id, Some(0x1234));
+        assert_eq!(decoder.rejected(), 0);
+    }
+
+    #[test]
+    fn failed_hamming_words_become_reed_solomon_erasures() {
+        let at = |index: usize| BODY_START + (IMBE_OFFSETS[index / 40 + 1] + 72) * 2 + index % 40;
+        for duid in [DUID_LDU1, DUID_LDU2] {
+            let mut decoder = holding(&tx::logical_bits(0x293, duid, 0x84));
+            let mut first = [false; 10];
+            for (index, bit) in first.iter_mut().enumerate() {
+                if matches!(index, 1 | 8) {
+                    weaken(&mut decoder.logical[at(index)]);
+                }
+                *bit = decoder.logical[at(index)] > 0;
+            }
+            let clean = &tx::logical_bits(0x293, duid, 0x84)[at(0)..at(0) + 6];
+            assert!(
+                ParityCode::HAMMING_10_6
+                    .decode(&mut first)
+                    .is_none_or(|_| first[..6] != *clean)
+            );
+            for index in 40..100 {
+                decoder.logical[at(index)] = 0;
+            }
+            if duid == DUID_LDU1 {
+                let frame = decoder.ldu_link_control().expect("link control");
+                assert_eq!(frame.destination, Some(0x1201));
+            } else {
+                let frame = decoder.ldu_encryption_sync().expect("encryption sync");
+                assert_eq!(frame.key_id, Some(0x1234));
+            }
+            assert_eq!(decoder.rejected(), 0, "data unit {duid:#X}");
+        }
+    }
+
+    #[test]
+    fn the_trellis_corrects_weak_errors_the_hard_decoder_misses() {
+        let mut decoder = holding(&tx::logical_bits(0x4D2, DUID_TSDU, 0x80));
+        let index: [usize; DATA_DIBITS] = std::array::from_fn(|at| at);
+        let mut air = [0usize; DATA_DIBITS];
+        DATA_ORDER.gather(&index, &mut air);
+        for step in 18..26 {
+            let (symbol, bit) = (step % 2, step / 2 % 2);
+            weaken(&mut decoder.logical[BODY_START + air[2 * step + symbol] * 2 + bit]);
+        }
+        let mut hard = holding(&[]);
+        hard.logical = decoder
+            .logical
+            .iter()
+            .map(|&value| sdrmm_dsp::soft(value > 0))
+            .collect();
+        assert!(hard.trunking_blocks().is_empty());
+        let frames = decoder.trunking_blocks();
+        let grant = frames.first().expect("trunking block");
+        assert_eq!(grant.opcode.as_deref(), Some("group voice channel grant"));
+        assert_eq!(grant.source, Some(0xABCDEF));
+        assert_eq!(grant.errors_corrected, 8);
+    }
+
+    fn play_ldu1(symbols: &[f32]) -> Vec<f32> {
+        let mut decoder = Decoder::new(Vec::new(), MbeDecoder::full_rate());
+        decoder.encryption = Some(false);
+        let mut out = ChannelOutputs::default();
+        for &symbol in symbols {
+            decoder.push(symbol, &mut out);
+        }
+        decoder.vocoder.drain(&mut Speaker(&mut out));
+        out.audio_pcm
+    }
+
+    #[test]
+    fn weak_flips_in_imbe_golay_vectors_play_as_the_clean_call() {
+        let encoded = full_rate_frames(9);
+        let voice: [[bool; 144]; 9] = std::array::from_fn(|frame| encoded[frame]);
+        let dibits = tx::ldu1_dibits(0x293, &voice);
+        let clean: Vec<f32> = dibits.iter().map(|&dibit| spec_symbol(dibit)).collect();
+        let mut weak = clean.clone();
+        let mut hard_wrong = 0;
+        for (frame, &offset) in voice.iter().zip(&IMBE_OFFSETS) {
+            let dibits: [u8; 72] = std::array::from_fn(|at| {
+                u8::from(frame[2 * at]) << 1 | u8::from(frame[2 * at + 1])
+            });
+            let expected = sdrmm_codec::voice::full_frame(&dibits);
+            let mut flipped = dibits;
+            let mut flips = 0;
+            for bit in 0..IMBE_BITS {
+                let (at, place) = (bit / 2, bit % 2);
+                let mut probe = dibits;
+                probe[at] ^= 2 >> place;
+                let adjacent = place == 1 || dibits[at] & 1 == 0;
+                if flips == 4 || !adjacent || sdrmm_codec::voice::full_frame(&probe).errors[0] == 0
+                {
+                    continue;
+                }
+                flips += 1;
+                flipped[at] ^= 2 >> place;
+                let symbol = on_air_bit(BODY_START + offset * 2 + bit) / 2;
+                weak[symbol] = weak_symbol(dibits[at], place);
+            }
+            assert_eq!(flips, 4);
+            hard_wrong +=
+                usize::from(sdrmm_codec::voice::full_frame(&flipped).info != expected.info);
+        }
+        assert!(hard_wrong > 0, "four errors stay in the hard radius");
+        let audio = play_ldu1(&weak);
+        assert_eq!(audio.len(), 9 * 960);
+        assert_eq!(audio, play_ldu1(&clean));
     }
 
     #[test]

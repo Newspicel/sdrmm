@@ -7,6 +7,8 @@ pub(crate) const PARITY: usize = 28;
 const MAX_PDU_BYTES: usize = 23;
 const CRC12_POLY: u32 = 0x897;
 const CRC16_POLY: u32 = 0x1021;
+/// Parity the weakest-hexbit erasures leave unspent, so noise seldom passes the code and CRC.
+const SPARE_PARITY: usize = 4;
 
 /// RS(63,35) over GF(64) on x^6 + x + 1, roots from x: sent shortened and punctured.
 static RS: LazyLock<ReedSolomon> = LazyLock::new(|| ReedSolomon::with_field(6, 0x43, 1, PARITY));
@@ -107,34 +109,69 @@ pub(crate) enum PduKind {
     Reserved(u8),
 }
 
-/// Decodes a signalling burst whose body dibits are already descrambled.
-pub(crate) fn decode(body: &[u8], layout: &Layout) -> Option<MacPdu> {
+/// Decodes a signalling burst whose body dibits are already descrambled, `reliability` holding
+/// each dibit's confidence. Failing that, it erases the least reliable hexbits two at a time,
+/// Forney's generalized minimum distance decoding, each trial kept only when its CRC holds.
+pub(crate) fn decode(body: &[u8], reliability: &[f32], layout: &Layout) -> Option<MacPdu> {
+    let (received, confidence) = hexbits(body, reliability, layout)?;
+    let sent = layout.first + layout.present;
+    let mut erasures = [0usize; RS_LENGTH];
+    let punctured = RS_LENGTH - sent;
+    for (slot, index) in erasures.iter_mut().zip(sent..RS_LENGTH) {
+        *slot = index;
+    }
+    let budget = PARITY
+        .saturating_sub(punctured + SPARE_PARITY)
+        .min(layout.present);
+    let mut codeword = received;
+    let mut pdu = None;
+    let accept = |trial: &[u8]| {
+        pdu = pdu_of(&received, trial, layout);
+        pdu.is_some()
+    };
+    if RS
+        .decode_gmd_with(
+            &mut codeword,
+            &confidence,
+            &erasures[..punctured],
+            budget,
+            accept,
+        )
+        .is_some()
+    {
+        return pdu;
+    }
+    for (slot, index) in erasures[punctured..].iter_mut().zip(0..layout.first) {
+        *slot = index;
+    }
+    correct(received, &erasures[..punctured + layout.first], layout)
+}
+
+/// The received codeword and each hexbit's confidence, its weakest dibit's.
+fn hexbits(
+    body: &[u8],
+    reliability: &[f32],
+    layout: &Layout,
+) -> Option<([u8; RS_LENGTH], [f32; RS_LENGTH])> {
     let mut received = [0u8; RS_LENGTH];
+    let mut confidence = [f32::INFINITY; RS_LENGTH];
     for (index, at) in layout.dibits().enumerate() {
         let dibit = body.get(at)?;
         let symbol = layout.first + index / 3;
         received[symbol] = received[symbol] << 2 | dibit & 3;
+        confidence[symbol] = confidence[symbol].min(*reliability.get(at)?);
     }
-    let sent = layout.first + layout.present;
-    let mut punctured = [0usize; RS_LENGTH];
-    let mut erased = 0;
-    for index in sent..RS_LENGTH {
-        punctured[erased] = index;
-        erased += 1;
-    }
-    if let Some(pdu) = correct(received, &punctured[..erased], layout) {
-        return Some(pdu);
-    }
-    for index in 0..layout.first {
-        punctured[erased] = index;
-        erased += 1;
-    }
-    correct(received, &punctured[..erased], layout)
+    Some((received, confidence))
 }
 
 fn correct(received: [u8; RS_LENGTH], erasures: &[usize], layout: &Layout) -> Option<MacPdu> {
     let mut codeword = received;
     RS.decode_with_erasures(&mut codeword, erasures)?;
+    pdu_of(&received, &codeword, layout)
+}
+
+/// The PDU `codeword` carries when its CRC holds, counting the sent symbols it changed.
+fn pdu_of(received: &[u8; RS_LENGTH], codeword: &[u8], layout: &Layout) -> Option<MacPdu> {
     let sent = layout.first..layout.first + layout.present;
     let corrected = sent
         .filter(|&index| codeword[index] != received[index])
@@ -292,6 +329,8 @@ pub(crate) fn encode(bytes: &[u8], layout: &Layout) -> [u8; 160] {
 mod tests {
     use super::*;
 
+    const FIRM: [f32; 160] = [1.0; 160];
+
     const REGROUP: [u8; 11] = [
         0x81, 0x90, 0x0B, 0x0C, 0x82, 0x00, 0xC9, 0x00, 0xC9, 0x00, 0xC9,
     ];
@@ -306,13 +345,34 @@ mod tests {
     #[test]
     fn a_sacch_round_trips_through_the_code() {
         let body = encode(&idle_with(&REGROUP), &SACCH);
-        let pdu = decode(&body, &SACCH).expect("decodes");
+        let pdu = decode(&body, &FIRM, &SACCH).expect("decodes");
         assert_eq!(pdu.kind(), PduKind::Idle);
         assert_eq!(pdu.corrected, 0);
         assert_eq!(
             messages(&pdu).collect::<Vec<_>>(),
             vec![Message::Known(&REGROUP)]
         );
+    }
+
+    #[test]
+    fn the_least_reliable_hexbits_become_erasures() {
+        let mut pdu = [0u8; 18];
+        pdu[0] = 4 << 5;
+        pdu[1..8].copy_from_slice(&[0x01, 0x00, 0x00, 0xC9, 0x12, 0x34, 0x56]);
+        let mut body = encode(&pdu, &FACCH);
+        let mut reliability = FIRM;
+        let dibits: Vec<usize> = FACCH.dibits().collect();
+        for hexbit in (2..44).step_by(3) {
+            let at = dibits[hexbit * 3 + 1];
+            body[at] ^= 3;
+            reliability[at] = 0.1;
+        }
+        let (received, _) = hexbits(&body, &FIRM, &FACCH).expect("whole body");
+        let punctured: Vec<usize> = (FACCH.first + FACCH.present..RS_LENGTH).collect();
+        assert!(correct(received, &punctured, &FACCH).is_none());
+        let decoded = decode(&body, &reliability, &FACCH).expect("weakest erased");
+        assert_eq!(decoded.bytes(), &pdu[..]);
+        assert_eq!(decoded.corrected, 14);
     }
 
     #[test]
@@ -324,7 +384,7 @@ mod tests {
         for at in [1, 20, 40, 100] {
             body[at] ^= 3;
         }
-        let decoded = decode(&body, &FACCH).expect("corrects");
+        let decoded = decode(&body, &FIRM, &FACCH).expect("corrects");
         assert_eq!(&decoded.bytes()[..8], &pdu[..8]);
         assert!(decoded.corrected > 0);
     }
@@ -334,7 +394,7 @@ mod tests {
         let mut pdu = [0u8; 23];
         pdu[1] = 0x7B;
         let body = encode(&pdu, &LCCH);
-        assert!(decode(&body, &LCCH).is_some());
+        assert!(decode(&body, &FIRM, &LCCH).is_some());
         let mut wrong = body;
         wrong[30] ^= 1;
         wrong[31] ^= 1;
@@ -344,7 +404,7 @@ mod tests {
         wrong[62] ^= 2;
         wrong[90] ^= 1;
         wrong[91] ^= 1;
-        assert!(decode(&wrong, &LCCH).is_none_or(|pdu| pdu.bytes()[1] == 0x7B));
+        assert!(decode(&wrong, &FIRM, &LCCH).is_none_or(|pdu| pdu.bytes()[1] == 0x7B));
     }
 
     #[test]
@@ -356,7 +416,9 @@ mod tests {
         let other = encode(&flipped, &SACCH);
         let mut mixed = body;
         mixed[..40].copy_from_slice(&other[..40]);
-        assert!(decode(&mixed, &SACCH).is_none_or(|decoded| decoded.bytes() != &flipped[..]));
+        assert!(
+            decode(&mixed, &FIRM, &SACCH).is_none_or(|decoded| decoded.bytes() != &flipped[..])
+        );
     }
 
     #[test]

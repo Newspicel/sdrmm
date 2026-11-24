@@ -16,7 +16,7 @@ use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::ffsk::{FfskDemod, FfskTones};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
-use frame::{Decoded, HEAD, HEAD_BLOCK_BITS, HEAD_COPIES, REAR, REAR_BITS};
+use frame::{Decoded, HEAD, HEAD_BLOCK_BITS, HEAD_COPIES, Heard, REAR, REAR_BITS};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
@@ -191,20 +191,20 @@ impl EotChannel {
         });
         let summed: [f32; HEAD_BLOCK_BITS] =
             std::array::from_fn(|k| soft.iter().map(|copy| copy[k]).sum());
-        let copies = std::array::from_fn(|copy| frame::hard(HEAD, &soft[copy]));
-        frame::head(frame::hard(HEAD, &summed), &copies)
+        let copies = std::array::from_fn(|copy| Heard::of(HEAD, &soft[copy]).word());
+        frame::head(&Heard::of(HEAD, &summed), &copies)
     }
 
     fn paired(&self, start: u64, other: u64, polarity: f32) -> Option<Decoded> {
         let one: [f32; REAR_BITS] = self.copy(start, polarity);
         let two: [f32; REAR_BITS] = self.copy(other, polarity);
         let summed: [f32; REAR_BITS] = std::array::from_fn(|k| one[k] + two[k]);
-        frame::rear(frame::hard(REAR, &summed))
+        frame::rear(&Heard::of(REAR, &summed))
     }
 
     fn finish_rear(&mut self, start: u64, polarity: f32, out: &mut ChannelOutputs) {
         let alone: [f32; REAR_BITS] = self.copy(start, polarity);
-        let decoded = frame::rear(frame::hard(REAR, &alone)).or_else(|| {
+        let decoded = frame::rear(&Heard::of(REAR, &alone)).or_else(|| {
             start
                 .checked_sub(REPEAT_BITS)
                 .and_then(|earlier| self.paired(start, earlier, polarity))

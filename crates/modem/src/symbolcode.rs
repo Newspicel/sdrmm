@@ -8,11 +8,12 @@ mod three_of_six;
 pub use biphase::{BiphaseDecoder, BiphaseEncoder, BiphasePair, BiphaseVariant, biphase_decode};
 pub use differential::{
     DifferentialDecoder, DifferentialEncoder, DifferentialSymbolDecoder, DifferentialSymbolEncoder,
+    SoftDifferentialDecoder,
 };
 pub use manchester::{
     ManchesterConvention, manchester_decode, manchester_decode_pair, manchester_encode,
 };
-pub use nrz::{NrziConvention, NrziDecoder, NrziEncoder, nrz_decode, nrz_encode};
+pub use nrz::{NrziConvention, NrziDecoder, NrziEncoder, SoftNrziDecoder, nrz_decode, nrz_encode};
 pub use pair::{Alignment, PairDecode};
 pub use three_of_six::{Nibble, three_of_six_decode, three_of_six_encode};
 

@@ -85,9 +85,13 @@ pub(crate) fn message_len(len: usize) -> usize {
     (len - MESSAGE_POS) / 2
 }
 
-pub(crate) fn gather(frame: &[u8; EXTENDED_LEN], len: usize, lane: usize) -> [u8; MAX_CODEWORD] {
+pub(crate) fn gather<T: Copy + Default>(
+    frame: &[T; EXTENDED_LEN],
+    len: usize,
+    lane: usize,
+) -> [T; MAX_CODEWORD] {
     let k = message_len(len);
-    let mut codeword = [0u8; MAX_CODEWORD];
+    let mut codeword = [T::default(); MAX_CODEWORD];
     for j in 0..k {
         codeword[j] = frame[MESSAGE_POS + 2 * (k - 1 - j) + lane];
     }
@@ -166,14 +170,17 @@ impl Rs41Frames {
         self.rejected
     }
 
+    /// Reads a frame of `len` bytes, `reliability` the distance of each byte's least sure
+    /// symbol from the threshold.
     pub(crate) fn decode(
         &mut self,
         frame: &mut [u8; EXTENDED_LEN],
+        reliability: &[f32; EXTENDED_LEN],
         len: usize,
     ) -> Option<RadiosondeFrame> {
         whiten(&mut frame[..len]);
         frame[len..].fill(0);
-        let corrected = self.correct(frame, len);
+        let corrected = self.correct(frame, reliability, len);
         let blocks = self.blocks(frame, len);
         let Some(status) = blocks.status else {
             self.rejected += 1;
@@ -189,12 +196,18 @@ impl Rs41Frames {
         Some(out)
     }
 
-    fn correct(&self, frame: &mut [u8; EXTENDED_LEN], len: usize) -> u32 {
+    fn correct(
+        &self,
+        frame: &mut [u8; EXTENDED_LEN],
+        reliability: &[f32; EXTENDED_LEN],
+        len: usize,
+    ) -> u32 {
         let n = message_len(len) + PARITY_LEN;
         (0..2)
             .map(|lane| {
                 let mut codeword = gather(frame, len, lane);
-                match self.code.decode(&mut codeword[..n]) {
+                let weights = gather(reliability, len, lane);
+                match self.code.decode_gmd(&mut codeword[..n], &weights[..n]) {
                     Some(errors) => {
                         scatter(frame, len, lane, &codeword);
                         errors
@@ -312,6 +325,7 @@ enum Receive {
         expected: usize,
         byte: u8,
         bits: u8,
+        sure: f32,
     },
 }
 
@@ -321,6 +335,7 @@ pub(crate) struct Rs41 {
     sync: SyncMatcher,
     receive: Receive,
     frame: [u8; EXTENDED_LEN],
+    reliability: [f32; EXTENDED_LEN],
     frames: Rs41Frames,
 }
 
@@ -332,6 +347,7 @@ impl Rs41 {
             sync: SyncMatcher::from_bytes_lsb_first(&HEADER, SYNC_TOLERANCE),
             receive: Receive::Hunt,
             frame: [0; EXTENDED_LEN],
+            reliability: [f32::INFINITY; EXTENDED_LEN],
             frames: Rs41Frames::new(),
         }
     }
@@ -344,12 +360,13 @@ impl Rs41 {
         for &sample in audio {
             if let Some(symbol) = self.clock.push(sample) {
                 self.recorder.push(symbol);
-                self.bit(symbol > 0.0, out);
+                self.symbol(symbol, out);
             }
         }
     }
 
-    fn bit(&mut self, bit: bool, out: &mut Vec<RadiosondeFrame>) {
+    fn symbol(&mut self, symbol: f32, out: &mut Vec<RadiosondeFrame>) {
+        let bit = symbol > 0.0;
         match &mut self.receive {
             Receive::Hunt => {
                 if let Some(polarity) = self.sync.push(bit) {
@@ -360,6 +377,7 @@ impl Rs41 {
                         expected: EXTENDED_LEN,
                         byte: 0,
                         bits: 0,
+                        sure: f32::INFINITY,
                     };
                 }
             }
@@ -369,16 +387,20 @@ impl Rs41 {
                 expected,
                 byte,
                 bits,
+                sure,
             } => {
                 *byte |= u8::from(polarity.apply(bit)) << *bits;
+                *sure = sure.min(symbol.abs());
                 *bits += 1;
                 if *bits < 8 {
                     return;
                 }
                 self.frame[*len] = *byte;
+                self.reliability[*len] = *sure;
                 *len += 1;
                 *byte = 0;
                 *bits = 0;
+                *sure = f32::INFINITY;
                 if *len == FRAME_TYPE_POS + 1 {
                     *expected = frame_len(self.frame[FRAME_TYPE_POS] ^ MASK[FRAME_TYPE_POS]);
                 }
@@ -386,7 +408,8 @@ impl Rs41 {
                     let len = *len;
                     self.receive = Receive::Hunt;
                     self.sync.clear();
-                    if let Some(frame) = self.frames.decode(&mut self.frame, len) {
+                    let frame = self.frames.decode(&mut self.frame, &self.reliability, len);
+                    if let Some(frame) = frame {
                         out.push(frame);
                     }
                 }

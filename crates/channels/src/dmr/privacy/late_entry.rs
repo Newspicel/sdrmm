@@ -1,4 +1,5 @@
-use sdrmm_dsp::{CyclicCode, crc_msb_bits};
+use sdrmm_codec::voice::AMBE_3600_INTERLEAVE;
+use sdrmm_dsp::{CyclicCode, Soft, crc_msb_bits};
 
 use super::FRAMES_PER_BURST;
 
@@ -6,13 +7,39 @@ const BURSTS: usize = 6;
 const DATA_BURSTS: usize = 3;
 const FRAGMENT_BITS: u32 = 4;
 const WORD_BITS: u32 = 12;
+const WORD: usize = WORD_BITS as usize;
 const CRC_POLY: u32 = 0x3;
 const CRC_INVERT: u32 = 0xF;
+const STREAM_BITS: usize = 36;
+const UNPROTECTED_VECTOR: u8 = 3;
+
+/// One frame's share of the message indicator, soft and first bit first.
+pub(crate) type Fragment = [Soft; FRAGMENT_BITS as usize];
+
+/// Where u3's low four bits sit in a 72 bit frame, lowest first. u3 is sent as it is.
+const FRAGMENT_PLACES: [usize; FRAGMENT_BITS as usize] = fragment_places();
+
+const fn fragment_places() -> [usize; FRAGMENT_BITS as usize] {
+    let mut places = [0; FRAGMENT_BITS as usize];
+    let mut dibit = 0;
+    while dibit < AMBE_3600_INTERLEAVE.len() {
+        let mut half = 0;
+        while half < 2 {
+            let (vector, column) = AMBE_3600_INTERLEAVE[dibit][half];
+            if vector == UNPROTECTED_VECTOR && (column as u32) < FRAGMENT_BITS {
+                places[column as usize] = dibit * 2 + half;
+            }
+            half += 1;
+        }
+        dibit += 1;
+    }
+    places
+}
 
 /// Four bits of the late-entry message indicator ride in the low end of each voice frame's
 /// unprotected u3, lowest bit first.
-fn fragment_of(u3: u16) -> u8 {
-    (0..FRAGMENT_BITS).fold(0, |acc, bit| acc << 1 | (u3 >> bit & 1) as u8)
+pub(crate) fn fragment(frame: &[Soft; 72]) -> Fragment {
+    FRAGMENT_PLACES.map(|place| frame[place])
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -27,12 +54,14 @@ fn crc4(mi: u32) -> u32 {
 }
 
 /// Reads the 36 bits three bursts carry: each frame in turn takes four bits from each burst.
-fn gather(fragments: &[[u8; FRAMES_PER_BURST]]) -> u64 {
-    (0..FRAMES_PER_BURST)
-        .flat_map(|frame| fragments.iter().map(move |burst| burst[frame]))
-        .fold(0, |acc, fragment| {
-            acc << FRAGMENT_BITS | u64::from(fragment)
-        })
+fn gather(fragments: &[[Fragment; FRAMES_PER_BURST]]) -> [Soft; STREAM_BITS] {
+    let mut stream = [0; STREAM_BITS];
+    let bits = (0..FRAMES_PER_BURST)
+        .flat_map(|frame| fragments.iter().flat_map(move |burst| burst[frame]));
+    for (slot, bit) in stream.iter_mut().zip(bits) {
+        *slot = bit;
+    }
+    stream
 }
 
 #[cfg(any(test, feature = "synth"))]
@@ -51,14 +80,14 @@ fn scatter(bits: u64, fragments: &mut [[u8; FRAMES_PER_BURST]]) {
 /// (24,12) parity in D to F.
 #[derive(Default)]
 pub(crate) struct LateEntry {
-    fragments: [[u8; FRAMES_PER_BURST]; BURSTS],
+    fragments: [[Fragment; FRAMES_PER_BURST]; BURSTS],
     seen: u32,
 }
 
 impl LateEntry {
-    pub(crate) fn push(&mut self, burst: usize, frame: usize, u3: u16) {
+    pub(crate) fn push(&mut self, burst: usize, frame: usize, fragment: Fragment) {
         if burst < BURSTS && frame < FRAMES_PER_BURST {
-            self.fragments[burst][frame] = fragment_of(u3);
+            self.fragments[burst][frame] = fragment;
             self.seen |= 1 << (burst * FRAMES_PER_BURST + frame);
         }
     }
@@ -73,10 +102,12 @@ impl LateEntry {
         let data = gather(&self.fragments[..DATA_BURSTS]);
         let parity = gather(&self.fragments[DATA_BURSTS..]);
         let mut corrected = 0u64;
-        for word in 0..3 {
-            let shift = WORD_BITS * (2 - word);
-            let received = (data >> shift & 0xFFF) << WORD_BITS | parity >> shift & 0xFFF;
-            let (info, _) = CyclicCode::GOLAY_24_12.decode(received)?;
+        let words = data.as_chunks::<WORD>().0;
+        for (data, parity) in words.iter().zip(parity.as_chunks::<WORD>().0) {
+            let mut received = [0; 2 * WORD];
+            received[..WORD].copy_from_slice(data);
+            received[WORD..].copy_from_slice(parity);
+            let (info, _) = CyclicCode::GOLAY_24_12.decode_soft(&received)?;
             corrected = corrected << WORD_BITS | u64::from(info);
         }
         let mi = (corrected >> FRAGMENT_BITS) as u32;
@@ -103,15 +134,26 @@ pub(crate) fn fragments(mi: u32) -> [[u8; FRAMES_PER_BURST]; BURSTS] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sdrmm_dsp::soft;
 
     fn received(mi: u32) -> LateEntry {
         let mut late = LateEntry::default();
         for (burst, frames) in fragments(mi).iter().enumerate() {
             for (frame, &fragment) in frames.iter().enumerate() {
-                late.push(burst, frame, with_fragment(0x2AB5, fragment));
+                late.push(
+                    burst,
+                    frame,
+                    std::array::from_fn(|bit| soft(fragment >> (3 - bit) & 1 == 1)),
+                );
             }
         }
         late
+    }
+
+    fn flip(late: &mut LateEntry, burst: usize, frame: usize, strength: Soft) {
+        for value in &mut late.fragments[burst][frame] {
+            *value = -value.signum() * strength;
+        }
     }
 
     #[test]
@@ -122,7 +164,18 @@ mod tests {
     #[test]
     fn golay_repairs_a_damaged_fragment() {
         let mut late = received(0x1234_5678);
-        late.fragments[1][2] ^= 0b0101;
+        late.fragments[1][2][1] = -late.fragments[1][2][1];
+        late.fragments[1][2][3] = -late.fragments[1][2][3];
+        assert_eq!(late.take(), Some(0x1234_5678));
+    }
+
+    #[test]
+    fn four_weak_errors_in_one_word_are_repaired_soft() {
+        let mut late = received(0x1234_5678);
+        flip(&mut late, 1, 2, sdrmm_dsp::CONFIDENT);
+        assert_eq!(late.take(), None);
+        let mut late = received(0x1234_5678);
+        flip(&mut late, 1, 2, sdrmm_dsp::CONFIDENT / 4);
         assert_eq!(late.take(), Some(0x1234_5678));
     }
 
@@ -136,13 +189,27 @@ mod tests {
     #[test]
     fn the_fragment_rides_in_the_low_four_bits() {
         assert_eq!(with_fragment(0x3FF0, 0b1000), 0x3FF1);
-        assert_eq!(fragment_of(0x3FF1), 0b1000);
+        let code = [
+            0x0F_FFFF,
+            0x7F_FFFF,
+            0x7FF,
+            u32::from(with_fragment(0x3FF0, 0b1011)),
+        ];
+        let mut frame = [0; 72];
+        for (dibit, places) in AMBE_3600_INTERLEAVE.iter().enumerate() {
+            for (half, &(vector, column)) in places.iter().enumerate() {
+                frame[dibit * 2 + half] = soft(code[usize::from(vector)] >> column & 1 == 1);
+            }
+        }
+        assert_eq!(
+            fragment(&frame).map(|value| value > 0),
+            [true, false, true, true]
+        );
     }
 
     #[test]
     #[ignore = "needs KNOWN_KEY_SAMPLES=<known-key-mbe-samples checkout>"]
     fn known_key_samples_carry_the_next_message_indicator() {
-        use sdrmm_codec::voice::{AMBE_3600_INTERLEAVE, half_frame, half_rate_code_vectors};
         use sdrmm_decoder_test_support::known_keys::samples;
 
         let all = samples("dmr_");
@@ -161,8 +228,7 @@ mod tests {
                 let position = (index - start) % 18;
                 let bits: [bool; 72] =
                     std::array::from_fn(|i| frame.bytes[i / 8] >> (7 - i % 8) & 1 == 1);
-                let info = half_frame(half_rate_code_vectors(&bits, &AMBE_3600_INTERLEAVE)).info;
-                late.push(position / 3, position % 3, info[3]);
+                late.push(position / 3, position % 3, fragment(&bits.map(soft)));
                 if position == 17
                     && let Some(mi) = late.take()
                 {

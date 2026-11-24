@@ -149,6 +149,11 @@ pub(crate) fn soft_bits(phasor: Complex<f32>) -> [i8; 2] {
     [soft(-phasor.im), soft(-phasor.re)]
 }
 
+/// How far a phasor sits from the nearest decision boundary: its weaker bit's confidence.
+pub(crate) fn reliability(phasor: Complex<f32>) -> f32 {
+    phasor.re.abs().min(phasor.im.abs())
+}
+
 fn soft(value: f32) -> i8 {
     (value * SOFT_SCALE).clamp(-f32::from(i8::MAX), f32::from(i8::MAX)) as i8
 }

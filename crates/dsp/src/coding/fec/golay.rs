@@ -1,4 +1,8 @@
-use super::remainder::remainder;
+use super::{
+    conv::Soft,
+    remainder::remainder,
+    soft_ml::{SoftWord, confident, span},
+};
 
 const GOLAY23_POLY: u32 = 0xC75;
 const GOLAY23_CODE_BITS: u32 = 23;
@@ -30,6 +34,16 @@ const GOLAY23_ERROR_PATTERNS: [u32; 1 << GOLAY23_CHECK_BITS] = {
     table
 };
 
+const GOLAY23_ROWS: [u64; GOLAY23_DATA_BITS as usize] = {
+    let mut rows = [0; GOLAY23_DATA_BITS as usize];
+    let mut bit = 0;
+    while bit < rows.len() {
+        rows[bit] = golay23_encode(1 << bit) as u64;
+        bit += 1;
+    }
+    rows
+};
+
 #[must_use]
 pub const fn golay23_encode(data: u16) -> u32 {
     let payload = (data as u32 & GOLAY23_DATA_MASK) << GOLAY23_CHECK_BITS;
@@ -48,6 +62,17 @@ pub fn golay23_correct(word: u32) -> (u32, u32) {
     (word ^ error, error.count_ones())
 }
 
+/// Soft maximum likelihood over all 4096 codewords, the most significant bit first and
+/// positive for a one: the codeword and the decisions it overturns. Like [`golay23_correct`]
+/// it always answers.
+#[must_use]
+pub fn golay23_decode_soft(soft: &[Soft; GOLAY23_CODE_BITS as usize]) -> (u32, u32) {
+    let (values, len) = confident(soft);
+    let received = SoftWord::new(&values[..len]);
+    let (_, codeword) = received.best(span(&GOLAY23_ROWS));
+    (codeword as u32, received.overturned(codeword))
+}
+
 const fn golay23_remainder(word: u32) -> u32 {
     remainder(word, GOLAY23_POLY, GOLAY23_CODE_BITS, GOLAY23_CHECK_BITS)
 }
@@ -55,6 +80,42 @@ const fn golay23_remainder(word: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::coding::fec::conv::soft;
+
+    fn soften(word: u32) -> [Soft; 23] {
+        std::array::from_fn(|i| soft(word >> (22 - i) & 1 == 1))
+    }
+
+    #[test]
+    fn soft_decoding_of_hard_input_matches_the_hard_decoder() {
+        for data in [0, 0xA53, 0xFFF] {
+            let word = golay23_encode(data);
+            for flips in [0, 1, 1 << 22 | 1 << 9, 0b101_0000_0000_0100_0000] {
+                assert_eq!(
+                    golay23_decode_soft(&soften(word ^ flips)),
+                    golay23_correct(word ^ flips),
+                    "data {data:#x} flips {flips:#x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn soft_decoding_corrects_four_weak_errors_and_fills_erasures() {
+        let word = golay23_encode(0x3C9);
+        let flips = 1 << 0 | 1 << 6 | 1 << 13 | 1 << 20;
+        assert_ne!(golay23_correct(word ^ flips).0, word);
+        let mut received = soften(word ^ flips);
+        for (i, value) in received.iter_mut().enumerate() {
+            if flips >> (22 - i) & 1 == 1 {
+                *value /= 4;
+            }
+        }
+        assert_eq!(golay23_decode_soft(&received), (word, 4));
+        let mut erased = soften(word);
+        erased[..6].fill(0);
+        assert_eq!(golay23_decode_soft(&erased), (word, 0));
+    }
 
     #[test]
     fn golay23_matches_the_published_dcs_word() {

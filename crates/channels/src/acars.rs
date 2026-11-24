@@ -52,7 +52,7 @@ use sdrmm_aviation::acars::{AcarsApp, AppDecode, block, decode, miam, reasm};
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::DcBlocker;
+use sdrmm_dsp::{DcBlocker, crc_repair, crc16_ccitt};
 use sdrmm_modem::cpm::{Mapping, MskDetector};
 use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily, EventKind};
 
@@ -165,10 +165,10 @@ impl Channel for AcarsChannel {
         self.envelope.extend(iq.iter().map(|s| s.norm_sqr().sqrt()));
         self.dc.process(&mut self.envelope);
         self.bits.clear();
+        self.soft.clear();
+        self.detector
+            .process_soft(&self.envelope, &mut self.bits, &mut self.soft);
         if out.symbols.wanted() {
-            self.soft.clear();
-            self.detector
-                .process_soft(&self.envelope, &mut self.bits, &mut self.soft);
             out.symbols.levels(
                 &self.soft,
                 &[],
@@ -176,11 +176,9 @@ impl Channel for AcarsChannel {
                 BAUD,
                 self.detector.offset_hz(),
             );
-        } else {
-            self.detector.process(&self.envelope, &mut self.bits);
         }
-        for &bit in &self.bits {
-            self.framer.push(bit, out);
+        for &value in &self.soft {
+            self.framer.push(value, out);
         }
     }
 
@@ -200,11 +198,15 @@ enum State {
 
 struct Framer {
     reg: u8,
+    /// How sure each bit in `reg` is, in the same order.
+    reg_reliability: [f32; 8],
     inverted: bool,
     state: State,
     bits_to_byte: u32,
     bits_seen: u64,
     octets: Vec<u8>,
+    /// How sure each bit of `octets` is, LSB first as sent.
+    reliability: Vec<f32>,
     crc_len: usize,
     blocks: Reassembler,
     files: FileReassembler,
@@ -215,11 +217,13 @@ impl Framer {
     fn new() -> Self {
         Self {
             reg: 0,
+            reg_reliability: [0.0; 8],
             inverted: false,
             state: State::Hunt,
             bits_to_byte: 1,
             bits_seen: 0,
             octets: Vec::new(),
+            reliability: Vec::new(),
             crc_len: 0,
             blocks: Reassembler::new(REASSEMBLY_TIMEOUT_SECS),
             files: FileReassembler::new(),
@@ -231,6 +235,7 @@ impl Framer {
         self.state = State::Hunt;
         self.bits_to_byte = 1;
         self.octets.clear();
+        self.reliability.clear();
         self.crc_len = 0;
     }
 
@@ -238,10 +243,13 @@ impl Framer {
         self.bits_seen as f64 / BAUD
     }
 
-    fn push(&mut self, bit: bool, out: &mut ChannelOutputs) {
+    /// Takes one soft bit, positive is one.
+    fn push(&mut self, value: f32, out: &mut ChannelOutputs) {
         self.bits_seen += 1;
-        let bit = bit != self.inverted;
+        let bit = (value > 0.0) != self.inverted;
         self.reg = (self.reg >> 1) | (u8::from(bit) << 7);
+        self.reg_reliability.copy_within(1.., 0);
+        self.reg_reliability[7] = value.abs();
         self.bits_to_byte -= 1;
         if self.bits_to_byte > 0 {
             return;
@@ -255,13 +263,14 @@ impl Framer {
                 if byte == SOH {
                     self.state = State::Text;
                     self.octets.clear();
-                    self.octets.push(SOH);
+                    self.reliability.clear();
+                    self.keep(SOH);
                 } else {
                     self.restart();
                 }
             }
             State::Text => {
-                self.octets.push(byte);
+                self.keep(byte);
                 if byte == ETX || byte == ETB {
                     self.state = State::Crc;
                     self.crc_len = 0;
@@ -270,7 +279,7 @@ impl Framer {
                 }
             }
             State::Crc => {
-                self.octets.push(byte);
+                self.keep(byte);
                 self.crc_len += 1;
                 if self.crc_len == 2 {
                     match self.decode() {
@@ -281,6 +290,11 @@ impl Framer {
                 }
             }
         }
+    }
+
+    fn keep(&mut self, byte: u8) {
+        self.octets.push(byte);
+        self.reliability.extend_from_slice(&self.reg_reliability);
     }
 
     fn sync(&mut self, byte: u8) {
@@ -307,11 +321,22 @@ impl Framer {
         };
     }
 
-    fn decode(&mut self) -> Option<AcarsMessage> {
+    /// The block with its CRC and parity checked, or its weakest bits mended to them.
+    fn checked(&mut self) -> Option<AcarsBlock> {
+        let whole = |block: &AcarsBlock| block.crc_ok && block.parity_errors == 0;
         let parsed = block::parse(&self.octets)?;
-        if !parsed.crc_ok || parsed.parity_errors > 0 {
+        if whole(&parsed) {
+            return Some(parsed);
+        }
+        let crc = |octets: &[u8]| u32::from(crc16_ccitt(octets.get(1..).unwrap_or_default()));
+        if !crc_repair(&mut self.octets, &self.reliability, crc) {
             return None;
         }
+        block::parse(&self.octets).filter(whole)
+    }
+
+    fn decode(&mut self) -> Option<AcarsMessage> {
+        let parsed = self.checked()?;
         let now = self.elapsed_secs();
         let status = self.blocks.push(&parsed.core, now);
         let text = match &status {
@@ -841,10 +866,93 @@ mod tests {
     }
 
     fn feed_bytes(framer: &mut Framer, bytes: &[u8], out: &mut ChannelOutputs) {
-        for &byte in bytes {
+        feed_soft(framer, bytes, &[], out);
+    }
+
+    /// Feeds `bytes` at full confidence, but the bits at `weak` wrong and barely so.
+    fn feed_soft(framer: &mut Framer, bytes: &[u8], weak: &[usize], out: &mut ChannelOutputs) {
+        for (index, &byte) in bytes.iter().enumerate() {
             for i in 0..8 {
-                framer.push((byte >> i) & 1 == 1, out);
+                let level = if (byte >> i) & 1 == 1 { 1.0 } else { -1.0 };
+                let bit = index * 8 + i;
+                framer.push(
+                    if weak.contains(&bit) {
+                        -0.1 * level
+                    } else {
+                        level
+                    },
+                    out,
+                );
             }
+        }
+    }
+
+    /// The MSK detector's soft bits for `iq`, as the channel reads them.
+    fn soft_bits(iq: &[Complex<f32>]) -> Vec<f32> {
+        let mut chan = channel();
+        let mut envelope: Vec<f32> = iq.iter().map(|s| s.norm_sqr().sqrt()).collect();
+        chan.dc.process(&mut envelope);
+        let (mut bits, mut soft) = (Vec::new(), Vec::new());
+        chan.detector.process_soft(&envelope, &mut bits, &mut soft);
+        soft
+    }
+
+    /// Blocks heard over `runs` noisy transmissions, from hard bits and from soft bits; every
+    /// one must read right.
+    fn heard_through_noise(amplitude: f32, runs: u32) -> (usize, usize) {
+        let (mut hard, mut soft) = (0, 0);
+        let read_right = |out: &ChannelOutputs| {
+            out.events.iter().all(|event| {
+                event
+                    .read::<AcarsMessage>()
+                    .is_some_and(|m| m.text == "REPORT ENGINE 1 OK")
+            })
+        };
+        for seed in 0..runs {
+            let mut iq = transmission(&downlink(), RATE);
+            sdrmm_modem::synth::add_noise(&mut iq, 0x5eed_0000 + seed, amplitude);
+            let values = soft_bits(&filtered(&iq));
+            let (mut sliced, mut weighed) = (Framer::new(), Framer::new());
+            let (mut sliced_out, mut weighed_out) =
+                (ChannelOutputs::default(), ChannelOutputs::default());
+            for &value in &values {
+                sliced.push(value.signum(), &mut sliced_out);
+                weighed.push(value, &mut weighed_out);
+            }
+            assert!(
+                read_right(&sliced_out) && read_right(&weighed_out),
+                "seed {seed}"
+            );
+            hard += sliced_out.events.len();
+            soft += weighed_out.events.len();
+        }
+        (hard, soft)
+    }
+
+    #[test]
+    fn soft_bits_hear_blocks_through_noise_hard_bits_lose() {
+        let (hard, soft) = heard_through_noise(1.0, 30);
+        assert!(
+            soft >= 3 * hard && soft >= 18,
+            "hard {hard}, soft {soft} of 30"
+        );
+    }
+
+    #[test]
+    fn weak_wrong_bits_are_mended_against_the_crc() {
+        let good = synth::acars::block_bytes(&downlink());
+        let soh = good.iter().position(|&byte| byte == SOH).expect("soh");
+        for weak in [
+            vec![(soh + 4) * 8 + 2],
+            vec![(soh + 9) * 8, (soh + 20) * 8 + 5, (soh + 21) * 8 + 5],
+        ] {
+            let mut framer = Framer::new();
+            let mut out = ChannelOutputs::default();
+            feed_soft(&mut framer, &good, &weak, &mut out);
+            assert_eq!(out.events.len(), 1, "{weak:?}");
+            assert_eq!(framer.rejected, 0);
+            let message: AcarsMessage = out.events[0].read().expect("acars");
+            assert_eq!(message.text, "REPORT ENGINE 1 OK");
         }
     }
 

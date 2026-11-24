@@ -16,7 +16,7 @@ mod tests;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{hdlc_fcs_ok, hdlc_repair};
+use sdrmm_dsp::{SoftFrame, hdlc_fcs_ok, hdlc_repair};
 use sdrmm_modem::{
     cpm::Mapping,
     packet::{PacketMode, PacketReceiver, RecentFrames},
@@ -89,22 +89,23 @@ fn body(frame: &[u8]) -> &[u8] {
 
 impl Listener {
     /// Copies a frame that opens with the BSS marker into `scratch` with its FCS checked or
-    /// repaired. Repair only runs on frames whose fields already line up, so noise does not buy
-    /// a burst of CRC trials.
-    fn checked(&mut self, frame: &[u8]) -> bool {
-        if frame.first() != Some(&frame::MARKER) {
+    /// its weakest bits repaired. Repair only runs on frames whose fields already line up, so
+    /// noise does not buy CRC trials.
+    fn checked(&mut self, frame: SoftFrame<'_>) -> bool {
+        let bytes = frame.bytes;
+        if bytes.first() != Some(&frame::MARKER) {
             return false;
         }
-        let intact = hdlc_fcs_ok(frame);
-        if !intact && !frame::lines_up(body(frame)) {
+        let intact = hdlc_fcs_ok(bytes);
+        if !intact && !frame::lines_up(body(bytes)) {
             return false;
         }
         self.scratch.clear();
-        self.scratch.extend_from_slice(frame);
-        intact || hdlc_repair(&mut self.scratch)
+        self.scratch.extend_from_slice(bytes);
+        intact || hdlc_repair(&mut self.scratch, frame.reliability)
     }
 
-    fn hear(&mut self, frame: &[u8], out: &mut ChannelOutputs) {
+    fn hear(&mut self, frame: SoftFrame<'_>, out: &mut ChannelOutputs) {
         if !self.checked(frame) || !self.recent.first(&self.scratch) {
             return;
         }

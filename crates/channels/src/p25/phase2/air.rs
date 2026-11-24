@@ -1,6 +1,7 @@
 use num_complex::Complex;
+use sdrmm_dsp::LinearCode;
 
-use super::demod::{dibit, unturn};
+use super::demod::{dibit, soft_bits, unturn};
 
 pub(crate) const ISCH_DIBITS: usize = 20;
 pub(crate) const BODY_DIBITS: usize = 160;
@@ -9,10 +10,9 @@ pub(crate) const SLOTS: usize = 12;
 
 /// The S-ISCH: the outbound sync word before timeslots 2, 3, 6, 7, 10 and 11.
 pub(crate) const S_ISCH: u64 = 0x57_5D57_F7FF;
-const ISCH_MASK: u64 = (1 << (2 * ISCH_DIBITS)) - 1;
+const ISCH_BITS: usize = 2 * ISCH_DIBITS;
+const ISCH_MASK: u64 = (1 << ISCH_BITS) - 1;
 const S_ISCH_TOLERANCE: u32 = 4;
-/// The I-ISCH is a (40,9,16) code.
-const I_ISCH_TOLERANCE: u32 = 7;
 /// Two superframes without a recognised ISCH and the grid is gone.
 const MAX_MISSES: u32 = 2 * SLOTS as u32;
 
@@ -21,6 +21,7 @@ pub(crate) const SLOT_CHANNEL: [u8; SLOTS] = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0
 
 /// The body dibits holding the DUID, most significant first.
 const DUID_DIBITS: [usize; 4] = [0, 37, 122, 159];
+const DUID_BITS: usize = 2 * DUID_DIBITS.len();
 const DUID_CODEWORDS: [u8; 16] = [
     0x00, 0x17, 0x2E, 0x39, 0x4B, 0x5C, 0x65, 0x72, 0x8D, 0x9A, 0xA3, 0xB4, 0xC6, 0xD1, 0xE8, 0xFF,
 ];
@@ -37,25 +38,30 @@ const I_ISCH_GENERATOR: [u64; 9] = [
     0x00_343D_8597,
 ];
 const I_ISCH_OFFSET: u64 = 0x18_4229_D461;
-static I_ISCH_CODEWORDS: [u64; 128] = i_isch_codewords();
-
-const fn i_isch_codewords() -> [u64; 128] {
-    let mut table = [0u64; 128];
-    let mut value = 0;
-    while value < 128 {
-        let mut word = I_ISCH_OFFSET;
-        let mut bit = 0;
-        while bit < 9 {
-            if value >> (8 - bit) & 1 == 1 {
-                word ^= I_ISCH_GENERATOR[bit];
-            }
-            bit += 1;
-        }
-        table[value] = word;
-        value += 1;
-    }
-    table
-}
+/// The DUID code: DUID bit `i` selects the codeword of `1 << i`.
+static DUID_CODE: LinearCode = LinearCode::new(
+    &[
+        DUID_CODEWORDS[1] as u64,
+        DUID_CODEWORDS[2] as u64,
+        DUID_CODEWORDS[4] as u64,
+        DUID_CODEWORDS[8] as u64,
+    ],
+    DUID_BITS,
+);
+/// The I-ISCH, a coset of a (40,9,16) code whose top two information bits are always zero:
+/// value bit `i` selects generator row `8 - i`.
+static I_ISCH: LinearCode = LinearCode::new(
+    &[
+        I_ISCH_GENERATOR[8],
+        I_ISCH_GENERATOR[7],
+        I_ISCH_GENERATOR[6],
+        I_ISCH_GENERATOR[5],
+        I_ISCH_GENERATOR[4],
+        I_ISCH_GENERATOR[3],
+        I_ISCH_GENERATOR[2],
+    ],
+    ISCH_BITS,
+);
 
 /// What a burst carries, by its DUID.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,15 +101,11 @@ impl Burst {
     }
 }
 
-/// The DUID nearest an 8-bit codeword: the code has distance 4, so one error is corrected.
-pub(crate) fn burst_of(codeword: u8) -> Burst {
-    let mut best = None;
-    for (duid, &candidate) in DUID_CODEWORDS.iter().enumerate() {
-        if (codeword ^ candidate).count_ones() <= 1 {
-            best = Some(duid as u8);
-        }
-    }
-    best.map_or(Burst::Unknown, Burst::of)
+/// The DUID its eight soft bits mean.
+pub(crate) fn burst_of(soft: [i8; DUID_BITS]) -> Burst {
+    DUID_CODE
+        .decode_soft(&soft.map(f32::from))
+        .map_or(Burst::Unknown, |(duid, _)| Burst::of(duid as u8))
 }
 
 /// An I-ISCH, which names the timeslot it opens.
@@ -119,17 +121,30 @@ impl InfoIsch {
     }
 }
 
-pub(crate) fn info_isch(word: u64) -> Option<InfoIsch> {
-    let (value, errors) = I_ISCH_CODEWORDS
-        .iter()
-        .enumerate()
-        .map(|(value, &codeword)| (value, (codeword ^ word).count_ones()))
-        .min_by_key(|&(_, errors)| errors)?;
+pub(crate) fn info_isch(soft: &[i8; ISCH_BITS]) -> Option<InfoIsch> {
+    let unmasked: [f32; ISCH_BITS] = std::array::from_fn(|at| {
+        let value = f32::from(soft[at]);
+        if I_ISCH_OFFSET >> (ISCH_BITS - 1 - at) & 1 == 1 {
+            -value
+        } else {
+            value
+        }
+    });
+    let (value, _) = I_ISCH.decode_soft(&unmasked)?;
     let isch = InfoIsch {
         channel: (value >> 5 & 3) as u8,
         location: (value >> 3 & 3) as u8,
     };
-    (errors <= I_ISCH_TOLERANCE && isch.location < 3 && isch.channel < 2).then_some(isch)
+    (isch.location < 3 && isch.channel < 2).then_some(isch)
+}
+
+/// The soft bits of `phasors`, two a dibit.
+fn soft_word<const N: usize>(phasors: impl IntoIterator<Item = Complex<f32>>) -> [i8; N] {
+    let mut soft = [0i8; N];
+    for (pair, phasor) in soft.as_chunks_mut::<2>().0.iter_mut().zip(phasors) {
+        *pair = soft_bits(phasor);
+    }
+    soft
 }
 
 fn is_sync(word: u64) -> bool {
@@ -149,10 +164,7 @@ impl Packet {
 
     pub(crate) fn burst(&self) -> Burst {
         let body = self.body();
-        let codeword = DUID_DIBITS
-            .iter()
-            .fold(0u8, |word, &at| word << 2 | dibit(body[at]));
-        burst_of(codeword)
+        burst_of(soft_word(DUID_DIBITS.iter().map(|&at| body[at])))
     }
 
     pub(crate) fn channel(&self) -> u8 {
@@ -246,10 +258,11 @@ impl Framer {
 
     fn complete(&mut self) -> bool {
         self.fill = 0;
-        let word = self.packet.phasors[..ISCH_DIBITS]
+        let isch = &self.packet.phasors[..ISCH_DIBITS];
+        let word = isch
             .iter()
             .fold(0u64, |word, &phasor| word << 2 | u64::from(dibit(phasor)));
-        let slot = if let Some(isch) = info_isch(word) {
+        let slot = if let Some(isch) = info_isch(&soft_word(isch.iter().copied())) {
             self.misses = 0;
             Some(isch.slot())
         } else if is_sync(word) {
@@ -273,10 +286,36 @@ impl Framer {
 
 #[cfg(test)]
 pub(crate) fn info_isch_codeword(value: usize) -> u64 {
-    I_ISCH_CODEWORDS[value]
+    I_ISCH.encode(value as u32) ^ I_ISCH_OFFSET
+}
+
+/// `word`'s last `N` bits as firm soft bits, the first sent first.
+#[cfg(test)]
+pub(crate) fn firm<const N: usize>(word: u64) -> [i8; N] {
+    std::array::from_fn(|at| {
+        if word >> (N - 1 - at) & 1 == 1 {
+            45
+        } else {
+            -45
+        }
+    })
 }
 
 #[cfg(test)]
 pub(crate) fn duid_codeword(duid: u8) -> u8 {
     DUID_CODEWORDS[usize::from(duid & 0xF)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_duid_table_is_the_code_its_rows_span() {
+        assert_eq!(DUID_CODE.distance(), 4);
+        assert_eq!(I_ISCH.distance(), 16);
+        for (duid, &codeword) in (0u32..).zip(&DUID_CODEWORDS) {
+            assert_eq!(DUID_CODE.encode(duid), u64::from(codeword), "{duid}");
+        }
+    }
 }

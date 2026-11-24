@@ -12,7 +12,11 @@ use std::sync::LazyLock;
 use std::time::SystemTime;
 
 use num_complex::Complex;
-use sdrmm_dsp::{ShortBch, SyncDetector, hamming_distance};
+use sdrmm_dsp::{
+    ShortBch, SyncDetector,
+    coding::fec::{Acceptance, chase},
+    hamming_distance,
+};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_BURST},
     pulse::{self, Norm},
@@ -39,6 +43,8 @@ const ALPHA_BITS: usize = 7;
 const NUMERIC_BITS: usize = 4;
 
 const SYNC_TOLERANCE: u32 = 2;
+const CHASE_BITS: usize = 4;
+const CORRECTABLE: u32 = 2;
 
 const MAX_PAYLOAD_BITS: usize = 128 * PAYLOAD_BITS;
 const MAX_RIC: u32 = (1 << 21) - 1;
@@ -232,6 +238,8 @@ struct Candidate {
     batching: Batching,
     pending: Option<Pending>,
     payload: Vec<bool>,
+    /// The reliability of each bit in the detector's register, the newest at index 0.
+    reliability: [f32; CODEWORD_BITS as usize],
     rejected: u32,
 }
 
@@ -249,6 +257,7 @@ impl Candidate {
             batching: Batching::Hunt,
             pending: None,
             payload: Vec::new(),
+            reliability: [0.0; CODEWORD_BITS as usize],
             rejected: 0,
         }
     }
@@ -260,8 +269,11 @@ impl Candidate {
         self.payload.clear();
     }
 
-    fn bit(&mut self, bit: bool, reader: &Reader, out: &mut Vec<DecoderEvent>) -> Framing {
-        let synced = self.detector.push(bit);
+    fn bit(&mut self, soft: f32, reader: &Reader, out: &mut Vec<DecoderEvent>) -> Framing {
+        let synced = self.detector.push(soft < 0.0);
+        self.reliability
+            .copy_within(..CODEWORD_BITS as usize - 1, 1);
+        self.reliability[0] = soft.abs();
         match self.batching {
             Batching::Hunt => {
                 if synced {
@@ -303,7 +315,7 @@ impl Candidate {
     }
 
     fn codeword(&mut self, index: usize, word: u32, reader: &Reader, out: &mut Vec<DecoderEvent>) {
-        let Some((word, errors)) = BCH.decode_extended(word) else {
+        let Some((word, errors)) = repair(word, &self.reliability) else {
             if let Some(pending) = &mut self.pending {
                 pending.poisoned = true;
             }
@@ -380,6 +392,14 @@ impl Candidate {
         )?;
         Some((PocsagPayload::Alpha, render_alpha(&opened), true))
     }
+}
+
+/// The codeword nearest `word` by Chase search over its weakest bits, and the bits it differs in.
+fn repair(word: u32, reliability: &[f32; CODEWORD_BITS as usize]) -> Option<(u32, u32)> {
+    let decode = |trial: u32| BCH.decode_extended(trial).map(|(fixed, _)| fixed);
+    let acceptance = Acceptance::Radius(CORRECTABLE);
+    let fixed = chase(word, reliability, CHASE_BITS, acceptance, decode)?;
+    Some((fixed, (fixed ^ word).count_ones()))
 }
 
 fn character(bits: &[bool]) -> u8 {
@@ -519,8 +539,7 @@ impl Channel for PocsagChannel {
             }
             for &symbol in &soft {
                 let symbol = if self.invert { -symbol } else { symbol };
-                let bit = self.slicer.slice(symbol) == 1;
-                match self.candidates[index].bit(bit, &self.reader, &mut out.events) {
+                match self.candidates[index].bit(symbol, &self.reader, &mut out.events) {
                     Framing::Held => {}
                     Framing::Acquired => self.acquire(index),
                     Framing::Lost => {
@@ -1083,6 +1102,18 @@ mod tests {
                 "seed {seed:#x} left the BCH path unexercised"
             );
         }
+    }
+
+    #[test]
+    fn three_errors_on_weak_bits_are_repaired_softly() {
+        let word = BCH.encode_extended(0x1_2345);
+        let broken = word ^ (1 << 4 | 1 << 15 | 1 << 27);
+        assert_eq!(BCH.decode_extended(broken), None);
+        let mut reliability = [1.0; CODEWORD_BITS as usize];
+        for bit in [4, 15, 27] {
+            reliability[bit] = 0.05;
+        }
+        assert_eq!(repair(broken, &reliability), Some((word, 3)));
     }
 
     #[test]

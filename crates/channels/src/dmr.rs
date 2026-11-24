@@ -30,7 +30,7 @@ use sdrmm_decoder::voice::{Speaker, open_chip};
 use sdrmm_modem::cpm::c4fm::{DibitWindow, c4fm_demod, c4fm_params};
 pub(crate) mod privacy;
 mod trunk;
-use privacy::{CipherKey, Privacy};
+use privacy::{CipherKey, Privacy, late_entry_fragment};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
@@ -56,6 +56,10 @@ const SLOT_SYMBOLS: usize = 144;
 const SUPERFRAME_STRIDE: usize = SLOT_SYMBOLS * 2;
 const SPEAKER_HOLD_SYMBOLS: usize = SUPERFRAME_STRIDE * 3;
 
+/// How long a slot's voice call may go without a voice burst before it has ended unheard: a
+/// superframe, and two bursts of slack so one missed voice sync does not end it.
+const CALL_LOSS_SYMBOLS: usize = SUPERFRAME_STRIDE * (VOICE_FOLLOWERS as usize + 3);
+
 pub(crate) const SYNC_TOLERANCE: u32 = 4;
 
 const DT_PI_HEADER: u8 = 0x0;
@@ -79,6 +83,7 @@ const LCSS_LAST: u32 = 0b10;
 const LCSS_CONTINUATION: u32 = 0b11;
 
 const SHORT_LC_BITS: usize = 68;
+const CACH_BITS: usize = 24;
 
 pub(crate) const RATE_ONE_CODED_BITS: usize = 196;
 pub(crate) const RATE_ONE_DATA_BITS: usize = 192;
@@ -330,9 +335,17 @@ struct Decoder {
     mbc_headers: [Option<MbcHeader>; 2],
     speaking: Option<usize>,
     speaking_hold: usize,
+    calls: [Option<Call>; 2],
     tier_three: bool,
     masked_sums: u32,
     rejected: u32,
+}
+
+/// A voice call open on a slot, so one that stops without its terminator is counted lost.
+#[derive(Clone, Copy)]
+struct Call {
+    voiced: bool,
+    quiet: usize,
 }
 
 #[derive(Clone)]
@@ -394,6 +407,7 @@ impl Decoder {
             mbc_headers: std::array::from_fn(|_| None),
             speaking: None,
             speaking_hold: 0,
+            calls: [None; 2],
             tier_three: false,
             masked_sums: 0,
             rejected: 0,
@@ -421,12 +435,14 @@ impl Decoder {
         self.mbc_headers.fill(None);
         self.speaking = None;
         self.speaking_hold = 0;
+        self.calls = [None; 2];
         self.masked_sums = 0;
         self.tier_three = false;
     }
 
     fn push(&mut self, symbol: f32, out: &mut ChannelOutputs) {
         self.window.push(symbol);
+        self.age_calls();
         if self.speaking_hold > 0 {
             self.speaking_hold -= 1;
             if self.speaking_hold == 0 {
@@ -486,14 +502,9 @@ impl Decoder {
     }
 
     fn cach_at(&mut self, end_back: usize, out: &mut ChannelOutputs) -> Option<u8> {
-        const TACT: [usize; 7] = [0, 4, 8, 12, 14, 18, 22];
-        const PAYLOAD: [usize; 17] = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 15, 16, 17, 19, 20, 21, 23];
-        self.window.bits(end_back, 12, &mut self.bits);
-        let mut tact = TACT.map(|position| self.bits[position]);
-        ParityCode::HAMMING_7_4.decode(&mut tact)?;
-        let slot = u8::from(tact[1]) + 1;
-        let lcss = u8::from(tact[2]) << 1 | u8::from(tact[3]);
-        let payload = PAYLOAD.map(|position| self.bits[position]);
+        self.window
+            .soft_bits(end_back, CACH_BITS / 2, &mut self.coded);
+        let (slot, lcss, payload) = read_cach(&self.coded)?;
         if let Some(mut frame) = self.short_lc.push(lcss, payload) {
             frame.errors_corrected = 0;
             self.emit(&frame, out);
@@ -503,8 +514,9 @@ impl Decoder {
 
     fn burst(&mut self, voice: bool, slot: Option<u8>, cach: bool, out: &mut ChannelOutputs) {
         if voice {
-            self.window.bits(0, BURST_SYMBOLS, &mut self.bits);
+            self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
             let index = slot_index(slot).unwrap_or(0);
+            self.hear_voice(slot, cach);
             self.voice_payload(index, slot, 0, out);
             self.followers[index] = VOICE_FOLLOWERS;
             self.follower_cach[index] = cach;
@@ -517,29 +529,100 @@ impl Decoder {
             self.follower_countdown[index] = 0;
         }
         self.window.bits(0, BURST_SYMBOLS, &mut self.bits);
+        self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
         let index = slot_index(slot).unwrap_or(0);
+        let rejected = self.rejected;
         let Some(mut frame) = self.data_burst(index, slot) else {
+            if self.rejected != rejected {
+                self.close_counted_call(slot, cach);
+            }
             return;
         };
         match frame.kind {
             DvFrameKind::Header => {
+                self.open_call(slot, cach);
                 self.track_encryption(index, &frame);
                 self.slots[index].voice.reset();
                 frame.cipher = self.slots[index].privacy.label();
             }
             DvFrameKind::Terminator => {
                 frame.cipher = self.slots[index].privacy.label();
-                self.slots[index].encrypted = None;
-                self.slots[index].privacy.reset();
-                self.slots[index].voice.reset();
-                if self.speaking == Some(index) {
-                    self.speaking = None;
-                    self.speaking_hold = 0;
-                }
+                self.end_call(index);
             }
             _ => {}
         }
         self.emit(&frame, out);
+    }
+
+    /// The slot a burst's voice call is tracked on: one the burst names and the filter hears, or
+    /// the one channel of a mobile's direct transmission. A base station burst whose CACH failed
+    /// belongs to no call.
+    fn call_slot(&self, slot: Option<u8>, cach: bool) -> Option<usize> {
+        match slot {
+            Some(slot) if self.params.slots.accepts(slot) => slot_index(Some(slot)),
+            Some(_) => None,
+            None => (!cach).then_some(0),
+        }
+    }
+
+    fn open_call(&mut self, slot: Option<u8>, cach: bool) {
+        let Some(index) = self.call_slot(slot, cach) else {
+            return;
+        };
+        if self.calls[index].is_some_and(|call| call.voiced) {
+            self.lose_call(index);
+        }
+        self.calls[index] = Some(Call {
+            voiced: false,
+            quiet: 0,
+        });
+    }
+
+    fn hear_voice(&mut self, slot: Option<u8>, cach: bool) {
+        if let Some(index) = self.call_slot(slot, cach) {
+            self.calls[index] = Some(Call {
+                voiced: true,
+                quiet: 0,
+            });
+        }
+    }
+
+    /// A data burst that failed to decode on a slot in a call is its lost terminator, already
+    /// counted as rejected.
+    fn close_counted_call(&mut self, slot: Option<u8>, cach: bool) {
+        if let Some(index) = self.call_slot(slot, cach)
+            && self.calls[index].is_some()
+        {
+            self.end_call(index);
+        }
+    }
+
+    fn age_calls(&mut self) {
+        for index in 0..self.calls.len() {
+            let Some(call) = &mut self.calls[index] else {
+                continue;
+            };
+            call.quiet += 1;
+            if call.quiet > CALL_LOSS_SYMBOLS {
+                self.lose_call(index);
+            }
+        }
+    }
+
+    fn lose_call(&mut self, index: usize) {
+        self.reject();
+        self.end_call(index);
+    }
+
+    fn end_call(&mut self, index: usize) {
+        self.calls[index] = None;
+        self.slots[index].encrypted = None;
+        self.slots[index].privacy.reset();
+        self.slots[index].voice.reset();
+        if self.speaking == Some(index) {
+            self.speaking = None;
+            self.speaking_hold = 0;
+        }
     }
 
     fn schedule_follower(&mut self, index: usize) {
@@ -555,7 +638,10 @@ impl Decoder {
         if self.follower_cach[index] {
             self.cach_at(BURST_SYMBOLS, out);
         }
-        self.window.bits(0, BURST_SYMBOLS, &mut self.bits);
+        self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
+        if embedded_signalling_type(&self.coded).is_some() {
+            self.hear_voice(slot, self.follower_cach[index]);
+        }
         if let Some(mut frame) = self.embedded_signalling(index, slot) {
             self.track_encryption(index, &frame);
             frame.cipher = self.slots[index].privacy.label();
@@ -601,19 +687,23 @@ impl Decoder {
         let mut payload = [0i8; VOCODER_FRAME_BITS * VOCODER_FRAMES_PER_BURST];
         payload[..HALF_PAYLOAD_BITS].copy_from_slice(&self.soft[..HALF_PAYLOAD_BITS]);
         payload[HALF_PAYLOAD_BITS..].copy_from_slice(&self.soft[156..]);
-        for (position, frame) in payload
-            .as_chunks::<VOCODER_FRAME_BITS>()
-            .0
-            .iter()
-            .enumerate()
-        {
+        let mut coded = [0 as Soft; VOCODER_FRAME_BITS * VOCODER_FRAMES_PER_BURST];
+        coded[..HALF_PAYLOAD_BITS].copy_from_slice(&self.coded[..HALF_PAYLOAD_BITS]);
+        coded[HALF_PAYLOAD_BITS..].copy_from_slice(&self.coded[156..BURST_BITS]);
+        let frames = payload.as_chunks::<VOCODER_FRAME_BITS>().0;
+        let soft = coded.as_chunks::<VOCODER_FRAME_BITS>().0;
+        for (position, (frame, soft)) in frames.iter().zip(soft).enumerate() {
             let state = &mut self.slots[index];
             let mut decoded = half_soft_frame(frame);
             let playable = match state.encrypted {
                 Some(false) => true,
-                Some(true) => state
-                    .privacy
-                    .decipher(burst, position, &mut decoded, &self.keys),
+                Some(true) => state.privacy.decipher(
+                    burst,
+                    position,
+                    &mut decoded,
+                    late_entry_fragment(soft),
+                    &self.keys,
+                ),
                 None => false,
             };
             if playable {
@@ -634,9 +724,7 @@ impl Decoder {
     }
 
     fn data_burst(&mut self, index: usize, slot: Option<u8>) -> Option<DvFrame> {
-        let slot_type = u64::from(field_msb(&self.bits, 98, 10)) << 10
-            | u64::from(field_msb(&self.bits, 156, 10));
-        let Some((info, slot_errors)) = CyclicCode::GOLAY_20_8.decode(slot_type) else {
+        let Some((info, slot_errors)) = slot_type(&self.coded) else {
             self.reject();
             return None;
         };
@@ -648,9 +736,9 @@ impl Decoder {
         }
 
         if data_type == DT_RATE_THREE_QUARTER_DATA || data_type == DT_RATE_ONE_DATA {
-            let mut frame = if data_type == DT_RATE_THREE_QUARTER_DATA {
-                let decoded = decode_rate_three_quarter(&self.bits)?;
-                data_block(&decoded, "rate 3/4 data")
+            let (mut frame, payload_errors) = if data_type == DT_RATE_THREE_QUARTER_DATA {
+                let (decoded, errors) = decode_rate_three_quarter(&self.coded)?;
+                (data_block(&decoded, "rate 3/4 data"), errors)
             } else {
                 let mut coded = [false; RATE_ONE_CODED_BITS];
                 for (slot, &bit) in coded
@@ -660,14 +748,13 @@ impl Decoder {
                     *slot = bit;
                 }
                 let decoded = decode_rate_one(&coded);
-                data_block(&decoded, "rate 1 data")
+                (data_block(&decoded, "rate 1 data"), 0)
             };
             frame.slot = slot;
             frame.color_code = Some(colour);
-            frame.errors_corrected = slot_errors;
+            frame.errors_corrected = slot_errors + payload_errors;
             return Some(frame);
         }
-        self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
         let mut coded = [0 as Soft; Bptc196::CODED_BITS];
         for (slot, &soft) in coded
             .iter_mut()
@@ -951,9 +1038,7 @@ impl Decoder {
     }
 
     fn embedded_signalling(&mut self, index: usize, slot: Option<u8>) -> Option<DvFrame> {
-        let emb = u64::from(field_msb(&self.bits, 108, 8)) << 8
-            | u64::from(field_msb(&self.bits, 148, 8));
-        let Some((info, errors)) = CyclicCode::QR_16_7.decode(emb) else {
+        let Some((info, errors)) = embedded_signalling_type(&self.coded) else {
             self.drop_embedded(index);
             self.reject();
             return None;
@@ -966,7 +1051,6 @@ impl Decoder {
             LCSS_LAST | LCSS_CONTINUATION if !self.slots[index].embedded.is_empty() => {}
             _ => return None,
         }
-        self.window.soft_bits(0, BURST_SYMBOLS, &mut self.coded);
         self.slots[index]
             .embedded
             .extend(self.coded[116..148].iter().copied());
@@ -1026,9 +1110,40 @@ fn slot_index(slot: Option<u8>) -> Option<usize> {
         .map(|slot| usize::from(slot - 1))
 }
 
+/// The slot type: Golay (20,8) split around the sync, decoded soft.
+fn slot_type(coded: &[Soft]) -> Option<(u32, u32)> {
+    CyclicCode::GOLAY_20_8.decode_soft(&split_word::<20>(coded, 98, 156)?)
+}
+
+/// The EMB: QR (16,7) split around the embedded signalling, decoded soft.
+fn embedded_signalling_type(coded: &[Soft]) -> Option<(u32, u32)> {
+    CyclicCode::QR_16_7.decode_soft(&split_word::<16>(coded, 108, 148)?)
+}
+
+/// A codeword sent in two halves, at `first` and `second` of a burst.
+fn split_word<const N: usize>(coded: &[Soft], first: usize, second: usize) -> Option<[Soft; N]> {
+    let half = N / 2;
+    let mut word = [0; N];
+    word[..half].copy_from_slice(coded.get(first..first + half)?);
+    word[half..].copy_from_slice(coded.get(second..second + half)?);
+    Some(word)
+}
+
+/// The slot and LCSS a CACH's Hamming (7,4) TACT names, and its short LC fragment.
+fn read_cach(soft: &[Soft]) -> Option<(u8, u8, [Soft; 17])> {
+    const TACT: [usize; 7] = [0, 4, 8, 12, 14, 18, 22];
+    const PAYLOAD: [usize; 17] = [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 15, 16, 17, 19, 20, 21, 23];
+    let soft: &[Soft; CACH_BITS] = soft.get(..CACH_BITS)?.try_into().ok()?;
+    let mut tact = [false; 7];
+    ParityCode::HAMMING_7_4.decode_soft(&TACT.map(|position| soft[position]), &mut tact)?;
+    let slot = u8::from(tact[1]) + 1;
+    let lcss = u8::from(tact[2]) << 1 | u8::from(tact[3]);
+    Some((slot, lcss, PAYLOAD.map(|position| soft[position])))
+}
+
 #[derive(Default)]
 struct ShortLc {
-    payload: Vec<bool>,
+    payload: Vec<Soft>,
     rejected: u32,
 }
 
@@ -1045,7 +1160,7 @@ impl ShortLc {
         self.rejected = self.rejected.saturating_add(1);
     }
 
-    fn push(&mut self, lcss: u8, payload: [bool; 17]) -> Option<DvFrame> {
+    fn push(&mut self, lcss: u8, payload: [Soft; 17]) -> Option<DvFrame> {
         match u32::from(lcss) {
             LCSS_FIRST => self.payload.clear(),
             LCSS_CONTINUATION | LCSS_LAST if !self.payload.is_empty() => {}
@@ -1059,7 +1174,7 @@ impl ShortLc {
             }
             return None;
         }
-        let assembled: Option<[bool; SHORT_LC_BITS]> = self.payload.as_slice().try_into().ok();
+        let assembled: Option<[Soft; SHORT_LC_BITS]> = self.payload.as_slice().try_into().ok();
         self.payload.clear();
         let frame = assembled.as_ref().and_then(short_lc_message);
         if frame.is_none() {
@@ -1069,15 +1184,12 @@ impl ShortLc {
     }
 }
 
-fn short_lc_message(payload: &[bool; SHORT_LC_BITS]) -> Option<DvFrame> {
+/// Every row, the column parity row too, is a Hamming (17,12) codeword, so all four decode soft.
+fn short_lc_message(payload: &[Soft; SHORT_LC_BITS]) -> Option<DvFrame> {
     let mut matrix = [[false; 17]; 4];
-    for column in 0..17 {
-        for (row, cells) in matrix.iter_mut().enumerate() {
-            cells[column] = payload[column * 4 + row];
-        }
-    }
-    for row in &mut matrix[..3] {
-        ParityCode::HAMMING_17_12.decode(row)?;
+    for (row, cells) in matrix.iter_mut().enumerate() {
+        let received: [Soft; 17] = std::array::from_fn(|column| payload[column * 4 + row]);
+        ParityCode::HAMMING_17_12.decode_soft(&received, cells)?;
     }
     for column in 0..17 {
         if matrix
@@ -1722,31 +1834,30 @@ const fn trellis_outputs() -> [[[u8; 2]; 8]; 8] {
     outputs
 }
 
-fn decode_rate_three_quarter(burst: &[bool]) -> Option<[bool; TRELLIS_DATA_BITS]> {
-    if burst.len() < BURST_BITS {
-        return None;
-    }
-    let mut air = [0u8; TRELLIS_DIBITS];
-    let pairs = burst[..98]
+/// The 144 data bits of a rate 3/4 burst and the decisions the soft trellis overturned.
+fn decode_rate_three_quarter(burst: &[Soft]) -> Option<([bool; TRELLIS_DATA_BITS], u32)> {
+    let mut air = [[0 as Soft; 2]; TRELLIS_DIBITS];
+    let pairs = burst
+        .get(..98)?
         .as_chunks::<2>()
         .0
         .iter()
-        .chain(burst[166..BURST_BITS].as_chunks::<2>().0.iter());
+        .chain(burst.get(166..BURST_BITS)?.as_chunks::<2>().0);
     for (dibit, pair) in air.iter_mut().zip(pairs) {
-        *dibit = u8::from(pair[0]) << 1 | u8::from(pair[1]);
+        *dibit = *pair;
     }
-    let mut encoded = [0u8; TRELLIS_DIBITS];
+    let mut encoded = [[0 as Soft; 2]; TRELLIS_DIBITS];
     TRELLIS_ORDER.gather(&air, &mut encoded);
-    let steps: &[[u8; 2]; TRELLIS_STEPS] = encoded.as_chunks::<2>().0.try_into().ok()?;
+    let steps: &[[[Soft; 2]; 2]; TRELLIS_STEPS] = encoded.as_chunks::<2>().0.try_into().ok()?;
     let mut tribits = [0u8; TRELLIS_STEPS];
-    TRELLIS.decode(steps, 0, &mut tribits);
+    let errors = TRELLIS.decode_soft(steps, 0, &mut tribits);
     let mut out = [false; TRELLIS_DATA_BITS];
     for (chunk, &tribit) in out.as_chunks_mut::<3>().0.iter_mut().zip(&tribits[..48]) {
         chunk[0] = tribit & 4 != 0;
         chunk[1] = tribit & 2 != 0;
         chunk[2] = tribit & 1 != 0;
     }
-    Some(out)
+    Some((out, u32::from(errors)))
 }
 
 fn decode_rate_one(coded: &[bool; RATE_ONE_CODED_BITS]) -> [bool; RATE_ONE_DATA_BITS] {

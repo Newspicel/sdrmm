@@ -7,6 +7,19 @@ const SPEC_PDF1_BCH: u128 = 0b0_0101_1001_0101_0100_1001;
 const SPEC_PDF2_DATA: u128 = 0b10_0101_0111_0000_0000_0001_0111;
 const SPEC_PDF2_BCH: u128 = 0b0001_0101_0001;
 
+const SURE: [f32; LONG_BITS] = [1.0; LONG_BITS];
+
+/// Full confidence but in the bits `weak` marks.
+fn doubting(weak: u128) -> [f32; LONG_BITS] {
+    std::array::from_fn(|k| {
+        if weak >> (LONG_BITS - 1 - k) & 1 == 1 {
+            0.1
+        } else {
+            1.0
+        }
+    })
+}
+
 fn spec_short() -> Bits {
     from_hex(SPEC_SHORT).expect("hex")
 }
@@ -38,7 +51,7 @@ fn the_published_short_message_checks_and_names_its_beacon() {
     let bits = spec_short();
     assert_eq!(bits.range(86, 106), SPEC_PDF1_BCH);
     assert_eq!(seal(bits), bits);
-    let message = decode(bits, Bits::ALL, false).expect("valid");
+    let message = decode(bits, &SURE, false).expect("valid");
     assert_eq!(message.hex_id, "ADCD00800440401");
     assert_eq!(message.message, SPEC_SHORT);
     assert!(!message.long);
@@ -53,14 +66,29 @@ fn the_published_short_message_checks_and_names_its_beacon() {
 }
 
 #[test]
-fn three_flipped_bits_are_repaired_and_a_fourth_rejects_the_frame() {
+fn three_flipped_bits_are_repaired_and_a_confident_fourth_rejects_the_frame() {
     let clean = spec_short();
-    let three = Bits(clean.0 ^ (1 << 119 | 1 << 70 | 1 << 40));
-    let message = decode(three, Bits::ALL, true).expect("repaired");
+    let flipped = 1 << 119 | 1 << 70 | 1 << 40;
+    let three = Bits(clean.0 ^ flipped);
+    let message = decode(three, &doubting(flipped), true).expect("repaired");
     assert_eq!(message.hex_id, "ADCD00800440401");
     assert_eq!(message.errors_corrected, 3);
     assert!(message.self_test);
-    assert_eq!(decode(Bits(three.0 ^ 1 << 60), Bits::ALL, false), None);
+    assert_eq!(
+        decode(Bits(three.0 ^ 1 << 60), &doubting(flipped), false),
+        None
+    );
+}
+
+#[test]
+fn four_weak_errors_beyond_the_hard_radius_are_repaired_softly() {
+    let clean = spec_short();
+    let flipped = 1 << 119 | 1 << 70 | 1 << 60 | 1 << 40;
+    let received = Bits(clean.0 ^ flipped);
+    assert_eq!(PDF1_CODE.decode(received.range(FIRST, PDF1_END)), None);
+    let message = decode(received, &doubting(flipped), false).expect("repaired");
+    assert_eq!(message.hex_id, "ADCD00800440401");
+    assert_eq!(message.errors_corrected, 4);
 }
 
 #[test]
@@ -69,12 +97,12 @@ fn a_repair_must_only_touch_doubtful_bits() {
     let flipped = 1 << 119 | 1 << 70;
     let received = Bits(clean.0 ^ flipped);
     assert_eq!(
-        decode(received, Bits(flipped), false).map(|m| m.errors_corrected),
+        decode(received, &doubting(flipped), false).map(|m| m.errors_corrected),
         Some(2)
     );
-    assert_eq!(decode(received, Bits(1 << 119), false), None);
+    assert_eq!(decode(received, &doubting(1 << 119), false), None);
     assert_eq!(
-        decode(clean, Bits::default(), false).map(|m| m.errors_corrected),
+        decode(clean, &SURE, false).map(|m| m.errors_corrected),
         Some(0)
     );
 }
@@ -84,7 +112,7 @@ fn the_published_second_field_matches_its_bch_and_position() {
     let long = spec_short().with(25, 25, 1).with(107, 132, SPEC_PDF2_DATA);
     let sealed = seal(long);
     assert_eq!(sealed.range(133, 144), SPEC_PDF2_BCH);
-    let message = decode(sealed, Bits::ALL, false).expect("valid");
+    let message = decode(sealed, &SURE, false).expect("valid");
     assert!(message.long);
     assert_eq!(message.pdf2_ok, Some(true));
     assert_eq!(message.message.len(), 30);
@@ -95,14 +123,14 @@ fn the_published_second_field_matches_its_bch_and_position() {
 #[test]
 fn a_standard_location_round_trips_to_four_seconds() {
     let bits = standard_location(-33.8568, 151.2153);
-    let message = decode(bits, Bits::ALL, false).expect("valid");
+    let message = decode(bits, &SURE, false).expect("valid");
     assert_eq!(message.protocol, SarsatProtocol::StandardLocation);
     assert_eq!(message.beacon, SarsatBeacon::Epirb);
     assert_eq!(message.identity.as_deref(), Some("MMSI 366123456"));
     assert_eq!(message.homing, Some(true));
     close(message.lat, -33.8568);
     close(message.lon, 151.2153);
-    let elsewhere = decode(standard_location(10.0, -20.0), Bits::ALL, false).expect("valid");
+    let elsewhere = decode(standard_location(10.0, -20.0), &SURE, false).expect("valid");
     assert_eq!(message.hex_id, elsewhere.hex_id);
     assert_eq!(message.hex_id, "2DC43C4802FFBFF");
 }
@@ -111,7 +139,7 @@ fn a_standard_location_round_trips_to_four_seconds() {
 fn a_failed_second_field_keeps_the_coarse_fix_and_is_flagged() {
     let bits = standard_location(48.1173, 11.5167);
     let broken = Bits(bits.0 ^ 0b111 << 15);
-    let message = decode(broken, Bits::ALL, false).expect("pdf-1 still valid");
+    let message = decode(broken, &SURE, false).expect("pdf-1 still valid");
     assert_eq!(message.pdf2_ok, Some(false));
     assert_eq!(message.homing, None);
     close(message.lat, 48.0);
@@ -159,7 +187,7 @@ fn national_rls_and_elt_dt_positions_round_trip() {
         ),
     ] {
         let sealed = seal(encode_position(bits, protocol, 59.9139, -10.7522));
-        let message = decode(sealed, Bits::ALL, false).expect("valid");
+        let message = decode(sealed, &SURE, false).expect("valid");
         assert_eq!(message.protocol, protocol);
         assert_eq!(message.beacon, beacon);
         assert_eq!(message.identity.as_deref(), Some(identity));
@@ -185,7 +213,7 @@ fn an_aviation_user_reads_its_registration() {
             )
         },
     );
-    let message = decode(seal(bits), Bits::ALL, false).expect("valid");
+    let message = decode(seal(bits), &SURE, false).expect("valid");
     assert_eq!(message.beacon, SarsatBeacon::Elt);
     assert_eq!(message.identity.as_deref(), Some("Reg D-EABC"));
     assert_eq!(message.homing, Some(false));
@@ -194,7 +222,7 @@ fn an_aviation_user_reads_its_registration() {
 #[test]
 fn a_location_protocol_in_a_short_frame_is_spare() {
     let bits = seal(Bits::default().with(27, 36, 366).with(37, 40, 0b0010));
-    let message = decode(bits, Bits::ALL, false).expect("valid");
+    let message = decode(bits, &SURE, false).expect("valid");
     assert_eq!(message.protocol, SarsatProtocol::Spare);
     assert_eq!(message.beacon, SarsatBeacon::Other);
     assert_eq!(message.position(), None);
@@ -264,7 +292,7 @@ const AMSA_COMPLIANCE_KIT: [Published; 6] = [
 fn the_amsa_compliance_kit_decodes_to_its_published_fields() {
     for published in AMSA_COMPLIANCE_KIT {
         let bits = from_hex(published.hex).expect("hex");
-        let message = decode(bits, Bits::ALL, false).expect(published.hex);
+        let message = decode(bits, &SURE, false).expect(published.hex);
         assert_eq!(message.errors_corrected, 0, "{}", published.hex);
         assert_ne!(message.pdf2_ok, Some(false), "{}", published.hex);
         assert_eq!(message.hex_id, published.hex_id);

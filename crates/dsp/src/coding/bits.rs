@@ -6,7 +6,7 @@ mod stream;
 mod sync_word;
 
 pub use self::{
-    hdlc::{HDLC_FLAG, HdlcDeframer, HdlcFramer},
+    hdlc::{HDLC_FLAG, HdlcDeframer, HdlcFramer, SoftFrame},
     line::{DifferentialDecoder, NrziDecoder, manchester_decode},
     pack::{
         bits_be, field_msb, pack_lsb, pack_msb, pack_msb_into, pack_msb_slice, reverse_byte,

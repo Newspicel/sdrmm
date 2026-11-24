@@ -9,8 +9,8 @@ use blip25_vocoder::{
 };
 use codec2::{Codec2, Codec2Mode};
 use num_complex::Complex;
-use sdrmm_dsp::FracResampler;
 use sdrmm_dsp::audio::clip::clamp_full_scale;
+use sdrmm_dsp::{FracResampler, Soft};
 
 use crate::{
     OUTPUT_RATE,
@@ -443,13 +443,13 @@ impl MbeDecoder {
 }
 
 /// The 72 D-STAR voice bits as bytes the way the air sends them, least significant bit first.
-fn dstar_bytes(bits: &[bool; 72]) -> [u8; MAX_CHIP_FRAME_BYTES] {
+fn dstar_bytes(bits: &[Soft; 72]) -> [u8; MAX_CHIP_FRAME_BYTES] {
     let mut bytes = [0u8; MAX_CHIP_FRAME_BYTES];
     for (byte, chunk) in bytes.iter_mut().zip(bits.as_chunks::<8>().0) {
         *byte = chunk
             .iter()
             .enumerate()
-            .fold(0, |acc, (index, &bit)| acc | u8::from(bit) << index);
+            .fold(0, |acc, (index, &bit)| acc | u8::from(bit > 0) << index);
     }
     bytes
 }
@@ -504,7 +504,8 @@ impl DstarVocoder {
         }
     }
 
-    pub fn decode(&mut self, bits: &[bool; 72], encrypted: bool, out: &mut impl SpeechSink) {
+    /// Plays one frame of 72 soft bits, positive for a one.
+    pub fn decode(&mut self, bits: &[Soft; 72], encrypted: bool, out: &mut impl SpeechSink) {
         if let Some(chip) = &mut self.chip {
             if encrypted {
                 chip.mute(out);
@@ -786,7 +787,7 @@ mod tests {
         let mut vocoder = DstarVocoder::new();
         let mut out = Out::default();
         for _ in 0..4_000 {
-            let frame: [bool; 72] = std::array::from_fn(|_| next() & 1 == 1);
+            let frame: [Soft; 72] = std::array::from_fn(|_| sdrmm_dsp::soft(next() & 1 == 1));
             out.reset();
             vocoder.decode(&frame, false, &mut out);
             assert_presentable(&out);
@@ -799,13 +800,13 @@ mod tests {
         let mut vocoder = DstarVocoder::new();
         let mut out = Out::default();
         for _ in 0..500 {
-            let frame: [bool; 72] = std::array::from_fn(|_| next() & 1 == 1);
+            let frame: [Soft; 72] = std::array::from_fn(|_| sdrmm_dsp::soft(next() & 1 == 1));
             out.reset();
             vocoder.decode(&frame, false, &mut out);
         }
         vocoder.reset();
         out.reset();
-        vocoder.decode(&[false; 72], false, &mut out);
+        vocoder.decode(&[-sdrmm_dsp::CONFIDENT; 72], false, &mut out);
         assert!(!out.pcm.is_empty());
         assert_presentable(&out);
     }
@@ -946,10 +947,11 @@ mod tests {
 
     #[test]
     fn dstar_bytes_carry_the_first_air_bit_least_significant() {
-        let mut bits = [false; 72];
-        bits[0] = true;
-        bits[9] = true;
-        bits[71] = true;
+        let mut bits = [-sdrmm_dsp::CONFIDENT; 72];
+        bits[0] = 1;
+        bits[9] = 1;
+        bits[71] = 1;
+        bits[5] = 0;
         let bytes = dstar_bytes(&bits);
         assert_eq!(bytes[..9], [0x01, 0x02, 0, 0, 0, 0, 0, 0, 0x80]);
     }
@@ -961,11 +963,11 @@ mod tests {
         let mut shadow = DstarVocoder::new();
         live.swap_chip(&mut shadow);
         let mut out = Out::default();
-        live.decode(&[false; 72], false, &mut out);
+        live.decode(&[-sdrmm_dsp::CONFIDENT; 72], false, &mut out);
         assert_eq!(out.pcm.len(), OUTPUT_SAMPLES_PER_MBE_FRAME);
         assert_eq!(end.next_frame(), None);
         out.reset();
-        shadow.decode(&[true; 72], false, &mut out);
+        shadow.decode(&[sdrmm_dsp::CONFIDENT; 72], false, &mut out);
         assert!(out.pcm.is_empty());
         assert_eq!(sent_voice(&mut end).0[..9], [0xFF; 9]);
     }

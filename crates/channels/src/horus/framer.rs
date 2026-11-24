@@ -1,8 +1,10 @@
-//! Finds `$$` in the demodulated bits and tries each payload size behind it, smallest first,
+//! Finds `$` in the demodulated soft bits and tries each payload size behind it, smallest first,
 //! as horusdemodlib does, until one passes its CRC.
 
+use sdrmm_dsp::coding::fec::conv::Soft;
+
 use super::layer2::{
-    self, MAX_CODED_BYTES, MAX_PAYLOAD, PAYLOAD_SIZES, UNIQUE_WORD, UNIQUE_WORD_BITS, coded_bits,
+    self, MAX_CODED_BITS, MAX_PAYLOAD, PAYLOAD_SIZES, UNIQUE_WORD, UNIQUE_WORD_BITS, coded_bits,
 };
 use super::model::HorusFrame;
 use super::packet;
@@ -21,12 +23,12 @@ struct Candidate {
 }
 
 pub(crate) struct Framer {
-    bits: Vec<u8>,
+    bits: Vec<Soft>,
     base: u64,
     window: u16,
     seen: u64,
     candidates: Vec<Candidate>,
-    coded: [u8; MAX_CODED_BYTES],
+    coded: [Soft; MAX_CODED_BITS],
     payload: [u8; MAX_PAYLOAD],
     rejected: u32,
 }
@@ -39,7 +41,7 @@ impl Framer {
             window: 0,
             seen: 0,
             candidates: Vec::with_capacity(MAX_CANDIDATES),
-            coded: [0; MAX_CODED_BYTES],
+            coded: [0; MAX_CODED_BITS],
             payload: [0; MAX_PAYLOAD],
             rejected: 0,
         }
@@ -50,14 +52,15 @@ impl Framer {
         self.rejected
     }
 
-    pub(crate) fn push(&mut self, bit: u8, frames: &mut Vec<HorusFrame>) {
+    /// Takes the next soft bit, positive for a one.
+    pub(crate) fn push(&mut self, bit: Soft, frames: &mut Vec<HorusFrame>) {
         if self.bits.len() == HISTORY_BITS {
             self.bits.drain(..HISTORY_BITS - KEPT_BITS);
             self.base += (HISTORY_BITS - KEPT_BITS) as u64;
         }
-        self.bits.push(bit & 1);
+        self.bits.push(bit);
         self.seen += 1;
-        self.window = (self.window << 1) | u16::from(bit & 1);
+        self.window = (self.window << 1) | u16::from(bit > 0);
         if self.seen >= UNIQUE_WORD_BITS as u64 {
             self.spot_unique_word();
         }
@@ -104,13 +107,9 @@ impl Framer {
 
     fn decode(&mut self, at: u64, size: usize) -> Option<HorusFrame> {
         let start = usize::try_from(at.checked_sub(self.base)?).ok()? + UNIQUE_WORD_BITS;
-        let bytes = coded_bits(size) / 8 - UNIQUE_WORD_BITS / 8;
-        let bits = self.bits.get(start..start + bytes * 8)?;
-        let coded = &mut self.coded[..bytes];
-        coded.fill(0);
-        for (index, &bit) in bits.iter().enumerate() {
-            coded[index / 8] |= bit << (7 - index % 8);
-        }
+        let bits = coded_bits(size) - UNIQUE_WORD_BITS;
+        let coded = &mut self.coded[..bits];
+        coded.copy_from_slice(self.bits.get(start..start + bits)?);
         let payload = &mut self.payload[..size];
         let fixed = layer2::decode(coded, payload);
         let mut frame = packet::parse(payload)?;
@@ -124,13 +123,14 @@ impl Framer {
 mod tests {
     use super::*;
     use crate::horus::layer2::{crc, encode};
+    use sdrmm_dsp::coding::fec::conv::soft;
 
-    fn on_air(payload: &[u8]) -> Vec<u8> {
+    fn on_air(payload: &[u8]) -> Vec<Soft> {
         let mut bytes = UNIQUE_WORD.to_be_bytes().to_vec();
         bytes.extend(encode(payload));
         bytes
             .iter()
-            .flat_map(|&byte| (0..8).rev().map(move |k| (byte >> k) & 1))
+            .flat_map(|&byte| (0..8).rev().map(move |k| soft(byte >> k & 1 == 1)))
             .collect()
     }
 
@@ -143,7 +143,7 @@ mod tests {
         payload
     }
 
-    fn framed(bits: &[u8]) -> (Vec<HorusFrame>, u32) {
+    fn framed(bits: &[Soft]) -> (Vec<HorusFrame>, u32) {
         let mut framer = Framer::new();
         let mut frames = Vec::new();
         for &bit in bits {
@@ -154,7 +154,9 @@ mod tests {
 
     #[test]
     fn finds_back_to_back_frames_after_noise() {
-        let mut bits: Vec<u8> = (0..301u32).map(|n| ((n * 7919) >> 3 & 1) as u8).collect();
+        let mut bits: Vec<Soft> = (0..301u32)
+            .map(|n| soft((n * 7919) >> 3 & 1 == 1))
+            .collect();
         for sequence in 0..30 {
             bits.extend(on_air(&v1(sequence)));
         }
@@ -166,7 +168,7 @@ mod tests {
     #[test]
     fn a_unique_word_with_one_bad_bit_still_starts_a_frame() {
         let mut bits = on_air(&v1(5));
-        bits[3] ^= 1;
+        bits[3] = -bits[3];
         let (frames, _) = framed(&bits);
         assert_eq!(frames.len(), 1);
     }
@@ -175,9 +177,9 @@ mod tests {
     fn a_ruined_frame_counts_as_rejected() {
         let mut bits = on_air(&v1(5));
         for bit in bits.iter_mut().skip(40).step_by(3) {
-            *bit ^= 1;
+            *bit = -*bit;
         }
-        bits.extend(vec![0; coded_bits(MAX_PAYLOAD)]);
+        bits.extend(vec![soft(false); coded_bits(MAX_PAYLOAD)]);
         let (frames, rejected) = framed(&bits);
         assert!(frames.is_empty());
         assert_eq!(rejected, 1);

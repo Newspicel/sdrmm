@@ -148,7 +148,27 @@ pub fn trunking(nac: u16, rate: f64) -> Vec<Complex<f32>> {
     c4fm(&symbols, rate, BAUD, DEVIATION_HZ, RRC_ALPHA)
 }
 
+/// A data unit as dibits on air, the status symbols in.
 fn frame(nac: u16, duid: u8, voice: Option<&[[bool; 144]; 9]>, sync: Sync) -> Vec<u8> {
+    let total = frame_bits(duid);
+    let body = logical(nac, duid, voice, sync);
+    let mut out = Vec::with_capacity(total);
+    let mut read = 0;
+    while out.len() < total {
+        if out.len() >= 70 && (out.len() - 70) % 72 == 0 {
+            out.push(false);
+            out.push(true);
+        } else {
+            out.push(body[read]);
+            read += 1;
+        }
+    }
+    assert_eq!(read, body.len());
+    dibits(&out)
+}
+
+/// A data unit's bits from the sync on, without status symbols.
+fn logical(nac: u16, duid: u8, voice: Option<&[[bool; 144]; 9]>, sync: Sync) -> Vec<bool> {
     const IMBE_OFFSETS: [usize; 9] = [0, 72, 164, 256, 348, 440, 532, 624, 712];
     let total = frame_bits(duid);
     let status_count = total.saturating_sub(70).div_ceil(72);
@@ -175,20 +195,19 @@ fn frame(nac: u16, duid: u8, voice: Option<&[[bool; 144]; 9]>, sync: Sync) -> Ve
         0x7 => insert_tsbk(&mut body),
         _ => {}
     }
+    body
+}
 
-    let mut out = Vec::with_capacity(total);
-    let mut read = 0;
-    while out.len() < total {
-        if out.len() >= 70 && (out.len() - 70) % 72 == 0 {
-            out.push(false);
-            out.push(true);
-        } else {
-            out.push(body[read]);
-            read += 1;
-        }
-    }
-    assert_eq!(read, body.len());
-    dibits(&out)
+/// A data unit's logical bits, its encryption sync naming `algorithm`.
+#[cfg(test)]
+pub(crate) fn logical_bits(nac: u16, duid: u8, algorithm: u8) -> Vec<bool> {
+    logical(nac, duid, None, Sync { algorithm, ..CLEAR })
+}
+
+/// A clear LDU1 carrying `voice`, as dibits on air.
+#[cfg(test)]
+pub(crate) fn ldu1_dibits(nac: u16, voice: &[[bool; 144]; 9]) -> Vec<u8> {
+    frame(nac, 0x5, Some(voice), CLEAR)
 }
 
 fn insert_hdu(frame: &mut [bool], sync: Sync) {

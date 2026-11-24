@@ -10,15 +10,16 @@ use sdrmm_wire::{KindSpec, SettingField};
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{CyclicCode, Viterbi5, crc16_msb, word_msb};
+use sdrmm_dsp::{CyclicCode, Soft, Viterbi5, crc16_msb, word_msb};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
     DvFrame, DvFrameKind, EventKind,
 };
 
+use blip25_vocoder::fullrate::{self, frame::decode_frame_soft};
 use sdrmm_codec::voice::chip::ChipRate;
-use sdrmm_codec::voice::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors};
+use sdrmm_codec::voice::{FullRateFrame, HALF_RATE_SOFT_BITS, MbeDecoder, half_soft_frame};
 use sdrmm_decoder::voice::{Speaker, open_chip};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
@@ -61,6 +62,46 @@ const VFR_INTERLEAVE: [usize; 144] = [
 ];
 
 const VFR_CODE_WIDTHS: [usize; 8] = [23, 23, 23, 23, 15, 15, 15, 7];
+const VFR_BITS: usize = 144;
+
+/// Where each transmitted Voice FR bit sits in the Annex H order the IMBE soft decoder reads.
+static VFR_ANNEX_H: LazyLock<[usize; VFR_BITS]> = LazyLock::new(|| {
+    std::array::from_fn(|sent| {
+        let mut offset = VFR_INTERLEAVE[sent];
+        let mut code = [0u32; 8];
+        for (word, width) in code.iter_mut().zip(VFR_CODE_WIDTHS) {
+            if offset < width {
+                *word = 1 << (width - 1 - offset);
+                break;
+            }
+            offset -= width;
+        }
+        let dibits = fullrate::fec::interleave(&code);
+        let symbol = dibits
+            .iter()
+            .position(|&dibit| dibit != 0)
+            .unwrap_or_default();
+        2 * symbol + usize::from(dibits[symbol] == 1)
+    })
+});
+
+const VD2_BITS: usize = 104;
+const VD2_REPEATED: usize = 27;
+const VD2_INFO_BITS: usize = 49;
+const VD2_WHITENING: [bool; VD2_BITS] = vd2_whitening();
+
+const fn vd2_whitening() -> [bool; VD2_BITS] {
+    let mut pn = [false; VD2_BITS];
+    let mut register = 0x1C9u16;
+    let mut bit = 0;
+    while bit < VD2_BITS {
+        pn[bit] = register & 1 != 0;
+        let feedback = (register ^ (register >> 4)) & 1;
+        register = register >> 1 | feedback << 8;
+        bit += 1;
+    }
+    pn
+}
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "ysf".to_owned(),
@@ -157,11 +198,12 @@ struct Decoder {
     hunting: bool,
     soft: Vec<i16>,
     coded: Vec<i16>,
+    reliable: Vec<Soft>,
     info: Vec<bool>,
     last_kind: Option<DvFrameKind>,
     callsigns: Callsigns,
     reported_callsigns: Callsigns,
-    bits: Vec<bool>,
+    voice: Vec<i8>,
     half_vocoder: MbeDecoder,
     full_vocoder: MbeDecoder,
     rejected: u32,
@@ -176,11 +218,12 @@ impl Decoder {
             hunting: true,
             soft: Vec::with_capacity(PAYLOAD_SYMBOLS * 2),
             coded: Vec::with_capacity(PAYLOAD_SYMBOLS),
+            reliable: Vec::with_capacity(FICH_SYMBOLS),
             info: Vec::with_capacity(PAYLOAD_SYMBOLS / 2),
             last_kind: None,
             callsigns: Callsigns::default(),
             reported_callsigns: Callsigns::default(),
-            bits: Vec::with_capacity(PAYLOAD_SYMBOLS * 2),
+            voice: Vec::with_capacity(PAYLOAD_SYMBOLS * 2),
             half_vocoder: MbeDecoder::half_rate(),
             full_vocoder: MbeDecoder::full_rate(),
             rejected: 0,
@@ -241,37 +284,12 @@ impl Decoder {
     fn fich(&mut self) -> Option<FrameInfo> {
         self.window
             .soft_bits(PAYLOAD_SYMBOLS, FICH_SYMBOLS, &mut self.soft);
-        self.coded.clear();
-        for i in 0..FICH_SYMBOLS {
-            let n = 2 * (i / 5) + 40 * (i % 5);
-            self.coded.push(self.soft[n]);
-            self.coded.push(self.soft[n + 1]);
-        }
-        self.info.clear();
-        self.viterbi.decode(&self.coded, &mut self.info);
-
-        let mut fich = [0u8; FICH_BYTES];
-        let mut errors = 0;
-        let mut value = 0u64;
-        for block in 0..4 {
-            let word = self.info[block * 24..(block + 1) * 24]
-                .iter()
-                .fold(0u64, |acc, &b| acc << 1 | u64::from(b));
-            let Some((info, repaired)) = CyclicCode::GOLAY_24_12.decode(word) else {
-                self.reject();
-                return None;
-            };
-            errors += repaired;
-            value = value << 12 | u64::from(info);
-        }
-        for (i, byte) in fich.iter_mut().enumerate() {
-            *byte = (value >> (40 - i * 8)) as u8;
-        }
-        let crc = !crc16_msb(0x1021, 0, &fich[..4]);
-        if crc != u16::from_be_bytes([fich[4], fich[5]]) {
+        fich_order(&self.soft, &mut self.coded);
+        let Some((fich, errors)) = fich_bytes(&mut self.viterbi, &self.coded, &mut self.reliable)
+        else {
             self.reject();
             return None;
-        }
+        };
 
         let frame_type = fich[0] >> 6 & 0x03;
         let kind = match frame_type {
@@ -386,7 +404,8 @@ impl Decoder {
     }
 
     fn voice(&mut self, data_mode: u8, kind: DvFrameKind, out: &mut ChannelOutputs) {
-        self.window.bits(0, PAYLOAD_SYMBOLS, &mut self.bits);
+        self.window
+            .vocoder_soft_bits(0, PAYLOAD_SYMBOLS, &mut self.voice);
         match data_mode {
             0 => {
                 if kind != DvFrameKind::Voice {
@@ -394,13 +413,14 @@ impl Decoder {
                 }
                 for block in 0..5 {
                     let start = (block * 72 + 36) * 2;
-                    let mut frame = [false; 72];
-                    frame.copy_from_slice(&self.bits[start..start + 72]);
-                    self.half_vocoder.decode_half_code_vectors(
-                        half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
-                        false,
-                        &mut Speaker(out),
-                    );
+                    let frame: Option<&[i8; HALF_RATE_SOFT_BITS]> = self
+                        .voice
+                        .get(start..start + HALF_RATE_SOFT_BITS)
+                        .and_then(|frame| frame.try_into().ok());
+                    if let Some(frame) = frame {
+                        self.half_vocoder
+                            .play_half(&half_soft_frame(frame), &mut Speaker(out));
+                    }
                 }
             }
             2 => {
@@ -409,30 +429,13 @@ impl Decoder {
                 }
                 for block in 0..5 {
                     let start = (block * 72 + 20) * 2;
-                    let raw = &self.bits[start..start + 104];
-                    let mut deinterleaved = [false; 104];
-                    let mut register = 0x1C9u16;
-                    let mut pn = [false; 104];
-                    for bit in &mut pn {
-                        *bit = register & 1 != 0;
-                        let feedback = (register ^ (register >> 4)) & 1;
-                        register = register >> 1 | feedback << 8;
+                    if let Some(sent) = self.voice.get(start..start + VD2_BITS) {
+                        self.half_vocoder.decode_half_info(
+                            &vd2_info(sent),
+                            false,
+                            &mut Speaker(out),
+                        );
                     }
-                    for (i, &bit) in raw.iter().enumerate() {
-                        let target = (i % 4) * 26 + i / 4;
-                        deinterleaved[target] = bit ^ pn[target];
-                    }
-                    let mut info = [false; 49];
-                    for i in 0..27 {
-                        let ones = deinterleaved[i * 3..i * 3 + 3]
-                            .iter()
-                            .filter(|&&bit| bit)
-                            .count();
-                        info[i] = ones >= 2;
-                    }
-                    info[27..].copy_from_slice(&deinterleaved[81..103]);
-                    self.half_vocoder
-                        .decode_half_info(&info, false, &mut Speaker(out));
                 }
             }
             3 => {
@@ -451,9 +454,10 @@ impl Decoder {
     }
 
     fn voice_fr(&mut self, start: usize, out: &mut ChannelOutputs) {
-        let code = voice_fr_code_vectors(&self.bits[start..start + 144]);
-        self.full_vocoder
-            .decode_full_code_vectors(code, false, &mut Speaker(out));
+        if let Some(sent) = self.voice.get(start..start + VFR_BITS) {
+            self.full_vocoder
+                .play_full(&voice_fr_frame(sent), &mut Speaker(out));
+        }
     }
 }
 
@@ -497,20 +501,30 @@ impl Callsigns {
     }
 }
 
-fn voice_fr_code_vectors(transmitted: &[bool]) -> [u32; 8] {
-    let mut raw = [false; 144];
-    for (i, &bit) in transmitted.iter().enumerate() {
-        raw[VFR_INTERLEAVE[i]] = bit;
+/// A Voice FR frame, soft decoded: still PN modulated, as the IMBE decoder expects.
+fn voice_fr_frame(sent: &[i8]) -> FullRateFrame {
+    let mut annex_h = [0i8; VFR_BITS];
+    for (&value, &place) in sent.iter().zip(VFR_ANNEX_H.iter()) {
+        annex_h[place] = value;
     }
-    let mut code = [0u32; 8];
-    let mut offset = 0;
-    for (word, width) in code.iter_mut().zip(VFR_CODE_WIDTHS) {
-        *word = raw[offset..offset + width]
-            .iter()
-            .fold(0u32, |acc, &bit| acc << 1 | u32::from(bit));
-        offset += width;
+    decode_frame_soft(&annex_h)
+}
+
+/// The 49 VD2 information bits: the first 27 sent three times and summed soft, the rest once.
+fn vd2_info(sent: &[i8]) -> [bool; VD2_INFO_BITS] {
+    let mut soft = [0i16; VD2_BITS];
+    for (place, &value) in sent.iter().take(VD2_BITS).enumerate() {
+        let target = (place % 4) * 26 + place / 4;
+        let value = i16::from(value);
+        soft[target] = if VD2_WHITENING[target] { -value } else { value };
     }
-    code
+    std::array::from_fn(|bit| {
+        if bit < VD2_REPEATED {
+            soft[bit * 3..bit * 3 + 3].iter().sum::<i16>() > 0
+        } else {
+            soft[bit + 2 * VD2_REPEATED] > 0
+        }
+    })
 }
 
 fn pack<const N: usize>(bits: &[bool]) -> Option<[u8; N]> {
@@ -564,6 +578,48 @@ fn ysf_signatures() -> Vec<SignalSignature> {
     ]
 }
 
+/// The FICH's coded bits in the order the convolutional code sent them.
+fn fich_order(soft: &[Soft], coded: &mut Vec<Soft>) {
+    coded.clear();
+    for i in 0..FICH_SYMBOLS {
+        let n = 2 * (i / 5) + 40 * (i % 5);
+        coded.extend_from_slice(&soft[n..n + 2]);
+    }
+}
+
+/// The FICH and the decisions repaired: the Viterbi decoder's soft output feeds soft
+/// Golay(24,12), so a word it leaves with four weak errors still decodes. The CRC has the last
+/// word.
+fn fich_bytes(
+    viterbi: &mut Viterbi5,
+    coded: &[Soft],
+    reliable: &mut Vec<Soft>,
+) -> Option<([u8; FICH_BYTES], u32)> {
+    reliable.clear();
+    viterbi.decode_soft_output(coded, reliable);
+    let mut errors = 0;
+    let mut value = 0u64;
+    for word in reliable.as_chunks::<24>().0.iter().take(4) {
+        let (info, repaired) = golay_word(word)?;
+        errors += repaired;
+        value = value << 12 | u64::from(info);
+    }
+    let fich: [u8; FICH_BYTES] = std::array::from_fn(|i| (value >> (40 - i * 8)) as u8);
+    let crc = !crc16_msb(0x1021, 0, &fich[..4]);
+    (crc == u16::from_be_bytes([fich[4], fich[5]])).then_some((fich, errors))
+}
+
+/// Soft Golay first; where its stricter acceptance refuses a word, the hard decision on the
+/// same signs, since the FICH CRC still guards what either decode returns.
+fn golay_word(word: &[Soft; 24]) -> Option<(u32, u32)> {
+    CyclicCode::GOLAY_24_12.decode_soft(word).or_else(|| {
+        let hard = word
+            .iter()
+            .fold(0u64, |acc, &bit| acc << 1 | u64::from(bit > 0));
+        CyclicCode::GOLAY_24_12.decode(hard)
+    })
+}
+
 pub(crate) fn ysf_decoder() -> Native<YsfParams> {
     let decoder = Native::new::<YsfChannel>(|_| occupied_band())
         .filter(|_| Ok(channel_filter()))
@@ -597,6 +653,10 @@ mod tests {
     };
     use sdrmm_decoder_test_support::frames::{assert_tone_audio, decode, decode_with_audio};
     use sdrmm_decoder_test_support::settings;
+    use sdrmm_dsp::{CONFIDENT, math::rng::Rng};
+
+    const FICH_TRIALS: usize = 400;
+    const FICH_NOISE: f64 = 0.9;
     use sdrmm_wire::ChannelParams;
 
     fn channel() -> YsfChannel {
@@ -743,11 +803,11 @@ mod tests {
         assert_tone_audio(&audio, 17);
     }
 
-    #[test]
-    fn a_conformant_voice_fr_frame_reaches_the_vocoder_still_pn_modulated() {
-        let info = [0x0ABu16, 0x123, 0x456, 0x789, 0x2AB, 0x155, 0x3C0, 0x55];
-        let standard = fullrate::fec::deinterleave(&fullrate::frame::encode_frame(&info));
-        let mut raw = [false; 144];
+    const VFR_INFO: [u16; 8] = [0x0AB, 0x123, 0x456, 0x789, 0x2AB, 0x155, 0x3C0, 0x55];
+
+    fn voice_fr_sent(info: &[u16; 8]) -> [bool; VFR_BITS] {
+        let standard = fullrate::fec::deinterleave(&fullrate::frame::encode_frame(info));
+        let mut raw = [false; VFR_BITS];
         let mut offset = 0;
         for (&word, width) in standard.iter().zip(VFR_CODE_WIDTHS) {
             for bit in 0..width {
@@ -755,8 +815,110 @@ mod tests {
             }
             offset += width;
         }
-        let transmitted: [bool; 144] = std::array::from_fn(|i| raw[VFR_INTERLEAVE[i]]);
-        assert_eq!(voice_fr_code_vectors(&transmitted), standard);
+        std::array::from_fn(|i| raw[VFR_INTERLEAVE[i]])
+    }
+
+    fn vocoder_soft(bits: &[bool]) -> Vec<i8> {
+        bits.iter()
+            .map(|&bit| if bit { 127 } else { -127 })
+            .collect()
+    }
+
+    #[test]
+    fn voice_fr_bits_land_on_a_permutation_of_annex_h() {
+        let mut seen = [false; VFR_BITS];
+        for &place in VFR_ANNEX_H.iter() {
+            assert!(!std::mem::replace(&mut seen[place], true), "{place} twice");
+        }
+    }
+
+    #[test]
+    fn a_conformant_voice_fr_frame_reaches_the_vocoder_still_pn_modulated() {
+        let sent = voice_fr_sent(&VFR_INFO);
+        assert_eq!(voice_fr_frame(&vocoder_soft(&sent)).info, VFR_INFO);
+    }
+
+    #[test]
+    fn voice_fr_rides_out_four_weak_errors_in_its_first_golay_word() {
+        let sent = voice_fr_sent(&VFR_INFO);
+        let errors: Vec<usize> = (0..VFR_BITS)
+            .filter(|&i| VFR_INTERLEAVE[i] < 23)
+            .step_by(5)
+            .take(4)
+            .collect();
+        let mut hard = sent;
+        let mut weak = vocoder_soft(&sent);
+        for &place in &errors {
+            hard[place] = !hard[place];
+            weak[place] = -weak[place] / 4;
+        }
+        assert_ne!(voice_fr_frame(&vocoder_soft(&hard)).info, VFR_INFO);
+        assert_eq!(voice_fr_frame(&weak).info, VFR_INFO);
+    }
+
+    #[test]
+    fn vd2_sums_its_three_copies_soft() {
+        let info: [bool; VD2_INFO_BITS] = std::array::from_fn(|bit| bit % 3 == 1);
+        let sent = tx::vd2_voice(&info);
+        assert_eq!(vd2_info(&vocoder_soft(&sent)), info);
+        let copies: Vec<usize> = [12, 13]
+            .iter()
+            .map(|&target| target % 26 * 4 + target / 26)
+            .collect();
+        let mut hard = sent;
+        let mut weak = vocoder_soft(&sent);
+        for &place in &copies {
+            hard[place] = !hard[place];
+            weak[place] = -weak[place] / 4;
+        }
+        assert_ne!(vd2_info(&vocoder_soft(&hard)), info);
+        assert_eq!(vd2_info(&weak), info);
+    }
+
+    fn fich_hard(coded: &[Soft]) -> Option<[u8; FICH_BYTES]> {
+        let mut info = Vec::new();
+        Viterbi5::new().decode(coded, &mut info);
+        let mut value = 0u64;
+        for word in info.as_chunks::<24>().0.iter().take(4) {
+            let word = word.iter().fold(0u64, |acc, &b| acc << 1 | u64::from(b));
+            let (data, _) = CyclicCode::GOLAY_24_12.decode(word)?;
+            value = value << 12 | u64::from(data);
+        }
+        let fich: [u8; FICH_BYTES] = std::array::from_fn(|i| (value >> (40 - i * 8)) as u8);
+        let crc = !crc16_msb(0x1021, 0, &fich[..4]);
+        (crc == u16::from_be_bytes([fich[4], fich[5]])).then_some(fich)
+    }
+
+    #[test]
+    fn fich_feeds_soft_viterbi_output_to_soft_golay() {
+        let sent = tx::fich_bits(&tx::Fich::default());
+        let limit = f64::from(CONFIDENT);
+        let mut rng = Rng::mixed(5);
+        let mut viterbi = Viterbi5::new();
+        let (mut coded, mut reliable) = (Vec::new(), Vec::new());
+        let clean: Vec<Soft> = sent.iter().map(|&bit| sdrmm_dsp::soft(bit)).collect();
+        fich_order(&clean, &mut coded);
+        let (expected, _) = fich_bytes(&mut viterbi, &coded, &mut reliable).expect("a clean FICH");
+        let (mut soft_only, mut hard_only) = (0, 0);
+        for _ in 0..FICH_TRIALS {
+            let received: Vec<Soft> = sent
+                .iter()
+                .map(|&bit| {
+                    let clean = if bit { limit } else { -limit };
+                    (clean + FICH_NOISE * limit * rng.normal()).clamp(-limit, limit) as Soft
+                })
+                .collect();
+            fich_order(&received, &mut coded);
+            let soft = fich_bytes(&mut viterbi, &coded, &mut reliable).map(|(fich, _)| fich);
+            let hard = fich_hard(&coded);
+            assert!(soft.is_none_or(|fich| fich == expected));
+            soft_only += usize::from(soft.is_some() && hard.is_none());
+            hard_only += usize::from(hard.is_some() && soft.is_none());
+        }
+        assert!(
+            soft_only > 0 && hard_only == 0,
+            "{soft_only} vs {hard_only}"
+        );
     }
 
     #[test]

@@ -3,6 +3,8 @@ mod error;
 #[cfg(test)]
 mod fixtures;
 mod grid;
+mod log_sum;
+mod separable;
 pub mod tables;
 
 use std::f64::consts::TAU;
@@ -12,6 +14,7 @@ use sdrmm_dsp::math::complex::{narrow, widen};
 
 pub use error::ConstellationError;
 use grid::Grid;
+use separable::SeparableLabels;
 
 /// The largest rotational symmetry looked for; no table in use has more points on a ring.
 const MAX_ROTATIONAL_ORDER: u32 = 64;
@@ -30,6 +33,7 @@ pub struct Constellation {
     index_of_label: Vec<usize>,
     bits_per_symbol: usize,
     grid: Option<Grid>,
+    separable: Option<SeparableLabels>,
 }
 
 impl Constellation {
@@ -64,6 +68,9 @@ impl Constellation {
             .map(|p| narrow(widen(p) * scale))
             .collect();
         let grid = Grid::detect(&points);
+        let separable = grid
+            .as_ref()
+            .and_then(|grid| SeparableLabels::detect(grid, &points, &labels));
         let mut index_of_label = vec![0usize; n];
         for (index, &label) in labels.iter().enumerate() {
             index_of_label[label as usize] = index;
@@ -74,6 +81,7 @@ impl Constellation {
             index_of_label,
             bits_per_symbol: n.trailing_zeros() as usize,
             grid,
+            separable,
         })
     }
 

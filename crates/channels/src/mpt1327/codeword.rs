@@ -1,7 +1,10 @@
 //! MPT 1327 codewords: 48 information bits under a (63,48) cyclic code whose last check bit is
 //! inverted, then an even parity bit over all 64.
 
-use sdrmm_dsp::SyndromeDecoder;
+use sdrmm_dsp::{
+    SyndromeDecoder,
+    coding::fec::{Acceptance, chase},
+};
 
 /// x^15 + x^14 + x^13 + x^11 + x^4 + x^2 + 1.
 const GENERATOR: u128 = 0b1110_1000_0001_0101;
@@ -9,6 +12,8 @@ const BLOCK_BITS: u32 = 63;
 const CHECK_BITS: u32 = 16;
 /// The standard corrects one error and still detects four; more correction falses on noise.
 const CORRECTABLE: u32 = 1;
+const CHASE_BITS: usize = 4;
+pub(crate) const CODEWORD_BITS: usize = 64;
 
 /// The control channel codeword synchronisation sequence.
 pub(crate) const SYNC: u16 = 0b1100_0100_1101_0111;
@@ -79,6 +84,22 @@ impl Code {
         block << 1 | u64::from(block.count_ones() & 1)
     }
 
+    /// The codeword nearest `word` by Chase search over its weakest bits, `reliability[i]` that
+    /// of bit `i`.
+    pub(crate) fn decode_soft(
+        &self,
+        word: u64,
+        reliability: &[f32; CODEWORD_BITS],
+    ) -> Option<Codeword> {
+        let repair = |trial: u64| self.decode(trial).map(|codeword| codeword.word);
+        let acceptance = Acceptance::Radius(CORRECTABLE);
+        let fixed = chase(word, reliability, CHASE_BITS, acceptance, repair)?;
+        Some(Codeword {
+            word: fixed,
+            errors: (fixed ^ word).count_ones(),
+        })
+    }
+
     /// The codeword `word` was sent as, or none when the check bits cannot account for it.
     pub(crate) fn decode(&self, word: u64) -> Option<Codeword> {
         let odd = word.count_ones() & 1 == 1;
@@ -135,6 +156,22 @@ mod tests {
                 "bits {a} and {b}"
             );
         }
+    }
+
+    #[test]
+    fn three_errors_on_weak_bits_are_repaired_softly() {
+        let code = Code::new();
+        let word = code.encode(BROADCAST);
+        let broken = word ^ (1 << 3 | 1 << 30 | 1 << 61);
+        assert_eq!(code.decode(broken), None);
+        let mut reliability = [1.0; CODEWORD_BITS];
+        for bit in [3, 30, 61] {
+            reliability[bit] = 0.05;
+        }
+        assert_eq!(
+            code.decode_soft(broken, &reliability),
+            Some(Codeword { word, errors: 3 })
+        );
     }
 
     #[test]

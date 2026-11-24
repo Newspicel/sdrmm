@@ -1,3 +1,5 @@
+use crate::soft::soft_xor;
+
 #[must_use]
 pub fn nrz_encode(bits: &[bool]) -> Vec<bool> {
     bits.to_vec()
@@ -84,5 +86,36 @@ impl NrziDecoder {
 
     pub fn reset(&mut self) {
         self.last = false;
+    }
+}
+
+/// [`NrziDecoder`] on soft levels, positive is one, giving soft bits as sure as the weaker of
+/// the two levels each one compares.
+#[derive(Clone, Debug)]
+pub struct SoftNrziDecoder {
+    convention: NrziConvention,
+    last: f32,
+}
+
+impl SoftNrziDecoder {
+    #[must_use]
+    pub fn new(convention: NrziConvention) -> Self {
+        Self {
+            convention,
+            last: 0.0,
+        }
+    }
+
+    pub fn decode(&mut self, level: f32) -> f32 {
+        let changed = soft_xor(level, self.last);
+        self.last = level;
+        match self.convention {
+            NrziConvention::TransitionOnZero => -changed,
+            NrziConvention::TransitionOnOne => changed,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.last = 0.0;
     }
 }

@@ -9,15 +9,17 @@ use std::f64::consts::FRAC_1_SQRT_2;
 
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use block::encode_block;
-pub(crate) use block::{RdsOffset, check_block, correct_block};
+pub(crate) use block::{RdsOffset, check_block, corrected_word};
 use num_complex::Complex;
 use sdrmm_decoder::SymbolTap;
 use sdrmm_dsp::{
-    ComplexOnePole, Costas, Decimator, Nco, Pll, SymbolSync, design_cosine_biphase, design_lowpass,
+    ComplexOnePole, Costas, Decimator, Nco, Pll, SymbolSync,
+    coding::fec::{Acceptance, chase},
+    design_cosine_biphase, design_lowpass,
 };
 use sdrmm_modem::{
     constellation::{Constellation, tables},
-    symbolcode::DifferentialDecoder,
+    symbolcode::SoftDifferentialDecoder,
 };
 use sdrmm_wire::DecoderEvent;
 
@@ -47,6 +49,12 @@ const C_SLOT: usize = 2;
 const LAST_SLOT: usize = BLOCKS_PER_GROUP - 1;
 const SYNC_WINDOW_BLOCKS: u32 = 50;
 const SYNC_WINDOW_LIMIT: u32 = 20;
+/// Weak bits of a damaged block a repair may flip ahead of burst correction.
+const CHASE_FLIPS: usize = 4;
+/// A bit is weak below this share of its block's mean magnitude.
+const WEAK_SHARE: f32 = 0.5;
+/// A repair that flips more reliability than this many mean bits is likelier wrong than right.
+const MAX_SPEND: f32 = 2.0;
 
 const PS_LEN: usize = 8;
 const RT_LEN: usize = 64;
@@ -126,7 +134,7 @@ pub(crate) struct RdsDecoder {
     timing: SymbolSync,
     phase: Costas,
     alphabet: Constellation,
-    differential: DifferentialDecoder,
+    differential: SoftDifferentialDecoder,
     frames: GroupDecoder,
     pilot_mix: Vec<Complex<f32>>,
     data_mix: Vec<Complex<f32>>,
@@ -164,7 +172,7 @@ impl RdsDecoder {
             timing: SymbolSync::new(sps, TIMING_LOOP_BW),
             phase: Costas::new(PHASE_LOOP_BW, FRAC_1_SQRT_2, 0.0, PHASE_RANGE_HZ / BIT_RATE),
             alphabet: tables::bpsk(),
-            differential: DifferentialDecoder::new(),
+            differential: SoftDifferentialDecoder::new(),
             frames: GroupDecoder::default(),
             pilot_mix: Vec::new(),
             data_mix: Vec::new(),
@@ -214,9 +222,8 @@ impl RdsDecoder {
             if self.watched {
                 self.points.push(point);
             }
-            let level = self.alphabet.hard_slice(point) == 1;
-            let bit = self.differential.decode(level);
-            self.frames.push_bit(bit, out);
+            let bit = self.differential.decode(point.re);
+            self.frames.push(bit, out);
         }
         let decoded = self.frames.blocks_read != read;
         self.presence.observe(&self.data_bb, decoded || keep_pilot);
@@ -310,6 +317,8 @@ struct Block {
 #[derive(Default)]
 struct GroupDecoder {
     window: u32,
+    /// How sure each bit of `window` is, the newest first.
+    reliability: [f32; BLOCK_BITS],
     filled: usize,
     sync: BlockSync,
     blocks: [Option<Block>; BLOCKS_PER_GROUP],
@@ -324,8 +333,11 @@ struct GroupDecoder {
 }
 
 impl GroupDecoder {
-    fn push_bit(&mut self, bit: bool, out: &mut Vec<DecoderEvent>) {
-        self.window = ((self.window << 1) | u32::from(bit)) & BLOCK_MASK;
+    /// Takes one soft bit, positive is one.
+    fn push(&mut self, value: f32, out: &mut Vec<DecoderEvent>) {
+        self.window = ((self.window << 1) | u32::from(value > 0.0)) & BLOCK_MASK;
+        self.reliability.copy_within(..BLOCK_BITS - 1, 1);
+        self.reliability[0] = value.abs();
         self.filled = self.filled.saturating_add(1);
         if self.filled < BLOCK_BITS {
             return;
@@ -352,7 +364,7 @@ impl GroupDecoder {
 
     fn hunt(&mut self) {
         for slot in 0..BLOCKS_PER_GROUP {
-            if let Some(block) = check_slot(self.window, slot, false, None) {
+            if let Some(block) = check_slot(self.window, slot, None, None) {
                 self.blocks = [None; BLOCKS_PER_GROUP];
                 self.store(slot, Some(block));
                 self.sync = BlockSync::Confirm {
@@ -366,7 +378,7 @@ impl GroupDecoder {
 
     fn confirm(&mut self, slot: usize, out: &mut Vec<DecoderEvent>) {
         let version_b = self.blocks[B_SLOT].map(|b| b.data & 0x0800 != 0);
-        let Some(block) = check_slot(self.window, slot, false, version_b) else {
+        let Some(block) = check_slot(self.window, slot, None, version_b) else {
             self.blocks = [None; BLOCKS_PER_GROUP];
             self.sync = BlockSync::Hunt;
             return;
@@ -386,7 +398,7 @@ impl GroupDecoder {
     fn close_block(&mut self, slot: usize, recent: u64, out: &mut Vec<DecoderEvent>) {
         let version_b = self.blocks[B_SLOT].map(|b| b.data & 0x0800 != 0);
         self.blocks_read = self.blocks_read.saturating_add(1);
-        let block = check_slot(self.window, slot, true, version_b);
+        let block = check_slot(self.window, slot, Some(&self.reliability), version_b);
         if block.is_none() {
             self.block_errors = self.block_errors.saturating_add(1);
         }
@@ -454,27 +466,54 @@ fn slot_offsets(slot: usize, version_b: Option<bool>) -> &'static [RdsOffset] {
     }
 }
 
-fn check_slot(window: u32, slot: usize, correct: bool, version_b: Option<bool>) -> Option<Block> {
+/// The block in `window` under the slot's offsets. Given its bits' `reliability`, a damaged
+/// block is repaired Chase-style: burst correction after each pattern of flips over its weak
+/// bits, keeping the codeword that differs in the least reliability.
+fn check_slot(
+    window: u32,
+    slot: usize,
+    reliability: Option<&[f32; BLOCK_BITS]>,
+    version_b: Option<bool>,
+) -> Option<Block> {
     let offsets = slot_offsets(slot, version_b);
-    let strict = offsets
-        .iter()
-        .find_map(|&offset| check_block(window, offset));
-    if let Some(data) = strict {
+    let strict = |word: u32| offsets.iter().find_map(|&offset| check_block(word, offset));
+    if let Some(data) = strict(window) {
         return Some(Block {
             data,
             trusted: true,
         });
     }
-    if !correct {
+    let reliability = reliability?;
+    let repaired = |word: u32| {
+        offsets
+            .iter()
+            .find_map(|&offset| corrected_word(word, offset))
+    };
+    let flips = weak_bits(reliability);
+    let word = chase(window, reliability, flips, Acceptance::Nearest, repaired)?;
+    let mean = reliability.iter().sum::<f32>() / BLOCK_BITS as f32;
+    let spent: f32 = (0..BLOCK_BITS)
+        .filter(|&bit| (word ^ window) >> bit & 1 == 1)
+        .map(|bit| reliability[bit])
+        .sum();
+    if spent > MAX_SPEND * mean {
         return None;
     }
-    offsets
+    strict(word).map(|data| Block {
+        data,
+        trusted: false,
+    })
+}
+
+/// How many bits sit well below the block's mean magnitude, up to [`CHASE_FLIPS`]. Values of
+/// one size hold none, so hard bits get burst correction alone.
+fn weak_bits(reliability: &[f32; BLOCK_BITS]) -> usize {
+    let weak_below = WEAK_SHARE * reliability.iter().sum::<f32>() / BLOCK_BITS as f32;
+    let weak = reliability
         .iter()
-        .find_map(|&offset| correct_block(window, offset))
-        .map(|(data, _)| Block {
-            data,
-            trusted: false,
-        })
+        .filter(|&&value| value < weak_below)
+        .count();
+    weak.min(CHASE_FLIPS)
 }
 
 struct TextField {
@@ -766,12 +805,80 @@ mod tests {
     }
 
     fn drive(bits: &[bool]) -> (GroupDecoder, Vec<DecoderEvent>) {
+        let levels: Vec<f32> = bits
+            .iter()
+            .map(|&bit| if bit { 1.0 } else { -1.0 })
+            .collect();
+        drive_soft(&levels)
+    }
+
+    fn drive_soft(values: &[f32]) -> (GroupDecoder, Vec<DecoderEvent>) {
         let mut decoder = GroupDecoder::default();
         let mut events = Vec::new();
-        for &bit in bits {
-            decoder.push_bit(bit, &mut events);
+        for &value in values {
+            decoder.push(value, &mut events);
         }
         (decoder, events)
+    }
+
+    /// `bits` differentially coded onto BPSK through Gaussian noise of `sigma`, then decoded
+    /// back to soft bits.
+    fn through_noise(bits: &[bool], sigma: f64) -> Vec<f32> {
+        let mut rng = sdrmm_dsp::math::rng::Rng::mixed(0x2d5);
+        let mut encoder = sdrmm_modem::symbolcode::DifferentialEncoder::new();
+        let mut decoder = SoftDifferentialDecoder::new();
+        bits.iter()
+            .map(|&bit| {
+                let level = if encoder.encode(bit) { 1.0 } else { -1.0 };
+                decoder.decode((level + sigma * rng.normal()) as f32)
+            })
+            .collect()
+    }
+
+    /// Blocks of `blocks` read right, read wrong and lost when each is checked on its own from
+    /// `values`, the newest bit first in the reliability as the decoder keeps it.
+    fn tally(blocks: &[u32], values: &[f32]) -> [u32; 3] {
+        let mut tally = [0; 3];
+        for (index, (&sent, values)) in blocks.iter().zip(values.chunks(BLOCK_BITS)).enumerate() {
+            let window = values
+                .iter()
+                .fold(0u32, |window, &value| window << 1 | u32::from(value > 0.0));
+            let mut reliability = [0.0; BLOCK_BITS];
+            for (slot, value) in reliability.iter_mut().zip(values.iter().rev()) {
+                *slot = value.abs();
+            }
+            let slot = index % BLOCKS_PER_GROUP;
+            let read = check_slot(window, slot, Some(&reliability), None);
+            let wanted = sent >> 10;
+            tally[match read {
+                Some(block) if u32::from(block.data) == wanted => 0,
+                Some(_) => 1,
+                None => 2,
+            }] += 1;
+        }
+        tally
+    }
+
+    #[test]
+    fn soft_bits_read_more_blocks_right_and_fewer_wrong_in_noise() {
+        let blocks = tx_groups(&station(), 400);
+        let soft = through_noise(&bits_of(&blocks), 0.5);
+        let hard: Vec<f32> = soft.iter().map(|value| value.signum()).collect();
+        let ([hard_right, hard_wrong, hard_lost], [right, wrong, lost]) =
+            (tally(&blocks, &hard), tally(&blocks, &soft));
+        assert!(
+            right >= hard_right + 100,
+            "right: soft {right}, hard {hard_right}"
+        );
+        assert!(
+            2 * (wrong + lost) <= hard_wrong + hard_lost,
+            "wrong or lost: soft {}, hard {}",
+            wrong + lost,
+            hard_wrong + hard_lost
+        );
+        assert!(30 * wrong <= right + wrong + lost, "{wrong} read wrong");
+        let (_, events) = drive_soft(&soft);
+        assert_eq!(last_update(&events).ps.as_deref(), Some("SDRmmFM"));
     }
 
     fn last_update(events: &[DecoderEvent]) -> RdsUpdate {

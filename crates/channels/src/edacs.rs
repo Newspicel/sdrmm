@@ -5,7 +5,7 @@ use sdrmm_decoder::registry::Native;
 use sdrmm_decoder::{
     AUDIO_RATE, Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
-use sdrmm_dsp::coding::fec::{Bch, BchScratch};
+use sdrmm_dsp::coding::fec::{Acceptance, Bch, BchScratch, chase};
 use sdrmm_dsp::{FmDemod, SyncDetector, hamming_distance};
 use sdrmm_modem::analog::voice::{FmVoice, Quieting};
 use sdrmm_modem::cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_BURST};
@@ -48,6 +48,7 @@ pub(crate) const FRAME_BITS: usize = 2 * COPIES * MESSAGE_BITS;
 const BCH_FIELD_BITS: u32 = 6;
 const BCH_PRIMITIVE: u32 = 0x43;
 const BCH_CORRECTS: usize = 2;
+const CHASE_BITS: usize = 4;
 
 /// How long after the site's data a working channel waits before it plays what follows.
 const DATA_HOLD_S: f64 = 0.25;
@@ -226,7 +227,7 @@ impl Channel for EdacsChannel {
             }
             let before = out.events.len();
             for &symbol in &self.symbols {
-                data |= receiver.framer.push(symbol > 0.0, self.addressing, out);
+                data |= receiver.framer.push(symbol, self.addressing, out);
             }
             receiver.since_frame = if out.events.len() > before {
                 0
@@ -254,7 +255,7 @@ impl Channel for EdacsChannel {
     }
 }
 
-/// One message as voted from its three copies and corrected.
+/// One message as summed from its three copies and corrected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Word {
     pub(crate) data: u32,
@@ -266,7 +267,8 @@ struct Framer {
     sync: SyncDetector,
     inverse: SyncDetector,
     dotting: SyncDetector,
-    frame: [bool; FRAME_BITS],
+    /// The frame's soft bits after the sync, positive for a one.
+    frame: [f32; FRAME_BITS],
     filled: usize,
     collecting: Option<bool>,
     bch: Bch,
@@ -281,7 +283,7 @@ impl Framer {
             sync: SyncDetector::new(SYNC, SYNC_BITS, SYNC_TOLERANCE),
             inverse: SyncDetector::new(!SYNC, SYNC_BITS, SYNC_TOLERANCE),
             dotting: SyncDetector::new(DOTTING, DOTTING_BITS, DOTTING_BITS),
-            frame: [false; FRAME_BITS],
+            frame: [0.0; FRAME_BITS],
             filled: 0,
             collecting: None,
             scratch: bch.scratch(),
@@ -298,13 +300,15 @@ impl Framer {
         self.filled = 0;
     }
 
-    /// Takes one bit; reports whether it ended a sync word or a run of dotting.
-    fn push(&mut self, bit: bool, addressing: EdacsAddressing, out: &mut ChannelOutputs) -> bool {
+    /// Takes one soft bit, positive for a one; reports whether it ended a sync word or a run of
+    /// dotting.
+    fn push(&mut self, soft: f32, addressing: EdacsAddressing, out: &mut ChannelOutputs) -> bool {
+        let bit = soft > 0.0;
         let synced = self.sync.push(bit);
         let inverse = self.inverse.push(bit);
         self.dotting.push(bit);
         if let Some(inverted) = self.collecting {
-            self.frame[self.filled] = bit != inverted;
+            self.frame[self.filled] = if inverted { -soft } else { soft };
             self.filled += 1;
             if self.filled == FRAME_BITS {
                 self.collecting = None;
@@ -351,34 +355,55 @@ impl Framer {
     /// The message in half `half` of the frame, or `None`, counted, when it cannot be read.
     fn word(&mut self, half: usize) -> Option<Word> {
         let copies = &self.frame[half * COPIES * MESSAGE_BITS..(half + 1) * COPIES * MESSAGE_BITS];
-        let (word, disagreements) = vote(copies);
-        let mut word = word;
-        let Some(corrected) = self.bch.decode_with_scratch(&mut word, &mut self.scratch) else {
+        let (summed, disagreements) = vote(copies);
+        let (word, reliability) = word_of(&summed);
+        let (bch, scratch) = (&self.bch, &mut self.scratch);
+        let repair = |trial: u64| {
+            let mut bits: [bool; MESSAGE_BITS] =
+                std::array::from_fn(|k| trial >> (MESSAGE_BITS - 1 - k) & 1 == 1);
+            bch.decode_with_scratch(&mut bits, scratch)?;
+            Some(
+                bits.iter()
+                    .fold(0, |value, &bit| value << 1 | u64::from(bit)),
+            )
+        };
+        let acceptance = Acceptance::Radius(BCH_CORRECTS as u32);
+        let Some(fixed) = chase(word, &reliability, CHASE_BITS, acceptance, repair) else {
             self.rejected = self.rejected.saturating_add(1);
             return None;
         };
         Some(Word {
-            data: word[..DATA_BITS]
-                .iter()
-                .fold(0, |value, &bit| value << 1 | u32::from(bit)),
-            errors: disagreements + corrected as u32,
+            data: (fixed >> (MESSAGE_BITS - DATA_BITS)) as u32,
+            errors: disagreements + (fixed ^ word).count_ones(),
         })
     }
 }
 
-/// The bitwise majority of a message's three copies, the middle one sent inverted, and how many
-/// bits the copies did not all agree on.
-pub(crate) fn vote(copies: &[bool]) -> ([bool; MESSAGE_BITS], u32) {
-    let mut word = [false; MESSAGE_BITS];
+/// The sum of a message's three soft copies, the middle one sent inverted, and how many bits
+/// the copies did not all agree on.
+pub(crate) fn vote(copies: &[f32]) -> ([f32; MESSAGE_BITS], u32) {
+    let mut summed = [0.0; MESSAGE_BITS];
     let mut disagreements = 0;
-    for (index, bit) in word.iter_mut().enumerate() {
+    for (index, sum) in summed.iter_mut().enumerate() {
         let a = copies[index];
-        let b = !copies[MESSAGE_BITS + index];
+        let b = -copies[MESSAGE_BITS + index];
         let c = copies[2 * MESSAGE_BITS + index];
-        *bit = u8::from(a) + u8::from(b) + u8::from(c) >= 2;
-        disagreements += u32::from(!(a == b && b == c));
+        *sum = a + b + c;
+        disagreements += u32::from(!((a > 0.0) == (b > 0.0) && (b > 0.0) == (c > 0.0)));
     }
-    (word, disagreements)
+    (summed, disagreements)
+}
+
+/// The hard word of a soft message, its first bit the most significant, and each bit's
+/// reliability by its place in the word.
+fn word_of(soft: &[f32; MESSAGE_BITS]) -> (u64, [f32; MESSAGE_BITS]) {
+    let word = soft
+        .iter()
+        .fold(0, |word, &value| word << 1 | u64::from(value > 0.0));
+    (
+        word,
+        std::array::from_fn(|bit| soft[MESSAGE_BITS - 1 - bit].abs()),
+    )
 }
 
 /// Plays a working channel's voice: whatever a keyed carrier brings once the site's data has

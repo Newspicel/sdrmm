@@ -769,13 +769,26 @@ fn a_damaged_transmission_is_reported_as_rejected() {
         let settings = default_settings(type_id).expect("channel settings");
         create(ChannelCtx { input_rate: RATE }, &settings).expect("channel")
     }
-    fn rejects(chan: &mut dyn Channel, iq: &[Complex<f32>]) -> u32 {
+    /// Events read and frames reported rejected, listening on for a second after `iq`.
+    fn run(type_id: &str, iq: &[Complex<f32>]) -> (usize, u32) {
+        let mut chan = channel(type_id);
         let mut out = ChannelOutputs::default();
-        for block in iq.chunks(4_096) {
+        let mut events = 0;
+        let tail = sdrmm_decoder_test_support::complex_noise(0x7a11, 0.01, RATE as usize);
+        for block in iq.chunks(4_096).chain(tail.chunks(4_096)) {
             out.reset();
             chan.process(block, &mut out);
+            events += out.events.len();
         }
-        chan.rejected()
+        (events, chan.rejected())
+    }
+    /// Damage that costs events must be reported; damage the decoder repairs costs nothing.
+    fn silent_loss(type_id: &str, clean: &[Complex<f32>], damaged: &[&[Complex<f32>]]) -> bool {
+        let (wanted, _) = run(type_id, clean);
+        damaged.iter().any(|iq| {
+            let (read, rejected) = run(type_id, iq);
+            read < wanted && rejected == 0
+        })
     }
     fn hissing(clean: &[Complex<f32>], seed: u32) -> Vec<Complex<f32>> {
         let hiss = sdrmm_decoder_test_support::complex_noise(seed, 0.9, clean.len());
@@ -814,8 +827,11 @@ fn a_damaged_transmission_is_reported_as_rejected() {
         .enumerate()
         .filter(|(index, (type_id, clean))| {
             let seed = 0x11 * (*index as u32 + 1);
-            rejects(channel(type_id).as_mut(), &hissing(clean, seed)) == 0
-                && rejects(channel(type_id).as_mut(), &time_slipped(clean)) == 0
+            silent_loss(
+                type_id,
+                clean,
+                &[&hissing(clean, seed), &time_slipped(clean)],
+            )
         })
         .map(|(_, (type_id, _))| *type_id)
         .collect();

@@ -14,7 +14,7 @@ mod weather;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::hdlc_repair;
+use sdrmm_dsp::{SoftFrame, hdlc_repair};
 use sdrmm_modem::cpm::Mapping;
 use sdrmm_modem::packet::{
     PacketMode, PacketReceiver, RecentFrames,
@@ -135,7 +135,7 @@ impl Channel for AprsChannel {
         } = self;
         recent.advance(iq.len());
         let events = &mut out.events;
-        let heard = |frame: &[u8]| {
+        let heard = |frame: SoftFrame<'_>| {
             if let Some((packet, repaired)) = checked_packet(frame)
                 && recent.first(&repaired)
             {
@@ -153,13 +153,15 @@ impl Channel for AprsChannel {
     }
 }
 
-fn checked_packet(frame: &[u8]) -> Option<(AprsPacket, Vec<u8>)> {
-    parse_frame(frame)?;
-    let mut frame = frame.to_vec();
-    if !hdlc_repair(&mut frame) {
+/// The frame's packet and its bytes, the FCS checked or the weakest bits mended to it. Repair
+/// only runs on frames whose addresses already parse, so noise does not buy CRC trials.
+fn checked_packet(frame: SoftFrame<'_>) -> Option<(AprsPacket, Vec<u8>)> {
+    parse_frame(frame.bytes)?;
+    let mut bytes = frame.bytes.to_vec();
+    if !hdlc_repair(&mut bytes, frame.reliability) {
         return None;
     }
-    Some((parse_frame(&frame)?, frame))
+    Some((parse_frame(&bytes)?, bytes))
 }
 
 fn latin1(bytes: &[u8]) -> String {
@@ -1222,9 +1224,21 @@ mod tests {
     }
 
     #[test]
-    fn a_single_wrong_fcs_bit_is_repaired() {
-        let iq = keyed_frames(AprsMode::Afsk1200, &[&position_frame()], 0x0100);
-        assert_position_packet(&only(decode(AprsMode::Afsk1200, &iq)));
+    fn a_weak_wrong_bit_is_repaired_and_a_confident_one_is_not() {
+        let mut frame = position_frame();
+        frame.extend(sdrmm_dsp::crc16_x25(&frame).to_le_bytes());
+        let bit = (frame.len() - 2) * 8 + 3;
+        frame[bit / 8] ^= 1 << (bit % 8);
+        let mut reliability = vec![1.0; frame.len() * 8];
+        let heard = |reliability: &[f32]| {
+            checked_packet(SoftFrame {
+                bytes: &frame,
+                reliability,
+            })
+        };
+        assert!(heard(&reliability).is_none());
+        reliability[bit] = 0.1;
+        assert_position_packet(&heard(&reliability).expect("repaired").0);
     }
 
     #[test]

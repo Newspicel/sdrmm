@@ -52,6 +52,8 @@ struct Framer {
     gathering: bool,
     filled: usize,
     block: u64,
+    /// The reliability of each bit of `block`, the newest at index 0.
+    reliability: [f32; BLOCK_BITS],
     assembly: Assembly,
     rejected: u32,
 }
@@ -65,6 +67,7 @@ impl Framer {
             gathering: false,
             filled: 0,
             block: 0,
+            reliability: [0.0; BLOCK_BITS],
             assembly: Assembly::new(),
             rejected: 0,
         }
@@ -77,7 +80,9 @@ impl Framer {
         self.gathering = false;
     }
 
-    fn push(&mut self, bit: bool, out: &mut ChannelOutputs) {
+    /// Takes one soft bit, positive for a one.
+    fn push(&mut self, soft: f32, out: &mut ChannelOutputs) {
+        let bit = soft > 0.0;
         if !self.gathering {
             let synced = self
                 .syncs
@@ -91,13 +96,14 @@ impl Framer {
             return;
         }
         self.block = self.block << 1 | u64::from(bit);
+        self.reliability.copy_within(..BLOCK_BITS - 1, 1);
+        self.reliability[0] = soft.abs();
         self.filled += 1;
         if self.filled < BLOCK_BITS {
             return;
         }
         self.filled = 0;
-        let (first, second) = ((self.block >> 32) as u32, self.block as u32);
-        if self.assembly.push(&self.bch, first, second) == Step::Done {
+        if self.assembly.push(&self.bch, self.block, &self.reliability) == Step::Done {
             self.finish(out);
         }
     }
@@ -136,7 +142,7 @@ impl FleetSyncChannel {
 
     fn slice(lane: &mut Lane, symbols: &[f32], out: &mut ChannelOutputs) {
         for &symbol in symbols {
-            lane.framer.push(symbol > 0.0, out);
+            lane.framer.push(symbol, out);
         }
     }
 }

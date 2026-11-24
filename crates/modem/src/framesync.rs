@@ -1,5 +1,6 @@
 mod fixed;
 mod rotation;
+mod soft;
 mod tone_array;
 
 use std::f64::consts::TAU;
@@ -8,6 +9,7 @@ use num_complex::Complex;
 
 pub use fixed::{FixedFramer, Framed};
 pub use rotation::{conj_product, derotate, derotate_from, rotor};
+pub use soft::{SyncDistance, sync_distance};
 pub use tone_array::ToneArray;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

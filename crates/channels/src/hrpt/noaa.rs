@@ -59,9 +59,10 @@ impl Link {
         self.frames.frame()
     }
 
-    /// A frame kept on position alone may hold anything, so it draws no line.
-    pub fn push(&mut self, bit: bool) -> Pushed {
-        let cadu: Option<Framed> = self.frames.push(bit);
+    /// Takes one soft bit, positive is one. A frame kept on position alone may hold anything,
+    /// so it draws no line.
+    pub fn push(&mut self, value: f32) -> Pushed {
+        let cadu: Option<Framed> = self.frames.push_soft(value);
         Pushed {
             line: cadu.is_some_and(|framed| !framed.flywheel),
             cadu,

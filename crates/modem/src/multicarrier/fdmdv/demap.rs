@@ -1,32 +1,36 @@
 use std::f32::consts::FRAC_1_SQRT_2;
 
+use sdrmm_dsp::coding::fec::conv::Soft;
+
 use super::{BITS, CARRIERS, DATA_CARRIERS, PILOT, Sample, magnitude};
+use crate::soft::SoftBit;
 
 const EIGHTH_TURN: Sample = Sample::new(FRAC_1_SQRT_2, FRAC_1_SQRT_2);
 const NORM_FLOOR: f64 = 1e-6;
 
 pub(super) struct Decision {
-    pub(super) bits: [bool; BITS],
+    pub(super) soft: [Soft; BITS],
     pub(super) points: [Sample; DATA_CARRIERS],
     pub(super) sync_bit: bool,
     pub(super) frequency_error: f32,
 }
 
 pub(super) fn decide(symbols: &[Sample; CARRIERS], previous: &[Sample; CARRIERS]) -> Decision {
-    let mut bits = [false; BITS];
-    let points: [Sample; DATA_CARRIERS] =
-        std::array::from_fn(|carrier| difference(symbols[carrier], previous[carrier]));
-    for (pair, point) in bits.as_chunks_mut::<2>().0.iter_mut().zip(&points) {
+    let points = unit_power(std::array::from_fn(|carrier| {
+        difference(symbols[carrier], previous[carrier])
+    }));
+    let mut soft = [0; BITS];
+    for (pair, point) in soft.as_chunks_mut::<2>().0.iter_mut().zip(&points) {
         let turned = point * EIGHTH_TURN;
-        *pair = [turned.im < 0.0, turned.re < 0.0];
+        *pair = [SoftBit(-turned.im).to_fec(), SoftBit(-turned.re).to_fec()];
     }
     let norm = inverse_magnitude(previous[PILOT]);
     let pilot = difference(symbols[PILOT], previous[PILOT]);
     let sync_bit = pilot.re < 0.0;
     let frequency_error = if sync_bit { pilot.im } else { -pilot.im } * norm;
     Decision {
-        bits,
-        points: unit_power(points),
+        soft,
+        points,
         sync_bit,
         frequency_error,
     }
@@ -56,6 +60,28 @@ mod tests {
         symbols
     }
 
+    fn hard(decision: &Decision) -> Vec<[bool; 2]> {
+        decision
+            .soft
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| pair.map(|value| value > 0))
+            .collect()
+    }
+
+    #[test]
+    fn a_point_near_a_boundary_is_a_weak_decision() {
+        let previous = [Sample::ONE; CARRIERS];
+        let mut symbols = [Sample::ONE; CARRIERS];
+        symbols[3] = Sample::from_polar(1.0, 0.7);
+        let decision = decide(&symbols, &previous);
+        let [far, near] = decision.soft.as_chunks::<2>().0[3];
+        assert_eq!(hard(&decision)[3], [false, false]);
+        assert!(near > -8 && near < 0, "near {near}");
+        assert!(far < -40, "far {far}");
+    }
+
     #[test]
     fn each_quadrant_maps_to_its_dibit() {
         let previous = [Sample::ONE; CARRIERS];
@@ -67,12 +93,7 @@ mod tests {
         ] {
             let decision = decide(&symbols_with(rotation, Sample::ONE), &previous);
             assert!(
-                decision
-                    .bits
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .all(|pair| *pair == dibit),
+                hard(&decision).iter().all(|pair| *pair == dibit),
                 "{rotation}"
             );
         }
@@ -85,14 +106,7 @@ mod tests {
             &symbols_with(Sample::new(0.0, 50.0), Sample::ONE),
             &previous,
         );
-        assert!(
-            decision
-                .bits
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .all(|pair| *pair == [false, true])
-        );
+        assert!(hard(&decision).iter().all(|pair| *pair == [false, true]));
     }
 
     #[test]

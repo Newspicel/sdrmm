@@ -14,6 +14,7 @@ mod modulator;
 use std::ops::{Add, Mul};
 
 use num_complex::Complex;
+use sdrmm_dsp::coding::fec::conv::Soft;
 
 use decimator::Decimator;
 use downconvert::{Downconverter, Filtered};
@@ -76,7 +77,8 @@ impl FrameLength {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frame {
-    pub bits: [bool; BITS],
+    /// Each bit's soft decision, positive for a one, from its point's distance to the boundary.
+    pub soft: [Soft; BITS],
     /// Each data carrier's symbol over the one before, on the unit circle at 0, 90, 180 and
     /// 270 degrees.
     pub points: [Complex<f32>; DATA_CARRIERS],
@@ -172,7 +174,7 @@ impl Demodulator {
         let (sync, reliable_sync) = self.sync.update(decision.sync_bit);
         self.track_frequency(decision.frequency_error);
         Frame {
-            bits: decision.bits,
+            soft: decision.soft,
             points: decision.points,
             sync,
             reliable_sync,
@@ -320,7 +322,7 @@ mod tests {
         received[start..]
             .iter()
             .zip(&sent[start - MODEM_DELAY_FRAMES..])
-            .all(|(frame, bits)| frame.bits == *bits)
+            .all(|(frame, bits)| frame.soft.map(|value| value > 0) == *bits)
     }
 
     #[test]

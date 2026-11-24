@@ -120,6 +120,52 @@ fn differential_agrees_with_the_dsp_decoder() {
     assert_eq!(decoded, payload);
 }
 
+fn soft_levels(rng: &mut Rng, levels: &[bool]) -> Vec<f32> {
+    levels
+        .iter()
+        .map(|&level| {
+            let size = 0.1 + (rng.next_u64() % 100) as f32 / 50.0;
+            if level { size } else { -size }
+        })
+        .collect()
+}
+
+#[test]
+fn soft_differential_and_nrzi_decide_like_the_hard_ones_as_sure_as_the_weaker_level() {
+    let mut rng = Rng::new(0x50f7);
+    let levels = random_bits(&mut rng, 2048);
+    let soft = soft_levels(&mut rng, &levels);
+    let mut hard = DifferentialDecoder::new();
+    let mut differential = SoftDifferentialDecoder::new();
+    let mut nrzi = [
+        NrziConvention::TransitionOnZero,
+        NrziConvention::TransitionOnOne,
+    ]
+    .map(|convention| {
+        (
+            NrziDecoder::new(convention),
+            SoftNrziDecoder::new(convention),
+        )
+    });
+    for (index, (&level, &value)) in levels.iter().zip(&soft).enumerate() {
+        let out = differential.decode(value);
+        let decided = hard.decode(level);
+        let nrzi_out = nrzi
+            .each_mut()
+            .map(|(hard, soft)| (hard.decode(level), soft.decode(value)));
+        if index == 0 {
+            assert_eq!(out, 0.0);
+            continue;
+        }
+        assert_eq!(out > 0.0, decided, "bit {index}");
+        assert_eq!(out.abs(), value.abs().min(soft[index - 1].abs()));
+        for (hard, soft) in nrzi_out {
+            assert_eq!(soft > 0.0, hard, "bit {index}");
+            assert_eq!(soft.abs(), out.abs());
+        }
+    }
+}
+
 #[test]
 fn mary_differential_round_trips() {
     let mut rng = Rng::new(0x3a17);

@@ -1,7 +1,7 @@
 use std::ops::RangeInclusive;
 
 use num_complex::Complex;
-use sdrmm_dsp::FmDemod;
+use sdrmm_dsp::{FmDemod, SoftFrame};
 
 use super::{AFSK_BAUD, DEVIATION_HZ, G3RUH_BAUD, afsk::Afsk, g3ruh::G3ruh};
 
@@ -27,9 +27,10 @@ enum Slicer {
     G3ruh(Box<G3ruh>),
 }
 
-/// FM IQ in, HDLC frames out with their FCS still attached and unchecked. AFSK runs several
-/// lanes at once, so one transmission can come out more than once; [`super::RecentFrames`]
-/// drops the repeats. A frame is lent to `heard` and gone after it returns.
+/// FM IQ in, HDLC frames out with their FCS still attached and unchecked, each bit with its
+/// reliability so [`sdrmm_dsp::hdlc_repair`] can mend the weakest. AFSK runs several lanes at
+/// once, so one transmission can come out more than once; [`super::RecentFrames`] drops the
+/// repeats. A frame is lent to `heard` and gone after it returns.
 pub struct PacketReceiver {
     mode: PacketMode,
     demod: FmDemod,
@@ -57,7 +58,7 @@ impl PacketReceiver {
         self.mode
     }
 
-    pub fn process(&mut self, iq: &[Complex<f32>], mut heard: impl FnMut(&[u8])) {
+    pub fn process(&mut self, iq: &[Complex<f32>], mut heard: impl FnMut(SoftFrame<'_>)) {
         self.slice(iq, None, &mut heard);
     }
 
@@ -67,7 +68,7 @@ impl PacketReceiver {
         &mut self,
         iq: &[Complex<f32>],
         levels: &mut Vec<f32>,
-        mut heard: impl FnMut(&[u8]),
+        mut heard: impl FnMut(SoftFrame<'_>),
     ) {
         self.slice(iq, Some(levels), &mut heard);
     }
@@ -76,7 +77,7 @@ impl PacketReceiver {
         &mut self,
         iq: &[Complex<f32>],
         levels: Option<&mut Vec<f32>>,
-        heard: &mut impl FnMut(&[u8]),
+        heard: &mut impl FnMut(SoftFrame<'_>),
     ) {
         self.demod.process(iq, &mut self.discriminated);
         match &mut self.slicer {

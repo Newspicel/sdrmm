@@ -1,4 +1,4 @@
-use sdrmm_dsp::coding::fec::chase;
+use sdrmm_dsp::coding::fec::{Acceptance, chase};
 
 pub const ACCESS_DL: &[u8; 24] = &[
     0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 1, 1,
@@ -18,6 +18,8 @@ pub const LCW2_POLY: u32 = 465;
 pub const LCW3_POLY: u32 = 41;
 
 const CHASE_BITS: usize = 5;
+/// What [`bch_repair`] corrects.
+const CORRECTABLE: u32 = 2;
 const FILL_A: u32 = 0b1010_0010_0111_0011_1011_1111_0110_1101;
 const FILL_B: u32 = 0b0101_0100_0100_0101_1100_0010_1110_0110;
 
@@ -72,7 +74,8 @@ pub fn bch_repair_soft(poly: u32, block: &[u8], reliability: &[f32]) -> Option<V
                 .fold(0u64, |word, (bit, &value)| word | u64::from(value) << bit),
         )
     };
-    let codeword = chase(word, reliability, CHASE_BITS, repair)?;
+    let acceptance = Acceptance::Radius(CORRECTABLE);
+    let codeword = chase(word, reliability, CHASE_BITS, acceptance, repair)?;
     Some((0..length).map(|bit| (codeword >> bit & 1) as u8).collect())
 }
 

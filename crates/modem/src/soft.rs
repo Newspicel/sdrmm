@@ -50,6 +50,18 @@ impl From<Llr> for SoftBit {
     }
 }
 
+/// The XOR of two soft bits, positive is one: the min-sum box-plus, the XOR of their signs
+/// as sure as the weaker of the two. Scale-free, so it needs no noise estimate.
+#[must_use]
+pub fn soft_xor(a: f32, b: f32) -> f32 {
+    let magnitude = a.abs().min(b.abs());
+    if is_one(a) == is_one(b) {
+        -magnitude
+    } else {
+        magnitude
+    }
+}
+
 #[must_use]
 pub fn argmax(statistics: &[f32]) -> u8 {
     assert!(!statistics.is_empty(), "no statistics, no decision");
@@ -116,6 +128,16 @@ mod tests {
         assert_eq!(Llr(LLR_SATURATION / 2.0).to_fec(), CONFIDENT / 2);
         assert_eq!(Llr(0.125).to_fec(), 1);
         assert_eq!(Llr(0.06).to_fec(), 0);
+    }
+
+    #[test]
+    fn soft_xor_keeps_the_hard_xor_and_the_weaker_magnitude() {
+        assert_eq!(soft_xor(2.0, 0.5), -0.5);
+        assert_eq!(soft_xor(-2.0, -0.5), -0.5);
+        assert_eq!(soft_xor(2.0, -0.5), 0.5);
+        assert_eq!(soft_xor(-0.25, 3.0), 0.25);
+        assert!(!SoftBit(soft_xor(0.0, 1.0)).bit());
+        assert!(SoftBit(soft_xor(0.0, 1.0)).is_erasure());
     }
 
     #[test]

@@ -99,10 +99,10 @@ impl Link {
         self.line.as_slice()
     }
 
-    /// A CADU kept on position alone may hold anything, so the line it would continue is
-    /// dropped and the next is searched for afresh.
-    pub fn push(&mut self, bit: bool) -> Pushed {
-        let Some(framed) = self.cadus.push(bit) else {
+    /// Takes one soft bit, positive is one. A CADU kept on position alone may hold anything,
+    /// so the line it would continue is dropped and the next is searched for afresh.
+    pub fn push(&mut self, value: f32) -> Pushed {
+        let Some(framed) = self.cadus.push_soft(value) else {
             return Pushed::default();
         };
         if framed.flywheel {

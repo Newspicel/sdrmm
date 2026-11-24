@@ -33,6 +33,11 @@ pub(crate) fn correct_block(block: u32, offset: RdsOffset) -> Option<(u16, u32)>
         .map(|(data, flips)| (data as u16, flips))
 }
 
+/// The codeword [`correct_block`] repairs `block` to.
+pub(crate) fn corrected_word(block: u32, offset: RdsOffset) -> Option<u32> {
+    correct_block(block, offset).map(|(data, _)| CODE.encode(u32::from(data), offset.word()))
+}
+
 #[cfg(any(test, feature = "synth"))]
 pub(crate) fn encode_block(data: u16, offset: RdsOffset) -> u32 {
     CODE.encode(u32::from(data), offset.word())

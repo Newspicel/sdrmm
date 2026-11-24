@@ -10,10 +10,11 @@ use sdrmm_wire::{KindSpec, SettingField};
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{crc16_x25, hamming_distance};
+use sdrmm_dsp::{Soft, crc16_x25, hamming_distance};
 use sdrmm_modem::{
     cpm::{CoherentCpmStream, CpmDemod, CpmParams, Mapping, TIMING_BW_BURST},
     pulse::{self, Norm},
+    soft::SoftBit,
 };
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, DecoderEvent, DecoderFamily,
@@ -46,6 +47,8 @@ const SYNC_MASK: u128 = (1 << SYNC_BITS) - 1;
 const FRAME_BITS: usize = 96;
 const DATA_BITS: usize = 24;
 const VOICE_BITS: usize = FRAME_BITS - DATA_BITS;
+/// The soft bits kept back: a voice frame and the sync word behind it.
+const RECENT_BITS: usize = VOICE_BITS + SYNC_BITS as usize;
 const FRAMES_PER_SUPERFRAME: usize = 21;
 
 const COHERENT_LOOP_BW: f64 = 0.01;
@@ -185,13 +188,8 @@ impl Channel for DstarChannel {
             Source::Discriminator => (&mut *out, &mut self.shadow),
             Source::Coherent => (&mut self.shadow, &mut *out),
         };
-        feed(&mut self.decoder, &self.soft, &self.slicer, live);
-        feed(
-            &mut self.coherent_decoder,
-            &self.coherent_soft,
-            &self.slicer,
-            shadow,
-        );
+        feed(&mut self.decoder, &self.soft, live);
+        feed(&mut self.coherent_decoder, &self.coherent_soft, shadow);
         self.forward_shadow_calls(out);
         self.tap(out);
         match self.source {
@@ -216,9 +214,10 @@ fn same_call(a: &DvFrame, b: &DvFrame) -> bool {
         }
 }
 
-fn feed(decoder: &mut Decoder, soft: &[f32], slicer: &Mapping, out: &mut ChannelOutputs) {
+/// Hands each symbol on as a soft bit: the levels sit at -1 and +1, a one above.
+fn feed(decoder: &mut Decoder, soft: &[f32], out: &mut ChannelOutputs) {
     for &symbol in soft {
-        decoder.push(slicer.slice(symbol) == 1, out);
+        decoder.push(SoftBit(symbol).to_fec(), out);
     }
 }
 
@@ -293,7 +292,9 @@ struct Decoder {
     synced: bool,
     expecting: usize,
     data: u32,
-    voice_bits: [bool; VOICE_BITS],
+    voice_bits: [Soft; VOICE_BITS],
+    recent: [Soft; RECENT_BITS],
+    pushed: usize,
     packet: Vec<u8>,
     header: Vec<u8>,
     heard: Vec<u8>,
@@ -318,7 +319,9 @@ impl Decoder {
             synced: false,
             expecting: 0,
             data: 0,
-            voice_bits: [false; VOICE_BITS],
+            voice_bits: [0; VOICE_BITS],
+            recent: [0; RECENT_BITS],
+            pushed: 0,
             packet: Vec::with_capacity(PACKET_BYTES),
             header: Vec::with_capacity(HEADER_BYTES),
             heard: Vec::with_capacity(HEADER_BYTES),
@@ -358,6 +361,7 @@ impl Decoder {
 
     fn reset(&mut self) {
         self.register = 0;
+        self.recent = [0; RECENT_BITS];
         self.synced = false;
         self.expecting = 0;
         self.bit = 0;
@@ -372,8 +376,11 @@ impl Decoder {
         self.vocoder.reset();
     }
 
-    fn push(&mut self, bit: bool, out: &mut ChannelOutputs) {
+    fn push(&mut self, soft: Soft, out: &mut ChannelOutputs) {
+        let bit = soft > 0;
         self.register = self.register << 1 | u128::from(bit);
+        self.recent[self.pushed % RECENT_BITS] = soft;
+        self.pushed = self.pushed.wrapping_add(1);
         if !self.synced {
             let expected = self.expecting > 0;
             let tolerance = if expected { SYNC_TOLERANCE } else { 0 };
@@ -391,7 +398,7 @@ impl Decoder {
         }
         self.bit += 1;
         if self.bit <= VOICE_BITS {
-            self.voice_bits[self.bit - 1] = bit;
+            self.voice_bits[self.bit - 1] = soft;
         }
         if self.bit > VOICE_BITS {
             self.data = self.data << 1 | u32::from(bit);
@@ -413,10 +420,10 @@ impl Decoder {
         }
     }
 
+    /// Plays the voice frame that came before the sync word, the oldest of the recent bits.
     fn sync_frame_voice(&mut self, out: &mut ChannelOutputs) {
-        let voice = self.register >> SYNC_BITS;
         for (index, slot) in self.voice_bits.iter_mut().enumerate() {
-            *slot = voice >> (VOICE_BITS - 1 - index) & 1 == 1;
+            *slot = self.recent[(self.pushed + index) % RECENT_BITS];
         }
         self.vocoder
             .decode(&self.voice_bits, false, &mut Speaker(out));
@@ -824,8 +831,30 @@ mod tests {
         let mut out = ChannelOutputs::default();
         let mut soft = Vec::new();
         demod.process(iq, &mut soft);
-        feed(&mut decoder, &soft, cpm.mapping(), &mut out);
+        feed(&mut decoder, &soft, &mut out);
         out.events.len()
+    }
+
+    #[test]
+    fn the_voice_before_a_late_sync_keeps_its_soft_bits() {
+        let mut decoder = Decoder::new();
+        let mut out = ChannelOutputs::default();
+        decoder.expecting = RECENT_BITS + 50;
+        let voice: Vec<Soft> = (0..VOICE_BITS)
+            .map(|index| (index as Soft % 50 + 1) * if index % 3 == 0 { -1 } else { 1 })
+            .collect();
+        for _ in 0..30 {
+            decoder.push(0, &mut out);
+        }
+        decoder.expecting = RECENT_BITS;
+        for &value in &voice {
+            decoder.push(value, &mut out);
+        }
+        for place in (0..SYNC_BITS).rev() {
+            decoder.push(sdrmm_dsp::soft(SYNC >> place & 1 == 1), &mut out);
+        }
+        assert!(decoder.synced);
+        assert_eq!(decoder.voice_bits.as_slice(), voice.as_slice());
     }
 
     #[test]

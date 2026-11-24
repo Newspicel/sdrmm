@@ -124,12 +124,13 @@ impl HorusReceiver {
             ..
         } = self;
         levels.clear();
-        self.demod.push_levels(iq, |symbol, level| {
+        self.demod.push_llrs(iq, |_, level, llrs| {
             if *watched {
                 levels.push(level);
             }
-            framer.push(symbol >> 1, frames);
-            framer.push(symbol, frames);
+            for llr in llrs.iter().rev() {
+                framer.push(llr.to_fec(), frames);
+            }
         });
         let snr_db = self.demod.snr_db();
         for frame in &mut frames[first..] {

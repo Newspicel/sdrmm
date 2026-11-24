@@ -253,7 +253,7 @@ fn dev_raw_capture() {
         soft.clear();
         demod.process(chunk, &mut soft);
         for &value in &soft {
-            let pushed = link.push(value > 0.0);
+            let pushed = link.push(value);
             if let Some(framed) = pushed.cadu {
                 cadus.extend_from_slice(link.cadu());
                 damaged += usize::from(framed.flywheel);
@@ -295,7 +295,7 @@ fn decode_offair() -> OffAir {
         soft.clear();
         demod.process(chunk, &mut soft);
         for &value in &soft {
-            let pushed = link.push(value > 0.0);
+            let pushed = link.push(value);
             if let Some(framed) = pushed.cadu {
                 decoded.cadus.extend_from_slice(link.cadu());
                 decoded.damaged += usize::from(framed.flywheel);

@@ -1,6 +1,10 @@
 //! One MDC-1200 block: 112 bits interleaved over a 16 by 7 grid, holding op, argument, unit
 //! and CRC with a rate 1/2 convolutional code.
 
+use sdrmm_dsp::TrellisCode;
+use sdrmm_dsp::coding::fec::conv::Soft;
+use sdrmm_modem::soft::SoftBit;
+
 pub(crate) const SYNC: u64 = 0x07_092A_446F;
 pub(crate) const SYNC_BITS: u32 = 40;
 pub(crate) const BLOCK_BITS: usize = 112;
@@ -8,10 +12,36 @@ const DATA_BITS: usize = BLOCK_BITS / 2;
 const DATA_BYTES: usize = DATA_BITS / 8;
 const ROWS: usize = 7;
 const COLUMNS: usize = 16;
-/// Parity taps of the convolutional code. Their pairwise distances all differ, so the four
-/// checks on one data bit share no other bit and a majority of them can flip it.
+/// Parity taps of the convolutional code: each parity bit sums the data bits this far back.
 const TAPS: [usize; 4] = [0, 2, 5, 6];
-const MAJORITY: usize = 3;
+const MEMORY: usize = 6;
+const STATES: usize = 1 << MEMORY;
+/// The code sent as a trellis: the state holds the last six data bits, newest lowest, and each
+/// step sends the data bit then its parity. The zero last byte ends it in state 0.
+const CODE: TrellisCode<STATES, 2, 1> = trellis();
+
+const fn trellis() -> TrellisCode<STATES, 2, 1> {
+    let mut next = [[0u8; 2]; STATES];
+    let mut output = [[[0u8; 1]; 2]; STATES];
+    let mut state = 0;
+    while state < STATES {
+        let mut input = 0;
+        while input < 2 {
+            let register = state << 1 | input;
+            let mut parity = 0;
+            let mut tap = 0;
+            while tap < TAPS.len() {
+                parity ^= register >> TAPS[tap] & 1;
+                tap += 1;
+            }
+            next[state][input] = (register % STATES) as u8;
+            output[state][input] = [(input << 1 | parity) as u8];
+            input += 1;
+        }
+        state += 1;
+    }
+    TrellisCode::new(next, output)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Block {
@@ -26,31 +56,25 @@ pub(crate) const fn is_double(op: u8) -> bool {
     matches!(op, 0x35 | 0x55)
 }
 
-fn deinterleave(bits: &[bool; BLOCK_BITS]) -> [bool; BLOCK_BITS] {
-    std::array::from_fn(|n| bits[(n % ROWS) * COLUMNS + n / ROWS])
+fn deinterleave(soft: &[f32; BLOCK_BITS]) -> [f32; BLOCK_BITS] {
+    std::array::from_fn(|n| soft[(n % ROWS) * COLUMNS + n / ROWS])
 }
 
+#[cfg(test)]
 fn parity_of(data: &[bool; DATA_BITS], n: usize) -> bool {
     TAPS.iter()
         .filter(|&&delay| n >= delay)
         .fold(false, |acc, &delay| acc ^ data[n - delay])
 }
 
-fn repair(data: &mut [bool; DATA_BITS], parity: &[bool; DATA_BITS]) -> u32 {
-    let mut syndrome: [bool; DATA_BITS] = std::array::from_fn(|n| parity[n] ^ parity_of(data, n));
-    let last_checked = DATA_BITS - TAPS[TAPS.len() - 1];
-    let mut repaired = 0;
-    for m in 0..last_checked {
-        let votes = TAPS.iter().filter(|&&delay| syndrome[m + delay]).count();
-        if votes >= MAJORITY {
-            data[m] = !data[m];
-            for delay in TAPS {
-                syndrome[m + delay] = !syndrome[m + delay];
-            }
-            repaired += 1;
-        }
-    }
-    repaired
+/// The data bits of the likeliest path through the code, and how many sent bits it overturns.
+fn viterbi(line: &[f32; BLOCK_BITS]) -> ([bool; DATA_BITS], u32) {
+    let soft = |value: f32| -> Soft { SoftBit(value).to_fec() };
+    let received: [[[Soft; 2]; 1]; DATA_BITS] =
+        std::array::from_fn(|n| [[soft(line[n]), soft(line[DATA_BITS + n])]]);
+    let mut inputs = [0u8; DATA_BITS];
+    let overturned = CODE.decode_soft(&received, 0, &mut inputs);
+    (inputs.map(|input| input == 1), u32::from(overturned))
 }
 
 fn bytes(bits: &[bool; DATA_BITS]) -> [u8; DATA_BYTES] {
@@ -61,12 +85,10 @@ fn crc(header: &[u8]) -> u16 {
     !sdrmm_dsp::crc16_ccitt(header)
 }
 
-/// The block's header when its CRC holds after repair.
-pub(crate) fn decode(bits: &[bool; BLOCK_BITS]) -> Option<Block> {
-    let line = deinterleave(bits);
-    let mut data: [bool; DATA_BITS] = std::array::from_fn(|n| line[n]);
-    let parity: [bool; DATA_BITS] = std::array::from_fn(|n| line[DATA_BITS + n]);
-    let repaired = repair(&mut data, &parity);
+/// The block's header when its CRC holds after soft Viterbi decoding; `soft` holds the sent
+/// bits, positive for a one.
+pub(crate) fn decode(soft: &[f32; BLOCK_BITS]) -> Option<Block> {
+    let (data, repaired) = viterbi(&deinterleave(soft));
     let data = bytes(&data);
     (crc(&data[..4]) == u16::from_le_bytes([data[4], data[5]])).then(|| Block {
         op: data[0],
@@ -97,13 +119,19 @@ pub(crate) fn encode(op: u8, arg: u8, unit: u16) -> [bool; BLOCK_BITS] {
     sent
 }
 
+/// The sent bits as sure soft values.
+#[cfg(test)]
+pub(crate) fn sure(bits: &[bool; BLOCK_BITS]) -> [f32; BLOCK_BITS] {
+    bits.map(|bit| if bit { 1.0 } else { -1.0 })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn a_block_round_trips() {
-        let block = decode(&encode(0x01, 0x80, 0x1234));
+        let block = decode(&sure(&encode(0x01, 0x80, 0x1234)));
         assert_eq!(
             block,
             Some(Block {
@@ -128,7 +156,7 @@ mod tests {
             let mut bits = sent;
             let at = (position % ROWS) * COLUMNS + position / ROWS;
             bits[at] = !bits[at];
-            let block = decode(&bits);
+            let block = decode(&sure(&bits));
             assert!(
                 matches!(
                     block,
@@ -150,6 +178,21 @@ mod tests {
         for bit in bits.iter_mut().take(40) {
             *bit = !*bit;
         }
-        assert_eq!(decode(&bits), None);
+        assert_eq!(decode(&sure(&bits)), None);
+    }
+
+    #[test]
+    fn weak_errors_past_the_hard_repair_are_overturned() {
+        let sent = encode(0x46, 0x03, 0x0815);
+        let mut soft = sure(&sent);
+        let burst = (10..14).flat_map(|n| [n, DATA_BITS + n]);
+        for n in burst {
+            soft[(n % ROWS) * COLUMNS + n / ROWS] *= -0.2;
+        }
+        let hard = soft.map(f32::signum);
+        assert_ne!(decode(&hard).map(|block| block.unit), Some(0x0815));
+        let block = decode(&soft).expect("repaired");
+        assert_eq!((block.op, block.arg, block.unit), (0x46, 0x03, 0x0815));
+        assert_eq!(block.repaired, 8);
     }
 }

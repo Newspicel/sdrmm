@@ -1,4 +1,4 @@
-use sdrmm_dsp::hamming_distance;
+use super::{SyncDistance, sync_distance};
 
 /// What one completed frame went through.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,13 +18,43 @@ struct Lock {
     confirmed: bool,
     misses: u8,
     sync_errors: u32,
+    /// How far the last word sat from the sync word, soft when the bits came soft.
+    distance: f32,
+}
+
+/// The last 64 soft values twice over, so the newest `n` always lie in one slice.
+#[derive(Clone, Copy, Debug)]
+struct SoftWindow {
+    values: [f32; 128],
+    next: usize,
+}
+
+impl SoftWindow {
+    const fn new() -> Self {
+        Self {
+            values: [0.0; 128],
+            next: 0,
+        }
+    }
+
+    fn push(&mut self, value: f32) {
+        self.values[self.next] = value;
+        self.values[self.next + 64] = value;
+        self.next = (self.next + 1) % 64;
+    }
+
+    fn newest(&self, count: usize) -> &[f32] {
+        let end = self.next + 64;
+        &self.values[end - count..end]
+    }
 }
 
 /// Fixed-length frames that each open with the same sync word, in a bit stream that may arrive
 /// inverted. Once a word is found, the next is expected one frame later; a few damaged words
 /// in a row are carried on position before the search starts over. A frame is handed out once
 /// the word after it has been judged, so a lock no second word bears out yields nothing and
-/// gives way to a match at least as good.
+/// gives way to a match at least as good. Fed soft values, words are judged by
+/// [`sync_distance`], so weak wrong bits cost less than confident ones.
 pub struct FixedFramer {
     word: u64,
     mask: u64,
@@ -34,6 +64,8 @@ pub struct FixedFramer {
     track_errors: u32,
     max_misses: u8,
     raw: u64,
+    soft: Box<SoftWindow>,
+    soft_fed: bool,
     shift: u64,
     lock: Option<Lock>,
     building: Vec<u8>,
@@ -66,6 +98,8 @@ impl FixedFramer {
             track_errors,
             max_misses,
             raw: 0,
+            soft: Box::new(SoftWindow::new()),
+            soft_fed: false,
             shift: 0,
             lock: None,
             building: vec![0; frame_bits.div_ceil(8)],
@@ -77,6 +111,7 @@ impl FixedFramer {
 
     pub fn reset(&mut self) {
         self.raw = 0;
+        *self.soft = SoftWindow::new();
         self.shift = 0;
         self.lock = None;
         self.discard();
@@ -108,35 +143,55 @@ impl FixedFramer {
 
     /// Takes one bit; returns when it hands out a frame, now readable from [`Self::frame`].
     pub fn push(&mut self, bit: bool) -> Option<Framed> {
+        self.soft_fed = false;
+        self.step(bit)
+    }
+
+    /// Takes one soft bit, positive is one; otherwise as [`Self::push`].
+    pub fn push_soft(&mut self, value: f32) -> Option<Framed> {
+        self.soft.push(value);
+        self.soft_fed = true;
+        self.step(value > 0.0)
+    }
+
+    fn step(&mut self, bit: bool) -> Option<Framed> {
         self.raw = (self.raw << 1 | u64::from(bit)) & self.mask;
         let lock = self.lock;
         let searching = match lock {
-            None => Some(self.search_errors),
+            None => Some(self.search_errors as f32),
             Some(lock) if !lock.confirmed && lock.at + 1 != self.word_bits => {
-                Some(lock.sync_errors.min(self.search_errors))
+                Some(lock.distance.min(self.search_errors as f32))
             }
             Some(_) => None,
         };
-        if let Some((errors, inverted)) = searching.and_then(|limit| self.found(limit)) {
-            self.start(errors, inverted);
+        if let Some((distance, inverted)) = searching.and_then(|limit| self.found(limit)) {
+            self.start(distance, inverted);
             return None;
         }
         self.fill(bit, lock?)
     }
 
-    /// The sync word's errors and polarity, when the last bits hold it within `limit` errors.
-    fn found(&self, limit: u32) -> Option<(u32, bool)> {
-        let upright = hamming_distance(self.raw, self.word);
-        let inverted = hamming_distance(!self.raw & self.mask, self.word);
-        let best = if upright <= inverted {
-            (upright, false)
+    /// The last word's distance from the sync word, upright and inverted.
+    fn distance(&self) -> SyncDistance {
+        if self.soft_fed {
+            sync_distance(self.soft.newest(self.word_bits), self.word, self.mask)
         } else {
-            (inverted, true)
-        };
+            SyncDistance::hard(self.raw, self.word, self.mask)
+        }
+    }
+
+    /// The sync word's distance and polarity, when the last bits hold it within `limit`.
+    fn found(&self, limit: f32) -> Option<(f32, bool)> {
+        let best = self.distance().best();
         (best.0 <= limit).then_some(best)
     }
 
-    fn start(&mut self, sync_errors: u32, inverted: bool) {
+    fn hard_errors(&self, inverted: bool) -> u32 {
+        let bits = if inverted { !self.raw } else { self.raw };
+        ((bits ^ self.word) & self.mask).count_ones()
+    }
+
+    fn start(&mut self, distance: f32, inverted: bool) {
         self.shift = if inverted {
             !self.raw & self.mask
         } else {
@@ -149,7 +204,8 @@ impl FixedFramer {
             inverted,
             confirmed: false,
             misses: 0,
-            sync_errors,
+            sync_errors: self.hard_errors(inverted),
+            distance,
         });
     }
 
@@ -184,22 +240,29 @@ impl FixedFramer {
 
     /// Judges the word that opens a frame; `false` when the lock is lost.
     fn check_word(&mut self, lock: &mut Lock) -> bool {
-        let upright = hamming_distance(self.shift, self.word);
-        let flipped = hamming_distance(!self.shift & self.mask, self.word);
-        if upright <= self.track_errors {
-            (lock.sync_errors, lock.misses) = (upright, 0);
-        } else if flipped <= self.track_errors {
+        let distance = self.distance();
+        let (upright, flipped) = if lock.inverted {
+            (distance.inverted, distance.upright)
+        } else {
+            (distance.upright, distance.inverted)
+        };
+        let limit = self.track_errors as f32;
+        lock.distance = if upright <= limit {
+            lock.misses = 0;
+            upright
+        } else if flipped <= limit {
             self.flip_word();
-            (lock.sync_errors, lock.misses) = (flipped, 0);
+            lock.misses = 0;
             lock.inverted = !lock.inverted;
+            flipped
         } else if !lock.confirmed || lock.misses >= self.max_misses {
             return false;
         } else {
-            lock.sync_errors = upright;
             lock.misses += 1;
-            return true;
-        }
-        lock.confirmed = true;
+            upright
+        };
+        lock.sync_errors = self.hard_errors(lock.inverted);
+        lock.confirmed |= lock.misses == 0;
         true
     }
 
@@ -328,6 +391,36 @@ mod tests {
         );
         bytes[26] ^= 0xFF;
         assert_eq!(payloads(&bytes, 1), [(1, false), (2, true), (5, false)]);
+    }
+
+    #[test]
+    fn weak_wrong_bits_in_the_words_do_not_hide_them_from_soft_search() {
+        let bits = bits_of(&stream(&[[1, 2, 3, 4], [5, 6, 7, 8]]));
+        let mut soft: Vec<f32> = bits
+            .iter()
+            .map(|&bit| if bit { 1.0 } else { -1.0 })
+            .collect();
+        for word in 0..3 {
+            for at in [3, 19] {
+                let at = 16 + word * FRAME_BITS + at;
+                soft[at] *= -0.2;
+            }
+        }
+        let hard: Vec<bool> = soft.iter().map(|&value| value > 0.0).collect();
+        assert!(frames(&mut FixedFramer::new(WORD, 32, FRAME_BITS, 1, 1, 0), &hard).is_empty());
+        let mut framer = FixedFramer::new(WORD, 32, FRAME_BITS, 1, 1, 0);
+        let got: Vec<(u8, Framed)> = soft
+            .iter()
+            .filter_map(|&value| {
+                framer
+                    .push_soft(value)
+                    .map(|framed| (framer.frame()[4], framed))
+            })
+            .collect();
+        let payloads: Vec<u8> = got.iter().map(|(payload, _)| *payload).collect();
+        assert_eq!(payloads, [1, 5]);
+        assert_eq!(got[0].1.sync_errors, 2);
+        assert_eq!(framer.frame()[4..], [5, 6, 7, 8]);
     }
 
     #[test]

@@ -3,6 +3,8 @@ use sdrmm_dsp::coding::fec::{
     conv7::ViterbiK7,
 };
 
+use crate::framesync::sync_distance;
+
 use super::link::{
     ASM_BYTES, ASM_CODED_BITS, AsmPattern, CODED_BITS, CODED_BYTES, INTERLEAVE, PN, PairMap,
     Precoding, VCDU_BYTES, asm_patterns_with, conv_code, reed_solomon,
@@ -11,8 +13,10 @@ use super::link::{
 const LEAD: usize = 96;
 const TAIL: usize = ASM_CODED_BITS;
 const WINDOW: usize = LEAD + CODED_BITS + TAIL;
-const SEARCH_MISMATCHES: u32 = 4;
-const TRACK_MISMATCHES: u32 = 14;
+const SEARCH_MISMATCHES: f32 = 4.0;
+const TRACK_MISMATCHES: f32 = 14.0;
+/// Hard bit errors past which a window is not worth a soft look.
+const PREFILTER_MISMATCHES: u32 = 16;
 const MAX_MISSES: u8 = 2;
 const SLIP_GUARD: usize = 64;
 pub const SOFT_CAPACITY: usize = 2 * WINDOW + 16_384;
@@ -192,7 +196,7 @@ impl Deframer {
             if filled < ASM_CODED_BITS {
                 continue;
             }
-            if let Some(map) = self.matching_map(window) {
+            if let Some(map) = self.matching_map(scan, window) {
                 self.state = State::Track {
                     start: scan - ASM_CODED_BITS,
                     map,
@@ -210,12 +214,21 @@ impl Deframer {
         false
     }
 
-    fn matching_map(&self, window: u64) -> Option<PairMap> {
+    /// The map whose ASM the soft values ending at `end` hold best, within the search limit;
+    /// `window` is their hard bits, which rule out the plainly wrong patterns cheaply.
+    fn matching_map(&self, end: usize, window: u64) -> Option<PairMap> {
+        let soft = &self.soft[end - ASM_CODED_BITS..end];
         self.patterns
             .iter()
-            .map(|pattern| (pattern.mismatches(window), pattern.map))
-            .min_by_key(|&(mismatches, _)| mismatches)
-            .filter(|&(mismatches, _)| mismatches <= SEARCH_MISMATCHES)
+            .filter(|pattern| pattern.mismatches(window) <= PREFILTER_MISMATCHES)
+            .map(|pattern| {
+                (
+                    sync_distance(soft, pattern.value, pattern.mask).upright,
+                    pattern.map,
+                )
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .filter(|&(distance, _)| distance <= SEARCH_MISMATCHES)
             .map(|(_, map)| map)
     }
 
@@ -226,16 +239,19 @@ impl Deframer {
     }
 
     fn tracked_map(&self, start: usize, map: PairMap) -> Option<PairMap> {
-        let window = self.asm_window(start);
+        let end = start + ASM_CODED_BITS;
+        let soft = &self.soft[start..end];
         let holds = self
             .patterns
             .iter()
             .find(|pattern| pattern.map == map)
-            .is_some_and(|pattern| pattern.mismatches(window) <= TRACK_MISMATCHES);
+            .is_some_and(|pattern| {
+                sync_distance(soft, pattern.value, pattern.mask).upright <= TRACK_MISMATCHES
+            });
         if holds {
             Some(map)
         } else {
-            self.matching_map(window)
+            self.matching_map(end, self.asm_window(start))
         }
     }
 
@@ -297,5 +313,70 @@ impl Deframer {
             corrected: outcome.corrected,
             failed: outcome.failed > 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sdrmm_dsp::math::rng::Rng;
+
+    use super::*;
+
+    const LEVEL: f64 = 40.0;
+    /// Noise that flips about one coded symbol in seven.
+    const SIGMA: f64 = 0.9;
+    const TRIALS: usize = 400;
+
+    fn symbol(rng: &mut Rng, bit: bool) -> i16 {
+        let level = if bit { 1.0 } else { -1.0 };
+        ((level + SIGMA * rng.normal()) * LEVEL).round() as i16
+    }
+
+    fn hard_window(soft: &[i16]) -> u64 {
+        soft.iter()
+            .fold(0u64, |acc, &value| acc << 1 | u64::from(value > 0))
+    }
+
+    #[test]
+    fn soft_search_finds_markers_hard_search_misses_and_no_false_ones() {
+        let mut deframer = Deframer::new(Basis::Dual);
+        let pattern = deframer.patterns[0];
+        let mut rng = Rng::mixed(0x0a5a);
+        let (mut soft_hits, mut hard_hits) = (0, 0);
+        for _ in 0..TRIALS {
+            let marker: Vec<i16> = (0..ASM_CODED_BITS)
+                .map(|index| {
+                    symbol(
+                        &mut rng,
+                        pattern.value >> (ASM_CODED_BITS - 1 - index) & 1 == 1,
+                    )
+                })
+                .collect();
+            deframer.reset();
+            deframer.push(&marker);
+            let window = hard_window(&marker);
+            soft_hits +=
+                u32::from(deframer.matching_map(ASM_CODED_BITS, window) == Some(pattern.map));
+            hard_hits += u32::from(pattern.mismatches(window) <= SEARCH_MISMATCHES as u32);
+        }
+        assert!(
+            soft_hits >= 3 * hard_hits && soft_hits * 2 >= TRIALS as u32,
+            "soft {soft_hits}, hard {hard_hits} of {TRIALS}"
+        );
+        let noise: Vec<i16> = (0..SOFT_CAPACITY)
+            .map(|_| {
+                let bit = rng.bits() & 1 == 1;
+                symbol(&mut rng, bit)
+            })
+            .collect();
+        deframer.reset();
+        deframer.push(&noise);
+        let false_alarms = (ASM_CODED_BITS..noise.len())
+            .filter(|&end| {
+                let window = hard_window(&noise[end - ASM_CODED_BITS..end]);
+                deframer.matching_map(end, window).is_some()
+            })
+            .count();
+        assert_eq!(false_alarms, 0);
     }
 }

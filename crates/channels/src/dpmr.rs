@@ -11,7 +11,7 @@ use sdrmm_wire::{KindSpec, SettingField};
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{ParityCode, Prbs, PrbsSpec, crc_msb_bits, crc8_msb};
+use sdrmm_dsp::{CONFIDENT, ParityCode, Prbs, PrbsSpec, Soft, crc_msb_bits, crc8_msb};
 use sdrmm_modem::cpm::CpmDemod;
 use sdrmm_wire::{
     CallGate, ChannelDescriptor, ChannelSettings, ClickProfile, CodeStyle, DecoderEvent,
@@ -19,12 +19,13 @@ use sdrmm_wire::{
 };
 
 use sdrmm_codec::voice::chip::ChipRate;
-use sdrmm_codec::voice::{AMBE_3600_INTERLEAVE, MbeDecoder, half_rate_code_vectors};
+use sdrmm_codec::voice::{HALF_RATE_SOFT_BITS, MbeDecoder, half_soft_frame};
 use sdrmm_decoder::voice::{Speaker, open_chip};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
-use sdrmm_modem::cpm::c4fm::{self, DibitWindow, c4fm_demod, c4fm_params, invert_dibits};
+use sdrmm_modem::cpm::c4fm::{self, DibitWindow, c4fm_demod, c4fm_params};
+use std::ops::Neg;
 
 const INPUT_RATE_HZ: f64 = 48_000.0;
 
@@ -64,7 +65,6 @@ const AMBE_SYMBOLS: usize = 36;
 const CCH_STARTS: [usize; 4] = [0, 192, 384, 576];
 const CCH_BITS: usize = 72;
 const CCH_INFO_BITS: usize = 48;
-const CCH_BLOCKS: usize = 6;
 const CCH_CRC_BITS: usize = 7;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
@@ -156,7 +156,8 @@ struct Decoder {
     window: DibitWindow,
     countdown: usize,
     pending: Option<Pending>,
-    bits: Vec<bool>,
+    soft: Vec<Soft>,
+    voice: Vec<i8>,
     in_call: bool,
     voice_call: bool,
     inverted: bool,
@@ -185,7 +186,8 @@ impl Decoder {
             window: DibitWindow::new(SUPERFRAME_SYMBOLS),
             countdown: 0,
             pending: None,
-            bits: Vec::with_capacity(SUPERFRAME_SYMBOLS * 2),
+            soft: Vec::with_capacity(SUPERFRAME_SYMBOLS * 2),
+            voice: Vec::with_capacity(SUPERFRAME_SYMBOLS * 2),
             in_call: false,
             voice_call: false,
             inverted: false,
@@ -309,13 +311,13 @@ impl Decoder {
     }
 
     fn header(&mut self, fs4: bool) -> Option<(DvFrame, bool)> {
-        self.window.bits(0, HEADER_SYMBOLS, &mut self.bits);
+        self.window.soft_bits(0, HEADER_SYMBOLS, &mut self.soft);
         for inverted in [false, true] {
             if inverted {
-                invert_dibits(&mut self.bits);
+                invert_dibits(&mut self.soft);
             }
-            let hi = header_info(&self.bits[..HI_CODED_BITS])
-                .or_else(|| header_info(&self.bits[HI_CODED_BITS + CC_SYMBOLS * 2..]));
+            let hi = header_info(&self.soft[..HI_CODED_BITS])
+                .or_else(|| header_info(&self.soft[HI_CODED_BITS + CC_SYMBOLS * 2..]));
             if let Some(hi) = hi {
                 self.inverted = inverted;
                 return Some(self.header_frame(&hi, fs4 != inverted));
@@ -331,7 +333,7 @@ impl Decoder {
             DvFrameKind::Header
         });
         frame.color_code =
-            channel_code_number(field_msb(&self.bits, HI_CODED_BITS, CC_SYMBOLS * 2));
+            channel_code_number(&self.soft[HI_CODED_BITS..HI_CODED_BITS + CC_SYMBOLS * 2]);
         frame.destination = Some(field_msb(hi, 4, 24));
         frame.source = Some(field_msb(hi, 28, 24));
         let mode = field_msb(hi, 52, 3);
@@ -339,23 +341,30 @@ impl Decoder {
     }
 
     fn superframe(&mut self, out: &mut ChannelOutputs) {
-        self.window.bits(0, SUPERFRAME_SYMBOLS, &mut self.bits);
+        self.window.soft_bits(0, SUPERFRAME_SYMBOLS, &mut self.soft);
         if self.inverted {
-            invert_dibits(&mut self.bits);
+            invert_dibits(&mut self.soft);
         }
         self.read_control_channels(out);
         if !self.voice_call {
             return;
         }
+        self.window
+            .vocoder_soft_bits(0, SUPERFRAME_SYMBOLS, &mut self.voice);
+        if self.inverted {
+            invert_dibits(&mut self.voice);
+        }
         for start in TCH_STARTS {
             for frame_start in (start..start + TCH_SYMBOLS).step_by(AMBE_SYMBOLS) {
-                let mut frame = [false; 72];
-                frame.copy_from_slice(&self.bits[frame_start * 2..frame_start * 2 + 72]);
-                self.vocoder.decode_half_code_vectors(
-                    half_rate_code_vectors(&frame, &AMBE_3600_INTERLEAVE),
-                    false,
-                    &mut Speaker(out),
-                );
+                let at = frame_start * 2;
+                let frame: Option<&[i8; HALF_RATE_SOFT_BITS]> = self
+                    .voice
+                    .get(at..at + HALF_RATE_SOFT_BITS)
+                    .and_then(|frame| frame.try_into().ok());
+                if let Some(frame) = frame {
+                    self.vocoder
+                        .play_half(&half_soft_frame(frame), &mut Speaker(out));
+                }
             }
         }
     }
@@ -367,7 +376,7 @@ impl Decoder {
     fn read_control_channels(&mut self, out: &mut ChannelOutputs) {
         let mut mode = None;
         for start in CCH_STARTS {
-            let coded = &self.bits[start * 2..start * 2 + CCH_BITS];
+            let coded = &self.soft[start * 2..start * 2 + CCH_BITS];
             match control_channel(coded) {
                 Some(cch) => {
                     self.id_halves[cch.number] = Some(cch.id_half);
@@ -407,22 +416,9 @@ fn voice_mode(mode: u32) -> bool {
     matches!(mode, 0 | 1 | 5)
 }
 
-fn control_channel(coded: &[bool]) -> Option<ControlChannel> {
-    let mut descrambled = [false; CCH_BITS];
-    descrambled.copy_from_slice(coded);
-    scramble(&mut descrambled);
-    let mut blocks = [false; CCH_BITS];
-    for r in 0..HAMMING_WORD_BITS {
-        for c in 0..CCH_BLOCKS {
-            blocks[c * HAMMING_WORD_BITS + r] = descrambled[r * CCH_BLOCKS + c];
-        }
-    }
+fn control_channel(coded: &[Soft]) -> Option<ControlChannel> {
     let mut info = [false; CCH_INFO_BITS];
-    for block in 0..CCH_BLOCKS {
-        let word = &mut blocks[block * HAMMING_WORD_BITS..(block + 1) * HAMMING_WORD_BITS];
-        ParityCode::HAMMING_12_8.decode(word)?;
-        info[block * 8..block * 8 + 8].copy_from_slice(&word[..8]);
-    }
+    read_blocks(coded, &mut info)?;
     let checked = CCH_INFO_BITS - CCH_CRC_BITS;
     let crc = crc_msb_bits(
         0x09,
@@ -447,10 +443,32 @@ fn channel_code(number: u8) -> u32 {
         })
 }
 
-fn channel_code_number(received: u32) -> Option<u16> {
-    (0..64u8)
-        .find(|&number| (channel_code(number) ^ received).count_ones() <= CHANNEL_CODE_TOLERANCE)
-        .map(u16::from)
+/// The channel code nearest `received`, if it is at most [`CHANNEL_CODE_TOLERANCE`] confident
+/// errors away and strictly nearer than any other. A weak error costs its confidence.
+fn channel_code_number(received: &[Soft]) -> Option<u16> {
+    let mut best = (0u8, i32::MAX);
+    let mut runner_up = i32::MAX;
+    for number in 0..64u8 {
+        let distance = soft_distance(channel_code(number), received);
+        if distance < best.1 {
+            runner_up = best.1;
+            best = (number, distance);
+        } else {
+            runner_up = runner_up.min(distance);
+        }
+    }
+    let tolerance = CHANNEL_CODE_TOLERANCE as i32 * i32::from(CONFIDENT);
+    (best.1 <= tolerance && best.1 < runner_up).then_some(u16::from(best.0))
+}
+
+fn soft_distance(code: u32, received: &[Soft]) -> i32 {
+    let last = received.len().saturating_sub(1);
+    received
+        .iter()
+        .enumerate()
+        .filter(|&(place, &value)| (value > 0) != (code >> (last - place) & 1 == 1))
+        .map(|(_, &value)| i32::from(value.clamp(-CONFIDENT, CONFIDENT)).abs())
+        .sum()
 }
 
 /// x^9 + x^5 + 1 from all ones, read from its far end.
@@ -460,36 +478,46 @@ const SCRAMBLER: PrbsSpec = PrbsSpec {
     seed: 0x1FF,
 };
 
-fn scramble(bits: &mut [bool]) {
+fn descramble(soft: &mut [Soft]) {
     let mut prbs = Prbs::new(SCRAMBLER);
-    for bit in bits {
-        *bit ^= prbs.next_tail_bit();
+    for value in soft {
+        if prbs.next_tail_bit() {
+            *value = -*value;
+        }
     }
 }
 
-fn header_info(coded: &[bool]) -> Option<[bool; HI_BITS]> {
-    let mut descrambled = [false; HI_CODED_BITS];
+/// Flips the sign bit of every dibit, as an inverted channel sends it.
+fn invert_dibits<T: Copy + Neg<Output = T>>(soft: &mut [T]) {
+    for value in soft.iter_mut().step_by(2) {
+        *value = -*value;
+    }
+}
+
+/// Descrambles `coded`, Hamming (12,8) words sent row by row across the blocks, decodes each
+/// soft and writes its eight data bits to `info`.
+fn read_blocks(coded: &[Soft], info: &mut [bool]) -> Option<()> {
+    let blocks = coded.len() / HAMMING_WORD_BITS;
+    let mut descrambled = [0; HI_CODED_BITS];
+    let descrambled = descrambled.get_mut(..coded.len())?;
     descrambled.copy_from_slice(coded);
-    scramble(&mut descrambled);
-    let mut blocks = [false; HI_CODED_BITS];
-    for r in 0..HAMMING_WORD_BITS {
-        for c in 0..HI_BLOCKS {
-            blocks[c * HAMMING_WORD_BITS + r] = descrambled[r * HI_BLOCKS + c];
-        }
+    descramble(descrambled);
+    let mut decoded = [false; HAMMING_WORD_BITS];
+    let data_bits = info.as_chunks_mut::<8>().0;
+    for (block, data) in data_bits.iter_mut().take(blocks).enumerate() {
+        let word: [Soft; HAMMING_WORD_BITS] =
+            std::array::from_fn(|row| descrambled[row * blocks + block]);
+        ParityCode::HAMMING_12_8.decode_soft(&word, &mut decoded)?;
+        data.copy_from_slice(&decoded[..8]);
     }
-    let mut bytes = [0u8; HI_BLOCKS];
-    let mut info = [false; HI_BITS];
-    for (block, byte) in bytes.iter_mut().enumerate() {
-        let word = &mut blocks[block * HAMMING_WORD_BITS..(block + 1) * HAMMING_WORD_BITS];
-        ParityCode::HAMMING_12_8.decode(word)?;
-        for (bit, &value) in word[..8].iter().enumerate() {
-            *byte = *byte << 1 | u8::from(value);
-            if let Some(slot) = info.get_mut(block * 8 + bit) {
-                *slot = value;
-            }
-        }
-    }
-    (crc8(&bytes[..9]) == bytes[9]).then_some(info)
+    Some(())
+}
+
+fn header_info(coded: &[Soft]) -> Option<[bool; HI_BITS]> {
+    let mut decoded = [false; HI_BLOCKS * 8];
+    read_blocks(coded, &mut decoded)?;
+    let bytes: [u8; HI_BLOCKS] = std::array::from_fn(|byte| field_msb(&decoded, byte * 8, 8) as u8);
+    (crc8(&bytes[..9]) == bytes[9]).then(|| std::array::from_fn(|bit| decoded[bit]))
 }
 
 fn crc8(data: &[u8]) -> u8 {
@@ -540,6 +568,35 @@ pub(crate) mod fixture;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sdrmm_dsp::soft;
+
+    fn scramble(bits: &mut [bool]) {
+        let mut sequence = vec![CONFIDENT; bits.len()];
+        descramble(&mut sequence);
+        for (bit, key) in bits.iter_mut().zip(sequence) {
+            *bit ^= key < 0;
+        }
+    }
+
+    fn soften(bits: &[bool]) -> Vec<Soft> {
+        bits.iter().map(|&bit| soft(bit)).collect()
+    }
+
+    fn code_soft(code: u32) -> Vec<Soft> {
+        (0..24)
+            .rev()
+            .map(|bit| soft(code >> bit & 1 == 1))
+            .collect()
+    }
+
+    /// Flips `places` of `soft`, to full confidence or weakly.
+    fn flipped(soft: &[Soft], places: &[usize], weak: bool) -> Vec<Soft> {
+        let mut out = soft.to_vec();
+        for &place in places {
+            out[place] = if weak { -out[place] / 4 } else { -out[place] };
+        }
+        out
+    }
 
     #[test]
     fn the_scrambler_matches_its_right_shifting_register() {
@@ -703,8 +760,14 @@ mod tests {
         for (index, &code) in SPEC_CHANNEL_CODES.iter().enumerate() {
             let number = index as u8 + 1;
             assert_eq!(channel_code(number), code, "channel code {number}");
-            assert_eq!(channel_code_number(code), Some(u16::from(number)));
-            assert_eq!(channel_code_number(code ^ 0x80), Some(u16::from(number)));
+            assert_eq!(
+                channel_code_number(&code_soft(code)),
+                Some(u16::from(number))
+            );
+            assert_eq!(
+                channel_code_number(&code_soft(code ^ 0x80)),
+                Some(u16::from(number))
+            );
         }
         for number in 0..64u8 {
             let code = channel_code(number);
@@ -801,20 +864,75 @@ mod tests {
         scramble(&mut coded);
 
         assert_eq!(
-            header_info(&coded).as_ref().map(|hi| &hi[..]),
+            header_info(&soften(&coded)).as_ref().map(|hi| &hi[..]),
             Some(&information[..])
         );
         let mut single_error = coded;
         single_error[37] = !single_error[37];
         assert_eq!(
-            header_info(&single_error).as_ref().map(|hi| &hi[..]),
+            header_info(&soften(&single_error))
+                .as_ref()
+                .map(|hi| &hi[..]),
             Some(&information[..])
         );
         let mut wrong_checksum = coded;
         wrong_checksum[9] = !wrong_checksum[9];
         wrong_checksum[19] = !wrong_checksum[19];
         wrong_checksum[29] = !wrong_checksum[29];
-        assert_eq!(header_info(&wrong_checksum), None);
+        assert_eq!(header_info(&soften(&wrong_checksum)), None);
+        let double_error = [0, 10];
+        assert_eq!(
+            header_info(&flipped(&soften(&coded), &double_error, false)),
+            None
+        );
+        assert_eq!(
+            header_info(&flipped(&soften(&coded), &double_error, true))
+                .as_ref()
+                .map(|hi| &hi[..]),
+            Some(&information[..])
+        );
+    }
+
+    #[test]
+    fn the_control_channel_decodes_a_weak_double_error() {
+        let call = tx::Call::default();
+        let coded = soften(&tx::control_channel(&call, 2));
+        let double_error = [1, 7];
+        assert!(control_channel(&flipped(&coded, &double_error, false)).is_none());
+        let cch = control_channel(&flipped(&coded, &double_error, true)).expect("CCH");
+        assert_eq!((cch.number, cch.id_half), (2, call.own >> 12 & 0xFFF));
+    }
+
+    #[test]
+    fn the_channel_code_takes_weak_errors_past_its_tolerance() {
+        let code = code_soft(channel_code(23));
+        let errors = [0, 9, 20];
+        assert_eq!(channel_code_number(&flipped(&code, &errors, false)), None);
+        assert_eq!(
+            channel_code_number(&flipped(&code, &errors, true)),
+            Some(23)
+        );
+    }
+
+    #[test]
+    fn soft_voice_frames_read_the_ambe_interleave_and_ride_out_weak_errors() {
+        use sdrmm_codec::voice::{AMBE_3600_INTERLEAVE, half_frame, half_rate_code_vectors};
+        let air = half_rate_frames(1)[0];
+        let errors = [0, 4, 8, 12];
+        let soft: [i8; 72] = air.map(|bit| if bit { 127 } else { -127 });
+        let clean = half_frame(half_rate_code_vectors(&air, &AMBE_3600_INTERLEAVE));
+        assert_eq!(half_soft_frame(&soft).info, clean.info);
+        let mut hard = air;
+        let mut weak = soft;
+        for place in errors {
+            hard[place] = !hard[place];
+            weak[place] = -weak[place] / 4;
+        }
+        assert_ne!(
+            half_frame(half_rate_code_vectors(&hard, &AMBE_3600_INTERLEAVE)).info,
+            clean.info
+        );
+        assert_eq!(half_soft_frame(&weak).info, clean.info);
     }
 
     #[test]

@@ -6,6 +6,7 @@ mod synth;
 mod tables;
 
 use params::{Params, Quantized};
+use sdrmm_dsp::Soft;
 use synth::Noise;
 
 pub use synth::FRAME_SAMPLES;
@@ -13,7 +14,7 @@ pub use synth::FRAME_SAMPLES;
 const MAX_CLEAN_ERRORS: u32 = 3;
 const MAX_REPEATS: u32 = 3;
 
-/// The D-STAR AMBE voice decoder: one 72-bit air frame, FEC included, to 8 kHz speech.
+/// The D-STAR AMBE voice decoder: one 72-bit air frame, FEC included and soft, to 8 kHz speech.
 pub struct AmbeDecoder {
     current: Params,
     previous: Params,
@@ -41,7 +42,7 @@ impl AmbeDecoder {
         *self = Self::new();
     }
 
-    pub fn decode(&mut self, air: &[bool; 72], pcm: &mut [f32; FRAME_SAMPLES]) {
+    pub fn decode(&mut self, air: &[Soft; 72], pcm: &mut [f32; FRAME_SAMPLES]) {
         let frame = frame::decode(air);
         let Some(quantized) = Quantized::read(frame.info) else {
             return self.mute(pcm);
@@ -83,13 +84,17 @@ mod tests {
         frame::encode(Info::from_bits(bits & !(0b11_1111 << 43)))
     }
 
+    fn soft_voice_frame(seed: u64) -> [Soft; 72] {
+        frame::soften(&voice_frame(seed))
+    }
+
     #[test]
     fn clean_voice_frames_make_sound() {
         let mut decoder = AmbeDecoder::new();
         let mut pcm = [0.0; FRAME_SAMPLES];
         let total: f32 = (1..40)
             .map(|seed| {
-                decoder.decode(&voice_frame(seed), &mut pcm);
+                decoder.decode(&soft_voice_frame(seed), &mut pcm);
                 energy(&pcm)
             })
             .sum();
@@ -101,7 +106,8 @@ mod tests {
     fn a_tone_frame_is_silent() {
         let mut decoder = AmbeDecoder::new();
         let mut pcm = [1.0; FRAME_SAMPLES];
-        decoder.decode(&frame::encode(Info::from_bits(0x7F << 42 | 1)), &mut pcm);
+        let tone = frame::encode(Info::from_bits(0x7F << 42 | 1));
+        decoder.decode(&frame::soften(&tone), &mut pcm);
         assert_eq!(energy(&pcm), 0.0);
     }
 
@@ -109,8 +115,9 @@ mod tests {
     fn a_long_run_of_bad_frames_goes_silent() {
         let mut decoder = AmbeDecoder::new();
         let mut pcm = [0.0; FRAME_SAMPLES];
-        decoder.decode(&voice_frame(7), &mut pcm);
+        decoder.decode(&soft_voice_frame(7), &mut pcm);
         let damaged = frame::damage(voice_frame(8), &[(0, 23), (0, 22), (1, 22), (1, 21)]);
+        let damaged = frame::soften(&damaged);
         for _ in 0..=MAX_REPEATS {
             decoder.decode(&damaged, &mut pcm);
         }
@@ -122,7 +129,7 @@ mod tests {
     fn phase_tracks_stay_wrapped_through_a_long_over() {
         let mut decoder = AmbeDecoder::new();
         let mut pcm = [0.0; FRAME_SAMPLES];
-        let air = voice_frame(3);
+        let air = soft_voice_frame(3);
         for _ in 0..3_000 {
             decoder.decode(&air, &mut pcm);
         }
@@ -141,11 +148,11 @@ mod tests {
         let mut first = [0.0; FRAME_SAMPLES];
         let mut second = [0.0; FRAME_SAMPLES];
         for seed in 1..10 {
-            decoder.decode(&voice_frame(seed), &mut first);
+            decoder.decode(&soft_voice_frame(seed), &mut first);
         }
         decoder.reset();
         for seed in 1..10 {
-            decoder.decode(&voice_frame(seed), &mut second);
+            decoder.decode(&soft_voice_frame(seed), &mut second);
         }
         assert_eq!(first, second);
     }

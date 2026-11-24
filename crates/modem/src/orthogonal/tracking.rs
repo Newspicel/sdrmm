@@ -3,7 +3,11 @@ use std::{f32::consts::TAU, fmt};
 use num_complex::Complex;
 use sdrmm_dsp::{hann, math::fft::Transform};
 
-use crate::soft::argmax;
+use super::noise_var_from_energies;
+use crate::{
+    constellation::demap::energy_llrs,
+    soft::{Llr, argmax},
+};
 
 /// Timing estimates per symbol, as in Codec2's FSK modem.
 pub const DEFAULT_OVERSAMPLE: usize = 8;
@@ -22,6 +26,8 @@ const RETIME_THRESHOLD: f32 = 0.25;
 const SNR_SMOOTHING: f32 = 0.5;
 const EB_NO_OFFSET_DB: f32 = -6.0;
 const TINY: f32 = 1e-6;
+/// Bits a symbol of the most tones carries.
+const MAX_SYMBOL_BITS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TrackingMfskConfig {
@@ -165,7 +171,13 @@ impl TrackingMfsk {
 
     /// Like [`Self::push`], with each symbol's level: the tone its energies centre on, on the
     /// odd-integer rail of [`crate::cpm::Mapping::natural`], so a clean tone lands on its level.
-    pub fn push_levels(&mut self, mut iq: &[Complex<f32>], mut emit: impl FnMut(u8, f32)) {
+    pub fn push_levels(&mut self, iq: &[Complex<f32>], mut emit: impl FnMut(u8, f32)) {
+        self.push_llrs(iq, |symbol, level, _| emit(symbol, level));
+    }
+
+    /// Like [`Self::push_levels`], with each symbol's bit LLRs from its tone energies, the
+    /// least significant bit of the tone index first, over the block's noise per tone.
+    pub fn push_llrs(&mut self, mut iq: &[Complex<f32>], mut emit: impl FnMut(u8, f32, &[Llr])) {
         while !iq.is_empty() {
             let take = (self.nin - self.staged.len()).min(iq.len());
             self.staged.extend_from_slice(&iq[..take]);
@@ -179,7 +191,7 @@ impl TrackingMfsk {
         }
     }
 
-    fn demodulate(&mut self, input: &[Complex<f32>], emit: &mut impl FnMut(u8, f32)) {
+    fn demodulate(&mut self, input: &[Complex<f32>], emit: &mut impl FnMut(u8, f32, &[Llr])) {
         self.search.estimate(input, self.rate, &mut self.tones_hz);
         self.mix(input);
         self.integrate();
@@ -236,29 +248,46 @@ impl TrackingMfsk {
         timing.is_finite().then_some(timing)
     }
 
-    fn decide(&mut self, at: f32, emit: &mut impl FnMut(u8, f32)) {
-        let phases = self.phases();
-        let low = at.floor();
-        let fraction = at - low;
-        let low = low as isize;
-        let high = at.ceil() as isize;
+    fn decide(&mut self, at: f32, emit: &mut impl FnMut(u8, f32, &[Llr])) {
+        let noise = self.block_noise(at);
+        let mut llrs = [Llr(0.0); MAX_SYMBOL_BITS];
+        let llrs = &mut llrs[..self.m.trailing_zeros() as usize];
         let mut amplitude_sum = 0.0f32;
         let mut power_sum = 0.0f32;
         for symbol in 0..self.symbols {
-            let start = ((symbol + 1) * self.oversample) as isize;
-            for (tone, energy) in self.energies.iter_mut().enumerate() {
-                let sums = &self.integrals[tone * phases..(tone + 1) * phases];
-                let early = sums[(start + low) as usize];
-                let late = sums[(start + high) as usize];
-                *energy = (early * (1.0 - fraction) + late * fraction).norm_sqr();
-            }
+            self.sample_energies(symbol, at);
             let decided = argmax(&self.energies);
             let peak = self.energies[usize::from(decided)];
             amplitude_sum += peak.sqrt();
             power_sum += peak;
-            emit(decided, self.level());
+            energy_llrs(&self.energies, noise, llrs);
+            emit(decided, self.level(), llrs);
         }
         self.track_snr(amplitude_sum, power_sum);
+    }
+
+    /// The mean energy of the tones that lose, over the block: the noise in one tone.
+    fn block_noise(&mut self, at: f32) -> f64 {
+        let mut sum = 0.0;
+        for symbol in 0..self.symbols {
+            self.sample_energies(symbol, at);
+            sum += noise_var_from_energies(&self.energies, self.m);
+        }
+        (sum / self.symbols as f64).max(f64::from(TINY))
+    }
+
+    /// Each tone's energy in `symbol`, its timing `at` phases from the symbol's start.
+    fn sample_energies(&mut self, symbol: usize, at: f32) {
+        let phases = self.phases();
+        let low = at.floor();
+        let fraction = at - low;
+        let start = ((symbol + 1) * self.oversample) as isize;
+        let early_at = (start + low as isize) as usize;
+        let late_at = (start + at.ceil() as isize) as usize;
+        for (tone, energy) in self.energies.iter_mut().enumerate() {
+            let sums = &self.integrals[tone * phases..(tone + 1) * phases];
+            *energy = (sums[early_at] * (1.0 - fraction) + sums[late_at] * fraction).norm_sqr();
+        }
     }
 
     fn level(&self) -> f32 {
@@ -509,6 +538,28 @@ mod tests {
         }
         let out = demodulated(config((0.0, 3_900.0)), &iq);
         assert!(holds(&out, &symbols[200..700]), "the carrier pulled a tone");
+    }
+
+    #[test]
+    fn llrs_agree_with_the_decisions_and_weaken_with_noise() {
+        let symbols: Vec<u8> = draws(1_000, 4, 7);
+        let strength = |noise: f64| {
+            let mut iq = wave(&symbols, -700.0, 37, RATE as f32);
+            add_noise(&mut iq, 3, noise);
+            let mut demod = TrackingMfsk::new(config((-3_000.0, 3_000.0))).expect("valid config");
+            let (mut sum, mut count) = (0.0f32, 0);
+            demod.push_llrs(&iq, |symbol, _, llrs| {
+                assert_eq!(llrs.len(), 2);
+                for (k, llr) in llrs.iter().enumerate() {
+                    assert_eq!(llr.bit(), symbol >> k & 1 == 1, "bit {k} of {symbol}");
+                    sum += llr.0.abs();
+                }
+                count += 2;
+            });
+            sum / count as f32
+        };
+        let (clean, noisy) = (strength(0.1), strength(3.0));
+        assert!(clean > 4.0 * noisy, "clean {clean}, noisy {noisy}");
     }
 
     #[test]

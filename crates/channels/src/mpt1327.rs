@@ -116,7 +116,7 @@ impl Channel for Mpt1327Channel {
         out.symbols
             .levels(&bits, &[], &self.rail, FfskTones::CCIR_1200.baud, 0.0);
         for &bit in &bits {
-            self.framer.push(bit > 0.0, &mut self.frames);
+            self.framer.push(bit, &mut self.frames);
         }
         self.bits = bits;
         for frame in self.frames.drain(..) {

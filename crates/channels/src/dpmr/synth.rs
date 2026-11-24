@@ -109,7 +109,7 @@ fn channel_code(number: u8) -> Vec<bool> {
 
 /// The CCH of payload frame `number`: frames 0 and 1 carry the called ID's halves, 2 and 3 the
 /// own ID's, each beside the call mode and a CRC-7.
-fn control_channel(call: &Call, number: usize) -> Vec<bool> {
+pub(crate) fn control_channel(call: &Call, number: usize) -> Vec<bool> {
     let id = if number < 2 { call.called } else { call.own };
     let half = if number.is_multiple_of(2) {
         id >> 12

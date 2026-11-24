@@ -19,20 +19,20 @@ pub use audio::noise::{AutoNotch, ClickRemover, NoiseBlanker, SpectralDenoiser};
 pub use audio::squelch::Squelch;
 pub use coding::bits::{
     Descrambler, DifferentialDecoder, HDLC_FLAG, HdlcDeframer, HdlcFramer, NrziDecoder, Scrambler,
-    SyncDetector, bits_be, field_msb, hamming_distance, manchester_decode, pack_lsb, pack_msb,
-    pack_msb_into, pack_msb_slice, reverse_byte, sign_extend, word_msb,
+    SoftFrame, SyncDetector, bits_be, field_msb, hamming_distance, manchester_decode, pack_lsb,
+    pack_msb, pack_msb_into, pack_msb_slice, reverse_byte, sign_extend, word_msb,
 };
 pub use coding::fec::{
     BurstCode, CrcParity, ShortBch, TrellisCode,
-    block::{CyclicCode, ParityCode},
+    block::{CyclicCode, LinearCode, ParityCode},
     bptc::{Bptc128, Bptc196},
     conv::{CONFIDENT, ERASURE, Soft, Viterbi5, soft},
     conv_soft::SoftViterbi,
     conv7::{ConvCode, Depuncturer, StreamViterbiK7, ViterbiK7, depuncture, puncture},
-    crc_msb_bits, crc4_msb, crc8_msb, crc8_msb_table, crc8_msb_tabled, crc16_ccitt, crc16_genibus,
-    crc16_genibus_ok, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected, crc32_ieee,
-    crc32_mpeg, golay23_correct, golay23_encode, golay23_ok, hdlc_fcs_ok, hdlc_repair,
-    lfsr_digest8, lfsr_digest8_reflect, lfsr_digest16,
+    crc_msb_bits, crc_repair, crc4_msb, crc8_msb, crc8_msb_table, crc8_msb_tabled, crc16_ccitt,
+    crc16_genibus, crc16_genibus_ok, crc16_msb, crc16_msb_bits, crc16_x25, crc24_reflected,
+    crc32_ieee, crc32_mpeg, golay23_correct, golay23_decode_soft, golay23_encode, golay23_ok,
+    hdlc_fcs_ok, hdlc_repair, lfsr_digest8, lfsr_digest8_reflect, lfsr_digest16,
     prbs::{Prbs, PrbsSpec},
     push_crc16_genibus, rs129_parity,
     rs256::{GF256_PRIMITIVE, ReedSolomon},

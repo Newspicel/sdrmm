@@ -142,7 +142,30 @@ fn repeater_calls(
     Keyed { symbols }.modulate(rate)
 }
 
-fn call_bursts(call: &Call) -> Vec<Vec<bool>> {
+/// Two repeater timeslots, burst by burst; a slot out of bursts carries filler.
+#[must_use]
+pub fn repeater_slots(first: &[Vec<bool>], second: &[Vec<bool>], rate: f64) -> Vec<Complex<f32>> {
+    let mut symbols = Vec::new();
+    symbols.extend(dibits(&filler(800, 73)).into_iter().map(Some));
+    for index in 0..first.len().max(second.len()) {
+        for (slot, bursts) in [(1u8, first), (2, second)] {
+            match bursts.get(index) {
+                Some(burst) => append_repeater_burst(&mut symbols, burst, slot),
+                None => symbols.extend(
+                    dibits(&filler(288, 91 + 2 * index as u32 + u32::from(slot)))
+                        .into_iter()
+                        .map(Some),
+                ),
+            }
+        }
+    }
+    symbols.extend(dibits(&filler(400, 101)).into_iter().map(Some));
+    Keyed { symbols }.modulate(rate)
+}
+
+/// A call's bursts: its voice LC header, one voice superframe and its terminator.
+#[must_use]
+pub fn call_bursts(call: &Call) -> Vec<Vec<bool>> {
     let voice: [[bool; 216]; 6] = std::array::from_fn(|_| {
         let mut payload = [false; 216];
         payload[..108].copy_from_slice(&filler(108, u32::from(call.color_code) + 17));
@@ -422,7 +445,7 @@ fn uncoded_burst(call: &Call, payload: &[bool; RATE_ONE_DATA_BITS]) -> Vec<bool>
     burst
 }
 
-fn trellis_burst(call: &Call, payload: &[bool; TRELLIS_DATA_BITS]) -> Vec<bool> {
+pub(crate) fn trellis_burst(call: &Call, payload: &[bool; TRELLIS_DATA_BITS]) -> Vec<bool> {
     let coded = trellis_encode(payload);
     let slot_type = CyclicCode::GOLAY_20_8
         .encode(u32::from(call.color_code) << 4 | u32::from(DT_RATE_THREE_QUARTER_DATA));

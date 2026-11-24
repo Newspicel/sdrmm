@@ -1,6 +1,4 @@
-use std::sync::LazyLock;
-
-use sdrmm_dsp::{Prbs, PrbsSpec, Viterbi5, crc16_msb_bits};
+use sdrmm_dsp::{LinearCode, Prbs, PrbsSpec, Viterbi5, crc16_msb_bits};
 
 pub(crate) const CRC_POLY: u16 = 0x1021;
 pub(crate) const CRC_RESIDUE: u16 = 0x1D0F;
@@ -162,47 +160,28 @@ pub(crate) fn rm_parity(info: u16) -> u16 {
         .fold(0, |acc, (_, &parity)| acc ^ parity)
 }
 
-#[cfg(any(test, feature = "synth"))]
 pub(crate) fn rm_encode(info: u16) -> u32 {
     u32::from(info & 0x3FFF) << 16 | u32::from(rm_parity(info))
 }
 
-const RM_CORRECTABLE: u32 = 3;
+/// The Reed-Muller code as generator rows, information bit `i` selecting row `i`.
+static RM: LinearCode = LinearCode::new(&rm_rows(), AACH_BITS);
 
-static RM_SYNDROMES: LazyLock<Vec<u32>> = LazyLock::new(|| {
-    let mut table = vec![u32::MAX; 1 << 16];
-    let mut patterns = vec![0u32];
-    for weight in 1..=RM_CORRECTABLE {
-        let previous: Vec<u32> = patterns
-            .iter()
-            .copied()
-            .filter(|p| p.count_ones() == weight - 1)
-            .collect();
-        for pattern in previous {
-            let lowest = if pattern == 0 {
-                30
-            } else {
-                pattern.trailing_zeros()
-            };
-            patterns.extend((0..lowest).map(|bit| pattern | 1 << bit));
-        }
+const fn rm_rows() -> [u64; AACH_INFO_BITS] {
+    let mut rows = [0; AACH_INFO_BITS];
+    let mut bit = 0;
+    while bit < AACH_INFO_BITS {
+        rows[bit] = 1 << (bit + 16) | RM_GENERATOR[AACH_INFO_BITS - 1 - bit] as u64;
+        bit += 1;
     }
-    for pattern in patterns {
-        let slot = &mut table[usize::from(rm_syndrome(pattern))];
-        if *slot == u32::MAX || slot.count_ones() > pattern.count_ones() {
-            *slot = pattern;
-        }
-    }
-    table
-});
-
-fn rm_syndrome(word: u32) -> u16 {
-    rm_parity((word >> 16) as u16 & 0x3FFF) ^ word as u16
+    rows
 }
 
-pub(crate) fn rm_decode(word: u32) -> Option<(u16, u32)> {
-    let error = *RM_SYNDROMES.get(usize::from(rm_syndrome(word)))?;
-    (error != u32::MAX).then(|| (((word ^ error) >> 16) as u16 & 0x3FFF, error.count_ones()))
+/// Soft maximum likelihood decoding of the 30 bits, first sent first and positive for a one:
+/// the information bits and the decisions overturned.
+pub(crate) fn rm_decode_soft(soft: &[f32; AACH_BITS]) -> Option<(u16, u32)> {
+    let (info, overturned) = RM.decode_soft(soft)?;
+    Some((info as u16, overturned))
 }
 
 #[cfg(test)]
@@ -334,15 +313,46 @@ mod tests {
             .map(|info| rm_encode(info).count_ones())
             .min()
             .unwrap();
-        assert!(distance >= 7, "minimum distance {distance}");
+        assert_eq!(distance, 8);
+        assert_eq!(RM.distance(), distance);
+        for info in [1u16, 0x1234, 0x3FFF, 0x2AAA] {
+            assert_eq!(RM.encode(u32::from(info)), u64::from(rm_encode(info)));
+        }
+    }
+
+    fn soften(word: u32) -> [f32; AACH_BITS] {
+        std::array::from_fn(|i| {
+            if word >> (AACH_BITS - 1 - i) & 1 == 1 {
+                1.0
+            } else {
+                -1.0
+            }
+        })
+    }
+
+    #[test]
+    fn four_weak_reed_muller_errors_decode_where_hard_bits_fail() {
+        for info in [0u16, 0x1234, 0x3FFF, 0x2AAA] {
+            let errors = 1 << 2 | 1 << 11 | 1 << 19 | 1 << 27;
+            let word = rm_encode(info) ^ errors;
+            assert_eq!(rm_decode_soft(&soften(word)), None);
+            let mut soft = soften(word);
+            for (i, value) in soft.iter_mut().enumerate() {
+                if errors >> (AACH_BITS - 1 - i) & 1 == 1 {
+                    *value *= 0.2;
+                }
+            }
+            assert_eq!(rm_decode_soft(&soft), Some((info, 4)), "{info:#x}");
+            assert_eq!(rm_decode_soft(&soften(word ^ errors)), Some((info, 0)));
+        }
     }
 
     #[test]
     fn the_reed_muller_decoder_corrects_three_errors() {
         for info in [0u16, 0x1234, 0x3FFF, 0x2AAA] {
             let word = rm_encode(info) ^ (1 << 3 | 1 << 17 | 1 << 29);
-            assert_eq!(rm_decode(word), Some((info, 3)));
-            assert_eq!(rm_decode(rm_encode(info)), Some((info, 0)));
+            assert_eq!(rm_decode_soft(&soften(word)), Some((info, 3)));
+            assert_eq!(rm_decode_soft(&soften(rm_encode(info))), Some((info, 0)));
         }
     }
 }

@@ -1,7 +1,11 @@
 //! `FleetSync` blocks: 64 bits, 48 of data under a 15 bit CRC and a parity bit. `FleetSync II`
 //! sends each block as four, every 16 bit quarter a BCH(15,7) word carrying one nibble.
 
-use sdrmm_dsp::{SyndromeDecoder, crc_msb_bits};
+use sdrmm_dsp::{
+    SyndromeDecoder,
+    coding::fec::{Acceptance, chase},
+    crc_msb_bits,
+};
 
 use super::model::{FleetSyncMessage, FleetSyncVersion};
 
@@ -11,6 +15,10 @@ pub(crate) const BLOCK_BITS: usize = 64;
 pub(crate) const BLOCK_BYTES: usize = 6;
 pub(crate) const MAX_BYTES: usize = 22 * BLOCK_BYTES;
 const QUARTERS: usize = 4;
+const QUARTER_BITS: usize = 16;
+const CHASE_BITS: usize = 4;
+/// The block check corrects nothing, so a repair may only overturn weak bits worth one.
+const BLOCK_REACH: u32 = 1;
 /// The check register adds its polynomial before it shifts, which is the usual shift-first
 /// register with the polynomial `0x6815` moved up one bit.
 const CRC_POLY: u32 = 0x6815 << 1;
@@ -58,22 +66,38 @@ fn reversed(word: u16) -> u16 {
     word.reverse_bits() >> 1
 }
 
-fn nibble(bch: &SyndromeDecoder, quarter: u16) -> Option<u16> {
-    let (fixed, _) = bch.decode(u128::from(reversed(quarter & 0x7FFF)))?;
-    Some(reversed(fixed as u16) >> NIBBLE_SHIFT & 0xF)
+/// The `FleetSync I` block nearest `block` whose check holds, by Chase search over its weakest
+/// bits.
+fn held_block(block: u64, reliability: &[f32; BLOCK_BITS]) -> Option<(u32, u32)> {
+    let holds = |trial: u64| block_holds((trial >> 32) as u32, trial as u32).then_some(trial);
+    let acceptance = Acceptance::Radius(BLOCK_REACH);
+    let fixed = chase(block, reliability, CHASE_BITS, acceptance, holds)?;
+    Some(((fixed >> 32) as u32, fixed as u32))
+}
+
+fn nibble(bch: &SyndromeDecoder, quarter: u16, reliability: &[f32]) -> Option<u16> {
+    let repair = |trial: u32| {
+        let (fixed, _) = bch.decode(u128::from(reversed(trial as u16)))?;
+        Some(u32::from(reversed(fixed as u16)))
+    };
+    let fixed = chase(
+        u32::from(quarter & 0x7FFF),
+        &reliability[..BCH_BITS as usize],
+        CHASE_BITS,
+        Acceptance::Radius(BCH_CORRECTABLE),
+        repair,
+    )?;
+    Some(fixed as u16 >> NIBBLE_SHIFT & 0xF)
 }
 
 /// The 16 data bits one `FleetSync II` block carries, its quarters taken low half first.
-fn quarter_word(bch: &SyndromeDecoder, first: u32, second: u32) -> Option<u16> {
-    let halves = [
-        first as u16,
-        (first >> 16) as u16,
-        second as u16,
-        (second >> 16) as u16,
-    ];
-    halves
-        .iter()
-        .try_fold(0u16, |word, &half| nibble(bch, half).map(|n| word << 4 | n))
+fn quarter_word(bch: &SyndromeDecoder, block: u64, reliability: &[f32; BLOCK_BITS]) -> Option<u16> {
+    let order = [2, 3, 0, 1];
+    order.iter().try_fold(0u16, |word, &quarter| {
+        let at = quarter * QUARTER_BITS;
+        let half = (block >> at) as u16;
+        nibble(bch, half, &reliability[at..at + QUARTER_BITS]).map(|n| word << 4 | n)
+    })
 }
 
 /// A message being gathered block by block after a sync word.
@@ -109,11 +133,19 @@ impl Assembly {
         self.version = None;
     }
 
-    pub(crate) fn push(&mut self, bch: &SyndromeDecoder, first: u32, second: u32) -> Step {
-        if self.quarter == 0 && block_holds(first, second) {
+    /// Takes one block, bit `i` of `block` with reliability `reliability[i]`.
+    pub(crate) fn push(
+        &mut self,
+        bch: &SyndromeDecoder,
+        block: u64,
+        reliability: &[f32; BLOCK_BITS],
+    ) -> Step {
+        if self.quarter == 0
+            && let Some((first, second)) = held_block(block, reliability)
+        {
             return self.append(bytes_of(first, second), FleetSyncVersion::One);
         }
-        let Some(word) = quarter_word(bch, first, second) else {
+        let Some(word) = quarter_word(bch, block, reliability) else {
             return Step::Done;
         };
         self.quarters[self.quarter] = word;
@@ -262,14 +294,60 @@ mod tests {
         assert_eq!(encode(bytes_of(ANI_END.0, ANI_END.1)), ANI_END);
     }
 
+    const STRONG: [f32; BLOCK_BITS] = [1.0; BLOCK_BITS];
+
+    fn joined(first: u32, second: u32) -> u64 {
+        u64::from(first) << 32 | u64::from(second)
+    }
+
+    fn weak(bits: &[usize]) -> [f32; BLOCK_BITS] {
+        let mut reliability = STRONG;
+        for &bit in bits {
+            reliability[bit] = 0.05;
+        }
+        reliability
+    }
+
     #[test]
     fn a_fleetsync_ii_quarter_repairs_two_flipped_bits() {
         let bch = bch();
         let (first, second) = encode_fs2(ANI_START.0, ANI_START.1)[1];
-        assert_eq!(quarter_word(&bch, first, second), Some(0x0830));
         assert_eq!(
-            quarter_word(&bch, first ^ 0x0009, second ^ 0x2400_0000),
+            quarter_word(&bch, joined(first, second), &STRONG),
             Some(0x0830)
+        );
+        let broken = joined(first ^ 0x0009, second ^ 0x2400_0000);
+        assert_eq!(quarter_word(&bch, broken, &STRONG), Some(0x0830));
+    }
+
+    #[test]
+    fn three_weak_errors_in_a_quarter_are_repaired_softly() {
+        let bch = bch();
+        let (first, second) = encode_fs2(ANI_START.0, ANI_START.1)[1];
+        let flips = [1, 6, 12];
+        let broken = flips
+            .iter()
+            .fold(joined(first, second), |word, &bit| word ^ 1 << bit);
+        assert_ne!(quarter_word(&bch, broken, &STRONG), Some(0x0830));
+        assert_eq!(quarter_word(&bch, broken, &weak(&flips)), Some(0x0830));
+    }
+
+    #[test]
+    fn weak_errors_in_a_fleetsync_i_block_are_repaired_softly() {
+        let flips = [2, 23, 40];
+        let broken = flips
+            .iter()
+            .fold(joined(ANI_END.0, ANI_END.1), |word, &bit| word ^ 1 << bit);
+        let mut hard = Assembly::new();
+        hard.push(&bch(), broken, &STRONG);
+        assert_eq!(hard.message(1_200), None);
+        let mut soft = Assembly::new();
+        assert_eq!(soft.push(&bch(), broken, &weak(&flips)), Step::More);
+        let message = soft.message(1_200).expect("a message");
+        assert_eq!(message.version, FleetSyncVersion::One);
+        assert_eq!(
+            (message.from_fleet, message.from_unit),
+            (Some(107), Some(1772))
         );
     }
 
@@ -278,7 +356,10 @@ mod tests {
         let bch = bch();
         let mut assembly = Assembly::new();
         for (first, second) in encode_fs2(ANI_START.0, ANI_START.1) {
-            assert_eq!(assembly.push(&bch, first, second), Step::More);
+            assert_eq!(
+                assembly.push(&bch, joined(first, second), &STRONG),
+                Step::More
+            );
         }
         let message = assembly.message(1_200).expect("a message");
         assert_eq!(message.version, FleetSyncVersion::Two);
@@ -291,7 +372,10 @@ mod tests {
     #[test]
     fn an_ani_names_fleet_and_unit() {
         let mut assembly = Assembly::new();
-        assert_eq!(assembly.push(&bch(), ANI_END.0, ANI_END.1), Step::More);
+        assert_eq!(
+            assembly.push(&bch(), joined(ANI_END.0, ANI_END.1), &STRONG),
+            Step::More
+        );
         let message = assembly.message(1_200).expect("a message");
         assert_eq!(message.command, 0x80);
         assert_eq!(

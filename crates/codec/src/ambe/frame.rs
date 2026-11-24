@@ -1,4 +1,4 @@
-use sdrmm_dsp::golay23_correct;
+use sdrmm_dsp::{Soft, golay23_decode_soft};
 
 const INTERLEAVE: [(u8, u8); 72] = [
     (0, 10),
@@ -76,6 +76,8 @@ const INTERLEAVE: [(u8, u8); 72] = [
 ];
 
 const GOLAY_CHECK_BITS: u32 = 11;
+const GOLAY_BITS: usize = 23;
+const C0_BITS: usize = 24;
 const SCRAMBLED_BITS: u32 = 23;
 const INFO_BITS: u32 = 49;
 const C1_SHIFT: u32 = 25;
@@ -100,10 +102,22 @@ pub(super) struct Frame {
     pub(super) errors: u32,
 }
 
-pub(super) fn decode(air: &[bool; 72]) -> Frame {
-    let [c0, c1, c2, c3] = code_vectors(air);
-    let (c0, c0_errors) = golay_data(c0 >> 1);
-    let (c1, c1_errors) = golay_data(c1 ^ scrambler(c0));
+/// The frame in 72 soft bits, positive for a one: both Golay words decode soft, the rest by
+/// sign.
+pub(super) fn decode(air: &[Soft; 72]) -> Frame {
+    let mut vectors = [[0; C0_BITS]; 4];
+    for (&value, &(row, column)) in air.iter().zip(&INTERLEAVE) {
+        vectors[usize::from(row)][usize::from(column)] = value;
+    }
+    let [c0, c1, c2, c3] = &vectors;
+    let (c0, c0_errors) = golay_data(c0, 1, 0);
+    let (c1, c1_errors) = golay_data(c1, 0, scrambler(c0));
+    let [c2, c3] = [c2, c3].map(|vector| {
+        vector
+            .iter()
+            .rev()
+            .fold(0u32, |word, &value| word << 1 | u32::from(value > 0))
+    });
     let info = u64::from(c0) << C0_SHIFT
         | u64::from(c1) << C1_SHIFT
         | u64::from(c2) << C2_SHIFT
@@ -114,17 +128,22 @@ pub(super) fn decode(air: &[bool; 72]) -> Frame {
     }
 }
 
-fn code_vectors(air: &[bool; 72]) -> [u32; 4] {
-    let mut code = [0; 4];
-    for (&bit, &(row, column)) in air.iter().zip(&INTERLEAVE) {
-        code[usize::from(row)] |= u32::from(bit) << column;
-    }
-    code
-}
-
-fn golay_data(word: u32) -> (u32, u32) {
-    let (codeword, _) = golay23_correct(word);
-    let data_errors = ((codeword ^ word) >> GOLAY_CHECK_BITS).count_ones();
+/// The Golay word in `vector` from column `low + 22` down to `low`, unscrambled by `mask`:
+/// its data and the data decisions it overturned.
+fn golay_data(vector: &[Soft; C0_BITS], low: usize, mask: u32) -> (u32, u32) {
+    let received: [Soft; GOLAY_BITS] = std::array::from_fn(|index| {
+        let value = vector[low + GOLAY_BITS - 1 - index];
+        if mask >> (GOLAY_BITS - 1 - index) & 1 == 1 {
+            value.saturating_neg()
+        } else {
+            value
+        }
+    });
+    let (codeword, _) = golay23_decode_soft(&received);
+    let hard = received
+        .iter()
+        .fold(0u32, |word, &value| word << 1 | u32::from(value > 0));
+    let data_errors = ((codeword ^ hard) >> GOLAY_CHECK_BITS).count_ones();
     (codeword >> GOLAY_CHECK_BITS, data_errors)
 }
 
@@ -165,6 +184,11 @@ pub(super) fn damage(mut air: [bool; 72], places: &[(u8, u8)]) -> [bool; 72] {
 }
 
 #[cfg(test)]
+pub(super) fn soften(air: &[bool; 72]) -> [Soft; 72] {
+    air.map(sdrmm_dsp::soft)
+}
+
+#[cfg(test)]
 impl Info {
     pub(super) fn from_bits(bits: u64) -> Self {
         Self(bits & ((1 << INFO_BITS) - 1))
@@ -189,7 +213,7 @@ mod tests {
     #[test]
     fn a_clean_frame_round_trips() {
         let info = Info::from_bits(0x1_2345_6789_ABCD);
-        let frame = decode(&encode(info));
+        let frame = decode(&soften(&encode(info)));
         assert_eq!(frame.info, info);
         assert_eq!(frame.errors, 0);
     }
@@ -197,9 +221,38 @@ mod tests {
     #[test]
     fn golay_repairs_and_counts_data_errors() {
         let info = Info::from_bits(0x0_F0F0_0F0F_5A5A);
-        let frame = decode(&damage(encode(info), &[(0, 23), (1, 0)]));
+        let frame = decode(&soften(&damage(encode(info), &[(0, 23), (1, 0)])));
         assert_eq!(frame.info, info);
         assert_eq!(frame.errors, 1);
+    }
+
+    #[test]
+    fn weak_errors_past_golay_radius_decode_soft_in_both_words() {
+        let info = Info::from_bits(0x1_3579_BDF0_2468);
+        let places = [
+            (0, 23),
+            (0, 15),
+            (0, 8),
+            (0, 2),
+            (1, 22),
+            (1, 14),
+            (1, 7),
+            (1, 1),
+        ];
+        let clean = encode(info);
+        let damaged = damage(clean, &places);
+        assert_ne!(decode(&soften(&damaged)).info, info);
+        let weak: [Soft; 72] = std::array::from_fn(|index| {
+            let value = sdrmm_dsp::soft(damaged[index]);
+            if damaged[index] == clean[index] {
+                value
+            } else {
+                value / 4
+            }
+        });
+        let frame = decode(&weak);
+        assert_eq!(frame.info, info);
+        assert_eq!(frame.errors, 4);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 mod late_entry;
-use late_entry::LateEntry;
+pub(crate) use late_entry::fragment as late_entry_fragment;
+use late_entry::{Fragment, LateEntry};
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use late_entry::{fragments as late_entry_fragments, with_fragment};
 
@@ -286,6 +287,7 @@ impl Privacy {
         burst: usize,
         frame: usize,
         decoded: &mut Frame,
+        fragment: Fragment,
         keys: &[(u8, CipherKey)],
     ) -> bool {
         let position = burst * FRAMES_PER_BURST + frame;
@@ -293,7 +295,7 @@ impl Privacy {
         self.last_position = Some(position);
         let lost = decoded.errors[0] == u8::MAX;
         if !lost {
-            self.late.push(burst, frame, decoded.info[3]);
+            self.late.push(burst, frame, fragment);
         }
         let playable = self.undo(position, new_superframe, decoded);
         if position == FRAMES_PER_SUPERFRAME - 1
@@ -381,7 +383,7 @@ mod tests {
         let mut privacy = Privacy::new();
         privacy.link_control(true, Some(MOTOROLA));
         let mut frame = masked(SILENCE, basic_keystream(0xE300));
-        assert!(privacy.decipher(0, 0, &mut frame, &[]));
+        assert!(privacy.decipher(0, 0, &mut frame, [0; 4], &[]));
         assert_eq!(pack_natural(&frame.info), SILENCE);
         assert_eq!(privacy.label().as_deref(), Some("Basic Privacy E300"));
     }
@@ -392,7 +394,7 @@ mod tests {
         privacy.link_control(true, Some(MOTOROLA));
         let speech = [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0x80];
         let mut frame = masked(speech, basic_keystream(0x2503));
-        assert!(!privacy.decipher(0, 0, &mut frame, &[]));
+        assert!(!privacy.decipher(0, 0, &mut frame, [0; 4], &[]));
         assert_eq!(privacy.label(), None);
     }
 
@@ -406,7 +408,7 @@ mod tests {
         let mut privacy = Privacy::new();
         privacy.link_control(true, Some(0x68));
         let mut frame = masked(SILENCE, basic_keystream(0xE300));
-        assert!(!privacy.decipher(0, 0, &mut frame, &[]));
+        assert!(!privacy.decipher(0, 0, &mut frame, [0; 4], &[]));
     }
 
     #[test]
@@ -484,7 +486,7 @@ mod tests {
         let mut privacy = Privacy::new();
         privacy.pi_header(0x21, 7, 0x0102_0304, &[(7, key("0102030405"))]);
         let mut frame = clean(SILENCE);
-        assert!(privacy.decipher(0, 0, &mut frame, &[]));
+        assert!(privacy.decipher(0, 0, &mut frame, [0; 4], &[]));
         assert_eq!(pack_natural(&frame.info), SILENCE);
         assert_eq!(privacy.label().as_deref(), Some("ARC4"));
     }
@@ -495,7 +497,7 @@ mod tests {
             let mut privacy = Privacy::new();
             privacy.pi_header(algorithm, key_id, 0x0102_0304, &[(7, key("0102030405"))]);
             let mut frame = clean(SILENCE);
-            assert!(!privacy.decipher(0, 0, &mut frame, &[]));
+            assert!(!privacy.decipher(0, 0, &mut frame, [0; 4], &[]));
             assert_eq!(privacy.label(), None);
         }
     }
@@ -511,6 +513,7 @@ mod tests {
         use sdrmm_decoder_test_support::known_keys::{
             MIN_HALF_RATE_CORRELATION, Sample, correlation, samples,
         };
+        use sdrmm_dsp::soft;
 
         /// Takes the first message indicator only, so every later superframe runs on the LFSR.
         /// `late` leaves out the PI header too, so the call starts from its late-entry MIs.
@@ -547,7 +550,8 @@ mod tests {
                     continue;
                 };
                 let position = (index - start) % 18;
-                if privacy.decipher(position / 3, position % 3, &mut decoded, &keys) {
+                let fragment = late_entry_fragment(&bits.map(soft));
+                if privacy.decipher(position / 3, position % 3, &mut decoded, fragment, &keys) {
                     vocoder.play_half(&decoded, &mut Speaker(&mut out));
                 } else {
                     vocoder.mute(&mut Speaker(&mut out));

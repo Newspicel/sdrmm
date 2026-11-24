@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 use num_complex::Complex;
 use sdrmm_dsp::{
     Viterbi5,
-    coding::fec::conv::{CONFIDENT, ERASURE},
+    coding::fec::conv::{CONFIDENT, ERASURE, Soft},
     crc_msb_bits, word_msb,
 };
 use sdrmm_modem::cpm::CpmDemod;
@@ -25,7 +25,7 @@ use sdrmm_wire::{
 };
 
 use sdrmm_codec::voice::chip::ChipRate;
-use sdrmm_codec::voice::{AMBE_3600_INTERLEAVE, MbeDecoder, half_frame, half_rate_code_vectors};
+use sdrmm_codec::voice::{HALF_RATE_SOFT_BITS, MbeDecoder, half_soft_frame};
 use sdrmm_decoder::voice::{Speaker, open_chip};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
@@ -236,8 +236,8 @@ struct Decoder {
     rejected: u32,
 }
 
-/// A frame's voice: each vocoder frame's slot (0 to 3) and transmitted bits.
-type Voice = Vec<(usize, [bool; 72])>;
+/// A frame's voice: each vocoder frame's slot (0 to 3) and its soft bits on the vocoder's scale.
+type Voice = Vec<(usize, [i8; HALF_RATE_SOFT_BITS])>;
 
 struct Held {
     at: u64,
@@ -362,8 +362,8 @@ impl Decoder {
             }
             self.last_quarter = Some(quarter);
         }
-        for (slot, bits) in held.voice {
-            let mut frame = half_frame(half_rate_code_vectors(&bits, &AMBE_3600_INTERLEAVE));
+        for (slot, soft) in held.voice {
+            let mut frame = half_soft_frame(&soft);
             let playable = match (self.privacy.encrypted(), held.quarter) {
                 (None, _) => true,
                 (Some(_), Some(quarter)) => self
@@ -470,9 +470,10 @@ impl Decoder {
             };
             for &(start, end) in ranges {
                 for frame_start in (start..end).step_by(36) {
-                    let mut frame_bits = [false; 72];
-                    frame_bits.copy_from_slice(&self.bits[frame_start * 2..frame_start * 2 + 72]);
-                    voice.push(((frame_start - VOICE_START) / 36, frame_bits));
+                    let at = frame_start * 2;
+                    let soft: [i8; HALF_RATE_SOFT_BITS] =
+                        std::array::from_fn(|bit| vocoder_soft(self.soft[at + bit]));
+                    voice.push(((frame_start - VOICE_START) / 36, soft));
                 }
             }
         }
@@ -507,6 +508,12 @@ impl Decoder {
         }
         apply_call(frame, layer3);
     }
+}
+
+/// A soft bit on the vocoder's scale, where full confidence is `i8::MAX`.
+fn vocoder_soft(value: Soft) -> i8 {
+    let full = i32::from(i8::MAX);
+    (i32::from(value) * full / i32::from(CONFIDENT)).clamp(-full, full) as i8
 }
 
 fn lich_parity_holds(information: &[bool]) -> bool {
@@ -782,6 +789,26 @@ mod tests {
     use sdrmm_decoder_test_support::frames::{assert_tone_audio, decode, decode_with_audio};
     use sdrmm_decoder_test_support::settings;
     use sdrmm_wire::ChannelParams;
+
+    #[test]
+    fn weak_voice_bits_stay_weak_on_the_vocoders_scale() {
+        use sdrmm_codec::voice::{AMBE_3600_INTERLEAVE, half_frame, half_rate_code_vectors};
+        assert_eq!(vocoder_soft(CONFIDENT), i8::MAX);
+        assert_eq!(vocoder_soft(-4 * CONFIDENT), -i8::MAX);
+        let air = half_rate_frames(1)[0];
+        let clean = half_frame(half_rate_code_vectors(&air, &AMBE_3600_INTERLEAVE)).info;
+        let mut soft = air.map(sdrmm_dsp::soft);
+        let mut hard = air;
+        for place in [0, 4, 8, 12] {
+            soft[place] = -soft[place] / 4;
+            hard[place] = !hard[place];
+        }
+        assert_ne!(
+            half_frame(half_rate_code_vectors(&hard, &AMBE_3600_INTERLEAVE)).info,
+            clean
+        );
+        assert_eq!(half_soft_frame(&soft.map(vocoder_soft)).info, clean);
+    }
 
     fn channel(bandwidth: NxdnBandwidth) -> NxdnChannel {
         NxdnChannel::new(

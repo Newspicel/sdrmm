@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use num_complex::Complex;
 use sdrmm_dsp::{
-    FracResampler, NoiseFloor, SpectrumAnalyzer, Squelch,
+    CyclicCode, FracResampler, NoiseFloor, SpectrumAnalyzer, Squelch,
     radar::{
         cfar::Hit,
         cluster::{Cluster, Clusterer},
@@ -165,5 +165,20 @@ fn clustering_is_deterministic_and_does_not_allocate_even_for_large_inputs() {
         clusters
             .windows(2)
             .all(|pair| pair[0].power >= pair[1].power)
+    );
+}
+#[test]
+fn soft_bch_63_16_decodes_a_nid_in_well_under_a_millisecond() {
+    let code = CyclicCode::BCH_63_16;
+    let word = code.encode(0x293A) ^ 0x8001_0000_0400_0021;
+    let soft: Vec<_> = (0..code.n())
+        .map(|i| sdrmm_dsp::soft(word >> (code.n() - 1 - i) & 1 == 1))
+        .collect();
+    let words_per_us = measure_throughput(20, 1, || {
+        black_box(code.decode_soft(black_box(&soft)));
+    });
+    assert!(
+        words_per_us > 0.002,
+        "soft BCH(63,16): {words_per_us} M words/s"
     );
 }

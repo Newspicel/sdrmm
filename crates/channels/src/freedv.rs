@@ -7,7 +7,7 @@ use sdrmm_wire::{HzRange, Modulation, SignalSignature};
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::golay23_correct;
+use sdrmm_dsp::{Soft, golay23_decode_soft};
 use sdrmm_modem::{
     constellation::{Constellation, tables},
     multicarrier::fdmdv::{self, Demodulator, Frame},
@@ -50,7 +50,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
 pub struct FreeDvChannel {
     sideband: Sideband,
     modem: Demodulator,
-    paired_bits: [bool; MODEM_BITS * 2],
+    paired_bits: [Soft; MODEM_BITS * 2],
     even_frame: bool,
     synced: bool,
     vocoder: Codec2Decoder,
@@ -92,7 +92,7 @@ impl NativeChannel for FreeDvChannel {
         Ok(Self {
             sideband: params.sideband,
             modem: Demodulator::new(),
-            paired_bits: [false; MODEM_BITS * 2],
+            paired_bits: [0; MODEM_BITS * 2],
             even_frame: false,
             synced: false,
             vocoder: Codec2Decoder::new(),
@@ -192,7 +192,7 @@ impl FreeDvChannel {
             return;
         }
         let offset = if self.even_frame { MODEM_BITS } else { 0 };
-        self.paired_bits[offset..offset + MODEM_BITS].copy_from_slice(&frame.bits);
+        self.paired_bits[offset..offset + MODEM_BITS].copy_from_slice(&frame.soft);
         if self.even_frame {
             self.decode_voice(out);
         }
@@ -200,29 +200,31 @@ impl FreeDvChannel {
     }
 
     fn decode_voice(&mut self, out: &mut ChannelOutputs) {
-        let received = self.paired_bits[..8]
-            .iter()
-            .chain(&self.paired_bits[11..15])
-            .chain(&self.paired_bits[CODEC_BITS..CODEC_BITS + 11])
-            .fold(0u32, |word, &bit| word << 1 | u32::from(bit));
-        let (corrected, _errors) = golay23_correct(received);
-
-        let mut payload = [false; CODEC_BITS];
-        payload.copy_from_slice(&self.paired_bits[..CODEC_BITS]);
-        for (index, bit) in payload[..8].iter_mut().enumerate() {
-            *bit = (corrected >> (22 - index)) & 1 == 1;
-        }
-        for (index, bit) in payload[11..15].iter_mut().enumerate() {
-            *bit = (corrected >> (14 - index)) & 1 == 1;
-        }
-        payload[2] = payload[1] || payload[3];
-
-        let mut packed = [0u8; 7];
-        for (index, &bit) in payload.iter().enumerate() {
-            packed[index / 8] |= u8::from(bit) << (7 - index % 8);
-        }
-        self.vocoder.decode_1300(packed, &mut Speaker(out));
+        self.vocoder
+            .decode_1300(codec_frame(&self.paired_bits), &mut Speaker(out));
     }
+}
+
+/// The Codec2 1300 frame in two modem frames, its Golay-protected bits soft-decoded.
+fn codec_frame(paired: &[Soft; MODEM_BITS * 2]) -> [u8; 7] {
+    let mut received = [0; 23];
+    received[..8].copy_from_slice(&paired[..8]);
+    received[8..12].copy_from_slice(&paired[11..15]);
+    received[12..].copy_from_slice(&paired[CODEC_BITS..CODEC_BITS + 11]);
+    let (corrected, _) = golay23_decode_soft(&received);
+    let mut payload: [bool; CODEC_BITS] = std::array::from_fn(|index| paired[index] > 0);
+    for (index, bit) in payload[..8].iter_mut().enumerate() {
+        *bit = (corrected >> (22 - index)) & 1 == 1;
+    }
+    for (index, bit) in payload[11..15].iter_mut().enumerate() {
+        *bit = (corrected >> (14 - index)) & 1 == 1;
+    }
+    payload[2] = payload[1] || payload[3];
+    let mut packed = [0u8; 7];
+    for (index, &bit) in payload.iter().enumerate() {
+        packed[index / 8] |= u8::from(bit) << (7 - index % 8);
+    }
+    packed
 }
 
 const FREEDV_SPOTS: &[HzRange] = &[
@@ -294,15 +296,48 @@ mod tests {
         );
     }
 
+    /// Two modem frames with `data` in the Golay-protected codec bits and its parity behind.
+    fn paired(data: u16) -> ([Soft; MODEM_BITS * 2], [bool; 23]) {
+        let codeword = sdrmm_dsp::golay23_encode(data);
+        let sent: [bool; 23] = std::array::from_fn(|i| codeword >> (22 - i) & 1 == 1);
+        let mut paired: [Soft; MODEM_BITS * 2] =
+            std::array::from_fn(|i| sdrmm_dsp::soft(i % 3 == 0));
+        let places = (0..8).chain(11..15).chain(CODEC_BITS..CODEC_BITS + 11);
+        for (place, &bit) in places.zip(&sent) {
+            paired[place] = sdrmm_dsp::soft(bit);
+        }
+        (paired, sent)
+    }
+
     #[test]
     fn payload_rebuild_matches_the_free_dv_golay_layout() {
-        let data = 0xA53u16;
-        let codeword = sdrmm_dsp::golay23_encode(data);
-        for damaged in [codeword, codeword ^ 1 << 7, codeword ^ 1 << 1 ^ 1 << 19] {
-            let (corrected, errors) = golay23_correct(damaged);
-            assert_eq!(corrected >> 11, u32::from(data));
-            assert_eq!(errors, (damaged ^ codeword).count_ones());
-        }
+        let data = 0xE53u16;
+        let (clean, _) = paired(data);
+        let packed = codec_frame(&clean);
+        let bits = |packed: [u8; 7], range: std::ops::Range<usize>| {
+            range.fold(0u32, |word, i| {
+                word << 1 | u32::from(packed[i / 8] >> (7 - i % 8) & 1)
+            })
+        };
+        assert_eq!(
+            bits(packed, 0..8) << 4 | bits(packed, 11..15),
+            u32::from(data)
+        );
+    }
+
+    #[test]
+    fn weak_golay_errors_decode_where_hard_bits_fail() {
+        let (clean, _) = paired(0x6C9);
+        let flips = [0, 4, 12, CODEC_BITS + 5];
+        let decode = |weakness: Soft| {
+            let mut damaged = clean;
+            for at in flips {
+                damaged[at] = -damaged[at] / weakness;
+            }
+            codec_frame(&damaged)
+        };
+        assert_ne!(decode(1), codec_frame(&clean));
+        assert_eq!(decode(4), codec_frame(&clean));
     }
 
     #[test]

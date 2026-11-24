@@ -19,7 +19,7 @@ use sdrmm_wire::{ChannelDescriptor, ChannelSettings, DecoderEvent, DecoderFamily
 #[cfg(any(test, feature = "synth"))]
 pub(crate) use demod::{BIT_RATE, PHASE_DEVIATION, PREAMBLE_S};
 use demod::{CHIP_RATE, Demod, RATE, Search};
-use message::{Bits, LONG_BITS, PDF1_BITS, SHORT_BITS};
+use message::{Bits, LONG_BITS, SHORT_BITS};
 use sdrmm_decoder::{
     Channel, ChannelCtx, ChannelError, ChannelOutputs, NativeChannel, check_input_rate,
 };
@@ -34,7 +34,6 @@ const SYNC_TOLERANCE: u32 = 3;
 const CHANNEL_TAPS: usize = 65;
 const TRACK_S: f64 = 0.75;
 const HISTORY_CHIPS: usize = 512;
-const DOUBTFUL_SHARE: usize = 4;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "sarsat".to_owned(),
@@ -48,17 +47,6 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     emits: vec![EventKind::named("sarsat")],
     ..ChannelDescriptor::default()
 });
-
-fn doubtful(soft: &[f32]) -> impl Iterator<Item = bool> + '_ {
-    let mut magnitudes = [0.0f32; LONG_BITS];
-    for (magnitude, value) in magnitudes.iter_mut().zip(soft) {
-        *magnitude = value.abs();
-    }
-    let used = &mut magnitudes[..soft.len()];
-    let (_, &mut threshold, _) =
-        used.select_nth_unstable_by(soft.len() / DOUBTFUL_SHARE, f32::total_cmp);
-    soft.iter().map(move |value| value.abs() < threshold)
-}
 
 fn chip_word(sync: u32) -> u64 {
     let ones = (1u64 << SYNC_LEAD_BITS) - 1;
@@ -209,19 +197,18 @@ impl SarsatChannel {
         })
     }
 
-    fn frame(&self, locked: Locked, start: u64, count: usize) -> (Bits, Bits) {
+    /// The frame's first `count` bits, and the reliability of each.
+    fn frame(&self, locked: Locked, start: u64, count: usize) -> (Bits, [f32; LONG_BITS]) {
         let soft = self.soft(locked, start);
-        let used = &soft[..count];
-        let word = Bits::from_sent(used.iter().map(|&value| value > 0.0));
-        let (first, second) = used.split_at(PDF1_BITS);
-        let weak = Bits::from_sent(doubtful(first).chain(doubtful(second)));
-        (word, weak)
+        let word = Bits::from_sent(soft[..count].iter().map(|&value| value > 0.0));
+        let reliability = std::array::from_fn(|k| if k < count { soft[k].abs() } else { 0.0 });
+        (word, reliability)
     }
 
     fn collected(&mut self, locked: Locked, start: u64, bits: usize, out: &mut ChannelOutputs) {
-        let (word, weak) = self.frame(locked, start, bits);
+        let (word, reliability) = self.frame(locked, start, bits);
         if bits == SHORT_BITS
-            && message::pdf1(word, weak).is_some_and(|(fixed, _)| message::is_long(fixed))
+            && message::pdf1(word, &reliability).is_some_and(|(fixed, _)| message::is_long(fixed))
         {
             self.frame = Frame::Collecting {
                 locked,
@@ -230,7 +217,7 @@ impl SarsatChannel {
             };
             return;
         }
-        match message::decode(word, weak, locked.self_test) {
+        match message::decode(word, &reliability, locked.self_test) {
             Some(decoded) => out.events.push(DecoderEvent::of(&decoded)),
             None => self.rejected = self.rejected.saturating_add(1),
         }

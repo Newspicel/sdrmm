@@ -8,7 +8,7 @@ use super::{
     },
     coding::{
         AACH_BITS, BSCH, BlockDecoder, FULL_SLOT, HALF_SLOT, MAX_TYPE5_BITS, SB1_SCRAMBLING, Soft,
-        rm_decode, scrambling_code, scrambling_sequence,
+        rm_decode_soft, scrambling_code, scrambling_sequence,
     },
     mac::{
         Address, Downlink, FRAGMENT_HEADER_BITS, Length, PduType, SysInfo, parse_access_assign,
@@ -312,11 +312,13 @@ impl Receiver {
     fn access_assign(&self, at: usize, first: usize, second_at: usize) -> Option<Downlink> {
         self.cell?;
         let time = self.time?;
+        let mut soft = [0.0; AACH_BITS];
         let positions = (at..at + first).chain(second_at..second_at + AACH_BITS - first);
-        let word = positions.enumerate().fold(0u32, |word, (i, k)| {
-            word << 1 | u32::from((self.window[k] > 0) ^ self.scrambling[i])
-        });
-        let (info, _) = rm_decode(word)?;
+        for ((value, k), &scrambled) in soft.iter_mut().zip(positions).zip(&self.scrambling) {
+            let received = f32::from(self.window[k]);
+            *value = if scrambled { -received } else { received };
+        }
+        let (info, _) = rm_decode_soft(&soft)?;
         Some(parse_access_assign(info, time.frame))
     }
 

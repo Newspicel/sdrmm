@@ -10,6 +10,7 @@ mod alloc_beamform;
 mod alloc_correlator;
 mod alloc_covariance;
 mod alloc_doa;
+mod alloc_fec;
 mod alloc_linalg;
 mod alloc_manifold;
 mod alloc_radar;

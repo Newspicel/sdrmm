@@ -1,5 +1,8 @@
+use std::sync::LazyLock;
+
 use crate::radiosonde::RadiosondeFrame;
 use crate::radiosonde::SondeType;
+use sdrmm_dsp::LinearCode;
 
 use super::{
     demod::{Polarity, Recorder, SymbolClock, SyncMatcher},
@@ -26,9 +29,18 @@ pub(crate) const MODE_COMPACT: u8 = 3;
 const SYNC_TOLERANCE: u32 = 2;
 const SMOOTHING: f64 = 0.5;
 const CHANNELS: usize = 16;
-const PARITY_CHECK: [u8; 8] = [0x7, 0xB, 0xD, 0xE, 0x8, 0x4, 0x2, 0x1];
+const CODE_BITS: usize = 8;
 
-#[cfg(any(test, feature = "synth"))]
+/// The extended Hamming code [`hamming_encode`] sends, nibble bit `i` selecting row `i`.
+static HAMMING: LazyLock<LinearCode> = LazyLock::new(|| {
+    let rows: [u64; 4] = std::array::from_fn(|bit| {
+        hamming_encode(1 << bit)
+            .iter()
+            .fold(0, |word, &set| word << 1 | u64::from(set))
+    });
+    LinearCode::new(&rows, CODE_BITS)
+});
+
 pub(crate) fn hamming_encode(nibble: u8) -> [bool; 8] {
     let d: [bool; 4] = std::array::from_fn(|k| (nibble >> (3 - k)) & 1 == 1);
     [
@@ -43,21 +55,11 @@ pub(crate) fn hamming_encode(nibble: u8) -> [bool; 8] {
     ]
 }
 
-pub(crate) fn hamming_decode(mut code: [bool; 8]) -> Option<(u8, u32)> {
-    let syndrome = code
-        .iter()
-        .zip(PARITY_CHECK)
-        .filter(|(bit, _)| **bit)
-        .fold(0u8, |acc, (_, column)| acc ^ column);
-    let corrected = if syndrome == 0 {
-        0
-    } else {
-        let position = PARITY_CHECK.iter().position(|&column| column == syndrome)?;
-        code[position] = !code[position];
-        1
-    };
-    let nibble = (0..4).fold(0u8, |acc, k| (acc << 1) | u8::from(code[k]));
-    Some((nibble, corrected))
+/// Soft maximum likelihood decoding of one codeword, each value positive for a one: the nibble
+/// and the decisions overturned.
+pub(crate) fn hamming_decode_soft(soft: &[f32; CODE_BITS]) -> Option<(u8, u32)> {
+    let (nibble, overturned) = HAMMING.decode_soft(soft)?;
+    Some((nibble as u8, overturned))
 }
 
 pub(crate) fn interleaved_index(codewords: usize, codeword: usize, bit: usize) -> usize {
@@ -288,7 +290,8 @@ impl DfmFrames {
         self.rejected
     }
 
-    pub(crate) fn decode(&mut self, payload: &[bool; PAYLOAD_BITS]) -> Option<RadiosondeFrame> {
+    /// Reads one frame of soft bits, positive for a one.
+    pub(crate) fn decode(&mut self, payload: &[f32; PAYLOAD_BITS]) -> Option<RadiosondeFrame> {
         let conf_end = 8 * CONF_CODEWORDS;
         let dat_len = 8 * DAT_CODEWORDS;
         if let Some((nibbles, corrected)) = self.section::<CONF_CODEWORDS>(&payload[..conf_end]) {
@@ -310,12 +313,12 @@ impl DfmFrames {
         emitted
     }
 
-    fn section<const N: usize>(&mut self, bits: &[bool]) -> Option<([u8; N], u32)> {
+    fn section<const N: usize>(&mut self, bits: &[f32]) -> Option<([u8; N], u32)> {
         let mut nibbles = [0u8; N];
         let mut corrected = 0;
         for (codeword, nibble) in nibbles.iter_mut().enumerate() {
             let code = std::array::from_fn(|bit| bits[interleaved_index(N, codeword, bit)]);
-            let Some((value, fixed)) = hamming_decode(code) else {
+            let Some((value, fixed)) = hamming_decode_soft(&code) else {
                 self.rejected += 1;
                 return None;
             };
@@ -368,7 +371,7 @@ pub(crate) struct Dfm {
     sync: SyncMatcher,
     receive: Receive,
     raw: [f32; 2 * PAYLOAD_BITS],
-    payload: [bool; PAYLOAD_BITS],
+    payload: [f32; PAYLOAD_BITS],
     frames: DfmFrames,
 }
 
@@ -380,7 +383,7 @@ impl Dfm {
             sync: SyncMatcher::from_bits(RAW_HEADER, SYNC_TOLERANCE),
             receive: Receive::Hunt,
             raw: [0.0; 2 * PAYLOAD_BITS],
-            payload: [false; PAYLOAD_BITS],
+            payload: [0.0; PAYLOAD_BITS],
             frames: DfmFrames::new(),
         }
     }
@@ -417,8 +420,9 @@ impl Dfm {
                 let polarity = *polarity;
                 self.receive = Receive::Hunt;
                 self.sync.clear();
+                let sign = if polarity.apply(true) { 1.0 } else { -1.0 };
                 for (bit, pair) in self.payload.iter_mut().zip(self.raw.as_chunks::<2>().0) {
-                    *bit = polarity.apply(pair[1] > pair[0]);
+                    *bit = sign * (pair[1] - pair[0]);
                 }
                 if let Some(frame) = self.frames.decode(&self.payload) {
                     out.push(frame);

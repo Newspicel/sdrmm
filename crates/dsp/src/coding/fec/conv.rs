@@ -43,6 +43,7 @@ pub struct Viterbi5 {
     polys: [u8; MAX_OUTPUTS],
     outputs: usize,
     decisions: Vec<u16>,
+    forward: Vec<[i32; STATES]>,
     metrics: [i32; STATES],
     next: [i32; STATES],
 }
@@ -78,6 +79,7 @@ impl Viterbi5 {
             polys: masked,
             outputs: polys.len(),
             decisions: Vec::new(),
+            forward: Vec::new(),
             metrics: [0; STATES],
             next: [0; STATES],
         }
@@ -91,6 +93,60 @@ impl Viterbi5 {
     /// Decodes a block flushed by a zero tail, tracing back from state 0.
     pub fn decode_terminated(&mut self, coded: &[Soft], out: &mut Vec<bool>) -> i32 {
         self.run(coded, out, Some(0))
+    }
+
+    /// Max-log MAP over the same trellis, free at the end like [`Self::decode`]: one soft value a
+    /// bit, its sign the decision [`Self::decode`] makes and its size half the metric the best
+    /// path with the other bit loses by, so a lone channel bit at `v` would weigh the same.
+    /// Clipped to [`CONFIDENT`]; a bit both paths tie on is an erasure. Returns the best metric.
+    pub fn decode_soft_output(&mut self, coded: &[Soft], out: &mut Vec<Soft>) -> i32 {
+        let steps = self.steps(coded);
+        self.forward.clear();
+        self.forward.resize(steps + 1, [UNREACHED_METRIC; STATES]);
+        self.forward[0][0] = 0;
+        for (step, received) in coded.chunks_exact(self.outputs).enumerate() {
+            let mut next = [UNREACHED_METRIC; STATES];
+            for (state, slot) in next.iter_mut().enumerate() {
+                for prev_high in [false, true] {
+                    let (prev, reg) = predecessor(state, prev_high);
+                    let metric =
+                        self.forward[step][prev].saturating_add(self.branch(reg, received));
+                    *slot = (*slot).max(metric);
+                }
+            }
+            self.forward[step + 1] = next;
+        }
+        let start = out.len();
+        out.resize(start + steps, ERASURE);
+        let mut backward = [0i32; STATES];
+        for (step, received) in coded.chunks_exact(self.outputs).enumerate().rev() {
+            let mut best = [UNREACHED_METRIC; 2];
+            let mut earlier = [UNREACHED_METRIC; STATES];
+            for state in 0..STATES {
+                for prev_high in [false, true] {
+                    let (prev, reg) = predecessor(state, prev_high);
+                    let through = backward[state].saturating_add(self.branch(reg, received));
+                    earlier[prev] = earlier[prev].max(through);
+                    let path = self.forward[step][prev].saturating_add(through);
+                    best[state & 1] = best[state & 1].max(path);
+                }
+            }
+            out[start + step] = reliability(best[1].saturating_sub(best[0]));
+            backward = earlier;
+        }
+        self.forward[steps]
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(UNREACHED_METRIC)
+    }
+
+    fn steps(&self, coded: &[Soft]) -> usize {
+        assert!(
+            coded.len().is_multiple_of(self.outputs),
+            "the code needs whole symbols"
+        );
+        coded.len() / self.outputs
     }
 
     fn branch(&self, reg: u8, received: &[Soft]) -> i32 {
@@ -109,11 +165,7 @@ impl Viterbi5 {
     }
 
     fn run(&mut self, coded: &[Soft], out: &mut Vec<bool>, end: Option<usize>) -> i32 {
-        assert!(
-            coded.len().is_multiple_of(self.outputs),
-            "the code needs whole symbols"
-        );
-        let steps = coded.len() / self.outputs;
+        let steps = self.steps(coded);
         self.decisions.clear();
         self.decisions.resize(steps, 0);
         self.metrics = [UNREACHED_METRIC; STATES];
@@ -123,8 +175,7 @@ impl Viterbi5 {
             for state in 0..STATES {
                 let mut best = (i32::MIN, false);
                 for prev_high in [false, true] {
-                    let prev = state >> 1 | usize::from(prev_high) << OLDEST_STATE_BIT;
-                    let reg = (prev << 1 | state & 1) as u8;
+                    let (prev, reg) = predecessor(state, prev_high);
                     let metric = self.metrics[prev].saturating_add(self.branch(reg, received));
                     if metric > best.0 {
                         best = (metric, prev_high);
@@ -153,9 +204,24 @@ impl Viterbi5 {
     }
 }
 
+/// The state before `state` whose oldest bit is `high`, and the register the step between
+/// them holds.
+const fn predecessor(state: usize, high: bool) -> (usize, u8) {
+    let prev = state >> 1 | (high as usize) << OLDEST_STATE_BIT;
+    (prev, (prev << 1 | state & 1) as u8)
+}
+
+/// A path metric gap as the soft value of one channel bit, rounded away from zero so only a
+/// tie erases.
+fn reliability(gap: i32) -> Soft {
+    let half = gap.saturating_add(gap.signum()) / 2;
+    half.clamp(-i32::from(CONFIDENT), i32::from(CONFIDENT)) as Soft
+}
+
 #[cfg(test)]
 mod tests {
     use super::{super::test_data::random_bits as message, *};
+    use crate::math::rng::Rng;
 
     fn softs(bits: &[bool]) -> Vec<Soft> {
         bits.iter().copied().map(soft).collect()
@@ -267,5 +333,99 @@ mod tests {
         let mut out = Vec::new();
         Viterbi5::new().decode(&received, &mut out);
         assert_eq!(out, bits);
+    }
+
+    fn noisy(coded: &[bool], sigma: f64, rng: &mut Rng) -> Vec<Soft> {
+        let limit = f64::from(CONFIDENT);
+        coded
+            .iter()
+            .map(|&bit| {
+                let clean = if bit { limit } else { -limit };
+                (clean + sigma * limit * rng.normal()).clamp(-limit, limit) as Soft
+            })
+            .collect()
+    }
+
+    fn coded_block(seed: u64) -> (Vec<bool>, Vec<bool>) {
+        let mut bits = message(96, seed);
+        bits.extend([false; 4]);
+        let mut coded = Vec::new();
+        encode(&bits, &mut coded);
+        (bits, coded)
+    }
+
+    #[test]
+    fn soft_output_decides_as_the_viterbi_decoder() {
+        let mut rng = Rng::mixed(7);
+        let mut decoder = Viterbi5::new();
+        let mut ties = 0;
+        for seed in 0..40 {
+            let (_, coded) = coded_block(seed);
+            let received = noisy(&coded, 0.9, &mut rng);
+            let mut hard = Vec::new();
+            let metric = decoder.decode(&received, &mut hard);
+            let mut reliable = Vec::new();
+            assert_eq!(decoder.decode_soft_output(&received, &mut reliable), metric);
+            for (&value, &bit) in reliable.iter().zip(&hard) {
+                if value == ERASURE {
+                    ties += 1;
+                } else {
+                    assert_eq!(value > 0, bit, "seed {seed}");
+                }
+            }
+        }
+        assert!(ties < 10, "{ties} ties");
+    }
+
+    #[test]
+    fn a_clean_block_is_confident_throughout() {
+        let (bits, coded) = coded_block(3);
+        let mut reliable = Vec::new();
+        Viterbi5::new().decode_soft_output(&softs(&coded), &mut reliable);
+        let expected: Vec<Soft> = bits.iter().copied().map(soft).collect();
+        assert_eq!(reliable, expected);
+    }
+
+    #[test]
+    fn errors_sit_where_reliability_is_low() {
+        let mut rng = Rng::mixed(11);
+        let mut decoder = Viterbi5::new();
+        let mut ranked = Vec::new();
+        for seed in 0..300 {
+            let (bits, coded) = coded_block(seed);
+            let mut reliable = Vec::new();
+            decoder.decode_soft_output(&noisy(&coded, 0.7, &mut rng), &mut reliable);
+            ranked.extend(
+                reliable
+                    .iter()
+                    .zip(&bits)
+                    .map(|(&value, &bit)| (value.abs(), (value > 0) != bit)),
+            );
+        }
+        ranked.sort_by_key(|&(magnitude, _)| magnitude);
+        let decile = ranked.len() / 10;
+        let errors = |slice: &[(Soft, bool)]| slice.iter().filter(|(_, wrong)| *wrong).count();
+        let weakest = errors(&ranked[..decile]);
+        let surest = errors(&ranked[ranked.len() - decile..]);
+        let total = errors(&ranked);
+        assert!(total > 100, "{total} errors");
+        assert!(weakest * 2 > total, "weakest decile {weakest} of {total}");
+        assert!(surest * 50 < weakest, "surest {surest}, weakest {weakest}");
+    }
+
+    #[test]
+    fn soft_output_reuses_its_buffers() {
+        let (_, coded) = coded_block(5);
+        let received = softs(&coded);
+        let mut decoder = Viterbi5::new();
+        let mut reliable = Vec::with_capacity(100);
+        decoder.decode_soft_output(&received, &mut reliable);
+        let (forward, capacity) = (decoder.forward.as_ptr(), decoder.forward.capacity());
+        let out = reliable.as_ptr();
+        reliable.clear();
+        decoder.decode_soft_output(&received, &mut reliable);
+        assert_eq!(decoder.forward.as_ptr(), forward);
+        assert_eq!(decoder.forward.capacity(), capacity);
+        assert_eq!(reliable.as_ptr(), out);
     }
 }

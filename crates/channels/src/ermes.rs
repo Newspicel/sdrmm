@@ -9,7 +9,10 @@ pub use model::*;
 use std::sync::LazyLock;
 
 use num_complex::Complex;
-use sdrmm_dsp::{ShortBch, SyncDetector};
+use sdrmm_dsp::{
+    ShortBch, SyncDetector,
+    coding::fec::{Acceptance, chase},
+};
 use sdrmm_modem::{
     cpm::{CpmDemod, CpmParams, Mapping, TIMING_BW_CONTINUOUS},
     pulse::{self, Norm},
@@ -32,6 +35,12 @@ const APT: u32 = 0b10_01_00_11_10_00_01_10_00_10_00_11_10_01_00;
 const DELIMITER: u32 = 0b11_01_01_01_11_10_01_11_11_10_11_10_11_10_11;
 const MAX_MESSAGE_WORDS: usize = 1_024;
 const MAX_TEXT: usize = 4_096;
+const WORD_BITS: usize = 30;
+const BLOCK_BITS: usize = 9 * WORD_BITS;
+const CHASE_BITS: usize = 4;
+const CORRECTABLE: u32 = 2;
+/// The level between a symbol's inner and outer deviation.
+const OUTER: f32 = 2.0;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "ermes".to_owned(),
@@ -71,6 +80,10 @@ pub struct ErmesChannel {
     soft: Vec<f32>,
     sync: SyncDetector,
     state: State,
+    /// The reliability of the last word's bits, the newest at index 0.
+    recent: [f32; WORD_BITS],
+    /// The reliability of each bit of the message block being gathered, in arrival order.
+    block: [f32; BLOCK_BITS],
     message: Vec<u32>,
     message_errors: u32,
     message_dropped: bool,
@@ -127,7 +140,9 @@ impl ErmesChannel {
         self.message_dropped = true;
     }
 
-    fn bit(&mut self, bit: bool, out: &mut ChannelOutputs) {
+    fn bit(&mut self, bit: bool, reliability: f32, out: &mut ChannelOutputs) {
+        self.recent.copy_within(..WORD_BITS - 1, 1);
+        self.recent[0] = reliability;
         if self.sync.push(bit) {
             self.state = State::System {
                 bits: 0,
@@ -142,8 +157,8 @@ impl ErmesChannel {
             State::System { bits, word, words } => {
                 *word = *word << 1 | u32::from(bit);
                 *bits += 1;
-                if *bits == 30 {
-                    if BCH.decode(*word).is_none() {
+                if *bits == WORD_BITS {
+                    if repair(*word, &self.recent).is_none() {
                         self.reset();
                     } else {
                         *words += 1;
@@ -166,7 +181,7 @@ impl ErmesChannel {
             } => {
                 *word = *word << 1 | u32::from(bit);
                 *bits += 1;
-                if *bits == 30 {
+                if *bits == WORD_BITS {
                     if *word == APT {
                         *terminated = true;
                         *bits = 0;
@@ -175,42 +190,51 @@ impl ErmesChannel {
                         *bits = 0;
                         *word = 0;
                     } else {
-                        let mut block = Vec::with_capacity(270);
-                        block.extend((0..30).rev().map(|position| *word >> position & 1 == 1));
+                        let mut block = Vec::with_capacity(BLOCK_BITS);
+                        block.extend(
+                            (0..WORD_BITS)
+                                .rev()
+                                .map(|position| *word >> position & 1 == 1),
+                        );
+                        for (at, &reliability) in self.recent.iter().rev().enumerate() {
+                            self.block[at] = reliability;
+                        }
                         self.state = State::Message { bits: block };
                     }
                 }
             }
             State::Message { bits } => {
-                if bits.len() < 270 {
+                if bits.len() < BLOCK_BITS {
+                    self.block[bits.len()] = reliability;
                     bits.push(bit);
                 }
-                if bits.len() == 270 {
+                if bits.len() == BLOCK_BITS {
                     let block = std::mem::take(bits);
-                    self.block(&block, out);
+                    self.read_block(&block, out);
                     if let State::Message { bits } = &mut self.state {
-                        bits.reserve(270);
+                        bits.reserve(BLOCK_BITS);
                     }
                 }
             }
         }
     }
 
-    fn block(&mut self, bits: &[bool], out: &mut ChannelOutputs) {
-        let mut words = [0u32; 9];
+    fn read_block(&mut self, bits: &[bool], out: &mut ChannelOutputs) {
+        let mut words = [(0u32, [0.0f32; WORD_BITS]); 9];
         let mut at = 0;
-        for _ in 0..30 {
-            for word in &mut words {
+        for position in (0..WORD_BITS).rev() {
+            for (word, reliability) in &mut words {
                 *word = *word << 1 | u32::from(bits[at]);
+                reliability[position] = self.block[at];
                 at += 1;
             }
         }
-        for word in words {
+        for (word, reliability) in words {
             if word == DELIMITER {
                 self.flush(out);
                 continue;
             }
-            let Some((word, errors)) = BCH.decode(word) else {
+            let Some((word, errors)) = repair(word, &reliability) else {
                 self.drop_message();
                 continue;
             };
@@ -265,6 +289,21 @@ impl ErmesChannel {
         }));
         self.start_message();
     }
+}
+
+/// The codeword nearest `word` by Chase search over its weakest bits, and the bits it differs in.
+fn repair(word: u32, reliability: &[f32; WORD_BITS]) -> Option<(u32, u32)> {
+    let decode = |trial: u32| BCH.decode(trial).map(|(fixed, _)| fixed);
+    let acceptance = Acceptance::Radius(CORRECTABLE);
+    let fixed = chase(word, reliability, CHASE_BITS, acceptance, decode)?;
+    Some((fixed, (fixed ^ word).count_ones()))
+}
+
+/// The two bits of a four level symbol, each with its reliability: the sign, then whether it
+/// sits on an inner level.
+fn symbol_bits(symbol: f32) -> [(bool, f32); 2] {
+    let inner = OUTER - symbol.abs();
+    [(symbol > 0.0, symbol.abs()), (inner > 0.0, inner.abs())]
 }
 
 fn data_bits(words: &[u32]) -> impl Iterator<Item = bool> + '_ {
@@ -341,6 +380,8 @@ impl NativeChannel for ErmesChannel {
             soft: Vec::new(),
             sync: SyncDetector::new(u64::from(SYNC), 30, 2),
             state: State::Search,
+            recent: [0.0; WORD_BITS],
+            block: [0.0; BLOCK_BITS],
             message: Vec::new(),
             message_errors: 0,
             message_dropped: false,
@@ -369,9 +410,9 @@ impl Channel for ErmesChannel {
             .cpm(&self.demod, &soft, &self.mapping, BAUD, RATE);
         for symbol in soft.drain(..) {
             let symbol = if self.invert { -symbol } else { symbol };
-            let index = self.mapping.slice(symbol);
-            self.bit(index >> 1 & 1 == 1, out);
-            self.bit(index & 1 == 1, out);
+            for (bit, reliability) in symbol_bits(symbol) {
+                self.bit(bit, reliability, out);
+            }
         }
         self.soft = soft;
     }
@@ -451,7 +492,7 @@ mod tests {
         .unwrap();
         let mut exact_out = ChannelOutputs::default();
         for bit in synth::ermes::bits(&page) {
-            exact.bit(bit, &mut exact_out);
+            exact.bit(bit, 1.0, &mut exact_out);
         }
         assert_eq!(
             exact_out.events.len(),
@@ -572,7 +613,7 @@ mod tests {
         .unwrap();
         let mut out = ChannelOutputs::default();
         for bit in bits {
-            channel.bit(bit, &mut out);
+            channel.bit(bit, 1.0, &mut out);
         }
         assert!(
             !out.events
@@ -582,5 +623,47 @@ mod tests {
             out.events
         );
         assert_eq!(Channel::rejected(&channel), 1);
+    }
+
+    fn heard(bits: &[bool], weak: &[usize]) -> Vec<ErmesMessage> {
+        let mut channel = ErmesChannel::new(
+            ChannelCtx { input_rate: RATE },
+            settings(ChannelParams::new("ermes", &ErmesParams::default()).expect("ermes settings")),
+        )
+        .unwrap();
+        let mut out = ChannelOutputs::default();
+        for (at, &bit) in bits.iter().enumerate() {
+            let reliability = if weak.contains(&at) { 0.05 } else { 1.0 };
+            channel.bit(bit, reliability, &mut out);
+        }
+        out.events
+            .into_iter()
+            .filter_map(|event| event.read::<ErmesMessage>())
+            .collect()
+    }
+
+    #[test]
+    fn three_weak_errors_in_a_message_word_are_repaired_softly() {
+        let mut bits = synth::ermes::bits(&page());
+        let block = 30 * (8 + 1 + 3 + 5);
+        let flipped = [block + 1, block + 9 * 7 + 1, block + 9 * 20 + 1];
+        for at in flipped {
+            bits[at] = !bits[at];
+        }
+        assert!(
+            heard(&bits, &[])
+                .iter()
+                .all(|message| message.text != "ERMES ALPHA PAGE")
+        );
+        let messages = heard(&bits, &flipped);
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert_eq!(messages[0].text, "ERMES ALPHA PAGE");
+        assert_eq!(messages[0].errors_corrected, 3);
+    }
+
+    #[test]
+    fn a_symbol_splits_into_sign_and_inner_bits_with_their_margins() {
+        assert_eq!(symbol_bits(3.0), [(true, 3.0), (false, 1.0)]);
+        assert_eq!(symbol_bits(-0.5), [(false, 0.5), (true, 1.5)]);
     }
 }

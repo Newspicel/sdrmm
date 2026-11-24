@@ -5,7 +5,10 @@ use std::sync::LazyLock;
 
 use crate::sarsat::SarsatMessage;
 use crate::sarsat::SarsatProtocol;
-use sdrmm_dsp::SyndromeDecoder;
+use sdrmm_dsp::{
+    SyndromeDecoder,
+    coding::fec::{Acceptance, chase},
+};
 
 pub(crate) const SHORT_BITS: usize = 88;
 pub(crate) const LONG_BITS: usize = 120;
@@ -20,6 +23,9 @@ const PDF1_GENERATOR: u128 = 0b10_0110_1101_1001_1110_0011;
 const PDF2_GENERATOR: u128 = 0b1_0101_0011_1001;
 const PDF1_CORRECTABLE: u32 = 3;
 const PDF2_CORRECTABLE: u32 = 2;
+/// A field's least reliable quarter is all a repair may overturn.
+const DOUBTFUL_SHARE: usize = 4;
+const CHASE_BITS: usize = 3;
 
 static PDF1_CODE: LazyLock<SyndromeDecoder> =
     LazyLock::new(|| SyndromeDecoder::new(PDF1_GENERATOR, PDF1_END - FIRST + 1, PDF1_CORRECTABLE));
@@ -35,9 +41,6 @@ pub(crate) fn prepare() {
 pub(crate) struct Bits(u128);
 
 impl Bits {
-    #[cfg(test)]
-    pub(crate) const ALL: Self = Self((1 << LONG_BITS) - 1);
-
     pub(crate) fn from_sent(sent: impl IntoIterator<Item = bool>) -> Self {
         Self(
             sent.into_iter()
@@ -78,35 +81,67 @@ impl Bits {
     }
 }
 
+/// The field's places, counted from its last bit, that rank in its least reliable share.
+fn doubtful(weights: &[f32]) -> u128 {
+    let mut ranked: [usize; PDF1_BITS] = std::array::from_fn(|place| place);
+    let ranked = &mut ranked[..weights.len()];
+    ranked.sort_unstable_by(|&a, &b| weights[a].total_cmp(&weights[b]).then(a.cmp(&b)));
+    ranked
+        .iter()
+        .take(weights.len() / DOUBTFUL_SHARE)
+        .fold(0, |mask, &place| mask | 1 << place)
+}
+
+/// Repairs bits `first` to `last` by Chase search, overturning only their doubtful share.
 fn repair(
     code: &SyndromeDecoder,
+    radius: u32,
     received: Bits,
-    weak: Bits,
-    first: u32,
-    last: u32,
+    reliability: &[f32; LONG_BITS],
+    (first, last): (u32, u32),
 ) -> Option<(Bits, u32)> {
     let word = received.range(first, last);
-    let (fixed, errors) = code.decode(word)?;
-    let doubtful = weak.range(first, last);
-    ((fixed ^ word) & !doubtful == 0).then_some((received.with(first, last, fixed), errors))
+    let mut weights = [0.0f32; PDF1_BITS];
+    let weights = &mut weights[..(last - first + 1) as usize];
+    for (place, weight) in (0u32..).zip(weights.iter_mut()) {
+        *weight = reliability[(last - place - FIRST) as usize];
+    }
+    let doubtful = doubtful(weights);
+    let decode = |trial: u128| {
+        let (fixed, _) = code.decode(trial)?;
+        ((fixed ^ word) & !doubtful == 0).then_some(fixed)
+    };
+    let acceptance = Acceptance::Distance(2 * radius + 1);
+    let fixed = chase(word, weights, CHASE_BITS, acceptance, decode)?;
+    Some((
+        received.with(first, last, fixed),
+        (fixed ^ word).count_ones(),
+    ))
 }
 
-pub(crate) fn pdf1(bits: Bits, weak: Bits) -> Option<(Bits, u32)> {
-    repair(&PDF1_CODE, bits, weak, FIRST, PDF1_END)
+/// `reliability[k]` is that of the `k`th bit sent.
+pub(crate) fn pdf1(bits: Bits, reliability: &[f32; LONG_BITS]) -> Option<(Bits, u32)> {
+    let field = (FIRST, PDF1_END);
+    repair(&PDF1_CODE, PDF1_CORRECTABLE, bits, reliability, field)
 }
 
-fn pdf2(bits: Bits, weak: Bits) -> Option<(Bits, u32)> {
-    repair(&PDF2_CODE, bits, weak, PDF2_START, LAST)
+fn pdf2(bits: Bits, reliability: &[f32; LONG_BITS]) -> Option<(Bits, u32)> {
+    let field = (PDF2_START, LAST);
+    repair(&PDF2_CODE, PDF2_CORRECTABLE, bits, reliability, field)
 }
 
 pub(crate) fn is_long(bits: Bits) -> bool {
     bits.bit(FIRST)
 }
 
-pub(crate) fn decode(bits: Bits, weak: Bits, self_test: bool) -> Option<SarsatMessage> {
-    let (bits, pdf1_errors) = pdf1(bits, weak)?;
+pub(crate) fn decode(
+    bits: Bits,
+    reliability: &[f32; LONG_BITS],
+    self_test: bool,
+) -> Option<SarsatMessage> {
+    let (bits, pdf1_errors) = pdf1(bits, reliability)?;
     let long = is_long(bits);
-    let (bits, pdf2_ok, pdf2_errors) = match (long, pdf2(bits, weak)) {
+    let (bits, pdf2_ok, pdf2_errors) = match (long, pdf2(bits, reliability)) {
         (false, _) => (bits, None, 0),
         (true, Some((fixed, errors))) => (fixed, Some(true), errors),
         (true, None) => (bits, Some(false), 0),

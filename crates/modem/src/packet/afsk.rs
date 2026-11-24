@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use sdrmm_dsp::{RealDecimator, ToneCorrelator, design_bandpass, design_lowpass};
+use sdrmm_dsp::{RealDecimator, SoftFrame, ToneCorrelator, design_bandpass, design_lowpass};
 
 use super::{AFSK_BAUD, AFSK_MARK_HZ, AFSK_SPACE_HZ, lane::Lane};
 
@@ -61,7 +61,7 @@ impl Afsk {
         &mut self,
         discriminated: &mut [f32],
         mut levels: Option<&mut Vec<f32>>,
-        heard: &mut impl FnMut(&[u8]),
+        heard: &mut impl FnMut(SoftFrame<'_>),
     ) {
         for v in &mut *discriminated {
             *v = v.clamp(-CLIP, CLIP);

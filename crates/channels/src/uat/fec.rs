@@ -51,17 +51,22 @@ impl Codes {
         }
     }
 
-    /// A Long ADS-B frame when the payload type says long, else a Basic one. A frame the code
-    /// cannot repair is `None`.
-    pub(crate) fn downlink(&self, frame: &mut [u8; LONG_BYTES]) -> Option<Downlink> {
+    /// A Long ADS-B frame when the payload type says long, else a Basic one, the least
+    /// reliable bytes erased when errors alone are too many. A frame the code cannot repair
+    /// is `None`.
+    pub(crate) fn downlink(
+        &self,
+        frame: &mut [u8; LONG_BYTES],
+        reliability: &[f32; LONG_BYTES],
+    ) -> Option<Downlink> {
         let mut long = *frame;
-        if let Some(corrected) = self.long.decode(&mut long)
+        if let Some(corrected) = self.long.decode_gmd(&mut long, reliability)
             && payload_type(&long) != 0
         {
             return Some(downlink(&long, LONG_DATA, corrected));
         }
         let short = &mut frame[..SHORT_BYTES];
-        let corrected = self.short.decode(short)?;
+        let corrected = self.short.decode_gmd(short, reliability)?;
         (payload_type(short) == 0).then(|| downlink(short, SHORT_DATA, corrected))
     }
 
@@ -69,18 +74,22 @@ impl Codes {
     pub(crate) fn uplink(
         &self,
         received: &[u8; UPLINK_BYTES],
+        reliability: &[f32; UPLINK_BYTES],
         blocks: &mut [u8; UPLINK_BYTES],
         data: &mut [u8; UPLINK_DATA],
     ) -> Option<u32> {
         self.interleave.gather(received, blocks);
+        let mut weights = [0.0; UPLINK_BYTES];
+        self.interleave.gather(reliability, &mut weights);
         let mut corrected = 0;
-        for (block, out) in blocks
+        for ((block, weights), out) in blocks
             .as_chunks_mut::<BLOCK_BYTES>()
             .0
             .iter_mut()
+            .zip(weights.as_chunks::<BLOCK_BYTES>().0)
             .zip(data.as_chunks_mut::<BLOCK_DATA>().0)
         {
-            corrected += self.uplink.decode(block)?;
+            corrected += self.uplink.decode_gmd(block, weights)?;
             out.copy_from_slice(&block[..BLOCK_DATA]);
         }
         Some(corrected)
@@ -140,6 +149,8 @@ mod tests {
     /// The same file, line 1: a Basic frame from A66EF1.
     const SHORT: &str = "00a66ef135445d525a0c0519119021204800";
 
+    const SURE: [f32; LONG_BYTES] = [1.0; LONG_BYTES];
+
     fn received(data: &str) -> [u8; LONG_BYTES] {
         let mut frame = [0u8; LONG_BYTES];
         let sent = Codes::new().encode_downlink(&hex(data));
@@ -154,7 +165,7 @@ mod tests {
         for at in [0, 5, 11, 20, 33, 40, 47] {
             frame[at] ^= 0xA5;
         }
-        let decoded = codes.downlink(&mut frame).expect("repaired");
+        let decoded = codes.downlink(&mut frame, &SURE).expect("repaired");
         assert_eq!(decoded.bytes(), hex(LONG));
         assert_eq!(decoded.corrected, 7);
     }
@@ -167,7 +178,7 @@ mod tests {
             *byte = at as u8;
         }
         frame[3] ^= 0x10;
-        let decoded = codes.downlink(&mut frame).expect("repaired");
+        let decoded = codes.downlink(&mut frame, &SURE).expect("repaired");
         assert_eq!(decoded.bytes(), hex(SHORT));
         assert_eq!(decoded.corrected, 1);
     }
@@ -179,7 +190,22 @@ mod tests {
         for at in [0, 5, 11, 20, 33, 40, 44, 47] {
             frame[at] ^= 0x3C;
         }
-        assert_eq!(codes.downlink(&mut frame), None);
+        assert_eq!(codes.downlink(&mut frame, &SURE), None);
+    }
+
+    #[test]
+    fn ten_weak_long_frame_errors_are_erased_and_repaired() {
+        let codes = Codes::new();
+        let mut frame = received(LONG);
+        let mut reliability = SURE;
+        for at in [0, 5, 11, 20, 27, 33, 38, 40, 44, 47] {
+            frame[at] ^= 0x3C;
+            reliability[at] = 0.2;
+        }
+        assert_eq!(codes.downlink(&mut frame.clone(), &SURE), None);
+        let decoded = codes.downlink(&mut frame, &reliability).expect("repaired");
+        assert_eq!(decoded.bytes(), hex(LONG));
+        assert_eq!(decoded.corrected, 10);
     }
 
     #[test]
@@ -192,7 +218,28 @@ mod tests {
         }
         let mut blocks = [0u8; UPLINK_BYTES];
         let mut out = [0u8; UPLINK_DATA];
-        assert_eq!(codes.uplink(&sent, &mut blocks, &mut out), Some(60));
+        let sure = [1.0; UPLINK_BYTES];
+        assert_eq!(codes.uplink(&sent, &sure, &mut blocks, &mut out), Some(60));
+        assert_eq!(out, data);
+    }
+
+    #[test]
+    fn weak_uplink_bytes_past_the_error_radius_are_erased() {
+        let codes = Codes::new();
+        let data: [u8; UPLINK_DATA] = std::array::from_fn(|at| (at * 5 + 1) as u8);
+        let mut sent = codes.encode_uplink(&data);
+        let mut reliability = [1.0; UPLINK_BYTES];
+        for at in 0..13 {
+            sent[at * 7 * BLOCKS] ^= 0x81;
+            reliability[at * 7 * BLOCKS] = 0.1;
+        }
+        let (mut blocks, mut out) = ([0u8; UPLINK_BYTES], [0u8; UPLINK_DATA]);
+        let sure = [1.0; UPLINK_BYTES];
+        assert_eq!(codes.uplink(&sent, &sure, &mut blocks, &mut out), None);
+        assert_eq!(
+            codes.uplink(&sent, &reliability, &mut blocks, &mut out),
+            Some(13)
+        );
         assert_eq!(out, data);
     }
 

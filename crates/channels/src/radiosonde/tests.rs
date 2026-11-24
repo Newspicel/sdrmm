@@ -151,6 +151,8 @@ fn rs41_round_trip_recovers_position_time_and_ptu() {
     );
 }
 
+const RS41_SURE: [f32; rs41::EXTENDED_LEN] = [1.0; rs41::EXTENDED_LEN];
+
 fn rs41_bytes(index: u32) -> [u8; rs41::EXTENDED_LEN] {
     let mut frame = [0u8; rs41::EXTENDED_LEN];
     frame[..rs41::STANDARD_LEN].copy_from_slice(&rs41_frame(index));
@@ -164,7 +166,7 @@ fn rs41_full_calibration_adds_pressure() {
     let mut last = None;
     for index in 0..60 {
         let mut bytes = rs41_bytes(index);
-        last = frames.decode(&mut bytes, rs41::STANDARD_LEN);
+        last = frames.decode(&mut bytes, &RS41_SURE, rs41::STANDARD_LEN);
     }
     let last = last.expect("decoded");
     close(
@@ -185,9 +187,31 @@ fn rs41_reed_solomon_repairs_byte_errors_and_reports_them() {
         bytes[at] ^= 0x5A;
     }
     let frame = Rs41Frames::new()
-        .decode(&mut bytes, rs41::STANDARD_LEN)
+        .decode(&mut bytes, &RS41_SURE, rs41::STANDARD_LEN)
         .expect("corrected frame");
     assert_eq!(frame.errors_corrected, 8);
+    check_fix(&truth, &frame, 1e-6, 0.05);
+}
+
+#[test]
+fn rs41_weak_bytes_past_the_error_radius_are_erased() {
+    let truth = flight(SondeType::Rs41);
+    let mut bytes = rs41_bytes(4);
+    let mut reliability = RS41_SURE;
+    for at in (60..60 + 2 * 16).step_by(2) {
+        bytes[at] ^= 0x5A;
+        reliability[at] = 0.1;
+    }
+    let mut frames = Rs41Frames::new();
+    assert!(
+        frames
+            .decode(&mut bytes.clone(), &RS41_SURE, rs41::STANDARD_LEN)
+            .is_none()
+    );
+    let frame = frames
+        .decode(&mut bytes, &reliability, rs41::STANDARD_LEN)
+        .expect("erased and repaired");
+    assert_eq!(frame.errors_corrected, 16);
     check_fix(&truth, &frame, 1e-6, 0.05);
 }
 
@@ -198,7 +222,11 @@ fn rs41_uncorrectable_status_block_emits_nothing_and_counts() {
     for at in (0x3B..0x3B + 26).step_by(2) {
         bytes[at] ^= 0xFF;
     }
-    assert!(frames.decode(&mut bytes, rs41::STANDARD_LEN).is_none());
+    assert!(
+        frames
+            .decode(&mut bytes, &RS41_SURE, rs41::STANDARD_LEN)
+            .is_none()
+    );
     assert_eq!(frames.rejected(), 1);
 }
 
@@ -231,19 +259,50 @@ fn dfm_round_trip_assembles_serial_and_decodes_gps() {
 
 #[test]
 fn dfm_hamming_corrects_one_bit_and_rejects_two() {
+    let firm = |code: [bool; 8]| code.map(|bit| if bit { 1.0 } else { -1.0 });
     for nibble in 0..16u8 {
         let code = dfm::hamming_encode(nibble);
-        assert_eq!(dfm::hamming_decode(code), Some((nibble, 0)));
+        assert_eq!(dfm::hamming_decode_soft(&firm(code)), Some((nibble, 0)));
         for flip in 0..8 {
             let mut damaged = code;
             damaged[flip] = !damaged[flip];
-            assert_eq!(dfm::hamming_decode(damaged), Some((nibble, 1)));
+            assert_eq!(dfm::hamming_decode_soft(&firm(damaged)), Some((nibble, 1)));
         }
     }
     let mut two = dfm::hamming_encode(0x9);
     two[0] = !two[0];
     two[5] = !two[5];
-    assert!(dfm::hamming_decode(two).is_none_or(|(nibble, _)| nibble != 0x9));
+    assert_eq!(dfm::hamming_decode_soft(&firm(two)), None);
+}
+
+fn dfm_soft(bits: &[bool]) -> Vec<f32> {
+    bits.iter()
+        .map(|&bit| if bit { 1.0 } else { -1.0 })
+        .collect()
+}
+
+#[test]
+fn dfm_soft_hamming_repairs_two_weak_errors_and_refuses_two_sure_ones() {
+    for nibble in 0..16u8 {
+        let clean: [f32; 8] = dfm_soft(&dfm::hamming_encode(nibble))
+            .try_into()
+            .expect("eight");
+        assert_eq!(dfm::hamming_decode_soft(&clean), Some((nibble, 0)));
+        for (a, b) in [(0, 5), (2, 7), (3, 4)] {
+            let mut sure = clean;
+            sure[a] = -sure[a];
+            sure[b] = -sure[b];
+            assert_eq!(dfm::hamming_decode_soft(&sure), None, "{nibble} {a} {b}");
+            let mut weak = sure;
+            weak[a] *= 0.2;
+            weak[b] *= 0.3;
+            assert_eq!(
+                dfm::hamming_decode_soft(&weak),
+                Some((nibble, 2)),
+                "{nibble}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -251,11 +310,12 @@ fn dfm_damaged_codewords_are_counted_and_corrected() {
     let mut frames = DfmFrames::new();
     let mut emitted = Vec::new();
     for index in 0..40 {
-        let mut bits: [bool; dfm::PAYLOAD_BITS] = dfm_payload(index).try_into().expect("bits");
-        bits[3] = !bits[3];
+        let mut bits: [f32; dfm::PAYLOAD_BITS] =
+            dfm_soft(&dfm_payload(index)).try_into().expect("bits");
+        bits[3] = -bits[3];
         if index == 10 {
-            bits[60] = !bits[60];
-            bits[60 + 13] = !bits[60 + 13];
+            bits[60] = -bits[60];
+            bits[60 + 13] = -bits[60 + 13];
         }
         emitted.extend(frames.decode(&bits));
     }

@@ -5,11 +5,10 @@
 use sdrmm_dsp::SyncDetector;
 use sdrmm_wire::DvFrame;
 
-use super::codeword::{Code, Codeword, PREAMBLE, SYNC, SYNT};
+use super::codeword::{CODEWORD_BITS, Code, Codeword, PREAMBLE, SYNC, SYNT};
 use super::frame::{Heard, dv_frame};
 use super::message::Message;
 
-const CODEWORD_BITS: u32 = 64;
 const SYNC_BITS: u32 = 24;
 const SYNC_TOLERANCE: u32 = 1;
 const PREAMBLE_TAIL: u64 = PREAMBLE as u64 & 0xFF;
@@ -53,6 +52,8 @@ pub(crate) struct Framer {
     traffic_sync: SyncDetector,
     lock: Lock,
     word: u64,
+    /// The reliability of each bit of `word`, the newest at index 0.
+    reliability: [f32; CODEWORD_BITS],
     pending: Option<Pending>,
     system: Option<u16>,
     recent: [(u64, u64); RECENT],
@@ -77,6 +78,7 @@ impl Framer {
             ),
             lock: Lock::Hunting,
             word: 0,
+            reliability: [0.0; CODEWORD_BITS],
             pending: None,
             system: None,
             recent: [(u64::MAX, 0); RECENT],
@@ -102,9 +104,13 @@ impl Framer {
         self.rejected
     }
 
-    pub(crate) fn push(&mut self, bit: bool, frames: &mut Vec<DvFrame>) {
+    /// Takes one soft bit, positive for a one.
+    pub(crate) fn push(&mut self, soft: f32, frames: &mut Vec<DvFrame>) {
+        let bit = soft > 0.0;
         self.clock += 1;
         self.word = self.word << 1 | u64::from(bit);
+        self.reliability.copy_within(..CODEWORD_BITS - 1, 1);
+        self.reliability[0] = soft.abs();
         let control_hit = self.control_sync.push(bit);
         let traffic_hit = self.traffic_sync.push(bit);
         if let Lock::Locked {
@@ -114,7 +120,7 @@ impl Framer {
             fresh,
         } = self.lock
         {
-            if filled + 1 == CODEWORD_BITS {
+            if filled + 1 == CODEWORD_BITS as u32 {
                 self.lock = Lock::Locked {
                     control,
                     filled: 0,
@@ -161,7 +167,7 @@ impl Framer {
     }
 
     fn codeword(&mut self, control: bool, misses: u8, fresh: bool, frames: &mut Vec<DvFrame>) {
-        let Some(codeword) = self.code.decode(self.word) else {
+        let Some(codeword) = self.code.decode_soft(self.word, &self.reliability) else {
             self.miss(misses, fresh, frames);
             return;
         };

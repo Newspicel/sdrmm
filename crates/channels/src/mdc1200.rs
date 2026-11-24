@@ -59,7 +59,8 @@ struct Framer {
     level: bool,
     sync: SyncDetector,
     state: State,
-    bits: [bool; BLOCK_BITS],
+    /// The block's soft bits, positive for a one.
+    bits: [f32; BLOCK_BITS],
     rejected: u32,
 }
 
@@ -69,7 +70,7 @@ impl Framer {
             level: false,
             sync: SyncDetector::new(SYNC, SYNC_BITS, SYNC_TOLERANCE),
             state: State::Hunt,
-            bits: [false; BLOCK_BITS],
+            bits: [0.0; BLOCK_BITS],
             rejected: 0,
         }
     }
@@ -79,8 +80,10 @@ impl Framer {
         self.state = State::Hunt;
     }
 
-    fn push(&mut self, mark: bool, out: &mut ChannelOutputs) {
-        self.level ^= !mark;
+    /// Takes one tone's soft decision, positive for mark. A bit is as sure as the tone that
+    /// keyed it.
+    fn push(&mut self, tone: f32, out: &mut ChannelOutputs) {
+        self.level ^= tone <= 0.0;
         let level = self.level;
         match &mut self.state {
             State::Hunt => {
@@ -98,7 +101,8 @@ impl Framer {
                 filled,
                 second,
             } => {
-                self.bits[*filled] = level ^ *inverted;
+                let sign = if level ^ *inverted { 1.0 } else { -1.0 };
+                self.bits[*filled] = sign * tone.abs();
                 *filled += 1;
                 if *filled == BLOCK_BITS {
                     let (inverted, first) = (*inverted, *second);
@@ -182,7 +186,7 @@ impl MdcChannel {
             0.0,
         );
         for &symbol in &self.symbols {
-            self.framer.push(symbol > 0.0, out);
+            self.framer.push(symbol, out);
         }
     }
 

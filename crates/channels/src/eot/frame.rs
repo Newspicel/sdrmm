@@ -6,7 +6,10 @@ use crate::eot::EotReport;
 use crate::eot::EotStatus;
 use crate::eot::HotCommand;
 use crate::eot::HotRequest;
-use sdrmm_dsp::SyndromeDecoder;
+use sdrmm_dsp::{
+    SyndromeDecoder,
+    coding::fec::{Acceptance, chase},
+};
 
 pub(crate) const REAR_SYNC: u64 = 0x5_5555_5712;
 pub(crate) const REAR_SYNC_BITS: u32 = 35;
@@ -24,6 +27,8 @@ const HEAD_CORRECTABLE: u32 = 3;
 const STATUS_REQUEST: u8 = 0x55;
 const EMERGENCY: u8 = 0xAA;
 const ARMING_TYPE: u8 = 7;
+const WORD_BITS: usize = 63;
+const CHASE_BITS: usize = 4;
 
 static REAR_CODE: LazyLock<SyndromeDecoder> =
     LazyLock::new(|| SyndromeDecoder::new(REAR_GENERATOR, 63, REAR_CORRECTABLE));
@@ -122,6 +127,42 @@ const MARKER_LIGHT: Field = field(44, 1);
 const HEAD_ADDRESS: Field = field(5, 17);
 const COMMAND: Field = field(22, 8);
 
+/// A received block: its hard bits by place in the codeword, and the reliability of each.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Heard {
+    word: u64,
+    reliability: [f32; WORD_BITS],
+}
+
+impl Heard {
+    pub(crate) fn of(layout: Layout, soft: &[f32]) -> Self {
+        let mut heard = Self {
+            word: 0,
+            reliability: [0.0; WORD_BITS],
+        };
+        for (sent, &value) in soft.iter().take(layout.bits()).enumerate() {
+            let at = layout.position(sent);
+            heard.word |= u64::from(value > 0.0) << at;
+            heard.reliability[at as usize] = value.abs();
+        }
+        heard
+    }
+
+    pub(crate) const fn word(&self) -> u64 {
+        self.word
+    }
+
+    /// The codeword nearest the block by Chase search over its weakest bits, once `key` is
+    /// taken off, and the bits it differs in.
+    fn repair(&self, code: &SyndromeDecoder, radius: u32, key: u64) -> Option<(u64, u32)> {
+        let received = self.word ^ key;
+        let decode = |trial: u64| decode(code, trial).map(|(fixed, _)| fixed);
+        let acceptance = Acceptance::Radius(radius);
+        let fixed = chase(received, &self.reliability, CHASE_BITS, acceptance, decode)?;
+        Some((fixed, (fixed ^ received).count_ones()))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Decoded {
     pub(crate) unit_address: u32,
@@ -129,8 +170,8 @@ pub(crate) struct Decoded {
     pub(crate) errors: u32,
 }
 
-pub(crate) fn rear(word: u64) -> Option<Decoded> {
-    let (fixed, errors) = decode(&REAR_CODE, word ^ REAR_KEY)?;
+pub(crate) fn rear(heard: &Heard) -> Option<Decoded> {
+    let (fixed, errors) = heard.repair(&REAR_CODE, REAR_CORRECTABLE, REAR_KEY)?;
     let data = fixed >> REAR.parity_bits;
     Some(Decoded {
         unit_address: REAR_ADDRESS.get(data),
@@ -168,22 +209,10 @@ fn status(data: u64) -> EotStatus {
     }
 }
 
-pub(crate) fn hard(layout: Layout, soft: &[f32]) -> u64 {
-    soft.iter()
-        .take(layout.bits())
-        .enumerate()
-        .fold(0, |word, (sent, &value)| {
-            word | u64::from(value > 0.0) << layout.position(sent)
-        })
-}
-
-pub(crate) fn head(summed: u64, copies: &[u64; HEAD_COPIES]) -> Option<Decoded> {
-    let [a, b, c] = *copies;
-    let voted = a & b | a & c | b & c;
-    let (fixed, errors) = [summed, voted, a, b, c]
-        .into_iter()
-        .filter_map(|word| decode(&HEAD_CODE, word))
-        .min_by_key(|&(_, errors)| errors)?;
+/// The command in the summed copies of a head block; `copies` counts those that read the same
+/// on their own.
+pub(crate) fn head(summed: &Heard, copies: &[u64; HEAD_COPIES]) -> Option<Decoded> {
+    let (fixed, errors) = summed.repair(&HEAD_CODE, HEAD_CORRECTABLE, 0)?;
     let agreeing = copies
         .iter()
         .filter(|&&copy| decode(&HEAD_CODE, copy).is_some_and(|(word, _)| word == fixed))
@@ -247,6 +276,13 @@ pub(crate) fn odd_parity(word: u64) -> bool {
 mod tests {
     use super::*;
 
+    fn sure(word: u64) -> Heard {
+        Heard {
+            word,
+            reliability: [1.0; WORD_BITS],
+        }
+    }
+
     fn packet(bits: &str) -> u64 {
         bits.bytes().enumerate().fold(0, |word, (sent, bit)| {
             word | u64::from(bit == b'1') << REAR.position(sent)
@@ -285,7 +321,7 @@ mod tests {
             packet(&format!("{}{}", "0".repeat(45), "101011011101110000")),
             REAR_KEY
         );
-        assert_eq!(rear(REAR_KEY).map(|d| d.errors), Some(0));
+        assert_eq!(rear(&sure(REAR_KEY)).map(|d| d.errors), Some(0));
     }
 
     #[test]
@@ -296,15 +332,26 @@ mod tests {
             report: EotReport::Rear(status()),
             errors: 0,
         };
-        assert_eq!(rear(word), Some(expected.clone()));
+        assert_eq!(rear(&sure(word)), Some(expected.clone()));
         assert_eq!(
-            rear(word ^ (1 << 3) ^ (1 << 50)),
+            rear(&sure(word ^ (1 << 3) ^ (1 << 50))),
             Some(Decoded {
                 errors: 2,
                 ..expected
             })
         );
-        assert_eq!(rear(word ^ 0b111 << 20), None);
+        assert_eq!(decode(&REAR_CODE, word ^ 0b111 << 20 ^ REAR_KEY), None);
+    }
+
+    #[test]
+    fn a_rear_block_with_three_weak_errors_is_repaired_softly() {
+        let word = rear_codeword(12_345, &status());
+        let mut heard = sure(word ^ 0b111 << 20);
+        assert_eq!(decode(&REAR_CODE, heard.word ^ REAR_KEY), None);
+        heard.reliability[20..23].fill(0.05);
+        let decoded = rear(&heard).expect("repaired");
+        assert_eq!(decoded.unit_address, 12_345);
+        assert_eq!(decoded.errors, 3);
     }
 
     #[test]
@@ -315,7 +362,7 @@ mod tests {
             let Some(Decoded {
                 report: EotReport::Rear(got),
                 ..
-            }) = rear(rear_codeword(1, &sent))
+            }) = rear(&sure(rear_codeword(1, &sent)))
             else {
                 panic!("block {pct} did not decode");
             };
@@ -323,11 +370,24 @@ mod tests {
         }
     }
 
+    fn summed(copies: &[u64; HEAD_COPIES]) -> Heard {
+        let mut heard = sure(0);
+        for bit in 0..WORD_BITS {
+            let sum: f32 = copies
+                .iter()
+                .map(|copy| if copy >> bit & 1 == 1 { 1.0 } else { -1.0 })
+                .sum();
+            heard.word |= u64::from(sum > 0.0) << bit;
+            heard.reliability[bit] = sum.abs();
+        }
+        heard
+    }
+
     #[test]
-    fn head_copies_vote_out_a_burst_in_one_copy() {
+    fn head_copies_sum_out_a_burst_in_one_copy() {
         let clean = head_codeword(54_321, EMERGENCY);
         let copies = [clean ^ 0xFF_FF00, clean ^ 1 << 40, clean];
-        let decoded = head(clean ^ 0b11_1111, &copies).expect("vote decodes");
+        let decoded = head(&summed(&copies), &copies).expect("sum decodes");
         assert_eq!(decoded.unit_address, 54_321);
         assert_eq!(decoded.errors, 0);
         assert_eq!(
@@ -339,6 +399,6 @@ mod tests {
             })
         );
         let broken = clean ^ 0x7F;
-        assert!(head(broken, &[broken, broken, broken]).is_none());
+        assert!(head(&sure(broken), &[broken, broken, broken]).is_none());
     }
 }
