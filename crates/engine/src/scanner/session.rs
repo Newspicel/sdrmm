@@ -59,7 +59,9 @@ fn admit(
             .measure_bw_hz
             .unwrap_or_else(|| decoder_bandwidth_hz(&decoder.settings)),
     );
-    plan.check_reach(&state.capabilities.freq_ranges)?;
+    let measured_hz = settings.measure_bw_hz.unwrap_or(0.0);
+    let heard_hz = (state.settings.sample_rate.unwrap_or(0.0) - measured_hz).max(0.0) / 2.0;
+    plan.check_reach(&state.capabilities.freq_ranges, heard_hz)?;
     Ok(decoder.stream)
 }
 

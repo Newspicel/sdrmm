@@ -57,11 +57,14 @@ fn sorted_hz(mut hz: Vec<f64>) -> Vec<f64> {
 }
 
 impl ScanPlan {
-    pub(crate) fn check_reach(&self, ranges: &[Range]) -> Result<(), EngineError> {
+    /// Refuses a target no reachable centre brings within `heard_hz` of, the half span a radio
+    /// hears around its centre without retuning.
+    pub(crate) fn check_reach(&self, ranges: &[Range], heard_hz: f64) -> Result<(), EngineError> {
+        let heard = |r: &Range, hz: f64| r.min - heard_hz <= hz && hz <= r.max + heard_hz;
         match self
             .targets
             .iter()
-            .find(|&&hz| !ranges.is_empty() && !ranges.iter().any(|r| r.holds(hz)))
+            .find(|&&hz| !ranges.is_empty() && !ranges.iter().any(|r| heard(r, hz)))
         {
             Some(hz) => Err(EngineError::Scan(format!(
                 "{hz} Hz is outside the tuning range of this radio"
@@ -191,14 +194,32 @@ mod tests {
     fn a_target_the_radio_cannot_reach_is_refused_by_name() {
         let plan = ScanPlan::build(&settings(Vec::new(), vec![100e6, 2.4e9])).expect("plan");
         let err = plan
-            .check_reach(&band(90e6, 200e6))
+            .check_reach(&band(90e6, 200e6), 0.0)
             .expect_err("out of reach");
         assert!(
             err.to_string().contains("2400000000"),
             "unhelpful message: {err}"
         );
-        plan.check_reach(&[])
+        plan.check_reach(&[], 0.0)
             .expect("a radio that declares no range is taken at its word");
-        plan.check_reach(&band(1e6, 6e9)).expect("in reach");
+        plan.check_reach(&band(1e6, 6e9), 0.0).expect("in reach");
+    }
+
+    #[test]
+    fn a_target_inside_the_window_of_a_fixed_centre_is_in_reach() {
+        let plan = ScanPlan::build(&settings(
+            vec![ScanRange {
+                start_hz: 446_006_250.0,
+                stop_hz: 446_093_750.0,
+                step_hz: 12_500.0,
+            }],
+            Vec::new(),
+        ))
+        .expect("plan");
+        let recording = band(446.05e6, 446.05e6);
+        plan.check_reach(&recording, 113_750.0)
+            .expect("heard around the centre");
+        plan.check_reach(&recording, 40_000.0)
+            .expect_err("the outer channels lie past what the window hears");
     }
 }
