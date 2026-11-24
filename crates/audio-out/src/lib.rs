@@ -1,6 +1,10 @@
 //! Plays audio on the server's own sound card. Each output mixes any number of voices, each fed
 //! from its own thread, so a speaker with several wires opens its device once.
 
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "macos")),
+    expect(dead_code, reason = "only a platform that plays drains the mixer")
+)]
 mod mixer;
 
 #[cfg(target_os = "linux")]

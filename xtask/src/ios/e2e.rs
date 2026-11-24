@@ -7,12 +7,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
-use sdrmm_wire::{
-    CreatedRowId, PairUri, PairingOffer, PhoneAccess, PhoneAccessStatus, PhoneListenerState,
-};
+use sdrmm_wire::{CreatedRowId, PhoneAccess, PhoneAccessStatus, PhoneListenerState};
 
 pub(super) const SELECTION: &str = "SDRmmUITests/EndToEndUITests";
-pub(super) const LINK_ENV: &str = "TEST_RUNNER_SDRMM_E2E_LINK";
 const FIXTURE: &str = "fixtures/ios/e2e-workspace.json";
 const TOKEN: &str = "e2e";
 const READY_WITHIN: Duration = Duration::from_secs(180);
@@ -104,7 +101,9 @@ impl Server {
         }
     }
 
-    pub(super) fn pairing_link(&self, root: &Path) -> Result<String> {
+    /// Opens the server to phones and loads the fixture. The test mints its own code, since
+    /// xcodebuild can take longer to reach it than a code lives.
+    pub(super) fn open_for_phones(&self, root: &Path) -> Result<Vec<(&'static str, String)>> {
         let port = free_port(Ipv4Addr::UNSPECIFIED)?;
         let access = serde_json::to_string(&PhoneAccess {
             enabled: true,
@@ -124,9 +123,7 @@ impl Server {
             let path = format!("/api/workspaces/{}/{step}", imported.id);
             self.ok("POST", &path, &Body::Empty)?;
         }
-        let offer: PairingOffer =
-            self.json("POST", "/api/phones/offers", &Body::Json("{}".to_owned()))?;
-        local_link(&offer.uri, port)
+        Ok(test_env(&self.base, port))
     }
 
     fn json<T: serde::de::DeserializeOwned>(
@@ -220,10 +217,15 @@ fn split_status(output: &str) -> Result<(u16, &str)> {
     Ok((status, text))
 }
 
-fn local_link(uri: &str, port: u16) -> Result<String> {
-    let mut link = PairUri::parse(uri).with_context(|| format!("not a pairing link: {uri}"))?;
-    link.hosts = vec![format!("127.0.0.1:{port}")];
-    Ok(link.to_uri())
+fn test_env(base: &str, phone_port: u16) -> Vec<(&'static str, String)> {
+    vec![
+        ("TEST_RUNNER_SDRMM_E2E_SERVER", base.to_owned()),
+        ("TEST_RUNNER_SDRMM_E2E_TOKEN", TOKEN.to_owned()),
+        (
+            "TEST_RUNNER_SDRMM_E2E_PHONE",
+            format!("127.0.0.1:{phone_port}"),
+        ),
+    ]
 }
 
 #[cfg(test)]
@@ -233,26 +235,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_link_points_at_the_phone_listener_on_loopback() {
-        let pin = "ab".repeat(32);
-        let offered = PairUri {
-            hosts: vec![
-                "192.168.1.20:8443".to_owned(),
-                "radio.local:8443".to_owned(),
-            ],
-            code: "48210937".to_owned(),
-            pin: pin.clone(),
-            protocol: sdrmm_wire::API_PROTOCOL,
-            name: Some("Shack".to_owned()),
-        };
-        let link = local_link(&offered.to_uri(), 18_444).expect("link");
-        let parsed = PairUri::parse(&link).expect("parses");
-        assert_eq!(parsed.hosts, ["127.0.0.1:18444"]);
+    fn the_test_gets_the_server_its_token_and_the_phone_listener() {
         assert_eq!(
-            (parsed.code, parsed.pin, parsed.name),
-            (offered.code, pin, offered.name)
+            test_env("https://127.0.0.1:18443", 18_444),
+            [
+                (
+                    "TEST_RUNNER_SDRMM_E2E_SERVER",
+                    "https://127.0.0.1:18443".to_owned()
+                ),
+                ("TEST_RUNNER_SDRMM_E2E_TOKEN", "e2e".to_owned()),
+                ("TEST_RUNNER_SDRMM_E2E_PHONE", "127.0.0.1:18444".to_owned()),
+            ]
         );
-        assert!(local_link("https://example.com", 1).is_err());
     }
 
     #[test]

@@ -4,18 +4,15 @@ import XCTest
 final class EndToEndUITests: XCTestCase {
     private let patience: TimeInterval = 30
 
-    func testPairAndHuntAgainstServer() throws {
-        guard let raw = ProcessInfo.processInfo.environment["SDRMM_E2E_LINK"] else {
-            throw XCTSkip("Needs SDRMM_E2E_LINK from cargo xtask ios e2e")
-        }
-        let link = try XCTUnwrap(URL(string: raw))
+    func testPairAndHuntAgainstServer() async throws {
+        let server = try PairingServer(environment: ProcessInfo.processInfo.environment)
         allowLocation()
         let app = XCUIApplication()
         app.launchEnvironment["SDRMM_E2E"] = "1"
         app.launchEnvironment["SDRMM_UITEST"] = "1"
         app.launch()
         XCTAssertTrue(app.navigationBars["Pair"].waitForExistence(timeout: patience))
-        app.open(link)
+        try await app.open(server.freshLink())
         let trust = app.buttons["pair.trust"]
         XCTAssertTrue(trust.waitForExistence(timeout: patience))
         trust.tap()

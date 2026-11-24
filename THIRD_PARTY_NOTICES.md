@@ -4,7 +4,7 @@
 
 SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 
-## Rust crates (1094)
+## Rust crates (1093)
 
 | Component | Version | License |
 | --- | --- | --- |
@@ -283,7 +283,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [fnv](https://github.com/servo/rust-fnv) | 1.0.7 | Apache-2.0 / MIT |
 | [foldhash](https://github.com/orlp/foldhash) | 0.1.5 | Zlib |
 | [foldhash](https://github.com/orlp/foldhash) | 0.2.0 | Zlib |
-| [form_urlencoded](https://github.com/servo/rust-url) | 1.2.2 | MIT OR Apache-2.0 |
+| [form_urlencoded](https://github.com/servo/rust-url) | 1.2.3 | MIT OR Apache-2.0 |
 | [from_map](https://github.com/Luro02/shorthand) | 0.1.0 | Unlicense OR MIT OR Apache-2.0 |
 | [fs-err](https://github.com/andrewhickman/fs-err) | 3.3.2 | MIT OR Apache-2.0 |
 | [fs_extra](https://github.com/webdesus/fs_extra) | 1.3.0 | MIT |
@@ -448,7 +448,6 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.8.9 | ISC |
 | [libloading](https://github.com/nagisa/rust_libloading/) | 0.9.0 | ISC |
 | [libm](https://github.com/rust-lang/compiler-builtins) | 0.2.16 | MIT |
-| [libopus_sys](https://github.com/cijiugechu/libopus_sys.git) | 0.3.3 | MIT |
 | [libredox](https://gitlab.redox-os.org/redox-os/libredox.git) | 0.1.25 | MIT |
 | [libsqlite3-sys](https://github.com/rusqlite/rusqlite) | 0.39.1 | MIT |
 | [link-section](https://github.com/mmastrac/linktime) | 0.19.4 | Apache-2.0 OR MIT |
@@ -946,7 +945,7 @@ SDRmm is licensed under AGPL-3.0-or-later: see [`LICENSE`](LICENSE).
 | [untrusted](https://github.com/briansmith/untrusted) | 0.9.0 | ISC |
 | [ureq](https://github.com/algesten/ureq) | 3.5.1 | MIT OR Apache-2.0 |
 | [ureq-proto](https://github.com/algesten/ureq-proto) | 0.7.1 | MIT OR Apache-2.0 |
-| [url](https://github.com/servo/rust-url) | 2.5.8 | MIT OR Apache-2.0 |
+| [url](https://github.com/servo/rust-url) | 2.5.9 | MIT OR Apache-2.0 |
 | [utf-8](https://github.com/SimonSapin/rust-utf8) | 0.7.6 | MIT OR Apache-2.0 |
 | [utf8-zero](https://github.com/algesten/utf8-zero) | 0.8.1 | MIT OR Apache-2.0 |
 | [utf8_iter](https://github.com/hsivonen/utf8_iter) | 1.1.0 | Apache-2.0 OR MIT |

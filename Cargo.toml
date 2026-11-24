@@ -51,6 +51,7 @@ members = [
     "crates/tools",
     "crates/server",
     "crates/mobile-core",
+    "crates/libopus-sys",
     "apps/sdrmm",
     "apps/iqlinkd",
     "apps/desktop",
@@ -248,6 +249,7 @@ wgpu = { version = "30", default-features = false, features = ["std", "parking_l
 
 # Audio (libopus via vendored build, )
 opus = "0.4"
+opusic-sys = "0.7.7"
 blip25-vocoder = { version = "1.0", default-features = false, features = ["decode"] }
 codec2 = "0.3.1"
 symphonia-core = "0.6.1"
@@ -395,3 +397,5 @@ codegen-units = 16
 # FFTs for powers of two on NEON, Wasm SIMD and AMD. Pinned until it lands upstream.
 [patch.crates-io]
 rustfft = { git = "https://github.com/Newspicel/RustFFT", rev = "fe4c666ebbc2a0231a5da801f8f023c5ac7182a9" }
+# songbird's libopus, served by opusic-sys so MSVC links one static-CRT libopus.
+libopus_sys = { path = "crates/libopus-sys" }

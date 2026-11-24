@@ -22,10 +22,6 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    #[cfg_attr(
-        not(any(target_os = "linux", target_os = "macos")),
-        expect(dead_code, reason = "only a platform that plays can fail")
-    )]
     pub(crate) fn fail(&self, reason: String) {
         let _ = self.fault.set(reason);
     }

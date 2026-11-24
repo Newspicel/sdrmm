@@ -1,0 +1,99 @@
+//! Stands in for crates.io `libopus_sys`, whose `CMake` build ignores `crt-static` and links
+//! `/MD` objects into the static MSVC binary. Serving songbird the `opusic-sys` bindings links
+//! one libopus, built with the CRT Rust links.
+#![no_std]
+
+pub use opusic_sys::*;
+
+/// `libopus_sys` types the non-negative `#define`s as `u32`, and `opus2` compares against them
+/// as such.
+macro_rules! unsigned {
+    ($($name:ident),* $(,)?) => {
+        $(pub const $name: u32 = opusic_sys::$name as u32;)*
+    };
+}
+
+unsigned!(
+    OPUS_OK,
+    OPUS_SET_APPLICATION_REQUEST,
+    OPUS_GET_APPLICATION_REQUEST,
+    OPUS_SET_BITRATE_REQUEST,
+    OPUS_GET_BITRATE_REQUEST,
+    OPUS_SET_MAX_BANDWIDTH_REQUEST,
+    OPUS_GET_MAX_BANDWIDTH_REQUEST,
+    OPUS_SET_VBR_REQUEST,
+    OPUS_GET_VBR_REQUEST,
+    OPUS_SET_BANDWIDTH_REQUEST,
+    OPUS_GET_BANDWIDTH_REQUEST,
+    OPUS_SET_COMPLEXITY_REQUEST,
+    OPUS_GET_COMPLEXITY_REQUEST,
+    OPUS_SET_INBAND_FEC_REQUEST,
+    OPUS_GET_INBAND_FEC_REQUEST,
+    OPUS_SET_PACKET_LOSS_PERC_REQUEST,
+    OPUS_GET_PACKET_LOSS_PERC_REQUEST,
+    OPUS_SET_DTX_REQUEST,
+    OPUS_GET_DTX_REQUEST,
+    OPUS_SET_VBR_CONSTRAINT_REQUEST,
+    OPUS_GET_VBR_CONSTRAINT_REQUEST,
+    OPUS_SET_FORCE_CHANNELS_REQUEST,
+    OPUS_GET_FORCE_CHANNELS_REQUEST,
+    OPUS_SET_SIGNAL_REQUEST,
+    OPUS_GET_SIGNAL_REQUEST,
+    OPUS_GET_LOOKAHEAD_REQUEST,
+    OPUS_GET_SAMPLE_RATE_REQUEST,
+    OPUS_GET_FINAL_RANGE_REQUEST,
+    OPUS_GET_PITCH_REQUEST,
+    OPUS_SET_GAIN_REQUEST,
+    OPUS_GET_GAIN_REQUEST,
+    OPUS_SET_LSB_DEPTH_REQUEST,
+    OPUS_GET_LSB_DEPTH_REQUEST,
+    OPUS_GET_LAST_PACKET_DURATION_REQUEST,
+    OPUS_SET_EXPERT_FRAME_DURATION_REQUEST,
+    OPUS_GET_EXPERT_FRAME_DURATION_REQUEST,
+    OPUS_SET_PREDICTION_DISABLED_REQUEST,
+    OPUS_GET_PREDICTION_DISABLED_REQUEST,
+    OPUS_SET_PHASE_INVERSION_DISABLED_REQUEST,
+    OPUS_GET_PHASE_INVERSION_DISABLED_REQUEST,
+    OPUS_GET_IN_DTX_REQUEST,
+    OPUS_SET_DRED_DURATION_REQUEST,
+    OPUS_GET_DRED_DURATION_REQUEST,
+    OPUS_SET_DNN_BLOB_REQUEST,
+    OPUS_APPLICATION_VOIP,
+    OPUS_APPLICATION_AUDIO,
+    OPUS_APPLICATION_RESTRICTED_LOWDELAY,
+    OPUS_SIGNAL_VOICE,
+    OPUS_SIGNAL_MUSIC,
+    OPUS_BANDWIDTH_NARROWBAND,
+    OPUS_BANDWIDTH_MEDIUMBAND,
+    OPUS_BANDWIDTH_WIDEBAND,
+    OPUS_BANDWIDTH_SUPERWIDEBAND,
+    OPUS_BANDWIDTH_FULLBAND,
+    OPUS_FRAMESIZE_ARG,
+    OPUS_FRAMESIZE_2_5_MS,
+    OPUS_FRAMESIZE_5_MS,
+    OPUS_FRAMESIZE_10_MS,
+    OPUS_FRAMESIZE_20_MS,
+    OPUS_FRAMESIZE_40_MS,
+    OPUS_FRAMESIZE_60_MS,
+    OPUS_FRAMESIZE_80_MS,
+    OPUS_FRAMESIZE_100_MS,
+    OPUS_FRAMESIZE_120_MS,
+    OPUS_RESET_STATE,
+    OPUS_MULTISTREAM_GET_ENCODER_STATE_REQUEST,
+    OPUS_MULTISTREAM_GET_DECODER_STATE_REQUEST,
+);
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn links_libopus() {
+        let version = unsafe { core::ffi::CStr::from_ptr(super::opus_get_version_string()) };
+        assert!(version.to_bytes().starts_with(b"libopus"));
+    }
+
+    #[test]
+    fn unsigned_constants_keep_their_values() {
+        assert_eq!(super::OPUS_OK, 0);
+        assert_eq!(super::OPUS_APPLICATION_VOIP, 2048);
+    }
+}

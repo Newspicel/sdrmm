@@ -111,7 +111,7 @@ describe("reachesListener", () => {
     const recorded = reaching(["enc"]);
     const enc = recorded.nodes.find((held) => held.id === "enc");
     const out = enc?.ports.find((port) => port.name === "baseband");
-    out?.reaches?.push({ port: "baseband", sink: "rec" } as never);
+    out?.reaches?.push({ port: "baseband", sink: "rec" });
     const withRecorder = [
       ...nodes,
       { id: "rec", kind: "baseband_recorder", position: { x: 0, y: 0 }, data: {} },

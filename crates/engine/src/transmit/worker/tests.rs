@@ -20,6 +20,7 @@ struct Aired {
 struct FakeRadio {
     aired: Arc<Mutex<Aired>>,
     takes: usize,
+    pause: Duration,
 }
 
 impl TxStream for FakeRadio {
@@ -30,6 +31,9 @@ impl TxStream for FakeRadio {
         end_burst: bool,
     ) -> Result<usize, DeviceError> {
         let samples = channels[0];
+        if !end_burst {
+            std::thread::sleep(self.pause);
+        }
         let accepted = samples.len().min(self.takes);
         let mut aired = self.aired.lock().expect("aired");
         aired.samples.extend_from_slice(&samples[..accepted]);
@@ -62,6 +66,7 @@ impl Rig {
         let radio = FakeRadio {
             aired: aired.clone(),
             takes: 1_000,
+            pause: Duration::ZERO,
         };
         let worker = Worker::new(Box::new(radio), source, RADIO, settings, shared.clone());
         let (commands, received) = mpsc::channel();
@@ -205,6 +210,7 @@ fn a_lane_is_sent_as_it_arrives_and_what_does_not_fit_is_counted() {
     let radio = FakeRadio {
         aired: aired.clone(),
         takes: 100_000,
+        pause: Duration::ZERO,
     };
     let worker = Worker::new(
         Box::new(radio),
@@ -244,4 +250,42 @@ fn a_lane_is_sent_as_it_arrives_and_what_does_not_fit_is_counted() {
     thread.join().expect("worker");
     drop(commands);
     assert!(!tap.push(&block), "a tap with no transmitter lets go");
+}
+
+#[test]
+fn a_lane_with_samples_waiting_stays_one_burst_while_the_radio_is_slow_to_take_them() {
+    let shared = Arc::new(TxShared::default());
+    let (mut tap, source) = feed(RADIO, &shared);
+    let aired = Arc::new(Mutex::new(Aired::default()));
+    let radio = FakeRadio {
+        aired: aired.clone(),
+        takes: 100_000,
+        pause: HANG + Duration::from_millis(80),
+    };
+    let worker = Worker::new(
+        Box::new(radio),
+        source,
+        RADIO,
+        TransmitSettings::default(),
+        shared.clone(),
+    );
+    let (_commands, received) = mpsc::channel::<TxCommand>();
+    let stop = Arc::new(AtomicBool::new(false));
+    let halt = stop.clone();
+    let thread = std::thread::spawn(move || worker.run(&received, &halt));
+
+    let lane = vec![Sample::new(0.25, 0.0); 72_000];
+    assert!(tap.push(&lane));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while aired.lock().expect("aired").ends == 0 {
+        assert!(Instant::now() < deadline, "the lane never ended its burst");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    stop.store(true, Ordering::Release);
+    thread.join().expect("worker");
+    let status = shared.status("tx", &TransmitSettings::default());
+    assert_eq!(status.bursts, 1);
+    let aired = aired.lock().expect("aired");
+    assert_eq!(aired.ends, 1);
+    assert!(aired.samples.len() >= lane.len());
 }

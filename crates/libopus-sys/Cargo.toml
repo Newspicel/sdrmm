@@ -1,0 +1,21 @@
+[package]
+name = "libopus_sys"
+version = "0.3.3"
+description = "libopus_sys for songbird, served by the one opusic-sys libopus"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+bundled = []
+dynamic = []
+static = []
+
+[dependencies]
+opusic-sys.workspace = true

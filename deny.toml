@@ -11,6 +11,15 @@ unsound = "all"
 unmaintained = "workspace"
 # An exception that no longer applies is a lie about the tree, so make it fail rather than warn.
 unused-ignored-advisory = "deny"
+# Pinned by upstream crates already at their newest release. Drop each once they move.
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 via openidconnect and tsclient-rs, which only verify with public keys" },
+    { id = "RUSTSEC-2026-0293", reason = "ringbuf 0.4 via songbird, whose samples cannot panic on drop" },
+    { id = "RUSTSEC-2026-0207", reason = "libcrux-sha3 0.0.8 via songbird's DAVE, which never squeezes SHAKE incrementally" },
+    { id = "RUSTSEC-2026-0208", reason = "libcrux-sha3 0.0.8 via songbird's DAVE, whose P-256 suite never uses SHAKE-256" },
+    { id = "RUSTSEC-2026-0212", reason = "libcrux-secrets 0.0.5 via songbird's DAVE, pinned by hpke-rs 0.6" },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via elliptic-curve 0.13, pinned by songbird and tsclient-rs" },
+]
 
 [licenses]
 # Everything the AGPL-3.0-or-later binaries may carry. GPL-3.0-only, LGPL-2.1-or-later and the

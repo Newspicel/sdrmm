@@ -49,12 +49,16 @@ struct Strategy {
     profiles: &'static [Detector],
     ladder: &'static [Erasures],
     fcs_arbitrates: bool,
+    /// How many of the least certain header symbols get read as their nearest other point
+    /// when the header holds more errors than its code mends.
+    header_doubts: usize,
 }
 
 const RECOVERY: Strategy = Strategy {
     profiles: &PROFILES,
     ladder: &[Erasures::Doubtful, Erasures::Least(2), Erasures::Least(4)],
     fcs_arbitrates: true,
+    header_doubts: 3,
 };
 
 #[cfg(test)]
@@ -62,6 +66,7 @@ const XNG: Strategy = Strategy {
     profiles: &[Detector::Differential],
     ladder: &[Erasures::Doubtful],
     fcs_arbitrates: false,
+    header_doubts: 0,
 };
 
 #[derive(Clone, Copy)]
@@ -117,12 +122,15 @@ struct Collecting {
     tracker: Tracker,
     bits: Vec<u8>,
     conf: Vec<f32>,
+    doubts: Vec<Doubt>,
     points: Vec<Complex<f32>>,
     scr: Prbs,
     length: Option<BurstLength>,
+    /// Other readings of the header, the next to try last.
+    fallbacks: Vec<BurstLength>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct BurstLength {
     tl_bits: usize,
     total_bits: usize,
@@ -307,7 +315,8 @@ impl Vdl2Demod {
     fn collect(&self, c: &mut Collecting) -> Collected {
         loop {
             if c.length.is_none() && c.bits.len() >= HEADER_BITS {
-                match burst_length(&c.bits) {
+                c.fallbacks = burst_lengths(&c.bits, &mut c.doubts, self.strategy.header_doubts);
+                match c.fallbacks.pop() {
                     Some(length) => c.length = Some(length),
                     None => return Collected::BadHeader,
                 }
@@ -327,6 +336,9 @@ impl Vdl2Demod {
                 s.norm(),
                 idx as f32 * PI / 4.0 + residual,
             ));
+            if c.bits.len() < HEADER_BITS {
+                c.doubts.push(Doubt::of(idx, residual, c.bits.len()));
+            }
             let (x, y, z) = GRAY_INV[idx];
             for b in [x, y, z] {
                 c.bits.push(b ^ u8::from(c.scr.next_bit()));
@@ -365,9 +377,11 @@ impl Vdl2Demod {
             profile,
             bits: Vec::new(),
             conf: Vec::new(),
+            doubts: Vec::new(),
             points: Vec::new(),
             scr: scrambler(),
             length: None,
+            fallbacks: Vec::new(),
         })
     }
 
@@ -379,6 +393,22 @@ impl Vdl2Demod {
             }
             None => false,
         }
+    }
+
+    /// Tries the header's next reading on the same symbols, then the next detector, then gives
+    /// the burst up.
+    fn reject(&mut self, mut c: Box<Collecting>) {
+        if let Some(length) = c.fallbacks.pop() {
+            c.length = Some(length);
+            self.state = State::Collect(c);
+        } else if !self.retry(&c) {
+            self.last_rs_fail = c.uw_start;
+            self.cursor = c.uw_start + 1.0;
+        }
+    }
+
+    fn burst_end(&self, c: &Collecting, length: BurstLength) -> f64 {
+        c.uw_start + (UW_DELTAS.len() + length.total_bits.div_ceil(3)) as f64 * self.sps
     }
 
     fn finish(&mut self, c: &Collecting, length: BurstLength, rs: &ReedSolomon) -> Option<Burst> {
@@ -394,20 +424,13 @@ impl Vdl2Demod {
             let frames = avlc::scan(&mut self.deframer, &decoded.bits);
             (!self.strategy.fcs_arbitrates || !frames.is_empty()).then_some((decoded, frames))
         });
-        let Some((decoded, frames)) = decoded else {
-            if self.retry(c) {
-                return None;
-            }
-            self.last_rs_fail = c.uw_start;
-            self.cursor = c.uw_start + 1.0;
-            return None;
-        };
+        let (decoded, frames) = decoded?;
         self.show(c);
         if decoded.soft_assisted {
             self.last_rs_fail = c.uw_start;
             self.cursor = c.uw_start + 1.0;
         } else {
-            self.cursor = c.next_pos;
+            self.cursor = self.burst_end(c, length);
         }
         Some(Burst {
             frames,
@@ -438,9 +461,10 @@ impl Vdl2Demod {
                     Collected::BadHeader => {
                         self.retry(&c);
                     }
-                    Collected::Complete(length) => {
-                        out.extend(self.finish(&c, length, rs));
-                    }
+                    Collected::Complete(length) => match self.finish(&c, length, rs) {
+                        Some(burst) => out.push(burst),
+                        None => self.reject(c),
+                    },
                 },
             }
         }
@@ -460,8 +484,62 @@ impl Vdl2Demod {
     }
 }
 
-fn burst_length(bits: &[u8]) -> Option<BurstLength> {
-    let header: &[u8; HEADER_BITS] = bits.get(..HEADER_BITS)?.try_into().ok()?;
+/// The header bit a symbol flips had it been its nearest other point, and how far it sat from
+/// its own.
+#[derive(Clone, Copy)]
+struct Doubt {
+    residual: f32,
+    bit: usize,
+}
+
+impl Doubt {
+    fn of(idx: usize, residual: f32, first_bit: usize) -> Self {
+        let step = if residual < 0.0 { 7 } else { 1 };
+        let (a, b) = (GRAY_INV[idx], GRAY_INV[(idx + step) % 8]);
+        let offset = [a.0 != b.0, a.1 != b.1, a.2 != b.2]
+            .iter()
+            .position(|&differs| differs)
+            .unwrap_or(0);
+        Self {
+            residual: residual.abs(),
+            bit: first_bit + offset,
+        }
+    }
+}
+
+/// The burst lengths the header may hold, the likeliest last: its hard decisions, then each
+/// reading with one of its `tries` least certain symbols as its nearest other point. The
+/// burst's FEC picks between them.
+fn burst_lengths(bits: &[u8], doubts: &mut [Doubt], tries: usize) -> Vec<BurstLength> {
+    let Some(header) = bits
+        .get(..HEADER_BITS)
+        .and_then(|h| <[u8; HEADER_BITS]>::try_from(h).ok())
+    else {
+        return Vec::new();
+    };
+    doubts.sort_by(|a, b| b.residual.total_cmp(&a.residual));
+    let readings = doubts
+        .iter()
+        .filter(|doubt| doubt.bit < HEADER_BITS)
+        .take(tries)
+        .map(|doubt| {
+            let mut reading = header;
+            reading[doubt.bit] ^= 1;
+            reading
+        });
+    let mut lengths: Vec<BurstLength> = Vec::new();
+    for reading in std::iter::once(header).chain(readings) {
+        if let Some(length) = burst_length(&reading)
+            && !lengths.contains(&length)
+        {
+            lengths.push(length);
+        }
+    }
+    lengths.reverse();
+    lengths
+}
+
+fn burst_length(header: &[u8; HEADER_BITS]) -> Option<BurstLength> {
     let tl_bits = header::decode(header).filter(|&tl| tl <= MAX_TL_BITS)? as usize;
     let layout = interleave::layout(tl_bits)?;
     Some(BurstLength {
@@ -540,4 +618,52 @@ fn evm_snr_db(residuals: &[f32]) -> f32 {
     }
     let evm2 = residuals.iter().map(|r| r * r).sum::<f32>() / residuals.len() as f32;
     -10.0 * evm2.max(1e-9).log10()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn doubt(residual: f32, bit: usize) -> Doubt {
+        Doubt { residual, bit }
+    }
+
+    #[test]
+    fn a_doubt_names_the_bit_its_neighbour_differs_in() {
+        for (idx, &(x, y, z)) in GRAY_INV.iter().enumerate() {
+            for (residual, neighbour) in [(0.3, (idx + 1) % 8), (-0.3, (idx + 7) % 8)] {
+                let bit = Doubt::of(idx, residual, 0).bit;
+                let mut bits = [x, y, z];
+                bits[bit] ^= 1;
+                let (a, b, c) = GRAY_INV[neighbour];
+                assert_eq!(bits, [a, b, c], "{idx} {residual}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_doubtful_header_errors_still_give_the_length() {
+        let mut bits = header::encode(489).to_vec();
+        bits[4] ^= 1;
+        bits[9] ^= 1;
+        let mut doubts = [
+            doubt(0.35, 1),
+            doubt(0.34, 4),
+            doubt(0.3, 9),
+            doubt(0.05, 12),
+        ];
+        let want = burst_length(&header::encode(489)).expect("length");
+        let mut unread = doubts;
+        assert!(!burst_lengths(&bits, &mut unread, 0).contains(&want));
+        let lengths = burst_lengths(&bits, &mut doubts, 3);
+        assert!(lengths.contains(&want), "{lengths:?}");
+    }
+
+    #[test]
+    fn a_clean_header_is_tried_first() {
+        let bits = header::encode(489);
+        let mut doubts = [doubt(0.35, 1), doubt(0.34, 4)];
+        let lengths = burst_lengths(&bits, &mut doubts, 3);
+        assert_eq!(lengths.last(), burst_length(&bits).as_ref());
+    }
 }

@@ -133,10 +133,10 @@ describe("the resolved store", () => {
     const client = new QueryClient();
     const stale = { node: "voice", source: "bind" as const, text: "Not placed on its radio" };
     const old: ResolvedState = { patch: patch(), problems: [stale] };
-    let answer: (state: ResolvedState) => void = () => {};
-    const reading = readResolved(client, () => new Promise((done) => (answer = done)));
+    const pending: { answer?: (state: ResolvedState) => void } = {};
+    const reading = readResolved(client, () => new Promise((done) => (pending.answer = done)));
     observeResolved(client, { type: "NodeProblems", data: { problems: [] } });
-    answer(old);
+    pending.answer?.(old);
     const read = await reading;
     expect(read.problems).toEqual([]);
     expect(read.patch).toBe(old.patch);

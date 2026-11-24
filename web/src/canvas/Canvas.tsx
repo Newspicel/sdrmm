@@ -149,12 +149,7 @@ export function Canvas() {
   }, [edit]);
 
   const publish = usePointer(workspace.socket);
-  const selectionKey = (selection.length > 0 ? selection : [workspace.selected ?? ""])
-    .filter((id) => id !== "")
-    .join("\n");
-  useEffect(() => {
-    publish({ selected: selectionKey === "" ? [] : selectionKey.split("\n") });
-  }, [publish, selectionKey]);
+  usePublishSelection(publish, selection.length > 0 ? selection : [workspace.selected ?? ""]);
   usePeerDrags(setNodes);
 
   const { handleNodesChange, handleEdgesChange } = useGraphChanges(
@@ -280,6 +275,14 @@ export function Canvas() {
       )}
     </div>
   );
+}
+
+/** Tells peers which nodes this operator has selected, once per change. */
+function usePublishSelection(publish: ReturnType<typeof usePointer>, selected: readonly string[]) {
+  const key = selected.filter((id) => id !== "").join("\n");
+  useEffect(() => {
+    publish({ selected: key === "" ? [] : key.split("\n") });
+  }, [publish, key]);
 }
 
 /** Escape clears the selection, unless a menu, palette or full screen face has the keyboard. */

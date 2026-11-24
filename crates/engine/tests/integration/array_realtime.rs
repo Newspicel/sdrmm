@@ -85,7 +85,6 @@ fn thread_times() -> Vec<ThreadTime> {
 
 #[cfg(target_os = "linux")]
 fn thread_times() -> Vec<ThreadTime> {
-    const USER_HZ: u64 = 100;
     let Ok(tasks) = std::fs::read_dir("/proc/self/task") else {
         return Vec::new();
     };
@@ -98,16 +97,7 @@ fn thread_times() -> Vec<ThreadTime> {
             let scheduled = std::fs::read_to_string(path.join("schedstat"))
                 .ok()
                 .and_then(|text| text.split_whitespace().next()?.parse::<u64>().ok());
-            let cpu_ns = match scheduled {
-                Some(ns) => ns,
-                None => {
-                    let stat = std::fs::read_to_string(path.join("stat")).ok()?;
-                    let fields: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
-                    let ticks: u64 = fields.get(11)?.parse::<u64>().ok()?
-                        + fields.get(12)?.parse::<u64>().ok()?;
-                    ticks * 1_000_000_000 / USER_HZ
-                }
-            };
+            let cpu_ns = scheduled.or_else(|| stat_cpu_ns(&path))?;
             Some(ThreadTime {
                 id,
                 name: name.trim().to_owned(),
@@ -115,6 +105,16 @@ fn thread_times() -> Vec<ThreadTime> {
             })
         })
         .collect()
+}
+
+/// CPU time from `/proc/<task>/stat` ticks, for kernels without schedstat.
+#[cfg(target_os = "linux")]
+fn stat_cpu_ns(task: &std::path::Path) -> Option<u64> {
+    const USER_HZ: u64 = 100;
+    let stat = std::fs::read_to_string(task.join("stat")).ok()?;
+    let fields: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
+    let ticks = fields.get(11)?.parse::<u64>().ok()? + fields.get(12)?.parse::<u64>().ok()?;
+    Some(ticks * 1_000_000_000 / USER_HZ)
 }
 
 fn busy_between(before: &[ThreadTime], after: &[ThreadTime], wall: Duration) -> Vec<(String, f64)> {

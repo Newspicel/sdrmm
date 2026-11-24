@@ -236,13 +236,13 @@ impl Source {
     }
 
     /// Whether the burst on the air is over: the encoder unkeyed and everything it sent is out,
-    /// or a lane went quiet past the hang time.
+    /// or a lane left nothing waiting for the hang time since the radio last took its samples.
     fn over(&self, fed: Instant) -> bool {
         match self {
             Self::Encoded { ring, keyed, .. } => {
                 !keyed.load(Ordering::Acquire) && ring.slots() == 0
             }
-            Self::Feed { .. } => fed.elapsed() > HANG,
+            Self::Feed { ring, .. } => ring.slots() == 0 && fed.elapsed() > HANG,
         }
     }
 
@@ -479,7 +479,6 @@ impl Worker {
             }
         });
         burst.produced += got as u64;
-        burst.fed = now;
         for sample in &mut self.baseband[..got] {
             *sample *= self.gain;
             burst.peak = burst.peak.max(sample.norm());
@@ -494,7 +493,11 @@ impl Worker {
         if let Some(duc) = &mut self.duc {
             duc.process(&self.baseband[..got], &mut self.out);
         }
-        write_all(self.stream.as_mut(), &self.shared, &self.out, false)
+        let written = write_all(self.stream.as_mut(), &self.shared, &self.out, false);
+        if let Some(burst) = &mut self.burst {
+            burst.fed = Instant::now();
+        }
+        written
     }
 
     /// Runs the converter's tail out so the key-down ramp reaches the air, then tells the radio

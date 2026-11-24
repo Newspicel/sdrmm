@@ -320,14 +320,17 @@ fn e2e(root: &Path) -> Result<()> {
     let udid = ensure_simulator(&Simulator::named(custom.as_deref()))?;
     let server = e2e::Server::start(root, &target_dir(root))?;
     boot(root, &udid)?;
-    let link = server.pairing_link(root)?;
-    println!("pairing link {link}");
+    let env = server.open_for_phones(root)?;
+    let env: Vec<(&str, &str)> = env
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
     let run = TestRun {
         label: "e2e",
         selection: vec![e2e::SELECTION.to_owned()],
         retry: false,
     };
-    let counts = run_tests(root, &udid, &run, &[(e2e::LINK_ENV, &link)])?;
+    let counts = run_tests(root, &udid, &run, &env)?;
     drop(server);
     counts.require_passed(&run.selection)
 }
@@ -475,8 +478,6 @@ fn ensure_simulator(simulator: &Simulator) -> Result<String> {
     Ok(String::from_utf8_lossy(&created.stdout).trim().to_owned())
 }
 
-/// A first boot on a fresh runner outlasts a pairing code, so the e2e mints its code only after
-/// this returns.
 fn boot(root: &Path, udid: &str) -> Result<()> {
     crate::run("xcrun", &["simctl", "bootstatus", udid, "-b"], root)
 }
