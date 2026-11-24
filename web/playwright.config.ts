@@ -34,6 +34,9 @@ const PORT = Number(process.env.E2E_PORT);
 const TLS = process.env.E2E_TLS === "1";
 const ORIGIN = `${TLS ? "https" : "http"}://127.0.0.1:${PORT}`;
 const SCRATCH = ".e2e-tmp";
+const SERVER = process.env.E2E_SERVER
+  ? JSON.stringify(process.env.E2E_SERVER)
+  : "cargo run -q -p sdrmm --no-default-features --target-dir target/no-soapy --";
 const PREPARE =
   process.env.E2E_PREBUILT === "1"
     ? ""
@@ -54,7 +57,7 @@ export default defineConfig({
   webServer: {
     command:
       PREPARE +
-      `cargo run -q -p sdrmm --no-default-features --target-dir target/no-soapy -- --bind 127.0.0.1:${PORT} ` +
+      `${SERVER} --bind 127.0.0.1:${PORT} ` +
       `--db web/${SCRATCH}/e2e.db --recordings-dir web/${SCRATCH}/recordings` +
       (TLS ? " --tls-self-signed" : ""),
     cwd: "..",

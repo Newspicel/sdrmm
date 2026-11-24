@@ -2,8 +2,8 @@ name: Rust
 description: Toolchain, media libraries and build cache
 inputs:
   cache:
-    description: Cache key
-    required: true
+    description: Build cache key; empty builds from scratch
+    default: ""
   save:
     description: Save the cache
     default: "true"
@@ -110,7 +110,8 @@ runs:
           macOS) echo "DYLD_LIBRARY_PATH=$FFMPEG_DIR/lib" >> "$GITHUB_ENV" ;;
           Windows) echo "$FFMPEG_DIR/bin" >> "$GITHUB_PATH" ;;
         esac
-    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+    - if: inputs.cache != ''
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         shared-key: ${{ inputs.cache }}
         save-if: ${{ inputs.save }}

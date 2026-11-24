@@ -61,7 +61,11 @@ enum Cmd {
         minimize: bool,
     },
     Audit,
-    Smoke,
+    /// `--prebuilt DIR` runs what `test archive` packed into DIR instead of building it.
+    Smoke {
+        #[arg(long)]
+        prebuilt: Option<PathBuf>,
+    },
     Screenshots,
     Bandplan {
         #[arg(long)]
@@ -105,7 +109,7 @@ fn main() -> Result<()> {
             minimize,
         } => fuzz(&root(), target.as_deref(), seconds, jobs, minimize),
         Cmd::Audit => audit(&root()),
-        Cmd::Smoke => smoke(&root()),
+        Cmd::Smoke { prebuilt } => smoke(&root(), prebuilt.as_deref()),
         Cmd::Screenshots => screenshots(&root()),
         Cmd::Bandplan { offline } => bandplan::run(&root(), offline),
         Cmd::Desktop {
@@ -1006,6 +1010,11 @@ enum TestStep {
 }
 
 const TEST_ARCHIVE: &str = "tests.tar.zst";
+/// Names the directory of prebuilt example plugins to the plugin tests.
+const EXAMPLE_PLUGINS: &str = "SDRMM_EXAMPLE_PLUGINS";
+const EXAMPLE_PLUGINS_DIR: &str = "example-plugins";
+const MEDIA_DIR: &str = "media";
+const RECORDINGS_DIR: &str = "recordings";
 /// The desktop app links Chromium, which only `cargo xtask desktop` fetches and tests against.
 const TEST_TARGETS: [&str; 6] = [
     "--workspace",
@@ -1028,7 +1037,9 @@ fn test(root: &Path, step: Option<&TestStep>) -> Result<()> {
         None => {
             build_tests(root)?;
             with_env(&generator(root), &["fixtures"], root, &test_env(root)?)?;
-            nextest(root, &TEST_TARGETS)?;
+            let plugins = target_dir(root).join(EXAMPLE_PLUGINS_DIR);
+            build_example_plugins(root, &plugins)?;
+            nextest(root, &TEST_TARGETS, &plugins)?;
             web_tests(root)
         }
         Some(TestStep::Archive { dir }) => archive_tests(root, dir),
@@ -1060,31 +1071,82 @@ fn build_tests(root: &Path) -> Result<()> {
     with_env("cargo", &args, root, &test_env(root)?)
 }
 
+fn target_dir(root: &Path) -> PathBuf {
+    std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from)
+}
+
 fn generator(root: &Path) -> String {
-    let target =
-        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from);
-    target
+    target_dir(root)
         .join("debug")
         .join(format!("xtask-gen{}", std::env::consts::EXE_SUFFIX))
         .display()
         .to_string()
 }
 
-fn nextest(root: &Path, extra: &[&str]) -> Result<()> {
+fn nextest(root: &Path, extra: &[&str], plugins: &Path) -> Result<()> {
     let mut args = vec!["nextest", "run"];
     args.extend(extra);
-    with_env("cargo", &args, root, &test_env(root)?)
+    let mut env = test_env(root)?;
+    env.push((EXAMPLE_PLUGINS, utf8(plugins)?.to_owned()));
+    with_env("cargo", &args, root, &env)
 }
 
+/// Builds the WASM example plugin and copies it, with the device example `build_tests` linked,
+/// into `out`. Every test process loads these rather than running cargo on its own.
+fn build_example_plugins(root: &Path, out: &Path) -> Result<()> {
+    let wasm = "wasm32-unknown-unknown";
+    run(
+        "cargo",
+        &[
+            "build",
+            "-p",
+            "sdrmm-plugin-example",
+            "--target",
+            wasm,
+            "--release",
+        ],
+        root,
+    )?;
+    let target = target_dir(root);
+    place(
+        &target.join(wasm).join("release/sdrmm_plugin_example.wasm"),
+        &out.join("wasm"),
+    )?;
+    let device = format!(
+        "{}sdrmm_device_plugin_example.{}",
+        std::env::consts::DLL_PREFIX,
+        std::env::consts::DLL_EXTENSION
+    );
+    place(&target.join("debug").join(device), &out.join("device"))
+}
+
+fn place(file: &Path, dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    let name = file.file_name().context("artifact without a name")?;
+    std::fs::copy(file, dir.join(name)).with_context(|| format!("copy {}", file.display()))?;
+    Ok(())
+}
+
+/// Packs beside the tests all that the shards and the smoke run would otherwise compile: xtask,
+/// the server with the web UI inside, the media libraries, the example plugins and the fixtures.
 fn archive_tests(root: &Path, dir: &Path) -> Result<()> {
+    ensure_web_deps(root)?;
+    run(PNPM, &["--dir", "web", "build"], root)?;
     build_tests(root)?;
     std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
-    with_env(
-        &generator(root),
-        &["fixtures", "--out", utf8(&dir.join("fixtures"))?],
-        root,
-        &test_env(root)?,
-    )?;
+    build_example_plugins(root, &dir.join(EXAMPLE_PLUGINS_DIR))?;
+    pack_runtime(root, dir)?;
+    for (command, out) in [
+        ("fixtures", "fixtures"),
+        ("broadcast-fixtures", RECORDINGS_DIR),
+    ] {
+        with_env(
+            &generator(root),
+            &[command, "--out", utf8(&dir.join(out))?],
+            root,
+            &test_env(root)?,
+        )?;
+    }
     let mut args = vec!["nextest", "archive", "--archive-file"];
     let file = dir.join(TEST_ARCHIVE);
     args.push(utf8(&file)?);
@@ -1092,8 +1154,48 @@ fn archive_tests(root: &Path, dir: &Path) -> Result<()> {
     with_env("cargo", &args, root, &test_env(root)?)
 }
 
+fn pack_runtime(root: &Path, dir: &Path) -> Result<()> {
+    place(&std::env::current_exe().context("find xtask")?, dir)?;
+    place(&target_dir(root).join("debug").join(server_binary()), dir)?;
+    if let Some(media) = media_dir(root, None)? {
+        let name = media
+            .file_name()
+            .context("media directory without a name")?;
+        copy_tree(&media, &dir.join(MEDIA_DIR).join(name))?;
+    }
+    Ok(())
+}
+
+fn server_binary() -> String {
+    format!("sdrmm{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// Puts the media libraries `archive` packed where `media_dir` looks for them.
+fn restore_media(root: &Path, dir: &Path) -> Result<()> {
+    let packed = dir.join(MEDIA_DIR);
+    if packed.is_dir() {
+        copy_tree(&packed, &root.join(".media"))?;
+    }
+    Ok(())
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to).with_context(|| format!("create {}", to.display()))?;
+    for entry in std::fs::read_dir(from).with_context(|| format!("read {}", from.display()))? {
+        let path = entry.context("read directory entry")?.path();
+        let target = to.join(path.file_name().context("entry without a name")?);
+        if path.is_dir() {
+            copy_tree(&path, &target)?;
+        } else {
+            std::fs::copy(&path, &target).with_context(|| format!("copy {}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
 fn shard_tests(root: &Path, dir: &Path, partition: &str) -> Result<()> {
     ensure_tool("nextest", "cargo-nextest")?;
+    restore_media(root, dir)?;
     let fixtures = root.join("fixtures");
     for entry in std::fs::read_dir(dir.join("fixtures"))
         .with_context(|| format!("read {}", dir.display()))?
@@ -1114,6 +1216,7 @@ fn shard_tests(root: &Path, dir: &Path, partition: &str) -> Result<()> {
             "--partition",
             partition,
         ],
+        &root.join(dir).join(EXAMPLE_PLUGINS_DIR),
     )
 }
 
@@ -1326,8 +1429,32 @@ fn build_smoke_server(root: &Path) -> Result<()> {
     run("cargo", &["build", "-p", "sdrmm"], root)
 }
 
-fn smoke(root: &Path) -> Result<()> {
+fn smoke(root: &Path, prebuilt: Option<&Path>) -> Result<()> {
     ensure_web_deps(root)?;
+    let scratch = root.join("web/.e2e-tmp");
+    if scratch.exists() {
+        std::fs::remove_dir_all(&scratch)
+            .with_context(|| format!("remove {}", scratch.display()))?;
+    }
+    let recordings = scratch.join(RECORDINGS_DIR);
+    let mut env = test_env(root)?;
+    env.push(("E2E_PREBUILT", "1".to_owned()));
+    match prebuilt {
+        Some(dir) => {
+            let server = unpack_smoke(root, &root.join(dir), &recordings)?;
+            env.push(("E2E_SERVER", utf8(&server)?.to_owned()));
+        }
+        None => build_smoke(root, &recordings)?,
+    }
+    with_env(
+        PNPM,
+        &["--dir", "web", "exec", "playwright", "test"],
+        root,
+        &env,
+    )
+}
+
+fn build_smoke(root: &Path, recordings: &Path) -> Result<()> {
     run(PNPM, &["--dir", "web", "build"], root)?;
     run(
         "cargo",
@@ -1341,25 +1468,27 @@ fn smoke(root: &Path) -> Result<()> {
         ],
         root,
     )?;
-    let scratch = root.join("web/.e2e-tmp");
-    if scratch.exists() {
-        std::fs::remove_dir_all(&scratch)
-            .with_context(|| format!("remove {}", scratch.display()))?;
-    }
-    xtask_gen(
-        root,
-        &[
-            "broadcast-fixtures",
-            "--out",
-            utf8(&scratch.join("recordings"))?,
-        ],
-    )?;
-    run_with_env(
-        PNPM,
-        &["--dir", "web", "exec", "playwright", "test"],
-        root,
-        &[NO_SOAPY_RUNTIME, ("E2E_PREBUILT", "1")],
-    )?;
+    xtask_gen(root, &["broadcast-fixtures", "--out", utf8(recordings)?])
+}
+
+fn unpack_smoke(root: &Path, dir: &Path, recordings: &Path) -> Result<PathBuf> {
+    restore_media(root, dir)?;
+    copy_tree(&dir.join(RECORDINGS_DIR), recordings)?;
+    let server = dir.join(server_binary());
+    make_executable(&server)?;
+    Ok(server)
+}
+
+/// A downloaded artifact loses its file modes.
+#[cfg(unix)]
+fn make_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .with_context(|| format!("make {} executable", path.display()))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 

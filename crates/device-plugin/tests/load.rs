@@ -14,22 +14,31 @@ use sdrmm_device::RxSink;
 use sdrmm_device_plugin::host::{self, LoadError};
 use sdrmm_wire::DeviceBackend;
 
+/// The example plugin `cargo xtask test` built for every test process, or else one built here.
 fn example() -> &'static Path {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT.get_or_init(|| {
-        let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("device-plugin");
-        let status = Command::new(env!("CARGO"))
-            .args(["build", "-p", "sdrmm-device-plugin-example", "--target-dir"])
-            .arg(&target)
-            .status()
-            .unwrap_or_else(|error| panic!("cannot run cargo: {error}"));
-        assert!(status.success(), "the example plugin does not build");
-        target.join("debug").join(format!(
+        let library = format!(
             "{}sdrmm_device_plugin_example.{}",
             std::env::consts::DLL_PREFIX,
             std::env::consts::DLL_EXTENSION
-        ))
+        );
+        match std::env::var_os("SDRMM_EXAMPLE_PLUGINS") {
+            Some(dir) => PathBuf::from(dir).join("device").join(library),
+            None => build_example().join(library),
+        }
     })
+}
+
+fn build_example() -> PathBuf {
+    let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("device-plugin");
+    let status = Command::new(env!("CARGO"))
+        .args(["build", "-p", "sdrmm-device-plugin-example", "--target-dir"])
+        .arg(&target)
+        .status()
+        .unwrap_or_else(|error| panic!("cannot run cargo: {error}"));
+    assert!(status.success(), "the example plugin does not build");
+    target.join("debug")
 }
 
 #[test]

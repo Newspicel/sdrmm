@@ -23,14 +23,23 @@ jobs:
       id-token: write
       attestations: write
 
+  etsi:
+    name: DVB tables vs ETSI (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+      - run: rustup show
+      - run: python3 crates/modem-test-support/scripts/dvbs2_spec_check.py --cache "$RUNNER_TEMP/etsi" --frame crates/channels/src/datv/dvbs2/frame.rs --ldpc crates/modem/src/dvb/ldpc/tables
+      - run: python3 crates/modem-test-support/scripts/s2x_tables.py --cache "$RUNNER_TEMP/etsi" --points crates/channels/src/datv/dvbs2/s2x --tables crates/modem/src/dvb/ldpc/tables --check
+      - run: python3 crates/modem-test-support/scripts/dvbt_tables.py --cache "$RUNNER_TEMP/etsi" --out crates/channels/src/dvbt --check
+
   measurements:
     name: Measurements (ubuntu)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
-        with:
-          cache: nightly
       - name: Modem gates
         run: |
           cargo test -p sdrmm-modem -p sdrmm-modem-test-support --release -- --ignored --skip write_ \
@@ -122,9 +131,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
-        with:
-          cache: array-realtime
-          save: false
       - run: "cargo test -p sdrmm-engine --release --features probe --test integration -- --nocapture array_realtime::"
         env:
           SDRMM_RT_SCALE: "2"
@@ -138,9 +144,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
       - uses: ./.github/actions/rust
-        with:
-          cache: macos
-          save: false
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest
@@ -158,9 +161,6 @@ jobs:
           packages: ndk;${{ steps.ndk.outputs.version }}
       - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/rust
-        with:
-          cache: mobile
-          save: false
       - run: cargo xtask mobile check --android
       - run: cargo xtask mobile bindings
 
@@ -170,9 +170,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
-        with:
-          cache: ubuntu
-          save: false
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-deny
@@ -261,8 +258,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
         with:
-          cache: desktop-${{ matrix.label }}
-          save: false
           cef: true
       - run: cargo xtask desktop
 
@@ -273,9 +268,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - uses: ./.github/actions/rust
-        with:
-          cache: ios
-          save: false
       - run: cargo xtask mobile check --ios
       - run: cargo xtask ios lint
       - run: cargo xtask ios test
@@ -302,9 +294,6 @@ jobs:
           packages: platforms;android-37.0 build-tools;37.0.0 ndk;${{ steps.ndk.outputs.version }}
       - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/rust
-        with:
-          cache: android
-          save: false
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-disabled: true
@@ -372,9 +361,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - uses: ./.github/actions/rust
-        with:
-          cache: ios
-          save: false
       - run: cargo xtask ios test --ui
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -390,9 +376,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_27.app
       - uses: ./.github/actions/rust
-        with:
-          cache: ios
-          save: false
       - run: cargo xtask ios e2e
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -419,9 +402,6 @@ jobs:
           packages: platforms;android-37.0 build-tools;37.0.0 ndk;${{ steps.ndk.outputs.version }}
       - run: echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ steps.ndk.outputs.version }}" >> "$GITHUB_ENV"
       - uses: ./.github/actions/rust
-        with:
-          cache: android
-          save: false
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
         with:
           cache-disabled: true
@@ -450,8 +430,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
-        with:
-          cache: sanitize
       - run: rustup toolchain install nightly --profile minimal
       - run: cargo xtask sanitize
 
@@ -475,8 +453,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust
-        with:
-          cache: fuzz
       - run: rustup toolchain install nightly --profile minimal
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:

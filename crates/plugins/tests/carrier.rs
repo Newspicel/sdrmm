@@ -1,4 +1,4 @@
-//! Builds the example plugin for WASM, loads it the way the server does and runs a channel and
+//! Loads the example WASM plugin the way the server does and runs a channel and
 //! an array processor of it.
 
 use std::{
@@ -32,39 +32,45 @@ fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The example plugin, built once per test process into its own target directory and moved
-/// into place whole, so a test in another process never loads it half copied.
+/// The example plugin `cargo xtask test` built for every test process, or else one built here.
 fn plugin_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let target = workspace().join("target/plugin-tests");
-        let status = Command::new(env!("CARGO"))
-            .current_dir(workspace())
-            .args([
-                "build",
-                "-p",
-                "sdrmm-plugin-example",
-                "--target",
-                "wasm32-unknown-unknown",
-                "--release",
-                "--target-dir",
-            ])
-            .arg(&target)
-            .status()
-            .unwrap_or_else(|error| panic!("cargo did not start: {error}"));
-        assert!(status.success(), "the example plugin did not build");
-        let dir = target.join("plugins");
-        std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("plugins dir: {error}"));
-        let staged = target.join(format!("{WASM}.{}", std::process::id()));
-        std::fs::copy(
-            target.join("wasm32-unknown-unknown/release").join(WASM),
-            &staged,
-        )
-        .unwrap_or_else(|error| panic!("copy plugin: {error}"));
-        std::fs::rename(&staged, dir.join(WASM))
-            .unwrap_or_else(|error| panic!("place plugin: {error}"));
-        dir
+    DIR.get_or_init(|| match std::env::var_os("SDRMM_EXAMPLE_PLUGINS") {
+        Some(dir) => PathBuf::from(dir).join("wasm"),
+        None => build_plugin(),
     })
+}
+
+/// Builds the example plugin into its own target directory and moves it into place whole, so a
+/// test in another process never loads it half copied.
+fn build_plugin() -> PathBuf {
+    let target = workspace().join("target/plugin-tests");
+    let status = Command::new(env!("CARGO"))
+        .current_dir(workspace())
+        .args([
+            "build",
+            "-p",
+            "sdrmm-plugin-example",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--release",
+            "--target-dir",
+        ])
+        .arg(&target)
+        .status()
+        .unwrap_or_else(|error| panic!("cargo did not start: {error}"));
+    assert!(status.success(), "the example plugin did not build");
+    let dir = target.join("plugins");
+    std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("plugins dir: {error}"));
+    let staged = target.join(format!("{WASM}.{}", std::process::id()));
+    std::fs::copy(
+        target.join("wasm32-unknown-unknown/release").join(WASM),
+        &staged,
+    )
+    .unwrap_or_else(|error| panic!("copy plugin: {error}"));
+    std::fs::rename(&staged, dir.join(WASM))
+        .unwrap_or_else(|error| panic!("place plugin: {error}"));
+    dir
 }
 
 fn module() -> std::sync::Arc<PluginModule> {
