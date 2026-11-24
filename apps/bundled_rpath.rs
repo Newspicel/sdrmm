@@ -15,6 +15,7 @@ fn bundled_rpath() {
                 "$ORIGIN",
                 "$ORIGIN/../lib/sdrmm",
                 "$ORIGIN/../lib/sdrmm-app",
+                "$ORIGIN/../lib",
             ]
         }
         _ => return,

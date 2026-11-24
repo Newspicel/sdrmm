@@ -9,16 +9,17 @@ fn main() -> std::io::Result<()> {
     windows_resources()
 }
 
-/// Linux packages install the Chromium runtime beside the helper in `/usr/lib/sdrmm-app`, while
-/// the launcher sits in `/usr/bin`, so the loader has to look there for `libcef.so`. A media
-/// build already gets both directories from `bundled_rpath`.
+/// Linux packages install the Chromium runtime beside the helper, in `/usr/lib/sdrmm-app` for a
+/// deb and in `usr/lib` for an `AppImage`, while the launcher sits in `bin`, so the loader has to
+/// look there for `libcef.so`. A media build already gets these directories from
+/// `bundled_rpath`.
 fn cef_rpath() {
     let linux = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux");
     if !linux || std::env::var_os("FFMPEG_DIR").is_some() {
         return;
     }
     println!("cargo::rustc-link-arg-bins=-Wl,--disable-new-dtags");
-    for dir in ["$ORIGIN", "$ORIGIN/../lib/sdrmm-app"] {
+    for dir in ["$ORIGIN", "$ORIGIN/../lib/sdrmm-app", "$ORIGIN/../lib"] {
         println!("cargo::rustc-link-arg-bins=-Wl,-rpath,{dir}");
     }
 }

@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 pub const IDENTIFIER: &str = "dev.newspicel.sdrmm";
-/// Where Linux packages install the Chromium runtime, relative to the launcher in `bin`.
+/// Where Linux packages install the Chromium runtime, relative to the launcher in `bin`: a deb
+/// in its own directory, an `AppImage` where linuxdeploy points the launcher's rpath.
 #[cfg(not(target_os = "macos"))]
-const LINUX_RUNTIME: &str = "../lib/sdrmm-app";
+const LINUX_RUNTIMES: [&str; 2] = ["../lib/sdrmm-app", "../lib"];
 #[cfg(not(target_os = "macos"))]
 const RUNTIME_MARKER: &str = "icudtl.dat";
 #[cfg(target_os = "windows")]
@@ -38,8 +39,8 @@ pub struct Runtime {
 #[cfg(not(target_os = "macos"))]
 pub fn runtime(exe: &Path) -> Result<Runtime> {
     let dir = exe.parent().context("the executable has no directory")?;
-    let resources = [dir.to_path_buf(), dir.join(LINUX_RUNTIME)]
-        .into_iter()
+    let resources = std::iter::once(dir.to_path_buf())
+        .chain(LINUX_RUNTIMES.iter().map(|runtime| dir.join(runtime)))
         .find(|candidate| candidate.join(RUNTIME_MARKER).is_file())
         .with_context(|| {
             format!(
@@ -83,10 +84,12 @@ mod tests {
         std::fs::create_dir_all(&lib).unwrap();
         let exe = bin.join("sdrmm-app");
         assert!(runtime(&exe).is_err());
+        std::fs::write(root.path().join("lib").join(RUNTIME_MARKER), b"").unwrap();
+        assert_eq!(runtime(&exe).unwrap().resources, bin.join("../lib"));
         std::fs::write(lib.join(RUNTIME_MARKER), b"").unwrap();
         assert_eq!(
             runtime(&exe).unwrap().helper,
-            bin.join(LINUX_RUNTIME).join(HELPER)
+            bin.join("../lib/sdrmm-app").join(HELPER)
         );
         std::fs::write(bin.join(RUNTIME_MARKER), b"").unwrap();
         assert_eq!(runtime(&exe).unwrap().resources, bin);

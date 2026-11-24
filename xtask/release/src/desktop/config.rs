@@ -10,8 +10,11 @@ const DESCRIPTION: &str = "Modular software-defined radio";
 const LONG_DESCRIPTION: &str = "Modular, client-server software-defined radio receiver.";
 const HOMEPAGE: &str = "https://sdrmm.com";
 const AUTHOR: &str = "Julian Haag";
-/// Chromium's shared libraries, which `libcef` brings beside itself in `/usr/lib/sdrmm-app`
-/// and the `AppImage` must not copy a second time into `usr/lib`.
+/// linuxdeploy sets the launcher's rpath to `$ORIGIN/../lib`, so the `AppImage` carries Chromium
+/// in `usr/lib`, not in `usr/lib/sdrmm-app` like the deb.
+const APPIMAGE_RUNTIME: &str = "usr/lib";
+/// Chromium's shared libraries, already in the `AppImage`'s `usr/lib`, which linuxdeploy must
+/// leave as CEF ships them.
 const CHROMIUM_LIBRARIES: &[&str] = &["libcef.so", "libvk_swiftshader.so", "libvulkan.so.1"];
 /// What Chromium links on Debian and Ubuntu; the `t64` names are Ubuntu 24.04's.
 const DEB_DEPENDS: &[&str] = &[
@@ -81,7 +84,7 @@ fn config(root: &Path, platform: &Platform, staged: &Staged, out: &Path) -> Valu
     });
     let extra = match platform.os {
         Os::Mac => mac(root, staged),
-        Os::Linux => linux(root, staged),
+        Os::Linux => linux(root, platform, staged),
         Os::Windows => windows(staged),
     };
     merge(&mut config, extra);
@@ -102,15 +105,18 @@ fn mac(root: &Path, staged: &Staged) -> Value {
     json!({ "macos": macos, "resources": staged.resources })
 }
 
-fn linux(root: &Path, staged: &Staged) -> Value {
+fn linux(root: &Path, platform: &Platform, staged: &Staged) -> Value {
     json!({
-        "resources": runtime(staged),
         "deb": {
             "depends": DEB_DEPENDS,
             "section": "hamradio",
             "desktopTemplate": root.join("packaging/linux/sdrmm-app.desktop"),
+            "files": runtime_at(staged, &format!("usr/lib/{}", platform.product())),
         },
-        "appimage": { "excludedLibs": CHROMIUM_LIBRARIES },
+        "appimage": {
+            "files": runtime_at(staged, APPIMAGE_RUNTIME),
+            "excludedLibs": CHROMIUM_LIBRARIES,
+        },
     })
 }
 
@@ -121,6 +127,15 @@ fn windows(staged: &Staged) -> Value {
 /// Everything beside `libcef`, at the root of the resource directory.
 fn runtime(staged: &Staged) -> Value {
     json!([{ "src": staged.runtime, "target": "." }])
+}
+
+/// Everything beside `libcef`, copied into a Linux package at `target`.
+fn runtime_at(staged: &Staged, target: &str) -> Value {
+    let mut files = serde_json::Map::new();
+    if let Some(runtime) = &staged.runtime {
+        files.insert(runtime.to_string_lossy().into_owned(), Value::from(target));
+    }
+    Value::Object(files)
 }
 
 fn merge(into: &mut Value, extra: Value) {
@@ -144,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn linux_installs_chromium_beside_the_helper() {
+    fn linux_installs_chromium_where_the_launcher_finds_it() {
         let platform = Platform::of("x86_64-unknown-linux-gnu").unwrap();
         let config = config(
             Path::new("/repo"),
@@ -153,8 +168,12 @@ mod tests {
             Path::new("/out"),
         );
         assert_eq!(config["productName"], "sdrmm-app");
-        assert_eq!(config["resources"][0]["src"], "/stage/runtime");
-        assert_eq!(config["resources"][0]["target"], ".");
+        assert!(config.get("resources").is_none());
+        assert_eq!(
+            config["deb"]["files"]["/stage/runtime"],
+            "usr/lib/sdrmm-app"
+        );
+        assert_eq!(config["appimage"]["files"]["/stage/runtime"], "usr/lib");
         assert_eq!(config["binaries"][0]["path"], "sdrmm-app");
         assert!(
             config["deb"]["depends"]
