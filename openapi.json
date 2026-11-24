@@ -24265,11 +24265,6 @@
       "ScanSettings": {
         "type": "object",
         "properties": {
-          "dwell_ms": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
           "frequencies": {
             "type": "array",
             "items": {
@@ -24447,6 +24442,15 @@
           "live": {
             "type": "boolean",
             "description": "Whether every target sits in the radio's window at once, so the scan watches them all on\nevery frame and moves only the decoder, never the radio."
+          },
+          "round_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How long the last round over every target took.",
+            "minimum": 0
           },
           "settings": {
             "$ref": "#/components/schemas/ScanSettings"

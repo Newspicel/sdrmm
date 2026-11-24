@@ -170,7 +170,6 @@
           }
         ],
         "frequencies": [],
-        "dwell_ms": 250,
         "resume_ms": 1500,
         "hold_ms": 5000,
         "hardware_sweep": true,

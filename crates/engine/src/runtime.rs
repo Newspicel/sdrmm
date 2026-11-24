@@ -20,6 +20,7 @@ pub(crate) use channel::{
 pub(crate) use command::DspCommand;
 pub use frontend::DspMeta;
 pub(crate) use patches::DeviceRuntime;
+pub(crate) use spectrum::ScanPaceClaim;
 pub use spectrum::{BackgroundSpectrum, OverlapClaim, SpectrumSnapshot, SpectrumTap};
 pub(crate) use spectrum::{Watch, Watching, spectrum_size};
 pub(crate) use worker::Waker;

@@ -171,16 +171,17 @@ impl Scan {
         engine: &Arc<Engine>,
         rx: &mut Receiver<SpectrumSnapshot>,
     ) -> Result<(), Halt> {
-        let dwell = self.dwell();
         for index in 0..self.plan.priority.len() {
             let hz = self.plan.priority[index];
-            if self.park(engine, rx, hz)?.is_none() {
+            let Some(frame) = self.park(engine, rx, hz)? else {
                 continue;
-            }
+            };
             let mut snr = [f32::NEG_INFINITY];
-            self.listen(rx, &[hz], &mut snr, dwell)?;
+            self.measure_into(&frame, &[hz], &mut snr);
             let busy = self.busy_calls(&[hz], &snr).next();
-            if let Some(call) = busy {
+            if let Some(call) = busy
+                && self.confirmed(rx, call)?
+            {
                 self.take(engine, rx, call)?;
             }
         }
@@ -223,7 +224,12 @@ impl Scan {
         }
     }
 
-    fn measure_into(&mut self, snapshot: &SpectrumSnapshot, targets: &[f64], snrs: &mut [f32]) {
+    pub(super) fn measure_into(
+        &mut self,
+        snapshot: &SpectrumSnapshot,
+        targets: &[f64],
+        snrs: &mut [f32],
+    ) {
         let Some(floor) = self.floor.of(snapshot) else {
             return;
         };

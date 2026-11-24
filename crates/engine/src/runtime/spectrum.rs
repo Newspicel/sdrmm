@@ -36,7 +36,12 @@ pub(crate) enum Watch {
     /// Only readers keeping statistics, which need every sample once but no overlap.
     Background,
     Viewer(SpectrumOverlap),
+    /// Viewers among them a scan stepping the radio, which wants frames as often as they come
+    /// cheap so it can leave each window as soon as it has read it.
+    Scan(SpectrumOverlap),
 }
+
+const OVERLAPS: u8 = SpectrumOverlap::ALL.len() as u8;
 
 impl Watch {
     const fn code(self) -> u8 {
@@ -44,19 +49,22 @@ impl Watch {
             Self::Nobody => 0,
             Self::Background => 1,
             Self::Viewer(overlap) => 2 + overlap as u8,
+            Self::Scan(overlap) => 2 + OVERLAPS + overlap as u8,
         }
     }
 
     fn from_code(code: u8) -> Self {
+        let overlap = |at: u8| {
+            SpectrumOverlap::ALL
+                .get(usize::from(at))
+                .copied()
+                .unwrap_or_default()
+        };
         match code {
             0 => Self::Nobody,
             1 => Self::Background,
-            _ => Self::Viewer(
-                SpectrumOverlap::ALL
-                    .get(usize::from(code - 2))
-                    .copied()
-                    .unwrap_or_default(),
-            ),
+            _ if code >= 2 + OVERLAPS => Self::Scan(overlap(code - 2 - OVERLAPS)),
+            _ => Self::Viewer(overlap(code - 2)),
         }
     }
 }
@@ -68,6 +76,7 @@ pub struct SpectrumTap {
     tx: broadcast::Sender<SpectrumSnapshot>,
     background: Arc<AtomicUsize>,
     claims: Arc<OverlapClaims>,
+    scans: Arc<AtomicUsize>,
 }
 
 impl Default for SpectrumTap {
@@ -76,6 +85,7 @@ impl Default for SpectrumTap {
             tx: broadcast::channel(TAP_SLOTS).0,
             background: Arc::default(),
             claims: Arc::default(),
+            scans: Arc::default(),
         }
     }
 }
@@ -105,6 +115,13 @@ impl SpectrumTap {
         }
     }
 
+    /// Asks for scan pace while the claim lives.
+    #[must_use]
+    pub fn claim_scan_pace(&self) -> ScanPaceClaim {
+        self.scans.fetch_add(1, Ordering::Relaxed);
+        ScanPaceClaim(self.scans.clone())
+    }
+
     pub(crate) fn send(&self, snapshot: SpectrumSnapshot) {
         let _ = self.tx.send(snapshot);
     }
@@ -113,7 +130,12 @@ impl SpectrumTap {
     pub(crate) fn watch(&self) -> Watch {
         let readers = self.tx.receiver_count();
         if readers > self.background.load(Ordering::Relaxed) {
-            Watch::Viewer(self.claims.wanted())
+            let overlap = self.claims.wanted();
+            if self.scans.load(Ordering::Relaxed) > 0 {
+                Watch::Scan(overlap)
+            } else {
+                Watch::Viewer(overlap)
+            }
         } else if readers > 0 {
             Watch::Background
         } else {
@@ -152,6 +174,16 @@ impl Drop for OverlapClaim {
         self.claims
             .count(self.overlap)
             .fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// A scan's ask for frames at scan pace, dropped when the scan stops stepping.
+#[derive(Debug)]
+pub struct ScanPaceClaim(Arc<AtomicUsize>);
+
+impl Drop for ScanPaceClaim {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -235,9 +267,11 @@ mod tests {
         let watching = Watching::default();
         assert_eq!(watching.get(), Watch::Viewer(SpectrumOverlap::Auto));
         let viewers = SpectrumOverlap::ALL.map(Watch::Viewer);
+        let scans = SpectrumOverlap::ALL.map(Watch::Scan);
         for watch in [Watch::Nobody, Watch::Background]
             .into_iter()
             .chain(viewers)
+            .chain(scans)
         {
             watching.set(watch);
             assert_eq!(watching.clone().get(), watch);
@@ -259,6 +293,18 @@ mod tests {
         assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Off));
         drop(off);
         assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Auto));
+    }
+
+    #[test]
+    fn a_stepping_scan_paces_the_lane_only_while_it_claims() {
+        let tap = SpectrumTap::default();
+        let pace = tap.claim_scan_pace();
+        assert_eq!(tap.watch(), Watch::Nobody, "a claim alone reads nothing");
+        let _viewer = tap.subscribe();
+        let _full = tap.claim(SpectrumOverlap::Full);
+        assert_eq!(tap.watch(), Watch::Scan(SpectrumOverlap::Full));
+        drop(pace);
+        assert_eq!(tap.watch(), Watch::Viewer(SpectrumOverlap::Full));
     }
 
     fn snapshot_at(center_hz: f64, bins: usize) -> SpectrumSnapshot {

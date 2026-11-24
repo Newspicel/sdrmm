@@ -177,6 +177,10 @@ export function recentHeard(status: ScannerStatus, count = 3): number[] {
   return (status.heard ?? []).slice(0, count).map((signal) => signal.hz);
 }
 
+export function formatRound(ms: number | null | undefined): string {
+  return ms == null || !Number.isFinite(ms) ? "-" : `${(ms / 1000).toFixed(2)} s`;
+}
+
 export function formatDb(db: number | null | undefined): string {
   return db == null || !Number.isFinite(db) ? "-" : `${db.toFixed(1)} dB`;
 }

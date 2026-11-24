@@ -18,6 +18,7 @@ use crate::{
     audio_fx::{AudioFxHub, FxSource},
     hunt, lock_runtime,
     planning::{descriptor_for, plan_center},
+    runtime::ScanPaceClaim,
     sample_rate_of, scanner,
 };
 
@@ -415,10 +416,39 @@ impl Engine {
             .is_some_and(|state| state.capabilities.hardware_sweep)
     }
 
-    pub(crate) fn scan_sample_rate(&self, ds: u32) -> Option<f64> {
-        let inner = self.lock();
-        let state = inner.device_sets.get(&ds)?;
-        (state.status == DeviceSetStatus::Running).then(|| sample_rate_of(&state.settings))
+    pub(crate) fn scan_lane(&self, ds: u32) -> Option<scanner::ScanLane> {
+        let (runtime, rate, clean_fraction) = {
+            let inner = self.lock();
+            let state = inner.device_sets.get(&ds)?;
+            if state.status != DeviceSetStatus::Running {
+                return None;
+            }
+            (
+                state.runtime.clone(),
+                sample_rate_of(&state.settings),
+                state.capabilities.clean_fraction,
+            )
+        };
+        let in_flight = lock_runtime(&runtime).in_flight_samples();
+        Some(scanner::ScanLane::new(rate, clean_fraction, in_flight))
+    }
+
+    pub(crate) fn claim_scan_pace(
+        &self,
+        ds: u32,
+        stream: u32,
+    ) -> Result<ScanPaceClaim, EngineError> {
+        let (runtime, streams) = {
+            let inner = self.lock();
+            let state = inner
+                .device_sets
+                .get(&ds)
+                .ok_or(EngineError::DeviceSetNotFound(ds))?;
+            (state.runtime.clone(), state.physical_streams())
+        };
+        lock_runtime(&runtime)
+            .claim_scan_pace(stream)
+            .ok_or(EngineError::StreamOutOfRange { stream, streams })
     }
 
     pub(crate) fn scan_reaches(&self, ds: u32, ch: u32, hz: f64) -> Result<bool, EngineError> {

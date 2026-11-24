@@ -1108,6 +1108,7 @@ mod contract_tests {
             current_snr_db: Some(21.5),
             sweeps: 4,
             hits: 9,
+            round_ms: Some(420),
             hardware_sweep: false,
             live: false,
             heard: Vec::new(),
@@ -1139,7 +1140,6 @@ mod contract_tests {
             },
             "the decoder comes from the control wire, never from the settings"
         );
-        assert_eq!(settings.dwell_ms, 250);
         assert_eq!(settings.resume_ms, 1_500);
         assert_eq!(settings.hold_ms, 5_000);
         assert_eq!(settings.measure_bw_hz, None);
@@ -1248,6 +1248,7 @@ mod contract_tests {
                 current_snr_db: None,
                 sweeps: 0,
                 hits: 0,
+                round_ms: None,
                 hardware_sweep: false,
                 live: false,
                 heard: Vec::new(),

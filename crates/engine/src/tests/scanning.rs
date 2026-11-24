@@ -36,7 +36,6 @@ async fn scan_finds_a_carrier_and_holds() {
             stop_hz: 100_200_000.0,
             step_hz: 25_000.0,
         }],
-        dwell_ms: 60,
         resume_ms: 60_000,
         ..sdrmm_wire::ScanSettings::for_channel(ch)
     };
@@ -155,7 +154,6 @@ async fn a_radio_tuned_by_hand_stays_put_and_the_scan_searches_only_its_window()
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![SIGNAL_HZ, beyond],
-                dwell_ms: 40,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -217,7 +215,6 @@ async fn the_decoder_follows_the_sweep_and_stays_where_the_scan_stops() {
             sdrmm_wire::ScanSettings {
                 frequencies: targets.to_vec(),
                 margin_db: 200.0,
-                dwell_ms: 40,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
         )
@@ -268,7 +265,6 @@ async fn skipping_a_held_frequency_resumes_and_never_holds_there_again() {
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![SIGNAL_HZ, SIGNAL_HZ + 25_000.0],
-                dwell_ms: 40,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -468,7 +464,6 @@ async fn an_all_scan_visits_each_busy_frequency_once_and_finishes() {
             sdrmm_wire::ScanSettings {
                 mode: sdrmm_wire::ScanMode::All,
                 frequencies: vec![SIGNAL_HZ - 50_000.0, SIGNAL_HZ, SIGNAL_HZ + 50_000.0],
-                dwell_ms: 40,
                 hold_ms: 300,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -506,7 +501,6 @@ async fn a_busy_priority_frequency_is_held_while_the_sweep_finds_nothing() {
                 frequencies: vec![SIGNAL_HZ + 300_000.0],
                 priority: vec![SIGNAL_HZ],
                 lockouts: Vec::new(),
-                dwell_ms: 40,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -542,7 +536,6 @@ async fn a_firmware_sweep_finds_a_carrier_without_the_scanner_retuning() {
             step_hz: 50_000.0,
         }],
         frequencies: vec![marker + BEYOND_ONE_WINDOW_HZ],
-        dwell_ms: 40,
         resume_ms: 60_000,
         measure_bw_hz: Some(25_000.0),
         ..sdrmm_wire::ScanSettings::for_channel(ch)
@@ -611,7 +604,6 @@ async fn a_radio_sweeping_in_firmware_refuses_a_retune_by_name() {
             sdrmm_wire::ScanSettings {
                 frequencies: vec![marker, marker + BEYOND_ONE_WINDOW_HZ],
                 margin_db: 200.0,
-                dwell_ms: 40,
                 measure_bw_hz: Some(25_000.0),
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -881,7 +873,6 @@ async fn close_call_holds_on_the_loudest_carrier_nobody_named() {
                 }],
                 frequencies: vec![marker + BEYOND_ONE_WINDOW_HZ],
                 margin_db: 12.0,
-                dwell_ms: 60,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -931,7 +922,6 @@ async fn close_call_stays_quiet_on_an_empty_band() {
                     step_hz: 50_000.0,
                 }],
                 margin_db: 40.0,
-                dwell_ms: 40,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
         )
@@ -974,7 +964,6 @@ async fn a_refused_firmware_sweep_falls_back_to_retuning_without_losing_the_radi
                     stop_hz: 100_300_000.0,
                     step_hz: 25_000.0,
                 }],
-                dwell_ms: 60,
                 resume_ms: 60_000,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -1028,6 +1017,58 @@ async fn a_refused_firmware_sweep_falls_back_to_retuning_without_losing_the_radi
 }
 
 #[tokio::test]
+async fn a_plan_wider_than_the_radio_steps_window_by_window_and_times_each_round() {
+    let mut registry = DeviceRegistry::new();
+    registry.register(50, Box::new(SignalDriver));
+    let engine = Engine::with_registry(registry, None);
+    let ds = engine.create_device_set("rtlsdr:signal").unwrap();
+    let ch = nfm_decoder(&engine, ds, TEST_CENTER_HZ);
+    let status = engine
+        .start_scan(
+            ds,
+            sdrmm_wire::ScanSettings {
+                ranges: vec![sdrmm_wire::ScanRange {
+                    start_hz: TEST_CENTER_HZ,
+                    stop_hz: TEST_CENTER_HZ + BEYOND_ONE_WINDOW_HZ,
+                    step_hz: 25_000.0,
+                }],
+                margin_db: 200.0,
+                hardware_sweep: false,
+                ..sdrmm_wire::ScanSettings::for_channel(ch)
+            },
+        )
+        .unwrap();
+    assert_eq!(status.round_ms, None, "no round finished yet");
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let scanner = loop {
+        let scanner = engine.snapshot().device_sets[0]
+            .scanners
+            .first()
+            .cloned()
+            .expect("scan listed");
+        assert_eq!(scanner.error, None, "scan failed");
+        assert!(!scanner.live, "the plan cannot fit one window");
+        if scanner.sweeps >= 2 {
+            break scanner;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the scan never finished two rounds"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let round_ms = scanner.round_ms.expect("a finished round is timed");
+    assert!(
+        (1..10_000).contains(&round_ms),
+        "a round over {} targets took {round_ms} ms",
+        scanner.targets
+    );
+    engine.stop_scan(ds, ch).unwrap();
+    engine.remove_device_set(ds).unwrap();
+}
+
+#[tokio::test]
 async fn stopping_mid_sweep_hands_the_radio_back() {
     let engine = virtual_engine();
     let ds = engine.create_device_set("virtual:band").unwrap();
@@ -1043,7 +1084,6 @@ async fn stopping_mid_sweep_hands_the_radio_back() {
                     step_hz: 50_000.0,
                 }],
                 margin_db: 200.0,
-                dwell_ms: 40,
                 measure_bw_hz: Some(25_000.0),
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
@@ -1099,7 +1139,6 @@ async fn a_sweep_hands_back_a_working_channel() {
             ds,
             sdrmm_wire::ScanSettings {
                 frequencies: vec![marker, marker + 100_000.0],
-                dwell_ms: 40,
                 resume_ms: 60_000,
                 measure_bw_hz: Some(25_000.0),
                 ..sdrmm_wire::ScanSettings::for_channel(channel)
@@ -1150,7 +1189,6 @@ async fn removing_a_scanning_set_tears_the_scan_down() {
                     step_hz: 25_000.0,
                 }],
                 margin_db: 200.0,
-                dwell_ms: 40,
                 ..sdrmm_wire::ScanSettings::for_channel(ch)
             },
         )

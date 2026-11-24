@@ -22,16 +22,21 @@ mod hold;
 mod live;
 mod plan;
 pub(crate) mod session;
+mod settle;
 pub(crate) mod sweep;
+mod window;
 
 use close_call::CloseCall;
 use floor::NoiseFloor;
 pub(crate) use plan::ScanPlan;
+use settle::Settle;
+use window::tile_end;
+pub(crate) use window::{ScanLane, Window};
 
 const USABLE_SPAN_FRACTION: f64 = 0.8;
-const RETUNE_SETTLE: Duration = Duration::from_millis(30);
+/// How long past its in-flight samples a radio may take to show a frame at its new tuning
+/// before the target it was moved for counts as out of reach.
 const WINDOW_WAIT: Duration = Duration::from_millis(500);
-const MIN_DWELL: Duration = Duration::from_millis(40);
 const SPECTRUM_TIMEOUT: Duration = Duration::from_secs(2);
 const HOLD_POLL: Duration = Duration::from_millis(120);
 const POLL: Duration = Duration::from_millis(4);
@@ -43,6 +48,7 @@ const JUMP_LINGER: Duration = Duration::from_secs(10);
 pub(crate) struct ScannerState {
     /// The plan's lowest and highest target.
     edges: (f64, f64),
+    window: Arc<Window>,
     stop: Arc<AtomicBool>,
     release: Arc<AtomicBool>,
     /// The bits of the frequency to jump to, or zero for none.
@@ -110,6 +116,7 @@ pub(crate) fn spawn(
     stream: u32,
 ) -> Result<ScannerState, EngineError> {
     let hardware = settings.hardware_sweep && engine.sweeps_in_firmware(ds);
+    let window = Arc::new(Window::default());
     let bw_hz = settings
         .measure_bw_hz
         .ok_or_else(|| EngineError::Scan("a scan needs a measurement bandwidth".to_string()))?;
@@ -117,6 +124,7 @@ pub(crate) fn spawn(
     scan.decoder = decoder;
     scan.stream = stream;
     scan.hardware = hardware;
+    scan.window = window.clone();
     lock_status(&scan.status).hardware_sweep = hardware;
     let edges = (
         scan.plan.targets.first().copied().unwrap_or_default(),
@@ -130,6 +138,7 @@ pub(crate) fn spawn(
         .map_err(|e| EngineError::Scan(format!("spawn scanner thread: {e}")))?;
     Ok(ScannerState {
         edges,
+        window,
         stop,
         release,
         jump,
@@ -148,11 +157,15 @@ struct Scan {
     followed: Option<f64>,
     last_follow: Option<Instant>,
     bw_hz: f64,
+    lane: ScanLane,
+    settle: Settle,
+    window: Arc<Window>,
     stop: Arc<AtomicBool>,
     release: Arc<AtomicBool>,
     jump: Arc<AtomicU64>,
     status: Arc<Mutex<ScannerStatus>>,
     last_update: Option<Instant>,
+    round_started: Option<Instant>,
     hardware: bool,
     in_sweep: bool,
     close_call: CloseCall,
@@ -193,6 +206,7 @@ impl Scan {
             current_snr_db: None,
             sweeps: 0,
             hits: 0,
+            round_ms: None,
             hardware_sweep: false,
             live: false,
             heard: Vec::new(),
@@ -208,11 +222,15 @@ impl Scan {
             followed: None,
             last_follow: None,
             bw_hz,
+            lane: ScanLane::new(0.0, None, 0),
+            settle: Settle::new(0),
+            window: Arc::default(),
             stop: Arc::new(AtomicBool::new(false)),
             release: Arc::new(AtomicBool::new(false)),
             jump: Arc::new(AtomicU64::new(0)),
             status: Arc::new(Mutex::new(status)),
             last_update: None,
+            round_started: None,
             hardware: false,
             in_sweep: false,
             close_call: CloseCall::default(),
@@ -227,6 +245,7 @@ impl Scan {
 
     fn run(mut self) {
         let outcome = self.sweep_forever();
+        self.window.clear();
         if self.in_sweep
             && let Some(engine) = self.engine.upgrade()
             && let Err(e) = sweep::leave(&engine, self.ds)
@@ -263,21 +282,23 @@ impl Scan {
     }
 
     fn sweep_forever(&mut self) -> Result<(), Halt> {
+        self.round_started = Some(Instant::now());
         loop {
             let engine = self.engine.upgrade().ok_or(Halt::Stopped)?;
-            let rate = engine.scan_sample_rate(self.ds).ok_or(Halt::Stopped)?;
-            self.watch_live(&engine, rate)?;
+            self.lane = engine.scan_lane(self.ds).ok_or(Halt::Stopped)?;
+            self.settle.set_in_flight(self.lane.in_flight);
+            self.watch_live(&engine, self.lane.rate)?;
             if self.hardware {
-                self.firmware_pass(&engine, rate)?;
+                self.firmware_pass(&engine, self.lane.rate)?;
             } else {
-                if rate * USABLE_SPAN_FRACTION <= self.bw_hz {
+                if self.lane.clean_hz <= self.bw_hz {
                     return Err(Halt::Failed(format!(
-                        "a {} Hz measurement bandwidth does not fit in a {rate} Hz device passband",
-                        self.bw_hz
+                        "a {} Hz measurement bandwidth does not fit in a {} Hz device passband",
+                        self.bw_hz, self.lane.rate
                     )));
                 }
                 self.pass(&engine)?;
-                lock_status(&self.status).sweeps += 1;
+                self.round_done();
                 if self.settings.mode == ScanMode::All && !std::mem::take(&mut self.found_new) {
                     self.done = true;
                 }
@@ -298,9 +319,14 @@ impl Scan {
         }
     }
 
+    /// One round over every target, a window at a time. Each window opens at the first target
+    /// not yet read and spans as much of the radio's clean passband as the plan fills.
     fn pass(&mut self, engine: &Arc<Engine>) -> Result<(), Halt> {
         let mut rx = engine
             .subscribe_spectrum(self.ds, self.stream)
+            .map_err(|e| Halt::Failed(e.to_string()))?;
+        let _pace = engine
+            .claim_scan_pace(self.ds, self.stream)
             .map_err(|e| Halt::Failed(e.to_string()))?;
         let mut from = 0;
         while from < self.plan.targets.len() {
@@ -311,35 +337,49 @@ impl Scan {
             if self.priority_due() {
                 self.check_priority(engine, &mut rx)?;
             }
-            let Some(window) = self.park(engine, &mut rx, self.plan.targets[from])? else {
+            let end = tile_end(&self.plan.targets, from, self.lane.clean_hz, self.bw_hz);
+            self.window
+                .set(self.plan.targets[from], self.plan.targets[end]);
+            let Some(frame) = self.park(engine, &mut rx, self.plan.targets[from])? else {
                 from += 1;
                 continue;
             };
-            let reach = leading_within(&self.plan.targets[from..], &window, self.bw_hz);
-            from += self.examine(engine, &mut rx, from, reach)?;
+            let reach = leading_within(&self.plan.targets[from..=end], &frame, self.bw_hz);
+            from += self.examine(engine, &mut rx, (from, reach), &frame)?;
         }
+        self.window.clear();
         Ok(())
     }
 
-    fn dwell(&self) -> Duration {
-        Duration::from_millis(u64::from(self.settings.dwell_ms)).max(MIN_DWELL)
+    fn round_done(&mut self) {
+        let now = Instant::now();
+        let mut status = lock_status(&self.status);
+        status.sweeps += 1;
+        if let Some(started) = self.round_started {
+            status.round_ms = Some(millis(now.duration_since(started)));
+        }
+        self.round_started = Some(now);
     }
 
     fn examine(
         &mut self,
         engine: &Arc<Engine>,
         rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
-        from: usize,
-        reach: usize,
+        (from, reach): (usize, usize),
+        frame: &SpectrumSnapshot,
     ) -> Result<usize, Halt> {
-        let dwell = self.dwell();
         if self.settings.mode == ScanMode::CloseCall {
-            self.watch(engine, rx, self.plan.targets[from], dwell)?;
+            self.report(engine, self.plan.targets[from], f32::NEG_INFINITY)?;
+            if let Some(call) = self.call_in(frame)
+                && self.confirmed(rx, call)?
+            {
+                self.take(engine, rx, call)?;
+            }
             return Ok(reach);
         }
         let targets: Vec<f64> = self.plan.targets[from..from + reach].to_vec();
         let mut snrs = vec![f32::NEG_INFINITY; targets.len()];
-        self.listen(rx, &targets, &mut snrs, dwell)?;
+        self.measure_into(frame, &targets, &mut snrs);
         if self.settings.mode == ScanMode::All {
             self.report_all(engine, &targets, &snrs)?;
             for call in self.fresh_calls(&targets, &snrs) {
@@ -353,11 +393,27 @@ impl Scan {
         }
         match self.first_call(engine, &targets, &snrs)? {
             Some((index, call)) => {
-                self.take(engine, rx, call)?;
+                if self.confirmed(rx, call)? {
+                    self.take(engine, rx, call)?;
+                }
                 Ok(index + 1)
             }
             None => Ok(reach),
         }
+    }
+
+    /// Reads `call` again on the next clean frame, so one noisy frame never costs a hold.
+    fn confirmed(
+        &mut self,
+        rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
+        call: Call,
+    ) -> Result<bool, Halt> {
+        let Some(frame) = self.fresh_frame(rx, call.hz)? else {
+            return Ok(false);
+        };
+        let mut snr = [f32::NEG_INFINITY];
+        self.measure_into(&frame, &[call.hz], &mut snr);
+        Ok(snr[0] >= self.settings.margin_db)
     }
 
     fn park(
@@ -372,13 +428,16 @@ impl Scan {
         {
             return Ok(None);
         }
+        if !self.window.holds(hz) {
+            self.window.clear();
+        }
         lock_status(&self.status).current_hz = hz;
         self.steer(engine, rx, hz)?;
-        drain(rx);
-        self.window_over(rx, hz)
+        self.fresh_frame(rx, hz)
     }
 
-    /// Moves the decoder to `hz`, letting the radio settle if it had to follow.
+    /// Moves the decoder to `hz`. When the radio had to follow, frames from where it was stop
+    /// counting.
     fn steer(
         &mut self,
         engine: &Engine,
@@ -390,26 +449,31 @@ impl Scan {
             .map_err(follow_failed)?;
         self.followed = Some(hz);
         if moved {
-            std::thread::sleep(RETUNE_SETTLE);
-            drain(rx);
+            self.settle.moved();
         }
+        drain(rx);
         Ok(())
     }
 
-    fn window_over(
-        &self,
+    /// The first frame taken wholly at the radio's present tuning, or `None` once such a frame
+    /// shows the radio does not hear `hz`.
+    fn fresh_frame(
+        &mut self,
         rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
         hz: f64,
     ) -> Result<Option<SpectrumSnapshot>, Halt> {
         let start = Instant::now();
+        let give_up = self.settle_time() + WINDOW_WAIT;
         let mut frames = 0usize;
         loop {
             self.check_stop()?;
             match rx.try_recv() {
                 Ok(snapshot) => {
                     frames += 1;
-                    if leading_within(std::slice::from_ref(&hz), &snapshot, self.bw_hz) == 1 {
-                        return Ok(Some(snapshot));
+                    if self.settle.clean(&snapshot) {
+                        let heard =
+                            leading_within(std::slice::from_ref(&hz), &snapshot, self.bw_hz) == 1;
+                        return Ok(heard.then_some(snapshot));
                     }
                 }
                 Err(TryRecvError::Empty) => std::thread::sleep(POLL),
@@ -421,9 +485,17 @@ impl Scan {
                     "the device produced no spectrum within {SPECTRUM_TIMEOUT:?}"
                 )));
             }
-            if frames > 0 && start.elapsed() >= WINDOW_WAIT {
+            if frames > 0 && start.elapsed() >= give_up {
                 return Ok(None);
             }
+        }
+    }
+
+    fn settle_time(&self) -> Duration {
+        if self.lane.rate > 0.0 {
+            Duration::from_secs_f64(self.lane.in_flight as f64 / self.lane.rate)
+        } else {
+            Duration::ZERO
         }
     }
 
@@ -452,7 +524,7 @@ impl Scan {
                     match first_center {
                         None => first_center = Some(snapshot.center_hz),
                         Some(start) if (snapshot.center_hz - start).abs() < 1.0 => {
-                            lock_status(&self.status).sweeps += 1;
+                            self.round_done();
                             if self.settings.mode == ScanMode::All {
                                 self.done = true;
                                 return Ok(());
@@ -641,44 +713,6 @@ impl Scan {
         Ok(None)
     }
 
-    fn watch(
-        &mut self,
-        engine: &Arc<Engine>,
-        rx: &mut tokio::sync::broadcast::Receiver<SpectrumSnapshot>,
-        center_hz: f64,
-        dwell: Duration,
-    ) -> Result<(), Halt> {
-        let deadline = Instant::now() + dwell;
-        let mut heard = Instant::now();
-        loop {
-            self.check_stop()?;
-            match rx.try_recv() {
-                Ok(snapshot) => {
-                    heard = Instant::now();
-                    if let Some(call) = self.call_in(&snapshot) {
-                        return self.take(engine, rx, call);
-                    }
-                    lock_status(&self.status).current_hz = center_hz;
-                    self.push_update(engine, false);
-                    self.follow(engine, false)?;
-                    if Instant::now() >= deadline {
-                        return Ok(());
-                    }
-                }
-                Err(TryRecvError::Empty) => {
-                    if heard.elapsed() >= SPECTRUM_TIMEOUT {
-                        return Err(Halt::Failed(format!(
-                            "the device produced no spectrum within {SPECTRUM_TIMEOUT:?}"
-                        )));
-                    }
-                    std::thread::sleep(POLL);
-                }
-                Err(TryRecvError::Lagged(_)) => {}
-                Err(TryRecvError::Closed) => return Err(Halt::Stopped),
-            }
-        }
-    }
-
     fn check_stop(&self) -> Result<(), Halt> {
         if self.stop.load(Ordering::Acquire) {
             return Err(Halt::Stopped);
@@ -714,6 +748,10 @@ impl Scan {
             status: Box::new(lock_status(&self.status).clone()),
         });
     }
+}
+
+fn millis(elapsed: Duration) -> u32 {
+    u32::try_from(elapsed.as_millis()).unwrap_or(u32::MAX)
 }
 
 fn follow_failed(e: EngineError) -> Halt {
@@ -893,6 +931,7 @@ mod tests {
         let scan = listener();
         let state = ScannerState {
             edges: (100_000_000.0, 100_000_000.0),
+            window: Arc::default(),
             stop: scan.stop.clone(),
             release: scan.release.clone(),
             jump: scan.jump.clone(),
@@ -915,6 +954,7 @@ mod tests {
         let scan = listener();
         let state = ScannerState {
             edges: (100_000_000.0, 100_100_000.0),
+            window: Arc::default(),
             stop: scan.stop.clone(),
             release: scan.release.clone(),
             jump: scan.jump.clone(),

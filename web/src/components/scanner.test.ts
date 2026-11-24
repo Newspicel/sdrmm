@@ -15,6 +15,7 @@ import {
   channelName,
   formatDb,
   formatMhz,
+  formatRound,
   liveStatus,
   presetIn,
   rangeNeed,
@@ -186,7 +187,6 @@ const STATUS: ScannerStatus = {
     node: "scan",
     ranges: [],
     frequencies: [],
-    dwell_ms: 250,
     resume_ms: 1500,
   },
   targets: 10,
@@ -238,6 +238,15 @@ describe("stateLabel", () => {
     const all = { ...STATUS, settings: { ...STATUS.settings, mode: "all" as const } };
     expect(stateLabel({ ...all, state: "holding" })).toBe("visiting");
     expect(stateLabel({ ...all, state: "done" })).toBe("done");
+  });
+});
+
+describe("formatRound", () => {
+  it("reads in seconds and shows a dash before the first round", () => {
+    expect(formatRound(550)).toBe("0.55 s");
+    expect(formatRound(12_340)).toBe("12.34 s");
+    expect(formatRound(null)).toBe("-");
+    expect(formatRound(undefined)).toBe("-");
   });
 });
 

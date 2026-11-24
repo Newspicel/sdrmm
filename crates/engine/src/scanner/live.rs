@@ -7,8 +7,8 @@ use sdrmm_wire::{HeardSignal, ScanMode, ScanState};
 use tokio::sync::broadcast::{Receiver, error::TryRecvError};
 
 use super::{
-    Call, Halt, JUMP_LINGER, POLL, RETUNE_SETTLE, SPECTRUM_TIMEOUT, Scan, drain, local_peaks,
-    lock_status, measure_mean,
+    Call, Halt, JUMP_LINGER, POLL, SPECTRUM_TIMEOUT, Scan, drain, local_peaks, lock_status,
+    measure_mean, millis,
 };
 use crate::{ChannelInfo, DeviceSetState, Engine, hunt::unix_ms, runtime::SpectrumSnapshot};
 
@@ -220,8 +220,9 @@ fn frames_whole((first, last): (f64, f64), band_hz: f64, rate: f64) -> bool {
 }
 
 impl DeviceSetState {
-    /// Copies of each scanning decoder at both ends of its plan, when the plan fits one window,
-    /// so Auto tuning frames every target and the scan can watch them all at once.
+    /// Copies of each scanning decoder at both ends of what it reads at once: its whole plan
+    /// when that fits one window, so the scan can watch every target together, or else the
+    /// window it is stepping through. Auto tuning frames them like any decoder.
     pub(crate) fn scan_edges(&self) -> Vec<ChannelInfo> {
         let rate = crate::sample_rate_of(&self.settings);
         let mut edges = Vec::new();
@@ -230,10 +231,15 @@ impl DeviceSetState {
                 continue;
             };
             let (low, high) = sdrmm_decoder::occupied_band(&channel.settings.params);
-            if !frames_whole(scanner.edges, high - low, rate) {
+            let span = if frames_whole(scanner.edges, high - low, rate) {
+                Some(scanner.edges)
+            } else {
+                scanner.window.edges()
+            };
+            let Some((first, last)) = span else {
                 continue;
-            }
-            for hz in [scanner.edges.0, scanner.edges.1] {
+            };
+            for hz in [first, last] {
                 let mut edge = channel.clone();
                 edge.settings.frequency_hz = hz;
                 edges.push(edge);
@@ -266,10 +272,10 @@ impl Scan {
         if !engine.settle_tuning(self.ds) {
             return Ok(false);
         }
-        std::thread::sleep(RETUNE_SETTLE);
+        self.settle.moved();
         drain(rx);
         Ok(self
-            .window_over(rx, centre)?
+            .fresh_frame(rx, centre)?
             .is_some_and(|window| fits(&self.plan.targets, &window, self.bw_hz)))
     }
 
@@ -319,8 +325,13 @@ impl Scan {
         let n = self.plan.targets.len();
         let mut snrs = vec![f32::NEG_INFINITY; n];
         let mut locked = vec![false; n];
+        let mut last_frame: Option<Instant> = None;
         loop {
             let snapshot = self.next_frame(rx)?;
+            let now = Instant::now();
+            if let Some(before) = last_frame.replace(now) {
+                lock_status(&self.status).round_ms = Some(millis(now.duration_since(before)));
+            }
             if !fits(&self.plan.targets, &snapshot, self.bw_hz) {
                 return Ok(());
             }

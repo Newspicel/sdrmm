@@ -20,7 +20,8 @@ use sdrmm_wire::{
 use tokio::sync::broadcast;
 
 use super::{
-    BackgroundSpectrum, DspCommand, DspMeta, OverlapClaim, SpectrumSnapshot, SpectrumTap, Waker,
+    BackgroundSpectrum, DspCommand, DspMeta, OverlapClaim, ScanPaceClaim, SpectrumSnapshot,
+    SpectrumTap, Waker,
     clip::ClipMeter,
     retire::Reclaimer,
     spectrum_size,
@@ -376,6 +377,11 @@ impl CaptureRuntime {
     pub fn claim_overlap(&self, stream: u32, overlap: SpectrumOverlap) -> Option<OverlapClaim> {
         self.lane(stream)
             .map(|lane| lane.spectrum_tx.claim(overlap))
+    }
+
+    pub fn claim_scan_pace(&self, stream: u32) -> Option<ScanPaceClaim> {
+        self.lane(stream)
+            .map(|lane| lane.spectrum_tx.claim_scan_pace())
     }
 
     fn lane(&self, stream: u32) -> Option<&Lane> {

@@ -189,6 +189,24 @@ fn gpu_matches_cpu_when_a_hardware_adapter_is_available() {
 }
 
 #[test]
+fn a_scan_gets_faster_frames_until_they_grow_too_large() {
+    for rate in RATES {
+        let size = spectrum_size(rate);
+        let analyzer = SpectrumAnalyzer::Cpu(CpuSpectrum::new(size, CPU_BUDGET));
+        let shown = analyzer.cadence(rate, size, Watch::Viewer(SpectrumOverlap::Auto));
+        let scanned = analyzer.cadence(rate, size, Watch::Scan(SpectrumOverlap::Auto));
+        let period = |c: Cadence| c.hop as f64 * f64::from(c.averages) / rate;
+        assert!(period(scanned) <= period(shown), "{rate}");
+    }
+    let rtl = SpectrumAnalyzer::Cpu(CpuSpectrum::new(4_096, CPU_BUDGET));
+    let paced = rtl.cadence(2.4e6, 4_096, Watch::Scan(SpectrumOverlap::Auto));
+    let period = paced.hop as f64 * f64::from(paced.averages) / 2.4e6;
+    assert!((0.008..=0.012).contains(&period), "{period} s a frame");
+    assert_eq!(scan_fps(4_096), SCAN_FPS);
+    assert!(scan_fps(262_144) < 2.0 * TARGET_FPS);
+}
+
+#[test]
 fn a_viewer_picks_how_far_the_cpu_overlaps() {
     let rate = 2_400_000.0;
     let size = spectrum_size(rate);

@@ -68,7 +68,6 @@ async fn a_scanner_node_starts_skips_and_stops_its_decoder() {
     let settings: sdrmm_wire::ScanSettings = serde_json::from_value(serde_json::json!({
         "ranges": [{"start_hz": 99_000_000.0, "stop_hz": 101_000_000.0, "step_hz": 100_000.0}],
         "margin_db": 200.0,
-        "dwell_ms": 40,
         "hardware_sweep": false,
     }))
     .expect("scan settings");

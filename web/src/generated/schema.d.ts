@@ -6659,6 +6659,11 @@ export interface components {
              *     every frame and moves only the decoder, never the radio.
              */
             live?: boolean;
+            /**
+             * Format: int32
+             * @description How long the last round over every target took.
+             */
+            round_ms?: number | null;
             settings: components["schemas"]["ScanSettings"];
             state: components["schemas"]["ScanState"];
             /** Format: int64 */
@@ -6677,8 +6682,6 @@ export interface components {
         /** @enum {string} */
         ScanRevert: "selected" | "last_called" | "last_used" | "primary" | "secondary";
         ScanSettings: {
-            /** Format: int32 */
-            dwell_ms?: number;
             frequencies?: number[];
             /**
              * @description Whether to let a radio that sweeps in its own firmware do the sweeping. Radios without one

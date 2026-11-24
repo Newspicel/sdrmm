@@ -49,8 +49,6 @@ pub struct ScanSettings {
     pub lockouts: Vec<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub priority: Vec<f64>,
-    #[serde(default = "default_dwell_ms")]
-    pub dwell_ms: u32,
     #[serde(default = "default_resume_ms")]
     pub resume_ms: u32,
     #[serde(default = "default_hold_ms")]
@@ -69,9 +67,6 @@ pub struct ScanSettings {
 
 pub const PRIORITY_INTERVAL_MS: u32 = 2_000;
 
-fn default_dwell_ms() -> u32 {
-    250
-}
 fn default_resume_ms() -> u32 {
     1_500
 }
@@ -97,7 +92,6 @@ impl ScanSettings {
             frequencies: Vec::new(),
             lockouts: Vec::new(),
             priority: Vec::new(),
-            dwell_ms: default_dwell_ms(),
             resume_ms: default_resume_ms(),
             hold_ms: default_hold_ms(),
             measure_bw_hz: None,
@@ -188,6 +182,9 @@ pub struct ScannerStatus {
     pub current_snr_db: Option<f32>,
     pub sweeps: u64,
     pub hits: u64,
+    /// How long the last round over every target took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub round_ms: Option<u32>,
     /// Whether the sweep in force is the radio's own. A scan that asked for one and did not get
     /// it says so here rather than looking like a firmware sweep that is merely slow.
     #[serde(default)]
@@ -263,6 +260,7 @@ mod tests {
             current_snr_db: None,
             sweeps: 0,
             hits: 0,
+            round_ms: None,
             hardware_sweep: false,
             live: false,
             heard: Vec::new(),

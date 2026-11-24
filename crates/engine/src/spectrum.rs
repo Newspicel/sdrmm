@@ -16,6 +16,12 @@ mod history;
 #[cfg(any(feature = "gpu-fft", test))]
 const GPU_MIN_FFT_SIZE: usize = 32_768;
 const TARGET_FPS: f64 = 30.0;
+/// Frames a second while a scan steps the radio: each window costs a frame or two, so their
+/// period is time the scan cannot spend elsewhere.
+const SCAN_FPS: f64 = 100.0;
+/// Most bins a second the scan pace publishes, so a wide lane's large frames fall back toward
+/// the display rate instead of flooding the publisher.
+const SCAN_BINS_PER_SECOND: f64 = 8_388_608.0;
 const MAX_AVERAGES: u32 = 64;
 /// Averages a frame without overlap, the cadence from before transforms overlapped.
 const UNLAPPED_AVERAGES: u32 = 16;
@@ -57,7 +63,12 @@ impl Cadence {
     /// Overlaps transforms as far as `budget` transformed samples per second allow, never closer
     /// than a quarter window, and averages what fits one frame period.
     pub(crate) fn new(sample_rate: f64, size: usize, budget: f64) -> Self {
-        let per_frame = (sample_rate / TARGET_FPS).max(1.0);
+        Self::paced(sample_rate, size, budget, TARGET_FPS)
+    }
+
+    /// The same at `fps` frames a second.
+    pub(crate) fn paced(sample_rate: f64, size: usize, budget: f64, fps: f64) -> Self {
+        let per_frame = (sample_rate / fps).max(1.0);
         let affordable = sample_rate * size as f64 / budget.max(1.0);
         let hop = (per_frame / f64::from(MAX_AVERAGES))
             .max(affordable)
@@ -172,6 +183,12 @@ impl SpectrumAnalyzer {
     pub(crate) fn cadence(&self, sample_rate: f64, size: usize, watch: Watch) -> Cadence {
         match watch {
             Watch::Viewer(overlap) => Cadence::new(sample_rate, size, self.budget(size, overlap)),
+            Watch::Scan(overlap) => Cadence::paced(
+                sample_rate,
+                size,
+                self.budget(size, overlap),
+                scan_fps(size),
+            ),
             Watch::Nobody | Watch::Background => {
                 Cadence::new(sample_rate, size, self.budget(size, SpectrumOverlap::Auto))
                     .unlapped(sample_rate, size)
@@ -259,6 +276,10 @@ impl SpectrumAnalyzer {
             }
         }
     }
+}
+
+fn scan_fps(size: usize) -> f64 {
+    (SCAN_BINS_PER_SECOND / size.max(1) as f64).clamp(TARGET_FPS, SCAN_FPS)
 }
 
 /// Transformed samples per second that average [`UNLAPPED_AVERAGES`] a frame, side by side at

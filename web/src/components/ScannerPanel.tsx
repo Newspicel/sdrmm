@@ -31,6 +31,7 @@ import {
   channelName,
   formatDb,
   formatMhz,
+  formatRound,
   liveStatus,
   MIN_STEP_KHZ,
   presetIn,
@@ -277,6 +278,9 @@ function ScanStats({ status }: { status: ScannerStatus }) {
       </Stat>
       <Stat label="Hits" title="Signals held">
         {status.hits}
+      </Stat>
+      <Stat label="Round" title="Time to check every target once">
+        {formatRound(status.round_ms)}
       </Stat>
       {locked > 0 && (
         <Stat label="Locked" title="Frequencies locked out">
