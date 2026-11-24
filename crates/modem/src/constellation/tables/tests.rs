@@ -303,6 +303,7 @@ fn unsupported_orders_are_rejected_by_name() {
     assert!(qam_hierarchical(16, 0.5).is_err());
     assert!(pam(6).is_err());
     assert!(psk(2048).is_err());
+    assert!(qam_square(1 << 22).is_err());
     assert!(qam_star(&[2.0, 1.0], 8).is_err());
     assert!(qam_star(&[1.0, 2.0], 6).is_err());
     assert!(apsk16_dvbs2(0.5).is_err());
@@ -319,9 +320,13 @@ fn offset_rotations_are_the_half_step() {
 
 #[test]
 fn slicing_a_large_table_allocates_nothing() {
-    let c = qam_square(1024).unwrap();
     let y = Complex::new(0.31f32, -0.12);
+    let c = qam_square(1024).unwrap();
     assert_no_alloc("hard_slice qam1024", || {
+        std::hint::black_box(c.hard_slice(y));
+    });
+    let c = qam_square(65_536).unwrap();
+    assert_no_alloc("hard_slice qam65536", || {
         std::hint::black_box(c.hard_slice(y));
     });
 }

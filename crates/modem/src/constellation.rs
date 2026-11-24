@@ -2,6 +2,7 @@ pub mod demap;
 mod error;
 #[cfg(test)]
 mod fixtures;
+mod grid;
 pub mod tables;
 
 use std::f64::consts::TAU;
@@ -10,6 +11,7 @@ use num_complex::Complex;
 use sdrmm_dsp::math::complex::{narrow, widen};
 
 pub use error::ConstellationError;
+use grid::Grid;
 
 /// The largest rotational symmetry looked for; no table in use has more points on a ring.
 const MAX_ROTATIONAL_ORDER: u32 = 64;
@@ -27,6 +29,7 @@ pub struct Constellation {
     labels: Vec<u32>,
     index_of_label: Vec<usize>,
     bits_per_symbol: usize,
+    grid: Option<Grid>,
 }
 
 impl Constellation {
@@ -56,10 +59,11 @@ impl Constellation {
             return Err(ConstellationError::ZeroPower);
         }
         let scale = power.sqrt().recip();
-        let points = points
+        let points: Vec<Complex<f32>> = points
             .into_iter()
             .map(|p| narrow(widen(p) * scale))
             .collect();
+        let grid = Grid::detect(&points);
         let mut index_of_label = vec![0usize; n];
         for (index, &label) in labels.iter().enumerate() {
             index_of_label[label as usize] = index;
@@ -69,6 +73,7 @@ impl Constellation {
             labels,
             index_of_label,
             bits_per_symbol: n.trailing_zeros() as usize,
+            grid,
         })
     }
 
@@ -97,6 +102,12 @@ impl Constellation {
         self.points.is_empty()
     }
 
+    /// Whether the points sit on a square, evenly spaced lattice, which slices in constant time.
+    #[must_use]
+    pub fn is_square_grid(&self) -> bool {
+        self.grid.is_some()
+    }
+
     #[must_use]
     pub fn index_of(&self, label: u32) -> Option<usize> {
         self.index_of_label.get(label as usize).copied()
@@ -104,6 +115,13 @@ impl Constellation {
 
     #[must_use]
     pub fn nearest_index(&self, y: Complex<f32>) -> usize {
+        match &self.grid {
+            Some(grid) => grid.nearest_index(y),
+            None => self.scanned_nearest_index(y),
+        }
+    }
+
+    fn scanned_nearest_index(&self, y: Complex<f32>) -> usize {
         let mut best = 0usize;
         let mut best_d2 = f64::INFINITY;
         for (i, &p) in self.points.iter().enumerate() {
@@ -123,6 +141,9 @@ impl Constellation {
 
     #[must_use]
     pub fn min_distance(&self) -> f64 {
+        if let Some(grid) = &self.grid {
+            return f64::from(grid.step());
+        }
         let mut min = f64::INFINITY;
         for i in 0..self.points.len() {
             for j in (i + 1)..self.points.len() {
@@ -199,6 +220,44 @@ mod tests {
             let index = c.nearest_index(y);
             assert_eq!(c.points()[index], c.nearest(y));
             assert_eq!(c.labels()[index], c.hard_slice(y));
+        }
+    }
+
+    #[test]
+    fn grid_slicing_agrees_with_the_scan() {
+        let mut state = 0x9e37_79b9u32;
+        let mut draw = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state as f32 / u32::MAX as f32 - 0.5) * 3.0
+        };
+        for table in [
+            tables::qam_square(4).unwrap(),
+            tables::qam_square(16).unwrap(),
+            tables::qam_square(256).unwrap(),
+        ] {
+            for _ in 0..2_000 {
+                let y = Complex::new(draw(), draw());
+                assert_eq!(
+                    table.nearest_index(y),
+                    table.scanned_nearest_index(y),
+                    "{y}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_65536_point_grid_slices_every_point_back_to_itself() {
+        let c = tables::qam_square(65_536).unwrap();
+        let spacing = c.min_distance();
+        let want = 2.0 / (2.0 * (65_536.0 - 1.0) / 3.0f64).sqrt();
+        assert!((spacing - want).abs() < 1e-6 * want, "{spacing} vs {want}");
+        assert_eq!(c.rotational_order(), 4);
+        let nudge = Complex::new(0.3 * spacing as f32, -0.3 * spacing as f32);
+        for (&p, &label) in c.points().iter().zip(c.labels()) {
+            assert_eq!(c.hard_slice(p + nudge), label);
         }
     }
 

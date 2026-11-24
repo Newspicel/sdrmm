@@ -19,6 +19,9 @@ pub const PI_4_ROTATION: f64 = FRAC_PI_4;
 
 const MAX_ORDER: u32 = 1024;
 
+/// Square QAM slices on its lattice in constant time, so it goes far past the tables that scan.
+const MAX_SQUARE_QAM_ORDER: u32 = 1 << 20;
+
 /// Side of the square grid and of each removed corner block, in points, for the cross QAMs.
 const CROSS_32: (i32, i32) = (6, 1);
 const CROSS_128: (i32, i32) = (12, 2);
@@ -61,7 +64,8 @@ pub fn psk_rotated(m: u32, phase_rad: f64) -> Result<Constellation, Constellatio
 }
 
 pub fn qam_square(m: u32) -> Result<Constellation, ConstellationError> {
-    check_order("square QAM", m, m >= 4 && m.ilog2().is_multiple_of(2))?;
+    let square = m >= 4 && m.ilog2().is_multiple_of(2);
+    check_order_up_to("square QAM", m, square, MAX_SQUARE_QAM_ORDER)?;
     let side = 1u32 << (m.ilog2() / 2);
     let (points, labels) = gray_grid(m, |i| (2 * i) as f32 - (side - 1) as f32);
     Constellation::from_points(points, labels)
@@ -133,7 +137,16 @@ pub fn offset_rotation(m: u32) -> f64 {
 }
 
 fn check_order(family: &'static str, m: u32, ok: bool) -> Result<(), ConstellationError> {
-    if ok && m >= 2 && m.is_power_of_two() && m <= MAX_ORDER {
+    check_order_up_to(family, m, ok, MAX_ORDER)
+}
+
+fn check_order_up_to(
+    family: &'static str,
+    m: u32,
+    ok: bool,
+    max: u32,
+) -> Result<(), ConstellationError> {
+    if ok && m >= 2 && m.is_power_of_two() && m <= max {
         return Ok(());
     }
     Err(ConstellationError::UnsupportedOrder { family, m })

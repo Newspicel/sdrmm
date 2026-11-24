@@ -2,6 +2,7 @@ mod acquire;
 mod anchor;
 mod carrier;
 mod demod;
+mod dense;
 mod differential;
 mod envelope;
 mod equaliser;
@@ -20,6 +21,7 @@ pub use carrier::{CarrierLoop, PhaseDetector};
 pub use demod::{
     LinearBurstDemod, LinearDemod, LinearTiming, TIMING_BW_BURST, TIMING_BW_CONTINUOUS,
 };
+pub use dense::{DEFAULT_EQUALISER_TAPS, DenseError, DenseQamDemod, DenseState};
 pub use differential::{DifferentialDetector, differential_detect};
 pub use envelope::{EnvelopeDemod, EnvelopeTiming, slice_amplitude};
 pub use equaliser::{Equaliser, EqualiserConfig, EqualiserError};
