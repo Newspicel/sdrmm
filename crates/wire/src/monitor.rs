@@ -138,6 +138,12 @@ impl Transmission {
             summary.push_str(" · ");
             summary.push_str(error);
         }
+        if let Some(transcript) = self.transcript.as_deref().map(str::trim)
+            && !transcript.is_empty()
+        {
+            summary.push_str(" · ");
+            summary.push_str(transcript);
+        }
         summary
     }
 }

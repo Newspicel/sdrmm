@@ -322,6 +322,7 @@ fn call_summary(c: &VoiceCall) -> String {
     if c.encrypted {
         parts.push("encrypted".to_owned());
     }
+    parts.extend(trimmed(c.transcript.as_deref()));
     joined(parts)
 }
 
@@ -502,6 +503,38 @@ mod tests {
         );
         assert_eq!(view.field("Emergency"), only_if(true).as_ref());
         assert_eq!(view.field("Encrypted"), None);
+    }
+
+    #[test]
+    fn a_transcribed_call_says_what_was_heard_in_its_summary() {
+        let call = |transcript: &str| {
+            serde_json::from_value::<VoiceCall>(serde_json::json!({
+                "id": 1, "node": "n", "started_at": "2026-01-01T00:00:00Z",
+                "ended_at": "2026-01-01T00:00:04Z", "duration_ms": 4200, "device_set": 0,
+                "channel": 0, "freq_hz": 119.9e6, "mode": "am", "encrypted": false,
+                "emergency": false, "transcript": transcript,
+            }))
+            .unwrap()
+            .present(&EventKind::CALL)
+        };
+        assert!(
+            call(" cleared for takeoff ")
+                .summary
+                .ends_with(" · cleared for takeoff")
+        );
+        assert!(call("  ").summary.ends_with("4.2 s"));
+    }
+
+    #[test]
+    fn a_transcribed_transmission_says_what_was_heard_in_its_summary() {
+        let mut heard = crate::decode::test_kinds::transmission();
+        heard.transcript = Some("contact radar".to_owned());
+        assert!(
+            heard
+                .present(&EventKind::TRANSMISSION)
+                .summary
+                .ends_with(" · contact radar")
+        );
     }
 
     #[test]
