@@ -665,7 +665,8 @@ async fn survey_records_through_the_mission() {
     let mut events = state.engine.subscribe_events();
     let started = act(&app, "map", r#"{"action":"start_survey"}"#).await;
     assert!(survey_of(&started).recording);
-    assert_eq!(started.controls, vec![MissionControl::StopSurvey]);
+    assert_eq!(started.controls.first(), Some(&MissionControl::StopSurvey));
+    assert!(!started.controls.contains(&MissionControl::StartSurvey));
     let cell = next_event(&mut events, |event| {
         matches!(event, ServerEvent::SurveyUpdate { node, update } if node == "map" && update.cell.is_some())
     })

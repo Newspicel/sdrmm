@@ -99,14 +99,16 @@ test.describe("the workspace", () => {
 
   test("binds a radio, adds a channel and pins a face", async ({ page }) => {
     await page.route("https://tiles.openfreemap.org/**", (route) => route.abort());
-    await page.route("**/api/devices", (route) =>
-      route.fulfill({
+    await page.route("**/api/devices", async (route) => {
+      const served = await route.fetch().then((response) => response.json());
+      await route.fulfill({
         json: {
+          ...served,
           devices: [{ driver: "virtual", key: "band", label: "Test band (virtual)" }],
           synthetic: true,
         },
-      }),
-    );
+      });
+    });
     await page.route("**/api/recordings", (route) =>
       route.fulfill({
         json: {
@@ -401,15 +403,15 @@ test.describe("the workspace", () => {
     expect((await rackStyles(page)).length).toBe(1);
 
     await page.reload();
+    await expect(rack).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText(/nothing pinned/i)).toHaveCount(0);
+
+    await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Patch" }).click();
     await expect(node("scope").getByRole("button", { name: /unpin from the rack/i })).toBeVisible();
     await expect(node("device").locator('[id^="frequency-dial"]')).toBeVisible();
     await expect(
       page.locator('.react-flow__node[data-id^="channel:"]').getByText("Signal", { exact: true }),
     ).toBeVisible();
-    await rack.click();
-    await expect(page.getByText(/nothing pinned/i)).toHaveCount(0);
-
-    await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Patch" }).click();
     await activate(node("device"));
     await page
       .getByRole("complementary", { name: "Inspector" })
@@ -1033,7 +1035,7 @@ test.describe("the workspace", () => {
                   position: { x: 440, y: 0 },
                   data: { channel_type: "nfm" },
                 },
-                { id: "spk", kind: "speaker", position: { x: 900, y: 0 } },
+                { id: "spk", kind: "speaker", position: { x: 900, y: 0 }, data: {} },
                 { id: "log", kind: "decoder_log", position: { x: 900, y: 240 }, data: {} },
               ],
               edges: [

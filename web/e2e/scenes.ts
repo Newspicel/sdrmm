@@ -189,7 +189,7 @@ function bandPatch(): WorkspaceSnapshot {
         node("dev", { kind: "device", data: { device: BAND } }, { x: 0, y: 0, w: 420, h: 236 }),
         channel("ch", "nfm", { x: 540, y: 0, w: 460, h: 331 }),
         node("scope", { kind: "scope" }, { x: 540, y: 371, w: 880, h: 400 }),
-        node("speaker", { kind: "speaker" }, { x: 1140, y: 0, w: 280, h: 204 }),
+        node("speaker", { kind: "speaker", data: {} }, { x: 1140, y: 0, w: 280, h: 204 }),
       ],
       edges: [
         wire(["dev", "iq"], ["scope", "iq"]),
@@ -216,7 +216,7 @@ const patch: Scene = {
           channel("nfm", "nfm", { x: 540, y: 100, w: 460, h: 331 }),
           channel("am", "am", { x: 540, y: 471, w: 460, h: 229 }),
           channel("wfm", "wfm", { x: 540, y: 740, w: 460, h: 255 }),
-          node("speaker", { kind: "speaker" }, { x: 1140, y: 440, w: 280, h: 204 }),
+          node("speaker", { kind: "speaker", data: {} }, { x: 1140, y: 440, w: 280, h: 204 }),
           node("udp", { kind: "network_export", data: {} }, { x: 1140, y: 684, w: 280, h: 242 }),
           node(
             "rec",
@@ -478,7 +478,7 @@ const rds: Scene = {
           node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
           channel("ch", "wfm", { x: 540, y: 0, w: 460, h: 255 }),
           node("scope", { kind: "scope" }, { x: 0, y: 295, w: 1000, h: 705 }),
-          node("speaker", { kind: "speaker" }, { x: 1140, y: 0, w: 280, h: 204 }),
+          node("speaker", { kind: "speaker", data: {} }, { x: 1140, y: 0, w: 280, h: 204 }),
           node("readout", { kind: "readout" }, { x: 1140, y: 244, w: 760, h: 220 }),
           node("log", { kind: "decoder_log", data: {} }, { x: 1140, y: 504, w: 760, h: 496 }),
         ],
@@ -666,7 +666,7 @@ const dmr: Scene = {
         nodes: [
           node("dev", { kind: "device", data: { device } }, { x: 0, y: 0, w: 420, h: 160 }),
           channel("ch", "dmr", { x: 540, y: 0, w: 440, h: 260 }),
-          node("speaker", { kind: "speaker" }, { x: 1100, y: 0, w: 280, h: 204 }),
+          node("speaker", { kind: "speaker", data: {} }, { x: 1100, y: 0, w: 280, h: 204 }),
           node("scope", { kind: "scope" }, { x: 0, y: 200, w: 980, h: 660 }),
           node("log", { kind: "decoder_log", data: {} }, { x: 1100, y: 244, w: 760, h: 616 }),
         ],

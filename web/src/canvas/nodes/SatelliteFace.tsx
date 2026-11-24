@@ -207,15 +207,17 @@ function Downlink({
 }) {
   const active = useFaceActive();
   return (
-    <div className="@container flex min-w-0 items-center gap-1 p-2" title="Downlink before Doppler">
-      <FrequencyDial
-        id={dialId(node)}
-        hz={hz ?? 0}
-        range={SATELLITE_RANGE}
-        disabled={held || locked}
-        wheelTunes={active}
-        onTune={onTune}
-      />
+    <div className="flex min-w-0 items-center gap-1 p-2" title="Downlink before Doppler">
+      <div className="@container min-w-0 flex-1">
+        <FrequencyDial
+          id={dialId(node)}
+          hz={hz ?? 0}
+          range={SATELLITE_RANGE}
+          disabled={held || locked}
+          wheelTunes={active}
+          onTune={onTune}
+        />
+      </div>
       <span className="ml-auto flex shrink-0 items-center gap-1">
         <TuneTo
           title="Type the downlink"

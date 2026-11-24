@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
   await stage(page, "Node names", {
     version: 4,
     graph: {
-      nodes: [node("speaker", { kind: "speaker" }, { x: 0, y: 0, w: 280, h: 180 })],
+      nodes: [node("speaker", { kind: "speaker", data: {} }, { x: 0, y: 0, w: 280, h: 180 })],
       edges: [],
     },
   });

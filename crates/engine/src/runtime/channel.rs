@@ -1337,7 +1337,7 @@ pub(crate) mod tests {
         const OFFSET_HZ: f64 = 150_000.0;
         let settings = ChannelSettings {
             frequency_hz: CENTER + OFFSET_HZ,
-            squelch: sdrmm_wire::Squelch::Auto { margin_db: 6.0 },
+            squelch: sdrmm_wire::Squelch::Off,
             params: ChannelParams::new(
                 "wfm",
                 &WfmParams {

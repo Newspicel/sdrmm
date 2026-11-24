@@ -53,7 +53,7 @@ export function Popover({
       openOnHover={openOnHover}
       delay={HOVER_DELAY_MS}
     >
-      {title === undefined ? (
+      {title === undefined || openOnHover ? (
         <PopoverTrigger {...triggerProps}>{label}</PopoverTrigger>
       ) : (
         <Tip text={title} render={<PopoverTrigger {...triggerProps} />}>

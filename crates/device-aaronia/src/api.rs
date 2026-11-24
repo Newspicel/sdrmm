@@ -563,6 +563,10 @@ fn default_install_dir() -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the same signature as the platforms without a default install"
+)]
 fn default_install_dir() -> Option<PathBuf> {
     Some(PathBuf::from(
         "/opt/aaronia-rtsa-suite/Aaronia-RTSA-Suite-PRO",

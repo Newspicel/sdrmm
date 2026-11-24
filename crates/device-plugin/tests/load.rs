@@ -78,8 +78,9 @@ fn a_library_without_the_symbol_is_refused() {
 
 #[test]
 fn a_file_that_is_not_a_library_is_refused() {
-    let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("not-a-plugin.{}", std::env::consts::DLL_EXTENSION));
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|error| panic!("tmpdir: {error}"));
+    let path = dir.join(format!("not-a-plugin.{}", std::env::consts::DLL_EXTENSION));
     std::fs::write(&path, b"just text").unwrap_or_else(|error| panic!("write: {error}"));
     assert!(matches!(host::load(&path), Err(LoadError::Open(_))));
 }
