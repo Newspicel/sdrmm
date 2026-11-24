@@ -22,6 +22,7 @@ pub(super) const BAND_BINS: [usize; SUBBANDS] = [
     ((12 + MIXER_PERIOD - HALF_BANDS) * MIXER_STEP) % MIXER_PERIOD,
 ];
 
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 const ROT_SRC: [[usize; MIXER_PERIOD]; ROTATION_PHASES] = {
     let mut table = [[0usize; MIXER_PERIOD]; ROTATION_PHASES];
     let mut phase = 0;

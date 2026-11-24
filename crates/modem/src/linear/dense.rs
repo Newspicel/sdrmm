@@ -27,7 +27,9 @@ impl fmt::Display for DenseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotSquareGrid => write!(f, "dense demodulation needs a square QAM grid"),
-            Self::TooFewSamplesPerSymbol => write!(f, "dense demodulation needs at least 4 sps"),
+            Self::TooFewSamplesPerSymbol => {
+                write!(f, "dense demodulation needs at least 4 samples per symbol")
+            }
         }
     }
 }

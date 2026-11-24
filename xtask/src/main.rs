@@ -1155,8 +1155,9 @@ fn archive_tests(root: &Path, dir: &Path) -> Result<()> {
 }
 
 fn pack_runtime(root: &Path, dir: &Path) -> Result<()> {
-    place(&std::env::current_exe().context("find xtask")?, dir)?;
-    place(&target_dir(root).join("debug").join(server_binary()), dir)?;
+    let built = target_dir(root).join("debug");
+    place(&built.join(xtask_binary()), dir)?;
+    place(&built.join(server_binary()), dir)?;
     if let Some(media) = media_dir(root, None)? {
         let name = media
             .file_name()
@@ -1164,6 +1165,11 @@ fn pack_runtime(root: &Path, dir: &Path) -> Result<()> {
         copy_tree(&media, &dir.join(MEDIA_DIR).join(name))?;
     }
     Ok(())
+}
+
+/// The workspace test build relinks xtask, so the running binary's own path may already be gone.
+fn xtask_binary() -> String {
+    format!("xtask{}", std::env::consts::EXE_SUFFIX)
 }
 
 fn server_binary() -> String {
