@@ -22,6 +22,7 @@ export const PRESENCE_LIMITS = limits.presence;
 export const ROTATOR_LIMITS = limits.rotator;
 export const SCHEDULE_LIMITS = limits.schedule;
 export const MAX_NODES = limits.patch.nodes;
+export const MAX_COORD = limits.patch.coord;
 export const DECODER_LOG_ROWS = limits.decoder_log_rows;
 export const MAX_EDGES = limits.patch.wires;
 export const MAX_STREAMS = limits.patch.streams;

@@ -50,6 +50,13 @@ const FEEDER_DEPTH = 3;
 const LARGE = 1.6;
 const GAP = 48;
 const SECTION_GAP = 160;
+const COLUMNS = ["unwired", "stopped", "running"] as const;
+type Column = (typeof COLUMNS)[number];
+/// A band of rows stops near this height and the next starts beside it.
+const BAND_H = 12_000;
+const MAX_BANDS = 8;
+/// Note nodes the layout adds: the sources head and three column heads per band.
+const LABELS_HELD = 1 + COLUMNS.length * MAX_BANDS;
 const ROW_W = 8400;
 const LABEL = { w: 240, h: 120 };
 
@@ -297,8 +304,7 @@ class Draft {
     const node = placed(id, body);
     this.nodes.push(node);
     this.ports.set(id, ports);
-    const labels = new Set(this.nodes.map(sectionOf)).size;
-    if (this.nodes.length + labels > MAX_NODES) {
+    if (this.nodes.length + LABELS_HELD > MAX_NODES) {
       throw FULL;
     }
     return node;
@@ -583,30 +589,87 @@ function homeOf(template: Template, state: State): Section {
   return !template.radio && inputs(template.ports).length === 0 ? "sources" : state;
 }
 
+/** Sources first, then one row per node: its unwired, stopped and running copies side by side
+ * under their column heads. Rows fold into bands side by side so the canvas stays in bounds. */
 function laidOut(nodes: readonly PatchNode[], scale: number): PatchNode[] {
   const out: PatchNode[] = [];
   let top = 0;
-  for (const section of SECTIONS) {
-    const members = nodes
-      .filter((node) => sectionOf(node) === section)
-      .toSorted((a, b) => footprint(b, scale).h - footprint(a, scale).h);
-    if (members.length === 0) {
-      continue;
-    }
-    out.push(label(section, top, scale));
-    const shelf = shelved(members, top + Math.round((LABEL.h + GAP) * scale), scale);
+  const sources = nodes
+    .filter((node) => sectionOf(node) === "sources")
+    .toSorted((a, b) => footprint(b, scale).h - footprint(a, scale).h);
+  if (sources.length > 0) {
+    out.push(label("sources", "sources-label", 0, top, scale));
+    const shelf = shelved(sources, top + Math.round((LABEL.h + GAP) * scale), scale);
     out.push(...shelf.nodes);
     top = shelf.bottom + Math.round(SECTION_GAP * scale);
   }
+  return [...out, ...grid(rowsOf(nodes), top, scale)];
+}
+
+type Row = Partial<Record<Column, PatchNode>>;
+
+/** Each node's copies by the name they share past their section, in the order they were drawn. */
+function rowsOf(nodes: readonly PatchNode[]): Row[] {
+  const rows = new Map<string, Row>();
+  for (const node of nodes) {
+    const column = COLUMNS.find((held) => held === sectionOf(node));
+    if (column === undefined) {
+      continue;
+    }
+    const key = node.id.slice(column.length + 1);
+    rows.set(key, { ...rows.get(key), [column]: node });
+  }
+  return [...rows.values()];
+}
+
+function grid(rows: readonly Row[], top: number, scale: number): PatchNode[] {
+  const gap = Math.round(GAP * scale);
+  const widths = COLUMNS.map((column) =>
+    Math.max(Math.round(LABEL.w * scale), ...rows.map((row) => boxOf(row[column], scale).w)),
+  );
+  const lefts = widths.map((_, index) => widths.slice(0, index).reduce((x, w) => x + w + gap, 0));
+  const bandW = (lefts.at(-1) ?? 0) + (widths.at(-1) ?? 0) + Math.round(SECTION_GAP * scale);
+  const heights = rows.map((row) =>
+    Math.max(...COLUMNS.map((column) => boxOf(row[column], scale).h)),
+  );
+  const total = heights.reduce((sum, h) => sum + h + gap, 0);
+  const bands = Math.min(MAX_BANDS, Math.max(1, Math.ceil(total / (BAND_H * scale))));
+  const head = Math.round((LABEL.h + GAP) * scale);
+  const out: PatchNode[] = [];
+  let band = -1;
+  let y = 0;
+  rows.forEach((row, index) => {
+    const full = band >= 0 && y - top - head > total / bands && band < bands - 1;
+    if (band < 0 || full) {
+      band += 1;
+      out.push(
+        ...COLUMNS.map((column, at) =>
+          label(column, `${column}-label-${band}`, band * bandW + (lefts[at] ?? 0), top, scale),
+        ),
+      );
+      y = top + head;
+    }
+    COLUMNS.forEach((column, at) => {
+      const node = row[column];
+      if (node !== undefined) {
+        out.push({ ...node, position: { x: band * bandW + (lefts[at] ?? 0), y } });
+      }
+    });
+    y += (heights[index] ?? 0) + gap;
+  });
   return out;
 }
 
-function label(section: Section, top: number, scale: number): PatchNode {
+function boxOf(node: PatchNode | undefined, scale: number): { w: number; h: number } {
+  return node === undefined ? { w: 0, h: 0 } : footprint(node, scale);
+}
+
+function label(section: Section, id: string, x: number, y: number, scale: number): PatchNode {
   return {
-    id: `${section}-label`,
+    id,
     kind: "note",
     data: { text: LABELS[section] },
-    position: { x: 0, y: top },
+    position: { x, y },
     size: { w: Math.round(LABEL.w * scale), h: Math.round(LABEL.h * scale) },
   };
 }

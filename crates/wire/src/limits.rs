@@ -90,9 +90,10 @@ pub struct Limits {
     pub account: AccountLimits,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct PatchLimits {
     pub nodes: usize,
+    pub coord: f32,
     pub wires: usize,
     pub streams: u32,
     pub channels_per_radio: usize,
@@ -398,6 +399,7 @@ pub const LIMITS: Limits = Limits {
     },
     patch: PatchLimits {
         nodes: crate::patch::MAX_NODES,
+        coord: crate::patch::MAX_COORD,
         wires: crate::patch::MAX_EDGES,
         streams: crate::patch::MAX_STREAMS,
         channels_per_radio: crate::patch::MAX_CHANNELS_PER_RADIO,

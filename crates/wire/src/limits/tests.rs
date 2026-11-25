@@ -80,6 +80,7 @@ fn the_published_limits_name_their_wire_constants() {
         json["filter"]["text_len"],
         crate::filter::MAX_FILTER_TEXT_LEN
     );
+    assert_eq!(json["patch"]["coord"], f64::from(crate::patch::MAX_COORD));
     assert_eq!(
         json["patch"]["channels_per_radio"],
         crate::patch::MAX_CHANNELS_PER_RADIO

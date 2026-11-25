@@ -104,6 +104,7 @@
   },
   "patch": {
     "nodes": 1024,
+    "coord": 100000.0,
     "wires": 2048,
     "streams": 16,
     "channels_per_radio": 64,

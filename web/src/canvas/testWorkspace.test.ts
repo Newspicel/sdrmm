@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadCatalog } from "../lib/catalog";
-import { MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_NODES } from "../lib/limits";
+import { MAX_CHANNELS_PER_RADIO, MAX_COORD, MAX_EDGES, MAX_NODES } from "../lib/limits";
 import type {
   ChannelDescriptor,
   EncoderDescriptor,
@@ -13,7 +13,6 @@ import { CATALOG, channelPortsNamed } from "../test/catalog";
 import { declaredPorts } from "./graph";
 import {
   footprint,
-  SECTIONS,
   sectionOf,
   streamPort,
   TEST_RADIOS,
@@ -246,28 +245,54 @@ describe("testWorkspaces", () => {
     expect(subjects(MANY).filter((subject) => !drawn.has(subject))).toEqual([]);
   });
 
-  it("lays out faces without overlap, grouped by state", () => {
+  it("lays out faces without overlap, inside the canvas bounds", () => {
     for (const { snapshot } of many) {
       const boxes = snapshot.graph.nodes.map((node) => ({
         ...node.position,
         ...footprint(node, 1.25),
       }));
       boxes.forEach((a, index) => {
+        expect(a.x + a.w).toBeLessThan(MAX_COORD);
+        expect(a.y + a.h).toBeLessThan(MAX_COORD);
         for (const b of boxes.slice(index + 1)) {
           const apart =
             a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
           expect(apart).toBe(true);
         }
       });
-      const tops = SECTIONS.map((section) =>
-        snapshot.graph.nodes
-          .filter((node) => sectionOf(node) === section)
-          .map((node) => node.position.y),
-      ).filter((ys) => ys.length > 0);
-      tops.slice(1).forEach((ys, index) => {
-        expect(Math.min(...ys)).toBeGreaterThan(Math.max(...(tops[index] ?? [])));
-      });
     }
+  });
+
+  it("puts each node's unwired, stopped and running copies side by side", () => {
+    const states = ["unwired", "stopped", "running"];
+    for (const { snapshot } of [...few, ...many]) {
+      const rows = new Map<string, PatchNode[]>();
+      for (const node of snapshot.graph.nodes) {
+        const state = states.find((held) => node.id.startsWith(`${held}-`));
+        if (state !== undefined && !node.id.includes("-label")) {
+          const key = node.id.slice(state.length + 1);
+          rows.set(key, [...(rows.get(key) ?? []), node]);
+        }
+      }
+      if (snapshot === few[0]?.snapshot) {
+        expect((rows.get("channel-voice") ?? []).map((node) => sectionOf(node))).toEqual(states);
+      }
+      for (const copies of rows.values()) {
+        const ordered = copies.toSorted(
+          (a, b) => states.indexOf(sectionOf(a) ?? "") - states.indexOf(sectionOf(b) ?? ""),
+        );
+        expect(new Set(ordered.map((node) => node.position.y)).size).toBe(1);
+        ordered.slice(1).forEach((node, index) => {
+          expect(node.position.x).toBeGreaterThan(ordered[index]?.position.x ?? 0);
+        });
+      }
+    }
+  });
+
+  it("heads every column with its state", () => {
+    const notes = few[0]?.snapshot.graph.nodes.filter((node) => node.kind === "note") ?? [];
+    const text = notes.map((node) => (node.kind === "note" ? node.data.text : ""));
+    expect(text).toEqual(expect.arrayContaining(["## Unwired", "## Stopped", "## Running"]));
   });
 
   it("gives a resizable face with ports a larger size", () => {
