@@ -215,28 +215,23 @@ impl Worker {
         for job in queue {
             let started = Instant::now();
             let mut record = job.record;
-            let outcome = job
-                .clip
-                .as_deref()
-                .filter(|_| self.models.installed(job.model))
-                .map(|wav| self.transcribe(job.model, wav, threads));
+            let outcome = job.clip.as_deref().map(|wav| {
+                self.transcribe(job.model, wav, threads)
+                    .map(|text| with_transcript(&mut record, text))
+            });
             let took_ms = started.elapsed().as_millis() as u64;
-            let (done, error) = match outcome {
-                Some(Ok(text)) => {
-                    with_transcript(&mut record, text);
-                    (true, None)
-                }
-                Some(Err(error)) => (false, Some(error)),
-                None => (false, None),
-            };
             self.engine.publish_decoded(passed_on(&job.node, record));
             self.hub.update(&self.engine, &job.node, |status| {
                 status.queued = status.queued.saturating_sub(1);
-                if done {
-                    status.done += 1;
-                    status.took_ms = Some(took_ms);
+                match outcome {
+                    Some(Ok(())) => {
+                        status.done += 1;
+                        status.took_ms = Some(took_ms);
+                        status.error = None;
+                    }
+                    Some(Err(error)) => status.error = Some(error),
+                    None => status.dropped += 1,
                 }
-                status.error = error;
             });
         }
     }

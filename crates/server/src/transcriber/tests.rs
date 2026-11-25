@@ -162,3 +162,37 @@ async fn a_call_without_a_model_still_goes_on_from_the_transcriber() {
     let status = state.transcribers.snapshot();
     assert_eq!(status.len(), 1);
 }
+
+#[test]
+fn a_missing_model_and_a_call_without_a_clip_both_show_on_the_face() {
+    let state = state_over(Arc::new(Store::open(None).expect("store")));
+    let graph = PatchGraph {
+        nodes: vec![node("tx", "transcriber")],
+        edges: Vec::new(),
+    };
+    state.transcribers.follow(&state.engine, &graph);
+    let worker = Worker {
+        engine: state.engine.clone(),
+        hub: state.transcribers.clone(),
+        models: Arc::new(SpeechModels::default()),
+    };
+    let (jobs, queue) = mpsc::sync_channel(2);
+    for clip in [Some(Bytes::from_static(&[0; WAV_HEADER])), None] {
+        let job = Job {
+            node: "tx".to_owned(),
+            model: SpeechModel::ParakeetTdtV3,
+            record: record("trunk"),
+            clip,
+        };
+        jobs.send(job).unwrap();
+    }
+    drop(jobs);
+    worker.run(&queue);
+    let statuses = locked(&state.transcribers.statuses);
+    let status = &statuses["tx"];
+    assert_eq!(
+        status.error.as_deref(),
+        Some("Parakeet v3 is not downloaded")
+    );
+    assert_eq!((status.done, status.dropped), (0, 1));
+}
