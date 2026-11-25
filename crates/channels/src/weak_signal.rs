@@ -91,7 +91,7 @@ static FT4_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         "FT4",
         "FT4 fast weak signal contacts",
         EventKind::named("ft4"),
-        Verification::OwnModulator,
+        Verification::OnAir,
     )
 });
 static WSPR_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
@@ -100,7 +100,7 @@ static WSPR_DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| {
         "WSPR",
         "WSPR propagation beacons",
         EventKind::named("wspr"),
-        Verification::OwnModulator,
+        Verification::OnAir,
     )
 });
 
@@ -1444,6 +1444,86 @@ mod tests {
                 text
             ),
             1
+        );
+    }
+
+    #[test]
+    fn an_off_air_ft4_period_reads_its_contest_exchanges() {
+        let mut audio = fixture::recording("ft4_ru_12k");
+        audio.resize(audio.len() + 2 * INPUT_RATE_HZ as usize, 0.0);
+        let iq: Vec<Complex<f32>> = audio.iter().map(|&s| Complex::new(s, 0.0)).collect();
+        let events = decode!(
+            Ft4Channel::new(
+                ChannelCtx {
+                    input_rate: INPUT_RATE_HZ,
+                },
+                settings(ChannelParams::new("ft4", &WsjtParams::default()).expect("ft4 settings")),
+            )
+            .unwrap(),
+            &iq
+        );
+        let heard: Vec<String> = events
+            .iter()
+            .filter_map(|event| wsjt(event, "ft4"))
+            .map(|message| message.text)
+            .collect();
+        for text in [
+            "KB0VHA KA1YQC R 539 MA",
+            "VE3LON K7RL R 549 WA",
+            "K4SQC VE3RX RR73",
+            "CQ RU WS4WW FM17",
+            "K1JT WB4HXE 559 GA",
+        ] {
+            assert!(
+                heard.iter().any(|h| h == text),
+                "{text} missing from {heard:?}"
+            );
+        }
+        assert!(heard.len() >= 15, "{heard:?}");
+    }
+
+    #[test]
+    fn an_off_air_wspr_period_reads_its_five_spots() {
+        const CENTRE_HZ: f64 = 1_500.0;
+        let narrow = sdrmm_decoder_test_support::cf32_le(include_bytes!(
+            "../../../fixtures/wspr_20m_750.sigmf-data"
+        ));
+        let mut iq = Vec::new();
+        sdrmm_dsp::Ddc::new(750.0, INPUT_RATE_HZ, -CENTRE_HZ)
+            .unwrap()
+            .process(&narrow, &mut iq);
+        iq.resize(iq.len() + 10 * INPUT_RATE_HZ as usize, Complex::default());
+        let mut filtered = Vec::new();
+        sdrmm_decoder_test_support::built_filter(
+            search_filter(wspr_config(&WsprParams::default())).expect("wspr filter"),
+            INPUT_RATE_HZ,
+        )
+        .process(&iq, &mut filtered);
+        let events = decode!(
+            WsprChannel::new(
+                ChannelCtx {
+                    input_rate: INPUT_RATE_HZ,
+                },
+                settings(ChannelParams::of(&WsprParams::default()).expect("wspr settings")),
+            )
+            .unwrap(),
+            &filtered
+        );
+        let mut heard: Vec<String> = events
+            .iter()
+            .filter_map(sdrmm_wire::DecoderEvent::read::<WsprSpot>)
+            .map(|spot| spot.text)
+            .collect();
+        heard.sort();
+        assert_eq!(
+            heard,
+            [
+                "KI7CI DM09 37",
+                "ND6P DM04 30",
+                "W3HH EL89 30",
+                "W5BIT EL09 17",
+                "WD4LHT EL89 30",
+            ]
         );
     }
 }

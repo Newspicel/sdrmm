@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 750.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "WSJT-X sample",
+    "core:description": "WSPR off air: one two-minute period, audio 1500 Hz at 0 Hz"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1500.0,
+      "core:datetime": "2026-11-25T11:27:57.321767Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "WSJT-X samples/WSPR/150426_0918.wav, GPL-3.0; source SHA-256 0f1e41e6a94fefd3df9efd8234dd6342dfd7e6675700f70e79e69eec955537da; samples 0..1440000 at 12000 Hz",
+      "core:sample_count": 90000,
+      "core:sample_start": 0
+    }
+  ]
+}

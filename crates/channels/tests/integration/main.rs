@@ -13,6 +13,7 @@ mod dmr_soft_gain;
 mod dvbt2_payload;
 mod ident;
 mod ident_fixtures;
+mod off_air;
 mod signal_id;
 mod xng_fixtures;
 mod xng_hfdl;

@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "GopherTrunk testdata",
+    "core:description": "NXDN96 off air on 447.100 MHz: group voice call from unit 8814, RAN 7"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 447100000.0,
+      "core:datetime": "2026-11-25T11:34:59.174937Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "GopherTrunk internal/radio/nxdn/testdata, Apache-2.0, commit 5454622771dc; source SHA-256 0f49aba231d892d3ab6b1f470b3500e52542327f4ac43e6116c49eb861ed1b31; samples 0..38400 at 48000 Hz",
+      "core:sample_count": 38400,
+      "core:sample_start": 0
+    }
+  ]
+}

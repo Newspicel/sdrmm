@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "SDR# IQ recording",
+    "core:description": "NXDN48 off air: group voice call from unit 901, talker alias REPEATER"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-25T11:34:59.154437Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki NXDN_IQ.zip, CC BY-SA; source SHA-256 0ebac618b787bbbf676676d064f6e447031c4bb605967ff92fcec644175cff20; samples 120000..240000 at 48000 Hz",
+      "core:sample_count": 30000,
+      "core:sample_start": 0
+    }
+  ]
+}

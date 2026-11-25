@@ -74,7 +74,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "D-STAR".to_owned(),
     summary: "D-STAR amateur digital voice".to_owned(),
     family: DecoderFamily::DIGITAL_VOICE,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,

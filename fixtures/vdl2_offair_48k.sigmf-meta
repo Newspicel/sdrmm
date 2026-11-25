@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "SDR# IQ recording",
+    "core:description": "VDL2 off air near Amsterdam: ACARS label B9 from HB-IJW (LX072K) and an AVLC RR"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-25T11:36:29.580517Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki VDL-M2_IQ.zip (CC BY-SA), VDL2 IQ.wav SHA-256 c91f62874c1faa2aff1bbc5baff54e46cdcadee72283d83ab2a49ff61f229b14, quadrature negated; source SHA-256 ec8ae82db232f4c0037de49acea6ba875f5ad36b9122e9c9a582cb39c58abdd4; samples 936000..1032000 at 48000 Hz",
+      "core:sample_count": 96000,
+      "core:sample_start": 0
+    }
+  ]
+}

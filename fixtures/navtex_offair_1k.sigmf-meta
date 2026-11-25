@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 1000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "KiwiSDR websdr.heppen.be (Heppen, Belgium)",
+    "core:description": "NAVTEX off air on 518 kHz: station V, navigational warning 54, WZ 745/26 Southwold light"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 518000.0,
+      "core:datetime": "2026-11-25T11:34:59.139102Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public KiwiSDR IQ via cargo xtask net-capture; source SHA-256 2470628f0bf790d7217c7af6f0e2caf7f71504693b335be956d24d4d21565a2b; samples 4296000..4704000 at 12000 Hz",
+      "core:sample_count": 34000,
+      "core:sample_start": 0
+    }
+  ]
+}

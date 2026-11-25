@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "KiwiSDR websdr.heppen.be (Heppen, Belgium)",
+    "core:description": "NCDXF beacons off air on 14100 kHz: OH2B at 22 wpm 38.5 s in"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 14099975.6,
+      "core:datetime": "2026-11-25T11:34:59.210937Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public KiwiSDR IQ via cargo xtask net-capture; source SHA-256 16b52c97c6a7f2053fff7df24518309f8d79743dafe26d85716bca7bf79c4bd7; samples 0..552000 at 12000 Hz",
+      "core:sample_count": 92000,
+      "core:sample_start": 0
+    }
+  ]
+}

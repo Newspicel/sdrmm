@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "WSJT-X sample",
+    "core:description": "FT4 off air during an RTTY Roundup: one 7.5 s period"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-25T11:27:57.306427Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "WSJT-X samples/FT4/000000_000002.wav, GPL-3.0; source SHA-256 d9e91fa04ba138a7b9f41b4103823c77ca1c3a9775101f6b14d60935bcd3813b; samples 0..72576 at 12000 Hz",
+      "core:sample_count": 72576,
+      "core:sample_start": 0
+    }
+  ]
+}

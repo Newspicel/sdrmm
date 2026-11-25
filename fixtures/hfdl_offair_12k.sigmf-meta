@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 12000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "skip.land",
+    "core:description": "HFDL off air on 21931 kHz: a Riverhead squitter"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 21931000.0,
+      "core:datetime": "2026-11-25T11:27:57.232349Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki Skip.land_2024-11-05T21_18_09Z_21931.00_iq.wav.zip, CC BY-SA; source SHA-256 c513b4882a1a0eaf5ab75de87fbb234f55dbd6849bda74ced9101bd5d3231421; samples 60750..121500 at 20250 Hz",
+      "core:sample_count": 36000,
+      "core:sample_start": 0
+    }
+  ]
+}

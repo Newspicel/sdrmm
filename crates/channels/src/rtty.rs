@@ -39,7 +39,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "RTTY".to_owned(),
     summary: "Radioteletype text".to_owned(),
     family: DecoderFamily::AMATEUR,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 1_000.0,
     input_rate_hz: 8_000.0,
     has_audio: false,

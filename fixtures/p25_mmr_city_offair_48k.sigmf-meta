@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 48000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "GopherTrunk testdata",
+    "core:description": "P25 Phase 1 control channel off air: MMR, NAC 0x164, site and adjacent status"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-25T11:34:59.187594Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "GopherTrunk cmd/gophertrunk/testdata/mmr-city-cc.cfile, Apache-2.0; source SHA-256 deecc2aad19a8c84bd15e20346e9838264308b3a7ead45e6575ce21f854ca2b6; samples 0..72000 at 48000 Hz",
+      "core:sample_count": 72000,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -34,6 +34,8 @@ const PROVE_CHUNKS: u8 = 3;
 const PROVE_FRAMES: u16 = 240;
 /// Marks a track has to put on the one-dot and three-dot lengths before it counts as an operator.
 const PROVE_MARKS: u32 = 16;
+/// Enough past samples to start a new track at the first frame its carrier showed in.
+const HISTORY: usize = FFT_SIZE + INIT_FRAMES as usize * FFT_HOP;
 const ECHO_MARGIN_DB: f32 = 6.0;
 /// No receiver hears a station this far under the loudest one in its passband; a peak that deep is
 /// the analysis window's own skirt, not another operator.
@@ -45,7 +47,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "CW skimmer".to_owned(),
     summary: "Every Morse signal in the band at once".to_owned(),
     family: DecoderFamily::AMATEUR,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 24_000.0,
     input_rate_hz: RATE,
     has_audio: false,
@@ -169,6 +171,9 @@ pub struct CwSkimmerChannel {
     pending: Vec<Pending>,
     spots: Vec<CwSkimmerSpot>,
     tracks: Vec<Track>,
+    history: Vec<Complex<f32>>,
+    history_at: usize,
+    history_len: usize,
 }
 
 fn params(settings: &ChannelSettings) -> Result<CwSkimmerParams, ChannelError> {
@@ -242,6 +247,41 @@ impl CwSkimmerChannel {
         self.spots.reserve(spot_limit(self.max_signals));
         self.tracks.truncate(usize::from(self.max_signals));
         Ok(())
+    }
+
+    /// Feeds the tracks up to the next analysis frame and no further, so a station found in a
+    /// frame is decoded from the sample after it, however the samples were cut into blocks.
+    fn advance(&mut self, iq: &[Complex<f32>]) {
+        for track in &mut self.tracks {
+            track.process(iq, &mut self.spots);
+        }
+        self.remember(iq);
+        self.samples.extend_from_slice(iq);
+        if self.samples.len() == FFT_SIZE {
+            self.analyze();
+            self.samples.drain(..FFT_HOP);
+        }
+    }
+
+    fn remember(&mut self, iq: &[Complex<f32>]) {
+        let first = iq.len().min(HISTORY - self.history_at);
+        let (head, tail) = iq.split_at(first);
+        self.history[self.history_at..self.history_at + first].copy_from_slice(head);
+        self.history[..tail.len()].copy_from_slice(tail);
+        self.history_at = (self.history_at + iq.len()) % HISTORY;
+        self.history_len = (self.history_len + iq.len()).min(HISTORY);
+    }
+
+    /// A track for a carrier first seen `frames` analysis frames ago, already fed what was sent
+    /// since, so the characters keyed while the carrier was being confirmed are read too.
+    fn spawn(&mut self, frequency_hz: f32, snr_db: f32, frames: u8) -> Track {
+        let mut track = self.prototype.spawn(frequency_hz, snr_db);
+        let back = (FFT_SIZE + usize::from(frames) * FFT_HOP).min(self.history_len);
+        let start = (self.history_at + HISTORY - back) % HISTORY;
+        let first = back.min(HISTORY - start);
+        track.process(&self.history[start..start + first], &mut self.spots);
+        track.process(&self.history[..back - first], &mut self.spots);
+        track
     }
 
     fn band_floor(&mut self) -> f32 {
@@ -357,9 +397,10 @@ impl CwSkimmerChannel {
         if entry.hits < INIT_HITS {
             return;
         }
-        let (frequency_hz, snr_db) = (entry.frequency_hz, entry.snr_db);
+        let (frequency_hz, snr_db, frames) = (entry.frequency_hz, entry.snr_db, entry.age);
         if self.tracks.len() < usize::from(self.max_signals) {
-            self.tracks.push(self.prototype.spawn(frequency_hz, snr_db));
+            let track = self.spawn(frequency_hz, snr_db, frames);
+            self.tracks.push(track);
             return;
         }
         let weakest = self
@@ -370,7 +411,7 @@ impl CwSkimmerChannel {
             .min_by(|(_, left), (_, right)| left.snr_db.total_cmp(&right.snr_db))
             .map(|(index, _)| index);
         if let Some(index) = weakest {
-            self.tracks[index] = self.prototype.spawn(frequency_hz, snr_db);
+            self.tracks[index] = self.spawn(frequency_hz, snr_db, frames);
         }
     }
 }
@@ -398,6 +439,9 @@ impl NativeChannel for CwSkimmerChannel {
             pending: Vec::with_capacity(pending_limit(params.max_signals)),
             spots: Vec::with_capacity(spot_limit(params.max_signals)),
             tracks: Vec::with_capacity(usize::from(params.max_signals)),
+            history: vec![Complex::default(); HISTORY],
+            history_at: 0,
+            history_len: 0,
         })
     }
 }
@@ -413,19 +457,18 @@ impl Channel for CwSkimmerChannel {
         self.samples.clear();
         self.pending.clear();
         self.tracks.clear();
+        self.history_len = 0;
     }
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         self.spots.clear();
-        for track in &mut self.tracks {
-            track.process(iq, &mut self.spots);
+        let mut rest = iq;
+        while !rest.is_empty() {
+            let (now, later) = rest.split_at((FFT_SIZE - self.samples.len()).min(rest.len()));
+            self.advance(now);
+            rest = later;
         }
         publish(&mut self.spots, out);
-        self.samples.extend_from_slice(iq);
-        while self.samples.len() >= FFT_SIZE {
-            self.analyze();
-            self.samples.drain(..FFT_HOP);
-        }
     }
 }
 

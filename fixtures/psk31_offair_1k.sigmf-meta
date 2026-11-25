@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 1000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "sigidwiki audio",
+    "core:description": "BPSK31 off air: DK9KW calling CQ, audio 1381 Hz at 0 Hz"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 1381.0,
+      "core:datetime": "2026-11-25T11:36:29.659448Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki Multiple_BPSK-31.mp3 (CC BY-SA, SHA-256 472b334e21055cd71f165c1db52778eeeb7617c70d2b3aa42f190a6045838869) as 12 kHz mono; source SHA-256 6e6a277d94e13da5253a55703382723c7ccafffe551217106575022e49b3da7d; samples 36000..216000 at 12000 Hz",
+      "core:sample_count": 15000,
+      "core:sample_start": 0
+    }
+  ]
+}

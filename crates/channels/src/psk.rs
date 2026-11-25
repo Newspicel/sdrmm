@@ -35,7 +35,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "PSK".to_owned(),
     summary: "PSK31 to PSK250 keyboard chat".to_owned(),
     family: DecoderFamily::AMATEUR,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 650.0,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: false,

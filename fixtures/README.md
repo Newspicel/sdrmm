@@ -134,6 +134,22 @@ a SigMF pair; `cargo xtask replay` runs a channel over it.
 | `dvbs2x/pls248` | symbol rate | `datv` unit tests | PLS 248 short-frame 32APSK |
 | `dvbs2x/superframe0` | symbol rate | `datv` unit tests | 72 repeated 256APSK PLFRAMEs in one Annex E format 0 container |
 | `gps_l1_opensky_2m048` | 2.048 M | `gnss` @ 0 Hz, 1575.42 MHz | GPS PRNs 5, 7, 13, 20 and 30 acquired and tracked above 40 dB-Hz |
+| `ais_offair_24k` | 24 k | `ais` @ 0 Hz | MMSI 232004345 `HOHEBANK` static and voyage data, destination `VARBERG` |
+| `aprs_offair_24k` | 24 k | `aprs` @ 0 Hz | three AX.25 frames between N2RQ-9, K2YYD-10 and W2KPQ via W2KPQ-2 |
+| `vdl2_offair_48k` | 48 k | `vdl2` @ 0 Hz | ACARS label B9 `/EHAM.TI2/040EHAMACFFA` from HB-IJW, an AVLC RR |
+| `hfdl_offair_12k` | 12 k | `hfdl` @ 0 Hz | Riverhead squitter, frame 2397, offset 1, system table 52 |
+| `navtex_offair_1k` | 1 k | `navtex` @ 0 Hz | station V, warning A54, `WZ 745/26` Southwold light, no repairs |
+| `nxdn48_offair_12k` | 12 k | `nxdn` @ 0 Hz | group call from unit 901, talker alias `REPEATER` |
+| `nxdn96_offair_48k` | 48 k | `nxdn` @ 0 Hz, 12.5 kHz | group call from unit 8814, RAN 7 |
+| `p25_mmr_city_offair_48k` | 48 k | `p25` @ 0 Hz | Phase 1 control channel, NAC 0x164, system 0x164 site 7 |
+| `dstar_f1zil_48k.s16` | 48 k | `dstar`, discriminator audio | header `F1NSR` to `CQCQCQ` via `F1ZIL  G` |
+| `ysf_f5zoo_48k.s16` | 48 k | `ysf`, discriminator audio | header `F6FCE` via `F5ZOO-R1` |
+| `dpmr_dsdcc_48k.s16` | 48 k | `dpmr`, discriminator audio | call 289 to 14653, one end |
+| `rtty_dwd_offair_2k` | 2 k | `rtty` @ 0 Hz, 50 Bd, 450 Hz, inverted | DWD sea forecast, `PLEASE PAY ATTENTION TO LOCAL` |
+| `morse_ncdxf_offair_2k` | 2 k | `morse` / `cw_skimmer` @ 0 Hz | NCDXF beacon `OH2B` at 22 wpm, 38.5 s in |
+| `psk31_offair_1k` | 1 k | `psk` @ 0 Hz | `CQ CQ CQ de DK9KW DK9KW DK9KW` |
+| `ft4_ru_12k` | 12 k | `ft4` @ 0 Hz | 15 or more RTTY Roundup exchanges, including `K4SQC VE3RX RR73` |
+| `wspr_20m_750` | 750 | `wspr`, audio 1500 Hz at 0 Hz | WD4LHT, ND6P, W3HH, W5BIT and KI7CI |
 
 ## Playback notes
 
@@ -507,6 +523,34 @@ MCU row of APIDs 64, 65 and 68. The source IQ is sigidwiki's LRPT sample
 Not IQ: PyEOT's `demo3eot.wav`, unmodified, 2.6 s of FM-discriminator audio from 457.9375 MHz
 with three rear-unit packets. GPL-3.0, see `eot/README.md`. The test FM-modulates it at ±3 kHz.
 `eot::tests::decodes_three_rear_units_from_an_off_air_recording` reads it.
+
+### Off-air recordings for the amateur, marine, aviation and voice decoders
+
+`tests/integration/off_air.rs` and `weak_signal::tests::an_off_air_*` read these directly. Each
+SigMF annotation pins its source SHA-256.
+
+- sigidwiki (CC BY-SA, test data under that license): `ais_offair_24k` (`AIS_IQ.zip`),
+  `aprs_offair_24k` (`APRS_IQ_145070kHz_IQ.zip`, 145.070 MHz), `vdl2_offair_48k`
+  (`VDL-M2_IQ.zip`, quadrature negated, as dumpvdl2 needs; dumpvdl2 decodes the same HB-IJW
+  downlink), `hfdl_offair_12k` (`Skip.land_2024-11-05T21_18_09Z_21931.00_iq.wav.zip`; dumphfdl
+  gives the same squitter fields), `nxdn48_offair_12k` (`NXDN_IQ.zip`) and `psk31_offair_1k`
+  (`Multiple_BPSK-31.mp3`, an MP3 of USB audio, tone shifted to 0 Hz).
+- GopherTrunk (Apache-2.0, commit `5454622771dc`), unchanged but for `cf32_le`:
+  `nxdn96_offair_48k` (`nxdn96_rdch_voice_447100_15oct_48k.cs16`) and
+  `p25_mmr_city_offair_48k` (`cmd/gophertrunk/testdata/mmr-city-cc.cfile`).
+- dsdcc (GPL-3.0, `samples/`): 2.5 s slices of discriminator audio, S16LE 48 kHz mono, which the
+  tests FM-modulate. `dstar_f1zil_48k.s16` is 1 s on of `dstar_f1zil_1.dis`
+  (SHA-256 `cd4d34d7…68d400`), `ysf_f5zoo_48k.s16` 5 s on of `ysf_f5zoo.dis`
+  (`a9d12d1f…134ccd`), `dpmr_dsdcc_48k.s16` 10 s on of `dpmr.dis` (`93eb0cd0…46a9e9`).
+  The D-STAR and YSF callsigns are the repeaters the dsdcc README names.
+- Public KiwiSDRs via `cargo xtask net-capture` on 2026-11-25: `rtty_dwd_offair_2k`
+  (DWD 10100.8 kHz), `morse_ncdxf_offair_2k` (14100 kHz; the NCDXF schedule puts OH2B in that
+  slot) and `navtex_offair_1k` (518 kHz). The CW skimmer only takes a station once 16 marks
+  prove it, so the beacon fixture keeps the 38 s of earlier beacons that open its track.
+- WSJT-X samples (GPL-3.0, commit `967c85a6`): `ft4_ru_12k` (`FT4/000000_000002.wav`, I only)
+  and `wspr_20m_750` (`WSPR/150426_0918.wav`, 1500 Hz shifted to 0 Hz at 750 S/s).
+
+M17 has no usable off-air recording yet: sigidwiki's MP3 carries no M17 sync.
 
 ### HF modems: `stanag/`
 

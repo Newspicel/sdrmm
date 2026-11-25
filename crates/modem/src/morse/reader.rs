@@ -329,6 +329,8 @@ impl MorseReader {
             .map_or(0.0, |dot| (1.2 * self.rate) as f32 / dot)
     }
 
+    /// Ends the transmission. A learned speed is dropped with it: the next one may be another
+    /// sender, and noise the slicer cut into marks before it must not set its pace.
     fn on_idle(&mut self, out: &mut Vec<MorseChunk>) {
         if let Some(run) = self.pending.take() {
             self.consume(run, out);
@@ -338,6 +340,9 @@ impl MorseReader {
         }
         self.finish_character(out);
         self.flush(out);
+        if self.fixed_wpm.is_none() {
+            self.dot = None;
+        }
     }
 }
 
@@ -392,6 +397,16 @@ mod tests {
         assert!((wpm - 20.0).abs() < 2.0, "{wpm}");
         assert!(reader.element_fit() <= FIT_MAX);
         assert!(reader.marks_scored() > 20);
+    }
+
+    #[test]
+    fn a_learned_speed_is_relearned_after_silence() {
+        let mut reader = MorseReader::new(RATE, None);
+        read(&mut reader, &keyed("CQ CQ DE DL1ABC K", 40.0));
+        read(&mut reader, &vec![0.01; 4 * RATE as usize]);
+        let chunks = read(&mut reader, &keyed("OH2B OH2B", 18.0));
+        let text: String = chunks.iter().map(|chunk| chunk.text.as_str()).collect();
+        assert_eq!(text.trim(), "OH2B OH2B");
     }
 
     #[test]

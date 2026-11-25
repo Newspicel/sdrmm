@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 24000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "SDR# IQ recording",
+    "core:description": "AX.25 packet off air on 145.070 MHz: N2RQ-9 to K2YYD-10 via W2KPQ-2"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 145070000.0,
+      "core:datetime": "2026-11-25T11:28:07.921679Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki APRS_IQ_145070kHz_IQ.zip, CC BY-SA; source SHA-256 0df449836168ab3d6e3f470910e6401b5ad8a14a9310871239a0ad220d36cc50; samples 156248..273434 at 39062 Hz",
+      "core:sample_count": 72001,
+      "core:sample_start": 0
+    }
+  ]
+}

@@ -66,13 +66,19 @@ const CCH_STARTS: [usize; 4] = [0, 192, 384, 576];
 const CCH_BITS: usize = 72;
 const CCH_INFO_BITS: usize = 48;
 const CCH_CRC_BITS: usize = 7;
+const FRAME_SYMBOLS: usize = 192;
+const SYNC_SYMBOLS: usize = SHORT_SYNC_BITS as usize / 2;
+/// Symbols a frame sync may land early or late by and still be the one expected there.
+const SYNC_SLIP: usize = 2;
+/// Frames a call is followed through without a sync before it counts as lost.
+const FRAMES_UNTIL_LOST: usize = 4;
 
 static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescriptor {
     type_id: "dpmr".to_owned(),
     name: "dPMR".to_owned(),
     summary: "dPMR two-way radio voice".to_owned(),
     family: DecoderFamily::DIGITAL_VOICE,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: BANDWIDTH_HZ,
     input_rate_hz: INPUT_RATE_HZ,
     has_audio: true,
@@ -165,6 +171,7 @@ struct Decoder {
     id_halves: [Option<u32>; 4],
     vocoder: MbeDecoder,
     rejected: u32,
+    searched: usize,
 }
 
 /// What one payload frame's CCH carries.
@@ -195,6 +202,7 @@ impl Decoder {
             id_halves: [None; 4],
             vocoder,
             rejected: 0,
+            searched: 0,
         }
     }
 
@@ -220,13 +228,19 @@ impl Decoder {
         if self.countdown > 0 {
             self.countdown -= 1;
             if self.countdown == 0 {
+                self.searched = 0;
                 match self.pending.take() {
                     Some(Pending::Header { fs4 }) => match self.header(fs4) {
                         Some((frame, voice_call)) => {
+                            let call = frame.destination.zip(frame.source);
+                            let repeated = self.in_call && call == self.reported;
                             self.in_call = true;
                             self.voice_call = voice_call;
-                            self.reported = frame.destination.zip(frame.source);
-                            out.events.push(DecoderEvent::of(&frame));
+                            self.reported = call;
+                            if !repeated {
+                                self.id_halves = [None; 4];
+                                out.events.push(DecoderEvent::of(&frame));
+                            }
                         }
                         None => self.rejected = self.rejected.saturating_add(1),
                     },
@@ -246,8 +260,15 @@ impl Decoder {
             self.late_entry_sync();
             return;
         }
+        self.searched += 1;
+        let Some(frame) = self.frame_boundary() else {
+            if self.searched > FRAMES_UNTIL_LOST * FRAME_SYMBOLS + SYNC_SYMBOLS + SYNC_SLIP {
+                self.lose_call();
+            }
+            return;
+        };
         let fs2 = self.observed(FS2);
-        if self.window.sync_distance(fs2, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
+        if frame == 0 && self.window.sync_distance(fs2, SHORT_SYNC_BITS) <= SHORT_TOLERANCE {
             self.window.anchor(fs2, SHORT_SYNC_BITS);
             self.await_superframe();
             return;
@@ -259,6 +280,21 @@ impl Decoder {
             out.events
                 .push(DecoderEvent::of(&dv_frame(DvFrameKind::Terminator)));
         }
+    }
+
+    /// Which frame after the last one decoded the window's sync would open, when it sits where
+    /// a frame sync can. A superframe's next sync is FS2 and an end frame's FS3 may follow any
+    /// frame, but neither is looked for inside one: their patterns sit within the tolerance of
+    /// channel codes and header fields.
+    fn frame_boundary(&self) -> Option<usize> {
+        let since = self
+            .searched
+            .checked_sub(SYNC_SYMBOLS.saturating_sub(SYNC_SLIP))?;
+        let frame = (since + SYNC_SLIP) / FRAME_SYMBOLS;
+        let offset = since % FRAME_SYMBOLS;
+        (frame < FRAMES_UNTIL_LOST
+            && (offset <= 2 * SYNC_SLIP || offset + SYNC_SLIP >= FRAME_SYMBOLS))
+            .then_some(frame)
     }
 
     fn header_sync(&mut self) -> bool {
@@ -293,6 +329,14 @@ impl Decoder {
     fn await_superframe(&mut self) {
         self.pending = Some(Pending::Superframe);
         self.countdown = SUPERFRAME_SYMBOLS;
+    }
+
+    /// Drops a call whose syncs stopped. Its ids stay reported, so rejoining the same call says
+    /// nothing new, but half-read ids go, so they cannot mix into the next call's.
+    fn lose_call(&mut self) {
+        self.in_call = false;
+        self.voice_call = false;
+        self.id_halves = [None; 4];
     }
 
     fn end_call(&mut self) {
@@ -662,12 +706,16 @@ mod tests {
         let gap = vec![Complex::default(); 14_400];
         let mut clean = gap.clone();
         let owners: Vec<u32> = (0..8).map(|index| 0x12_3450 + index).collect();
-        for &own in &owners {
+        for (index, &own) in owners.iter().enumerate() {
             let call = tx::Call {
                 own,
                 ..tx::Call::default()
             };
-            clean.extend(tx::transmission(&call, INPUT_RATE_HZ));
+            clean.extend(if index % 2 == 0 {
+                tx::transmission(&call, INPUT_RATE_HZ)
+            } else {
+                tx::transmission_with_unreadable_header(&call, INPUT_RATE_HZ)
+            });
             clean.extend_from_slice(&gap);
         }
         let hiss = sdrmm_decoder_test_support::complex_noise(1, NOISE_AMPLITUDE, clean.len());

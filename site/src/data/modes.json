@@ -121,7 +121,7 @@
       "name": "AIS",
       "summary": "Ship positions and names",
       "family": "marine",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -153,7 +153,7 @@
       "name": "APRS / AX.25",
       "summary": "Amateur packet positions and messages",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -210,7 +210,7 @@
       "name": "CW skimmer",
       "summary": "Every Morse signal in the band at once",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": []
     },
@@ -219,7 +219,7 @@
       "name": "D-STAR",
       "summary": "D-STAR amateur digital voice",
       "family": "digital_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -345,7 +345,7 @@
       "name": "dPMR",
       "summary": "dPMR two-way radio voice",
       "family": "digital_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -580,7 +580,7 @@
       "name": "FT4",
       "summary": "FT4 fast weak signal contacts",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 12000.0,
       "bands": [
         {
@@ -739,7 +739,7 @@
       "name": "High Frequency Data Link",
       "summary": "Aircraft datalink on HF",
       "family": "aviation",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 12000.0,
       "bands": [
         {
@@ -1010,7 +1010,7 @@
       "name": "Morse (CW)",
       "summary": "One Morse signal to text",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 8000.0,
       "bands": []
     },
@@ -1077,7 +1077,7 @@
       "name": "NAVTEX",
       "summary": "Maritime safety text broadcasts",
       "family": "marine",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 8000.0,
       "bands": [
         {
@@ -1137,7 +1137,7 @@
       "name": "NXDN",
       "summary": "NXDN two-way radio voice",
       "family": "digital_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -1159,7 +1159,7 @@
       "name": "P25 Phase 1",
       "summary": "P25 public safety voice",
       "family": "digital_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -1236,7 +1236,7 @@
       "name": "PSK",
       "summary": "PSK31 to PSK250 keyboard chat",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 8000.0,
       "bands": [
         {
@@ -1331,7 +1331,7 @@
       "name": "RTTY",
       "summary": "Radioteletype text",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 8000.0,
       "bands": []
     },
@@ -1446,7 +1446,7 @@
       "name": "System Fusion",
       "summary": "Yaesu System Fusion voice",
       "family": "digital_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -1533,7 +1533,7 @@
       "name": "VDL Mode 2",
       "summary": "Aircraft datalink on VHF",
       "family": "aviation",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 100000.0,
       "bands": [
         {
@@ -1629,7 +1629,7 @@
       "name": "WSPR",
       "summary": "WSPR propagation beacons",
       "family": "amateur",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 12000.0,
       "bands": [
         {

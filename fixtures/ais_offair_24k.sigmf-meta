@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 24000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "SDR# IQ recording",
+    "core:description": "AIS off air: HOHEBANK (MMSI 232004345) static and voyage data"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 0.0,
+      "core:datetime": "2026-11-25T11:27:57.196721Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "sigidwiki AIS_IQ.zip, CC BY-SA; source SHA-256 68741465c41abc3f119bf956ce6d6d54e728296f152a0545b38a45afbc91141b; samples 336000..393600 at 48000 Hz",
+      "core:sample_count": 28800,
+      "core:sample_start": 0
+    }
+  ]
+}

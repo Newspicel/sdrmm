@@ -86,7 +86,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "VDL Mode 2".to_owned(),
     summary: "Aircraft datalink on VHF".to_owned(),
     family: DecoderFamily::AVIATION,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: HALF_BANDWIDTH * 2.0,
     input_rate_hz: RATE,
     has_audio: false,

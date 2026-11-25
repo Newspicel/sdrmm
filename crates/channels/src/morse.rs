@@ -23,7 +23,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "Morse (CW)".to_owned(),
     summary: "One Morse signal to text".to_owned(),
     family: DecoderFamily::AMATEUR,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 400.0,
     input_rate_hz: 8_000.0,
     has_audio: false,

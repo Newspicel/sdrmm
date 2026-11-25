@@ -1,0 +1,24 @@
+{
+  "global": {
+    "core:datatype": "cf32_le",
+    "core:version": "1.2.6",
+    "core:sample_rate": 2000.0,
+    "core:recorder": "SDRmm",
+    "core:hw": "KiwiSDR dl4eeckiwi.proxy.kiwisdr.com (Wangerland, Germany)",
+    "core:description": "DWD RTTY off air on 10100.8 kHz, 50 Bd 450 Hz: a Mediterranean sea forecast"
+  },
+  "captures": [
+    {
+      "core:sample_start": 0,
+      "core:frequency": 10100800.0,
+      "core:datetime": "2026-11-25T11:27:57.244807Z"
+    }
+  ],
+  "annotations": [
+    {
+      "core:comment": "public KiwiSDR IQ via cargo xtask net-capture; source SHA-256 eb2b57f4afc746dba39c01c029afd32008638359e2ae8a6ce71b09955b5e9d01; samples 719936..959915 at 11998.932347 Hz",
+      "core:sample_count": 40001,
+      "core:sample_start": 0
+    }
+  ]
+}
