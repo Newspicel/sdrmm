@@ -26,7 +26,7 @@ export function TuningLock({
       render={
         <Button
           type="button"
-          className={`${ICON_BTN} ${locked ? "bg-accent/15" : ""}`}
+          className={ICON_BTN}
           aria-label={locked ? "Unlock tuning" : "Lock tuning"}
           aria-pressed={locked}
           onClick={() => onLock(!locked)}

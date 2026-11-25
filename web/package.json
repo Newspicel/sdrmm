@@ -37,6 +37,7 @@
     "@biomejs/biome": "2.6.6",
     "@playwright/test": "^1.65.0",
     "@rolldown/plugin-babel": "^0.3.0",
+    "@shadcn/lint": "0.2.5",
     "@tailwindcss/vite": "4.3.5",
     "@types/babel__core": "^7.20.5",
     "@types/react": "19.3.0",

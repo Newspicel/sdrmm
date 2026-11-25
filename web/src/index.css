@@ -69,8 +69,16 @@
   --text-dial-lg: 1.625rem;
   --text-dial-xl: 2.125rem;
 
+  --radius-*: initial;
   --radius-inset: 2px;
   --radius-control: 3px;
+
+  --font-weight-*: initial;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --tracking-label: 0.01em;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
@@ -83,6 +91,17 @@
   --shadow-node:
     inset 0 1px 0 oklch(1 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.5),
     0 22px 44px -16px oklch(0 0 0 / 0.75);
+  --shadow-glow: 0 0 4px;
+  --shadow-halo: 0 0 8px;
+  --shadow-beacon: 0 0 10px 2px;
+  --shadow-thumb: 0 0 0 1.5px var(--color-panel);
+  --shadow-knob: inset 0 0 0 1.5px var(--color-ink-dim), 0 0 0 1.5px var(--color-panel);
+  --shadow-knob-hot: inset 0 0 0 1.5px var(--color-accent), 0 0 0 1.5px var(--color-panel);
+  --inset-shadow-rule: inset 0 2px 0;
+  --inset-shadow-rule-under: inset 0 -2px 0;
+  --inset-shadow-well: inset 0 1px 3px oklch(0 0 0 / 0.35);
+  --inset-shadow-track: inset 0 0 0 1px var(--color-line), inset 0 1px 2px oklch(0 0 0 / 0.2);
+  --text-shadow-glow: 0 0 14px;
 }
 
 @layer base {

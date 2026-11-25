@@ -21,7 +21,7 @@ import {
   symbolStates,
   Trend,
 } from "../../components/baseband";
-import { ICON_BTN_SM, TAB_BAR, tab } from "../../components/controls";
+import { ICON_BTN_SM_FAINT, TAB_BAR, tab } from "../../components/controls";
 import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { Icon } from "../../components/Icon";
@@ -337,7 +337,7 @@ function ChartHeader({
           aria-label={expanded ? "Leave full screen" : "Show full screen"}
           aria-pressed={expanded}
           title={expanded ? "Back to the panel" : "Fill the window with this chart"}
-          className={`${ICON_BTN_SM} ml-auto self-center text-ink-faint`}
+          className={`${ICON_BTN_SM_FAINT} ml-auto self-center`}
           onClick={onExpand}
         >
           <Icon glyph={expanded ? Minimize2 : Maximize2} size={12} />
@@ -348,7 +348,7 @@ function ChartHeader({
           type="button"
           aria-label="Close chart"
           title="Close chart"
-          className={`${ICON_BTN_SM} self-center text-ink-faint ${onExpand === undefined ? "ml-auto" : ""}`}
+          className={`${ICON_BTN_SM_FAINT} self-center ${onExpand === undefined ? "ml-auto" : ""}`}
           onClick={onClose}
         >
           <Icon glyph={X} size={12} />

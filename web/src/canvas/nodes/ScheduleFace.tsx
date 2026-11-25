@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { Button, Input } from "../../components/BaseControls";
-import { BTN, FIELD } from "../../components/controls";
+import { BTN, FIELD, ICON_BTN_SM_DANGER } from "../../components/controls";
 import { Chips } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { TextChip } from "../../components/face/TextChip";
@@ -133,7 +133,7 @@ function WindowRow({
       <Button
         type="button"
         aria-label="Remove window"
-        className="text-ink-faint hover:text-danger"
+        className={ICON_BTN_SM_DANGER}
         onClick={onRemove}
       >
         <Icon glyph={X} size={12} />

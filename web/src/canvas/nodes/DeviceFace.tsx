@@ -104,7 +104,7 @@ function AutoTuning({
       render={
         <Button
           type="button"
-          className={`${ICON_BTN} ${auto ? "bg-accent/15" : ""}`}
+          className={ICON_BTN}
           aria-label={auto ? "Tune by hand" : "Follow the decoders"}
           aria-pressed={auto}
           disabled={locked}
@@ -126,7 +126,7 @@ function LinkLanes({ linked, onLink }: { linked: boolean; onLink: (linked: boole
       render={
         <Button
           type="button"
-          className={`${ICON_BTN} ${linked ? "bg-accent/15" : ""}`}
+          className={ICON_BTN}
           aria-label={linked ? "Tune lanes one by one" : "Tune all lanes together"}
           aria-pressed={linked}
           onClick={() => onLink(!linked)}

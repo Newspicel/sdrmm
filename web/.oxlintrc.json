@@ -1,9 +1,18 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "react", "import", "unicorn", "oxc"],
-  "options": { "typeAware": true },
-  "env": { "browser": true, "es2024": true },
-  "categories": { "correctness": "error", "suspicious": "warn" },
+  "jsPlugins": ["@shadcn/lint"],
+  "options": {
+    "typeAware": true
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
   "rules": {
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",
@@ -12,7 +21,36 @@
     "typescript/no-unsafe-type-assertion": "off",
     "react/react-in-jsx-scope": "off",
     "unicorn/prefer-add-event-listener": "off",
-    "import/no-unassigned-import": "off"
+    "import/no-unassigned-import": "off",
+    "shadcn/no-raw-colors": [
+      "error",
+      {
+        "scanAllStrings": true
+      }
+    ],
+    "shadcn/no-arbitrary-values": [
+      "error",
+      {
+        "allow": ["layout", "transition-[width]"],
+        "scanAllStrings": true
+      }
+    ],
+    "shadcn/no-unknown-classes": [
+      "error",
+      {
+        "allow": ["nodrag", "nopan", "node-drag"]
+      }
+    ]
   },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "shadcn/no-raw-colors": "off",
+        "shadcn/no-arbitrary-values": "off",
+        "shadcn/no-unknown-classes": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["dist/**", "src/generated/**"]
 }

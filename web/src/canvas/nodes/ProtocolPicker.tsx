@@ -1,5 +1,5 @@
 import { Button } from "../../components/BaseControls";
-import { BTN_SM } from "../../components/controls";
+import { BTN_SM, KEY_SM } from "../../components/controls";
 import { SettingChip } from "../../components/face/Chips";
 import {
   activePreset,
@@ -10,15 +10,6 @@ import {
   protocolPresets,
   setEnabled,
 } from "./protocols";
-
-const KEY =
-  "inline-flex h-5 items-center gap-1.5 rounded-control border px-1.5 font-mono text-2xs " +
-  "transition-colors duration-100 focus-visible:outline-none focus-visible:ring-2 " +
-  "focus-visible:ring-accent/25";
-
-const KEY_ON = "border-accent-dim bg-accent/10 text-ink";
-
-const KEY_OFF = "border-line bg-well text-ink-faint hover:border-line-strong hover:text-ink-dim";
 
 export function ProtocolChip({
   groups,
@@ -167,13 +158,13 @@ function Key({
       type="button"
       aria-pressed={on}
       title={title}
-      className={`${KEY} ${on ? KEY_ON : KEY_OFF}`}
+      className={KEY_SM}
       onClick={() => onToggle(!on)}
     >
       <span
         aria-hidden
         className={`size-1.5 rounded-full ${
-          on ? "bg-accent shadow-[0_0_4px_var(--color-accent)]" : "bg-line-strong"
+          on ? "bg-accent shadow-glow shadow-accent" : "bg-line-strong"
         }`}
       />
       {label}

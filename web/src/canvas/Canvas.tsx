@@ -19,7 +19,7 @@ import {
   useState,
 } from "react";
 import { Button } from "../components/BaseControls";
-import { BTN_QUIET, SURFACE } from "../components/controls";
+import { BTN_QUIET, BTN_QUIET_DANGER, SURFACE } from "../components/controls";
 import { CANVAS_MOVED } from "../components/Popover";
 import { zoomSettled } from "../gl/drawLoop";
 import { useUiScale } from "../lib/prefs";
@@ -428,9 +428,7 @@ function ContextMenu({
       key={label}
       type="button"
       title={extra.title}
-      className={`${BTN_QUIET} w-full justify-start ${
-        extra.danger === true ? "hover:text-danger" : ""
-      }`}
+      className={`${extra.danger === true ? BTN_QUIET_DANGER : BTN_QUIET} w-full justify-start`}
       onClick={() => {
         act();
         onClose();

@@ -29,9 +29,7 @@ const HEADROOM_TINT =
   `color-mix(in oklab, var(--color-warn) 22%, transparent) ${HEADROOM.warn * 100}% ${HEADROOM.hot * 100}%, ` +
   `color-mix(in oklab, var(--color-danger) 26%, transparent) ${HEADROOM.hot * 100}%)`;
 
-const THUMB_AUTO =
-  "bg-panel shadow-[inset_0_0_0_1.5px_var(--color-ink-dim),0_0_0_1.5px_var(--color-panel)] " +
-  "hover:shadow-[inset_0_0_0_1.5px_var(--color-accent),0_0_0_1.5px_var(--color-panel)]";
+const THUMB_AUTO = "bg-panel shadow-knob hover:shadow-knob-hot";
 
 const STACKED_ROW = "grid h-7 grid-cols-[minmax(0,1fr)_3.75rem_2.75rem] items-center gap-x-2";
 

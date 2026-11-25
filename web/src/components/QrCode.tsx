@@ -37,8 +37,8 @@ export function QrCode({
         viewBox={`0 0 ${qr.size} ${qr.size}`}
         shapeRendering="crispEdges"
       >
-        <rect width={qr.size} height={qr.size} fill="#fff" />
-        <path d={qr.path} fill="#000" />
+        <rect width={qr.size} height={qr.size} className="fill-white" />
+        <path d={qr.path} className="fill-black" />
       </svg>
     </div>
   );

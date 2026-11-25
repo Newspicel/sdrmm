@@ -18,7 +18,7 @@ export function PlayToggle({ active, onToggle }: { active: boolean; onToggle: ()
       render={
         <Button
           type="button"
-          className={`${ICON_BTN} ${active ? "bg-accent/15 text-accent" : ""}`}
+          className={ICON_BTN}
           aria-label={active ? "Stop" : "Play"}
           aria-pressed={active}
           onClick={onToggle}

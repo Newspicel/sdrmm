@@ -12,7 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../components/BaseControls";
-import { ICON_BTN_SM } from "../../components/controls";
+import { ICON_BTN_SM_DANGER, ICON_BTN_SM_FAINT } from "../../components/controls";
 import { FaceAlert } from "../../components/FaceAlert";
 import { FaceFault } from "../../components/face/Fault";
 import { Icon } from "../../components/Icon";
@@ -108,11 +108,11 @@ export function PortAnchor({ port }: { port: string }) {
 }
 
 const CATEGORY_STRIP: Record<NodeCategory, string> = {
-  source: "bg-cat-source shadow-[0_0_8px_var(--color-cat-source)]",
-  channel: "bg-cat-channel shadow-[0_0_8px_var(--color-cat-channel)]",
-  encoder: "bg-cat-encoder shadow-[0_0_8px_var(--color-cat-encoder)]",
-  tool: "bg-cat-tool shadow-[0_0_8px_var(--color-cat-tool)]",
-  output: "bg-cat-output shadow-[0_0_8px_var(--color-cat-output)]",
+  source: "bg-cat-source shadow-halo shadow-cat-source",
+  channel: "bg-cat-channel shadow-halo shadow-cat-channel",
+  encoder: "bg-cat-encoder shadow-halo shadow-cat-encoder",
+  tool: "bg-cat-tool shadow-halo shadow-cat-tool",
+  output: "bg-cat-output shadow-halo shadow-cat-output",
 };
 
 /** What a live node is doing, lit on its header dot: the one place a node's state changes colour. */
@@ -124,9 +124,9 @@ export interface LiveSignal {
 const PASSING: LiveSignal = { tone: "ok", label: "Passing audio" };
 
 const LIVE_STRIP: Record<LiveSignal["tone"], string> = {
-  ok: "bg-ok shadow-[0_0_10px_2px_var(--color-ok)]",
-  warn: "bg-warn shadow-[0_0_10px_2px_var(--color-warn)]",
-  danger: "bg-danger shadow-[0_0_10px_2px_var(--color-danger)]",
+  ok: "bg-ok shadow-beacon shadow-ok",
+  warn: "bg-warn shadow-beacon shadow-warn",
+  danger: "bg-danger shadow-beacon shadow-danger",
 };
 
 function liveSignal(live: boolean | LiveSignal | undefined): LiveSignal | null {
@@ -145,14 +145,14 @@ const CATEGORY_TINT: Record<NodeCategory, string> = {
 };
 
 const CATEGORY_RULE: Record<NodeCategory, string> = {
-  source: "shadow-[inset_0_2px_0_var(--color-cat-source)]",
-  channel: "shadow-[inset_0_2px_0_var(--color-cat-channel)]",
-  encoder: "shadow-[inset_0_2px_0_var(--color-cat-encoder)]",
-  tool: "shadow-[inset_0_2px_0_var(--color-cat-tool)]",
-  output: "shadow-[inset_0_2px_0_var(--color-cat-output)]",
+  source: "inset-shadow-rule inset-shadow-cat-source",
+  channel: "inset-shadow-rule inset-shadow-cat-channel",
+  encoder: "inset-shadow-rule inset-shadow-cat-encoder",
+  tool: "inset-shadow-rule inset-shadow-cat-tool",
+  output: "inset-shadow-rule inset-shadow-cat-output",
 };
 
-const SELECTED_RULE = "shadow-[inset_0_2px_0_var(--color-accent)]";
+const SELECTED_RULE = "inset-shadow-rule inset-shadow-accent";
 
 function PortGlyph({ type }: { type: PortType }) {
   const common = {
@@ -319,7 +319,7 @@ function FramedShell({
               aria-label={inspected ? "Close inspector" : "Inspect"}
               aria-pressed={inspected}
               title="Settings and status"
-              className={`${ICON_BTN_SM} ${inspected ? "bg-accent/15 text-accent" : "text-ink-faint"}`}
+              className={ICON_BTN_SM_FAINT}
               onClick={() => workspace.inspect(inspected ? null : node.id)}
             >
               <Icon glyph={SlidersHorizontal} size={12} />
@@ -329,7 +329,7 @@ function FramedShell({
               aria-label={full ? "Leave full screen" : "Show full screen"}
               aria-pressed={full}
               title={full ? "Back to its usual size" : "Fill the window with this face"}
-              className={`${ICON_BTN_SM} ${full ? "bg-accent/15 text-accent" : "text-ink-faint"}`}
+              className={ICON_BTN_SM_FAINT}
               onClick={() => workspace.expand(full ? null : node.id)}
             >
               <Icon glyph={full ? Minimize2 : Maximize2} size={12} />
@@ -339,7 +339,7 @@ function FramedShell({
               aria-label={pinned ? "Unpin from the rack" : "Pin to the rack"}
               aria-pressed={pinned}
               title={pinned ? "On the rack: click to take it off" : "Pin to the rack"}
-              className={`${ICON_BTN_SM} ${pinned ? "bg-accent/15 text-accent" : "text-ink-faint"}`}
+              className={ICON_BTN_SM_FAINT}
               onClick={() =>
                 workspace.edit((snapshot) => ({
                   ...snapshot,
@@ -355,7 +355,7 @@ function FramedShell({
               type="button"
               aria-label={`Remove ${node.label ?? title}`}
               title="Remove from the patch"
-              className={`${ICON_BTN_SM} text-ink-faint hover:text-danger`}
+              className={ICON_BTN_SM_DANGER}
               onClick={remove}
             >
               <Icon glyph={X} size={12} />

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Form, Input } from "../../components/BaseControls";
-import { BTN, FIELD, LABEL } from "../../components/controls";
+import { BTN, BTN_ROW, FIELD, LABEL } from "../../components/controls";
 import { NumberField } from "../../components/NumberField";
 import { Segmented } from "../../components/Segmented";
 import { nmeaDevicesQuery, phonesQuery } from "../../lib/api";
@@ -62,7 +62,7 @@ function ReceiverChoices({ onChoose }: { onChoose: Choose }) {
             <Button
               key={device.path}
               type="button"
-              className={`${BTN} h-auto min-h-7 justify-start py-1.5 text-left`}
+              className={BTN_ROW}
               onClick={() => onChoose(nmeaSource(device.path))}
             >
               <span className="flex w-full min-w-0 flex-col gap-0.5">

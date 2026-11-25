@@ -30,6 +30,10 @@ export const FACE_BTN_DANGER_ARMED =
   `${INTERACTIVE} h-6 border border-danger bg-danger/10 px-2 text-xs font-medium text-danger ` +
   "hover:bg-danger/25";
 
+export const BTN_ROW =
+  `${INTERACTIVE} min-h-7 justify-start border border-line ${RAISED} px-2.5 py-1.5 text-left text-xs ` +
+  "font-medium hover:border-line-strong hover:bg-panel-3";
+
 export const BTN_SM =
   `${INTERACTIVE} h-5 border border-line ${RAISED} px-1.5 text-2xs font-medium ` +
   "hover:border-line-strong";
@@ -62,13 +66,18 @@ export const BTN_DANGER_SM =
   `${INTERACTIVE} h-5 border border-danger/60 bg-danger/10 px-1.5 text-2xs font-medium ` +
   "text-danger hover:bg-danger/25";
 
-const ICON_BASE =
-  `${INTERACTIVE} justify-center border border-transparent text-ink-dim ` +
-  "hover:bg-panel-2 hover:text-ink";
+const ICON_PRESSABLE =
+  "hover:bg-panel-2 hover:text-ink aria-pressed:bg-accent/15 aria-pressed:text-accent";
+
+const ICON_BASE = `${INTERACTIVE} justify-center border border-transparent text-ink-dim ${ICON_PRESSABLE}`;
 
 export const ICON_BTN = `${ICON_BASE} size-7 pointer-coarse:size-10`;
 
 export const ICON_BTN_SM = `${ICON_BASE} size-5 pointer-coarse:size-10`;
+
+export const ICON_BTN_SM_FAINT =
+  `${INTERACTIVE} size-5 justify-center border border-transparent text-ink-faint ${ICON_PRESSABLE} ` +
+  "pointer-coarse:size-10";
 
 export const ICON_BTN_DANGER =
   `${INTERACTIVE} size-7 justify-center border border-transparent text-ink-faint ` +
@@ -119,6 +128,15 @@ export const CHIP_SETTING_QUIET = `${CHIP_BASE} bg-ink/5 hover:bg-ink/10`;
 export const CHIP_READOUT =
   "inline-flex h-5 items-center gap-1 rounded-control bg-ink/5 px-1.5 font-mono text-2xs " +
   "whitespace-nowrap text-ink-faint";
+
+const KEY_BASE =
+  `${INTERACTIVE} border border-line bg-well font-mono text-2xs text-ink-dim ` +
+  "hover:border-line-strong hover:text-ink " +
+  "aria-pressed:border-accent-dim aria-pressed:bg-accent/10 aria-pressed:text-accent";
+
+export const KEY = `${KEY_BASE} h-7 px-2`;
+
+export const KEY_SM = `${KEY_BASE} h-5 px-1.5`;
 
 export const TOGGLE_QUIET =
   `${INTERACTIVE} h-5 justify-center border border-transparent px-1.5 text-2xs font-medium ` +

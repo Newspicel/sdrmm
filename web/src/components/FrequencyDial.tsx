@@ -123,7 +123,7 @@ export function FrequencyDial({
       aria-valuemin={range.min}
       aria-valuemax={range.max}
       aria-valuetext={`${(hz / 1e6).toFixed(6)} megahertz`}
-      className="flex items-baseline rounded-control border border-line bg-well px-1.5 py-0.5 font-mono leading-none shadow-[inset_0_1px_3px_oklch(0_0_0/0.35)] select-none [text-shadow:0_0_14px_var(--color-vfo-glow)]"
+      className="flex items-baseline rounded-control border border-line bg-well px-1.5 py-0.5 font-mono leading-none inset-shadow-well select-none text-shadow-glow text-shadow-vfo-glow"
       onKeyDown={disabled ? undefined : onKeyDown}
     >
       {digits.map((digit, i) => (
@@ -164,7 +164,7 @@ function Digit({
         disabled={disabled}
         data-place={digit.place}
         aria-label={`${10 ** digit.place} hertz digit`}
-        className={`relative min-h-7 overflow-hidden rounded-inset px-[2px] tabular-nums transition-colors duration-100 pointer-coarse:min-h-10 ${DIGIT_SIZE} ${
+        className={`relative min-h-7 overflow-hidden rounded-inset px-0.5 tabular-nums transition-colors duration-100 pointer-coarse:min-h-10 ${DIGIT_SIZE} ${
           armed === null ? "" : armed > 0 ? "cursor-n-resize" : "cursor-s-resize"
         } ${
           armed !== null || active
@@ -172,7 +172,7 @@ function Digit({
             : digit.leading
               ? "text-ink-faint/60"
               : "text-vfo"
-        } ${active ? "bg-accent/10 shadow-[inset_0_-2px_0_var(--color-accent)]" : ""}`}
+        } ${active ? "bg-accent/10 inset-shadow-rule-under inset-shadow-accent" : ""}`}
         onPointerDown={(event) => {
           const direction = digitDirection(event, event.currentTarget.getBoundingClientRect());
           if (direction === null) {

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Button } from "../../components/BaseControls";
+import { KEY } from "../../components/controls";
 import { DB_LIMIT, DB_STEP, withCeiling, withFloor } from "../../components/dbRange";
 import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
 import { GradientEditor } from "../../components/GradientEditor";
@@ -233,16 +234,7 @@ function TraceToggle({
   children?: ReactNode;
 }) {
   return (
-    <Button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={`flex h-7 items-center gap-2 rounded-control border px-2 font-mono text-2xs transition-colors duration-100 ${
-        on
-          ? "border-accent-dim bg-accent/10 text-accent"
-          : "border-line bg-well text-ink-dim hover:border-line-strong hover:text-ink"
-      }`}
-    >
+    <Button type="button" aria-pressed={on} onClick={onClick} className={KEY}>
       {children}
       {label}
     </Button>

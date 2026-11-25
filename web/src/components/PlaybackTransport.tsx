@@ -71,7 +71,7 @@ export function PlaybackTransport({
       </Button>
       <Button
         type="button"
-        className={`${ICON_BTN} ${looping ? "bg-accent/15 text-accent" : ""}`}
+        className={ICON_BTN}
         aria-label="Loop"
         aria-pressed={looping}
         title={

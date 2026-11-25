@@ -1,7 +1,7 @@
 import { Download, Play, Square } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/BaseControls";
-import { BTN, BTN_PRIMARY, LABEL } from "../../components/controls";
+import { BTN, BTN_DANGER_ARMED, BTN_PRIMARY, LABEL } from "../../components/controls";
 import { Icon } from "../../components/Icon";
 import { NumberField } from "../../components/NumberField";
 import { Popover } from "../../components/Popover";
@@ -161,7 +161,7 @@ export function SweepBar({
         <Button
           type="button"
           aria-pressed={live}
-          className={`${BTN} ${live ? "border-danger/60 text-danger" : ""}`}
+          className={live ? BTN_DANGER_ARMED : BTN}
           disabled={!canSweep || invalid}
           title="Sweep again as soon as each sweep ends"
           onClick={() => onLive(!live)}

@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "../components/BaseControls";
-import { ICON_BTN_SM } from "../components/controls";
+import { ICON_BTN_SM_FAINT } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { oneOf, orNull } from "../lib/remembered";
 import { useNodeProblems } from "../lib/resolved";
@@ -53,7 +53,7 @@ export function InspectorPanel() {
         <Button
           type="button"
           aria-label="Close inspector"
-          className={`${ICON_BTN_SM} text-ink-faint`}
+          className={ICON_BTN_SM_FAINT}
           onClick={() => inspect(null)}
         >
           <Icon glyph={X} size={12} />

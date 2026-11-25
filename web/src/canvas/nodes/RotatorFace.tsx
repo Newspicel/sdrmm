@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Form, Input } from "../../components/BaseControls";
-import { BTN, BTN_QUIET_DANGER, FIELD } from "../../components/controls";
+import { BTN, BTN_QUIET_DANGER, BTN_ROW, FIELD } from "../../components/controls";
 import {
   ChipField,
   Chips,
@@ -321,7 +321,7 @@ function SerialChoices({ onPick, make }: { onPick: Pick; make: (device: string) 
           <Button
             key={device.path}
             type="button"
-            className={`${BTN} h-auto min-h-7 justify-start py-1.5 text-left`}
+            className={BTN_ROW}
             onClick={() => onPick(make(device.path))}
           >
             <span className="flex w-full min-w-0 flex-col gap-0.5">

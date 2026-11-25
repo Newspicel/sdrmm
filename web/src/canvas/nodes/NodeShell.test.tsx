@@ -42,9 +42,9 @@ describe("NodeShell on the canvas", () => {
 
   it("carries the accent along the top bar of the selected face", () => {
     expect(render("idle", { selected: NODE.id })).toContain(
-      "shadow-[inset_0_2px_0_var(--color-accent)]",
+      "inset-shadow-rule inset-shadow-accent",
     );
-    expect(render("idle")).toContain("shadow-[inset_0_2px_0_var(--color-cat-tool)]");
+    expect(render("idle")).toContain("inset-shadow-rule inset-shadow-cat-tool");
   });
 
   it("keeps its category colour while live, lighting only the dot", () => {

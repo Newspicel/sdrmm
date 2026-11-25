@@ -11,9 +11,7 @@ export const SLIDER_CONTROL =
   "flex h-7 w-full cursor-pointer touch-none items-center data-dragging:cursor-grabbing " +
   "data-disabled:cursor-not-allowed data-disabled:opacity-45 pointer-coarse:h-10";
 
-export const SLIDER_TRACK =
-  "relative h-2 w-full rounded-inset bg-well " +
-  "shadow-[inset_0_0_0_1px_var(--color-line),inset_0_1px_2px_oklch(0_0_0/0.2)]";
+export const SLIDER_TRACK = "relative h-2 w-full rounded-inset bg-well inset-shadow-track";
 
 /** Insets the travel by half the thumb, so the thumb stays inside the rail at both ends. */
 export const SLIDER_TRAVEL = "mx-0.5 h-full";
@@ -22,7 +20,7 @@ export const SLIDER_TRAVEL = "mx-0.5 h-full";
 export const SLIDER_FILL = "-ml-0.5 box-content rounded-inset bg-accent pl-0.5";
 
 export const SLIDER_THUMB =
-  "h-4 w-1 cursor-grab rounded-inset shadow-[0_0_0_1.5px_var(--color-panel)] " +
+  "h-4 w-1 cursor-grab rounded-inset shadow-thumb " +
   "data-dragging:cursor-grabbing has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent " +
   "has-[:focus-visible]:outline-offset-2";
 

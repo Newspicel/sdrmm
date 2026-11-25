@@ -165,7 +165,7 @@ export function Chips({
   }
   return (
     <div
-      className={`flex flex-wrap items-center gap-x-1 gap-y-[3px] contain-inline-size ${INSET[inset]} ${className ?? ""}`}
+      className={`flex flex-wrap items-center gap-x-1 gap-y-0.75 contain-inline-size ${INSET[inset]} ${className ?? ""}`}
     >
       {children}
     </div>

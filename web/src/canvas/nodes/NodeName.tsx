@@ -6,7 +6,7 @@ import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { nodeLabel } from "../nodeName";
 
-const TEXT = "min-w-0 truncate text-xs font-semibold tracking-[0.01em] text-ink";
+const TEXT = "min-w-0 truncate text-xs font-semibold tracking-label text-ink";
 
 export function NodeName({ node, title }: { node: PatchNode; title: string }) {
   const workspace = useWorkspaceContext();

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Input } from "../../components/BaseControls";
-import { BTN, FACE_BTN, FACE_BTN_DANGER, FIELD } from "../../components/controls";
+import { BTN_ROW, FACE_BTN, FACE_BTN_DANGER, FIELD } from "../../components/controls";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { formatBytes, formatMhz, formatSampleRate } from "../../components/format";
@@ -59,7 +59,7 @@ export function Library({
           <Button
             key={recording.id}
             type="button"
-            className={`${BTN} h-auto min-h-7 shrink-0 justify-start py-1.5 text-left`}
+            className={`${BTN_ROW} shrink-0`}
             title={recordingProvenance(recording)}
             onClick={() => onPick(recording)}
           >
