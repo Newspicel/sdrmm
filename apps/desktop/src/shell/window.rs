@@ -41,6 +41,7 @@ pub fn created(browser: Option<&mut Browser>) {
 }
 
 /// Chromium builds the page's accessibility tree only once a screen reader asks for it.
+#[cfg(target_os = "macos")]
 pub fn set_accessibility(on: bool) {
     ACCESSIBLE.set(on);
     apply_accessibility();

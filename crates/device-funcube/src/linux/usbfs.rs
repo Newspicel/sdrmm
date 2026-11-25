@@ -265,16 +265,16 @@ mod tests {
 
     #[test]
     fn requests_match_the_kernel_header() {
-        assert_eq!(CONTROL as u64, 0xc018_5500);
-        assert_eq!(BULK as u64, 0xc018_5502);
-        assert_eq!(SET_INTERFACE as u64, 0x8008_5504);
-        assert_eq!(SUBMIT_URB as u64, 0x8038_550a);
-        assert_eq!(DISCARD_URB as u64, 0x550b);
-        assert_eq!(REAP_URB_NDELAY as u64, 0x4008_550d);
-        assert_eq!(RELEASE_INTERFACE as u64, 0x8004_5510);
-        assert_eq!(IOCTL as u64, 0xc010_5512);
-        assert_eq!(CONNECT as u64, 0x5517);
-        assert_eq!(DISCONNECT_CLAIM as u64, 0x8108_551b);
+        assert_eq!(u64::from(CONTROL), 0xc018_5500);
+        assert_eq!(u64::from(BULK), 0xc018_5502);
+        assert_eq!(u64::from(SET_INTERFACE), 0x8008_5504);
+        assert_eq!(u64::from(SUBMIT_URB), 0x8038_550a);
+        assert_eq!(u64::from(DISCARD_URB), 0x550b);
+        assert_eq!(u64::from(REAP_URB_NDELAY), 0x4008_550d);
+        assert_eq!(u64::from(RELEASE_INTERFACE), 0x8004_5510);
+        assert_eq!(u64::from(IOCTL), 0xc010_5512);
+        assert_eq!(u64::from(CONNECT), 0x5517);
+        assert_eq!(u64::from(DISCONNECT_CLAIM), 0x8108_551b);
     }
 
     #[test]

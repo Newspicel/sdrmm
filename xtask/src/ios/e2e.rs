@@ -13,6 +13,8 @@ pub(super) const SELECTION: &str = "SDRmmUITests/EndToEndUITests";
 const FIXTURE: &str = "fixtures/ios/e2e-workspace.json";
 const TOKEN: &str = "e2e";
 const READY_WITHIN: Duration = Duration::from_secs(180);
+/// A starved macOS runner drops loopback connections now and then; repeating a call is harmless.
+const CURL_RETRY: [&str; 5] = ["--retry", "4", "--retry-all-errors", "--retry-delay", "2"];
 const POLL: Duration = Duration::from_millis(500);
 
 pub(super) struct Server {
@@ -163,6 +165,7 @@ impl Server {
             "-w",
             "\n%{http_code}",
         ];
+        args.extend(CURL_RETRY);
         if let Some(data) = &data {
             args.extend([
                 "-H",

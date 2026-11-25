@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 
 pub fn set(root: &Path, version: &str) -> Result<()> {
     let version = version.strip_prefix('v').unwrap_or(version);
@@ -8,8 +8,9 @@ pub fn set(root: &Path, version: &str) -> Result<()> {
     let manifest = root.join("Cargo.toml");
     let lock = root.join("Cargo.lock");
     let properties = root.join(ANDROID_PROPERTIES);
-    let members = members(&read(&lock)?);
-    write(&manifest, &stamp_manifest(&read(&manifest)?, version)?)?;
+    let manifest_text = read(&manifest)?;
+    let members = members(&read(&lock)?, &workspace_version(&manifest_text)?);
+    write(&manifest, &stamp_manifest(&manifest_text, version)?)?;
     write(&lock, &stamp_lock(&read(&lock)?, &members, version))?;
     write(
         &properties,
@@ -94,10 +95,31 @@ fn stamp_manifest(manifest: &str, version: &str) -> Result<String> {
     Ok(out)
 }
 
-fn members(lock: &str) -> Vec<String> {
+fn workspace_version(manifest: &str) -> Result<String> {
+    let mut section = "";
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            section = trimmed;
+        }
+        if section == "[workspace.package]"
+            && trimmed.starts_with("version")
+            && let Some(value) = trimmed.split('"').nth(1)
+        {
+            return Ok(value.to_owned());
+        }
+    }
+    bail!("Cargo.toml has no `version` under [workspace.package]")
+}
+
+/// Local packages at the workspace version. A path crate with a version of its own, such as a
+/// `[patch]` stand-in, keeps it: stamping it would leave the lock out of date.
+fn members(lock: &str, workspace: &str) -> Vec<String> {
+    let version = format!("version = \"{workspace}\"");
     lock.split("[[package]]")
         .skip(1)
         .filter(|block| !block.contains("\nsource = "))
+        .filter(|block| block.lines().any(|line| line == version))
         .filter_map(|block| block.lines().find_map(|line| line.strip_prefix("name = ")))
         .map(str::to_owned)
         .collect()
@@ -125,12 +147,19 @@ fn stamp_lock(lock: &str, members: &[String], version: &str) -> String {
 mod tests {
     use super::*;
 
-    const LOCK: &str = "version = 4\n\n[[package]]\nname = \"anyhow\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n\n[[package]]\nname = \"sdrmm\"\nversion = \"0.9.0\"\ndependencies = [\n \"anyhow\",\n]\n";
+    const LOCK: &str = "version = 4\n\n[[package]]\nname = \"anyhow\"\nversion = \"1.0.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n\n[[package]]\nname = \"libopus_sys\"\nversion = \"0.3.3\"\n\n[[package]]\nname = \"sdrmm\"\nversion = \"0.9.0\"\ndependencies = [\n \"anyhow\",\n]\n";
 
     #[test]
-    fn stamps_only_local_packages_in_the_lock() {
-        let stamped = stamp_lock(LOCK, &members(LOCK), "2.0.0");
+    fn stamps_only_workspace_versioned_local_packages_in_the_lock() {
+        let stamped = stamp_lock(LOCK, &members(LOCK, "0.9.0"), "2.0.0");
         assert_eq!(stamped, LOCK.replace("0.9.0", "2.0.0"));
+    }
+
+    #[test]
+    fn reads_the_workspace_version() {
+        let manifest =
+            "[package]\nversion = \"1.0.0\"\n\n[workspace.package]\nversion = \"0.9.0\"\n";
+        assert_eq!(workspace_version(manifest).unwrap(), "0.9.0");
     }
 
     #[test]

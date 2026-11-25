@@ -25,10 +25,11 @@ COPY xtask xtask
 # crates/* are all libraries, apps/* and xtask are all binaries; if that ever stops holding,
 # cargo fails loudly with "no targets specified in the manifest". A declared [[bench]] must
 # also exist for its manifest to parse; the stubs assume the default benches/<name>.rs path,
-# so a bench that sets `path =` fails loudly here too.
-RUN find crates apps xtask -type f ! -name Cargo.toml -delete \
+# so a bench that sets `path =` fails loudly here too. crates/libopus-sys keeps its source: it
+# is a [patch] that crates.io dependencies compile against in this layer.
+RUN find crates apps xtask -type f ! -name Cargo.toml ! -path 'crates/libopus-sys/*' -delete \
     && find crates apps xtask -mindepth 1 -type d -empty -delete \
-    && for dir in crates/*/; do mkdir -p "$dir/src" && : > "$dir/src/lib.rs"; done \
+    && for dir in crates/*/; do mkdir -p "$dir/src" && { [ -f "$dir/src/lib.rs" ] || : > "$dir/src/lib.rs"; }; done \
     && for dir in apps/*/ xtask/ xtask/release/; do mkdir -p "$dir/src" && echo 'fn main() {}' > "$dir/src/main.rs"; done \
     && : > xtask/release/src/lib.rs \
     && for m in crates/*/Cargo.toml apps/*/Cargo.toml xtask/Cargo.toml xtask/release/Cargo.toml; do \
