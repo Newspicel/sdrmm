@@ -25,6 +25,11 @@ export const FACE_BTN_GO =
   `${INTERACTIVE} h-6 border border-line ${RAISED} px-2 text-xs font-medium ` +
   "hover:border-ok hover:bg-ok/10 hover:text-ok";
 
+/** A face's footer button that starts something risky, such as keying a transmitter: amber on hover. */
+export const FACE_BTN_WARN =
+  `${INTERACTIVE} h-6 border border-line ${RAISED} px-2 text-xs font-medium ` +
+  "hover:border-warn hover:bg-warn/10 hover:text-warn";
+
 /** A face's footer danger button armed to confirm: red until clicked again or left. */
 export const FACE_BTN_DANGER_ARMED =
   `${INTERACTIVE} h-6 border border-danger bg-danger/10 px-2 text-xs font-medium text-danger ` +

@@ -6,6 +6,7 @@ import {
   gateDb,
   heardHz,
   LEVEL_FLOOR_DB,
+  levelOf,
   levelUnit,
   useLevelStore,
 } from "./levels";
@@ -183,5 +184,25 @@ describe("heardHz", () => {
     expect(heardHz(437_800_000, level)).toBe(437_808_200);
     expect(heardHz(437_800_000, { ...level, shift_hz: null })).toBe(437_800_000);
     expect(heardHz(437_800_000, undefined)).toBe(437_800_000);
+  });
+});
+
+describe("levelOf", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useLevelStore.getState().reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("finds one channel's level, and none for a channel off the air", () => {
+    useLevelStore.getState().observe(update(3, [[7, -40, -30]]));
+    vi.advanceTimersByTime(FLUSH_MS);
+    const state = useLevelStore.getState();
+    expect(levelOf(state, { deviceSet: 3, id: 7 })?.level_db).toBe(-40);
+    expect(levelOf(state, { deviceSet: 3, id: 8 })).toBeUndefined();
+    expect(levelOf(state, null)).toBeUndefined();
   });
 });

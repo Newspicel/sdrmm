@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "../../components/BaseControls";
-import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
+import { FACE_BTN_DANGER, FACE_BTN_WARN } from "../../components/controls";
 import {
   formatPeak,
   METER_FLOOR_DB,
@@ -21,7 +21,7 @@ import { nodeAction } from "../../lib/api";
 import { reachesOf, useFeeds } from "../../lib/resolved";
 import { toastError } from "../../lib/toasts";
 import type { PatchNode, PatchNodeOf, TransmitAction, TransmitSettings } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect, type Workspace } from "../context";
 import { nodeOf, patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { runningSetOf } from "../workspaceDevice";
@@ -45,21 +45,17 @@ export function TransmitFace({ node }: { node: PatchNode }) {
 }
 
 function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
-  const workspace = useWorkspaceContext();
-  const status = transmitStatusOf(workspace.deviceSets, node.id);
+  const now = useWorkspaceNow();
+  const { status, wired, receiveOnly, range, centerHz, selected } = useWorkspaceSelect(
+    (workspace) => transmitView(workspace, node.id),
+  );
   const air = airOf(status);
   const fed = useFeeds(node.id, "iq").length + useFeeds(node.id, "baseband").length > 0;
-  const radio = reachesOf(workspace.resolved, node.id, "transmit")[0]?.sink ?? null;
-  const set = radio === null ? null : runningSetOf(workspace, radio);
-  const receiveOnly =
-    radio !== null && radioUseOf(nodeOf(workspace.graph, radio), set) === "receive";
-  const need = transmitNeed(fed, radio !== null, receiveOnly);
-  const range = set === null ? ANY_FREQUENCY : tuningRange(set.capabilities);
-  const frequency =
-    node.data.frequency_hz ?? status?.frequency_hz ?? set?.settings.center_hz ?? null;
+  const need = transmitNeed(fed, wired, receiveOnly);
+  const frequency = node.data.frequency_hz ?? status?.frequency_hz ?? centerHz;
   const tune = (frequency_hz: number) => edit({ frequency_hz });
   const edit = (next: Partial<TransmitSettings>): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) => withTransmitSettings(current, next)),
     }));
@@ -83,7 +79,7 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
               id={dialId(node.id)}
               hz={frequency ?? 0}
               range={range}
-              wheelTunes={workspace.selected === node.id}
+              wheelTunes={selected}
               onTune={tune}
             />
             <span className="ml-auto flex shrink-0 items-center gap-1">
@@ -160,7 +156,7 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
         {status === null ? (
           <Button
             type="button"
-            className={FACE_BTN}
+            className={FACE_BTN_WARN}
             title={
               receiveOnly ? SET_TO_SEND : "From here on, what the source produces goes on the air"
             }
@@ -182,6 +178,20 @@ function TransmitNodeFace({ node }: { node: PatchNodeOf<"transmit"> }) {
       </FaceFooter>
     </NodeShell>
   );
+}
+
+/** What the face shows of the transmitter and the radio its wire reaches. */
+function transmitView(workspace: Workspace, node: string) {
+  const radio = reachesOf(workspace.resolved, node, "transmit")[0]?.sink ?? null;
+  const set = radio === null ? null : runningSetOf(workspace, radio);
+  return {
+    status: transmitStatusOf(workspace.deviceSets, node),
+    wired: radio !== null,
+    receiveOnly: radio !== null && radioUseOf(nodeOf(workspace.graph, radio), set) === "receive",
+    range: set === null ? ANY_FREQUENCY : tuningRange(set.capabilities),
+    centerHz: set?.settings.center_hz ?? null,
+    selected: workspace.selected === node,
+  };
 }
 
 const SET_TO_SEND = "Set the radio to send";

@@ -5,16 +5,16 @@ import { createWorkspace, WORKSPACES_KEY, wiringVerdicts } from "../lib/api";
 import { useT } from "../lib/i18n/translate";
 import { uiScale } from "../lib/prefs";
 import { pushToast } from "../lib/toasts";
-import { useWorkspaceContext } from "./context";
+import { useWorkspaceNow } from "./context";
 import { type TestContext, testWorkspaces } from "./testWorkspace";
 
 /** Draws every node face in every state into new workspaces and opens the first. */
 export function TestWorkspaceButton({ onCreated }: { onCreated: (id: number) => void }) {
   const t = useT();
   const queryClient = useQueryClient();
-  const { context } = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const create = useMutation({
-    mutationFn: () => createAll(context),
+    mutationFn: () => createAll(now().context),
     onSuccess: (id) => {
       if (id !== undefined) {
         onCreated(id);

@@ -1,6 +1,6 @@
 import { feedsOf, reachesOf } from "../../lib/resolved";
 import type { ResolvedPatch } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 
 /** A port the node needs a wire on. `out` marks an output that has to reach something. */
 export interface Want {
@@ -26,7 +26,7 @@ export function unwiredOf(
 }
 
 export function useUnwired(node: string, wants: readonly Want[]): boolean {
-  return unwiredOf(useWorkspaceContext().resolved, node, wants);
+  return useWorkspaceSelect((workspace) => unwiredOf(workspace.resolved, node, wants));
 }
 
 function wired(patch: ResolvedPatch | null, node: string, want: Want): boolean {

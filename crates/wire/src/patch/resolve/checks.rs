@@ -1,12 +1,14 @@
 use super::{
     super::{
-        DeviceRef, IqOrigin, MAX_EDGES, MAX_NODE_ID_LEN, MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ,
-        MAX_SIGNAL_MAP_OFFSET_HZ, Multi, NodeBody, PatchEdge, PatchError, PatchGraph, PatchNode,
-        Payload, PortDirection, PortRef, PortSpec, PortType, Refusal, check_geometry,
-        valid_host_port, validate_gps_source,
+        DeviceRef, IQ_PORT, IqOrigin, MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_NODE_ID_LEN,
+        MAX_NODES, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ, Multi, NodeBody,
+        PatchEdge, PatchError, PatchGraph, PatchNode, Payload, PortDirection, PortRef, PortSpec,
+        PortType, Refusal, check_geometry, valid_host_port, validate_gps_source,
     },
     Net, feeds, ports,
 };
+use std::collections::HashSet;
+
 use crate::{
     channel::ChannelDescriptor, network::MAX_NETWORK_ADDRESS_LEN, workspace::MAX_NAME_LEN,
 };
@@ -21,15 +23,14 @@ pub(super) fn structure(
     if graph.edges.len() > MAX_EDGES {
         return Err(PatchError::TooManyEdges);
     }
-    let mut seen: Vec<&str> = Vec::with_capacity(graph.nodes.len());
+    let mut seen: HashSet<&str> = HashSet::with_capacity(graph.nodes.len());
     for node in &graph.nodes {
         if node.id.is_empty() || node.id.len() > MAX_NODE_ID_LEN {
             return Err(PatchError::NodeId(node.id.clone()));
         }
-        if seen.contains(&node.id.as_str()) {
+        if !seen.insert(&node.id) {
             return Err(PatchError::DuplicateNode(node.id.clone()));
         }
-        seen.push(&node.id);
         if node
             .label
             .as_ref()
@@ -172,7 +173,7 @@ pub(super) fn refusal<'a>(net: &mut Net<'a>, edge: &'a PatchEdge) -> Option<Patc
         return Some(PatchError::Cycle(edge.to.node.clone()));
     }
     net.edges.push(edge);
-    let found = admission(net, edge, &input);
+    let found = admission(net, edge, &input).or_else(|| room(net, edge, &input));
     net.edges.pop();
     found.and_then(refused)
 }
@@ -261,6 +262,51 @@ fn admission(net: &Net<'_>, edge: &PatchEdge, input: &PortSpec) -> Option<Refusa
             let fed = feeds::feeds_into(net, &reference.node, spec);
             judge(net, &reference.node, spec, &fed)
         })
+}
+
+/// The engine hosts at most `MAX_CHANNELS_PER_RADIO` channels on one radio stream, so a wire
+/// that would put one more there is refused before it is drawn.
+fn room(net: &Net<'_>, edge: &PatchEdge, input: &PortSpec) -> Option<Refusal> {
+    if input.port_type != PortType::Iq {
+        return None;
+    }
+    feeds::downstream(net, &edge.to, PortType::Iq)
+        .iter()
+        .filter(|reference| hosts_channel(net, reference))
+        .filter_map(|reference| {
+            let spec = net.spec(reference, PortDirection::In)?;
+            Some(feeds::feeds_into(net, &reference.node, spec))
+        })
+        .flatten()
+        .find_map(|feed| full(net, &feed))
+}
+
+fn full(net: &Net<'_>, feed: &super::Feed) -> Option<Refusal> {
+    let lane = PortRef {
+        node: feed.source.clone(),
+        port: feed.port.clone(),
+    };
+    let mut hosted: Vec<String> = feeds::reached(net, &lane, PortType::Iq)
+        .into_iter()
+        .map(|reach| PortRef {
+            node: reach.sink,
+            port: reach.port,
+        })
+        .filter(|reference| hosts_channel(net, reference))
+        .map(|reference| reference.node)
+        .collect();
+    hosted.sort_unstable();
+    hosted.dedup();
+    (hosted.len() > MAX_CHANNELS_PER_RADIO).then_some(Refusal::RadioFull {
+        held: MAX_CHANNELS_PER_RADIO,
+    })
+}
+
+fn hosts_channel(net: &Net<'_>, reference: &PortRef) -> bool {
+    reference.port == IQ_PORT
+        && net
+            .node(&reference.node)
+            .is_some_and(|(node, _)| matches!(node.body, NodeBody::Channel(_)))
 }
 
 fn judge(net: &Net<'_>, node: &str, spec: &PortSpec, fed: &[super::Feed]) -> Option<Refusal> {

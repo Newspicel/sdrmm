@@ -7,6 +7,20 @@ import { type VideoInput, videoHub } from "../lib/video";
 
 const DISPLAY_ASPECT = 4 / 3;
 
+/** The screen a video face shows before a picture comes, the size a picture takes. */
+export function IdleVideo() {
+  return (
+    <div className="p-2">
+      <div
+        role="img"
+        aria-label="No picture"
+        className="w-full rounded-inset bg-black"
+        style={{ aspectRatio: DISPLAY_ASPECT }}
+      />
+    </div>
+  );
+}
+
 const STALE_MS = 2_000;
 
 interface Geometry {

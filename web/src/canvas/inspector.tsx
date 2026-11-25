@@ -9,7 +9,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChipRows } from "../components/face/Chips";
 import { PortalContainerProvider } from "../components/PortalContainer";
-import { useWorkspaceContext } from "./context";
+import { useWorkspaceSelect } from "./context";
 
 interface Slots {
   head: HTMLElement | null;
@@ -70,12 +70,12 @@ export function Inspect({
   slot?: keyof Slots;
   children: ReactNode;
 }) {
-  const workspace = useWorkspaceContext();
+  const inspected = useWorkspaceSelect((workspace) => workspace.inspected === node);
   const target = useContext(InspectorTarget);
   const source = useContext(InspectSource);
   const element = target === "inline" ? null : target[slot];
   const popups = useMemo(() => ({ current: element }), [element]);
-  if (!source || workspace.inspected !== node) {
+  if (!source || !inspected) {
     return null;
   }
   if (target === "inline") {

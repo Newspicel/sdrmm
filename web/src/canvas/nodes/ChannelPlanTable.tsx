@@ -18,6 +18,7 @@ export function ChannelPlanTable({
   entries,
   found,
   following,
+  hint,
   onChange,
 }: {
   label: string;
@@ -25,6 +26,8 @@ export function ChannelPlanTable({
   entries: readonly TrunkChannelEntry[];
   found: readonly TrunkChannelEntry[];
   following: ReadonlySet<number>;
+  /** What the empty table waits for, if it waits for a setting. */
+  hint?: string | null;
   onChange: (entries: TrunkChannelEntry[]) => void;
 }) {
   const summary = planSummary(rows);
@@ -38,9 +41,9 @@ export function ChannelPlanTable({
           </Button>
         )}
       </div>
-      <div className="m-2 flex min-h-0 flex-1 flex-col overflow-y-auto rounded-inset border border-line bg-well">
+      <div className="m-2 flex min-h-0 flex-1 flex-col overflow-y-auto rounded-control border border-line">
         <table className="w-full border-collapse font-mono text-xs">
-          <thead className="sticky top-0 bg-well">
+          <thead className="sticky top-0 bg-panel">
             <tr>
               <th className={`${TABLE_HEAD} w-0 text-right`}>LCN</th>
               <th className={`${TABLE_HEAD} w-0 text-right`}>
@@ -89,7 +92,7 @@ export function ChannelPlanTable({
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <FaceEmpty hint="No channels yet" />}
+        {rows.length === 0 && <FaceEmpty hint={hint ?? undefined} />}
       </div>
       {summary !== null && <p className="px-2 pb-2 text-xs text-ink-dim">{summary}</p>}
     </div>

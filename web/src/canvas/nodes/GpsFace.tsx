@@ -20,7 +20,7 @@ import {
 import { gridLocator, usePositionStore } from "../../lib/position";
 import type { PatchNode, PositionFix, PositionSource } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { GpsChoices } from "./GpsChoices";
@@ -32,14 +32,14 @@ type Source<T extends PositionSource["type"]> = Extract<PositionSource, { type: 
 type Change = (source: PositionSource) => void;
 
 export function GpsFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const state = usePositionStore((store) => store.sources[node.id]);
   if (node.kind !== "gps") {
     return null;
   }
   const source = node.data.source ?? null;
   const setSource = (next: PositionSource | null): void => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "gps"

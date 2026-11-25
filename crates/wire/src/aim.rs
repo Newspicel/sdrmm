@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 
 use crate::{
     channel::{Control, SettingField},
-    present::{Field, Unit, fields, number, text_of},
+    present::{Field, Unit, face_fields, number, text_of},
     satellite::SatelliteLook,
 };
 
@@ -79,7 +79,7 @@ impl AimStatus {
     #[must_use]
     pub fn with_readouts(mut self) -> Self {
         let look = self.look;
-        self.readouts = fields(&[
+        self.readouts = face_fields(&[
             (
                 "entity",
                 "Following",
@@ -150,6 +150,15 @@ mod tests {
         }
         .with_readouts();
         let keys: Vec<&str> = status.readouts.iter().map(|f| f.key.as_str()).collect();
-        assert_eq!(keys, ["entity", "azimuth", "elevation", "range"]);
+        assert_eq!(
+            keys,
+            ["entity", "azimuth", "elevation", "range", "altitude", "age"]
+        );
+    }
+
+    #[test]
+    fn an_idle_aim_keeps_every_readout_row() {
+        let status = AimStatus::default().with_readouts();
+        assert_eq!(status.readouts.len(), 6);
     }
 }

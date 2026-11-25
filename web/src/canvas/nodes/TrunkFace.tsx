@@ -19,11 +19,11 @@ import type {
   TrunkTalkgroups,
   VoiceKey,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { ChannelPlanTable } from "./ChannelPlanTable";
-import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
+import { FaceBody, NodeShell } from "./NodeShell";
 import { useUnwired, type Want } from "./needs";
 import {
   AUTO_PROTOCOL,
@@ -63,19 +63,22 @@ import {
 const WANTS_IQ: readonly Want[] = [{ port: "iq" }];
 
 export function TrunkFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
+  const status = useWorkspaceSelect((workspace) =>
+    workspace.trunks.find((system) => system.node === node.id),
+  );
+  const channelTypes = useWorkspaceSelect((workspace) => workspace.context.channelTypes);
   const onIq = useFeeds(node.id, "iq").length > 0;
   const unwired = useUnwired(node.id, WANTS_IQ);
   if (node.kind !== "trunk") {
     return null;
   }
-  const status = workspace.trunks.find((system) => system.node === node.id);
   const awaiting = awaitingControlChannel(onIq, node.data.control_hz);
   const need = !unwired && awaiting ? "Set the control channel" : null;
   const stalled = controlChannelStalled(onIq, node.data.control_hz, status?.carriers);
   const protocol = node.data.protocol ?? AUTO_PROTOCOL;
   const detected = status?.detected ?? null;
-  const spec = trunkSpec(workspace.context.channelTypes, node.data.decoder ?? "");
+  const spec = trunkSpec(channelTypes, node.data.decoder ?? "");
   const scheme = activeScheme(spec, protocol, detected);
   const slots = spec?.slots ?? 1;
   const talkgroups: TrunkTalkgroups = {
@@ -85,7 +88,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
     names: [],
     ...node.data.talkgroups,
   };
-  const keysField = trunkKeysField(workspace.context.channelTypes, node.data.decoder ?? "");
+  const keysField = trunkKeysField(channelTypes, node.data.decoder ?? "");
   const vocoder = spec?.vocoder === true ? (node.data.vocoder ?? null) : undefined;
   const discovery = node.data.discovery ?? { enabled: false, ranges: [], max_probes: 0 };
   const channelMap = node.data.channel_map ?? [];
@@ -104,7 +107,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
       .filter((lcn): lcn is number => lcn != null),
   );
   const edit = (next: Partial<typeof node.data>) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "trunk" ? { ...current, data: { ...current.data, ...next } } : current,
@@ -131,7 +134,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
         <InspectSection label="System">
           <Chips inset="none">
             <SystemChips
-              types={workspace.context.channelTypes}
+              types={channelTypes}
               data={node.data}
               protocol={protocol}
               spec={spec}
@@ -173,7 +176,6 @@ export function TrunkFace({ node }: { node: PatchNode }) {
         </InspectSection>
       </Inspect>
       <FaceBody>
-        {need !== null && <FaceEmpty hint={need} />}
         <TrunkActivity
           status={status}
           slots={slots}
@@ -205,6 +207,7 @@ export function TrunkFace({ node }: { node: PatchNode }) {
           entries={channelMap}
           found={adoptable(learned, channelMap)}
           following={following}
+          hint={need}
           onChange={(channel_map) => edit({ channel_map })}
         />
       </FaceBody>

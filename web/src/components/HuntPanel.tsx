@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { HuntSweep } from "../canvas/nodes/HuntSweep";
-import { FaceBody, FaceEmpty, FaceFooter } from "../canvas/nodes/NodeShell";
+import { FaceBody, FaceFooter } from "../canvas/nodes/NodeShell";
 import { nodeAction, STATE_KEY } from "../lib/api";
 import { type Clicker, startClicker } from "../lib/geiger";
 import { useHuntStore } from "../lib/hunt";
@@ -110,9 +110,7 @@ export function HuntPanel({
   return (
     <>
       <FaceBody>
-        {unwired ? (
-          <FaceEmpty />
-        ) : status !== null && target !== null ? (
+        {!unwired && status !== null && target !== null ? (
           <>
             <HuntReading status={status} target={target} />
             {positionWired && (
@@ -127,21 +125,16 @@ export function HuntPanel({
           </>
         ) : (
           <>
-            {target !== null && (
-              <Readouts ruled={false}>
-                <Readout label="Hunting">
-                  {target.channel.settings.params.type} at{" "}
-                  {formatMhz(huntedHz(null, target.channel))}
-                </Readout>
-              </Readouts>
+            <IdleReading target={unwired ? null : target} />
+            {!unwired && refusal !== null && (
+              <FaceFault message={refusal.label} detail={refusal.title} />
             )}
-            {refusal !== null && <FaceFault message={refusal.label} detail={refusal.title} />}
           </>
         )}
         {!unwired && status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
       <FaceFooter>
-        {status !== null && <HuntStats status={status} />}
+        <HuntStats status={status} />
         {status !== null && target !== null ? (
           <Button
             type="button"
@@ -223,12 +216,33 @@ function HuntReading({ status, target }: { status: HuntStatus; target: HuntTarge
   );
 }
 
-function HuntStats({ status }: { status: HuntStatus }) {
-  const poseDrops = status.pose_drops ?? 0;
+/** The reading before a hunt runs: an empty meter and blank rows, so the face keeps its shape. */
+function IdleReading({ target }: { target: HuntTarget | null }) {
+  return (
+    <>
+      <HuntMeter strength={0} heading="waiting" />
+      <Readouts ruled={false}>
+        <Readout label="Hunting">
+          {target === null
+            ? null
+            : `${target.channel.settings.params.type} at ${formatMhz(huntedHz(null, target.channel))}`}
+        </Readout>
+        <Readout label="Trend">{null}</Readout>
+        <Readout label="Strength">{null}</Readout>
+        <Readout label="Level">{null}</Readout>
+        <Readout label="Smoothed">{null}</Readout>
+        <Readout label="Walked">{null}</Readout>
+      </Readouts>
+    </>
+  );
+}
+
+function HuntStats({ status }: { status: HuntStatus | null }) {
+  const poseDrops = status?.pose_drops ?? 0;
   return (
     <FaceStats>
       <Stat label="Readings" title="Level readings taken">
-        {status.readings}
+        {status?.readings ?? 0}
       </Stat>
       {poseDrops > 0 && (
         <Stat label="Pose drops" title="Poses refused, the queue was full" tone="danger">

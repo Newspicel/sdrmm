@@ -64,6 +64,7 @@
     "lanes_only": "Only radio lanes share an input",
     "one_target": "That output drives one node",
     "one_wire": "That input takes one wire",
+    "radio_full": "That radio holds {held} channels",
     "shared_clock": "This radio's lanes share no clock",
     "takes": "{node} takes {what}"
   },

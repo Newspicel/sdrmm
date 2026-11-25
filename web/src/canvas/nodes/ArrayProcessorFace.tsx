@@ -18,7 +18,7 @@ import type {
   ViewSpec,
 } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { arrayOf } from "../lanes";
 import { useNodeRemembered } from "../useNodeRemembered";
 import { NodeForm, StatusGrid } from "./NodeForm";
@@ -52,9 +52,9 @@ type Action = ProcessorFacets["actions"][number];
 
 /** Every array processor's face, built from what its type declares. */
 export function ArrayProcessorFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const current = useWorkspaceNow();
   const state = useProcessorStore((store) => store.byNode[node.id]);
-  const array = arrayOf(workspace.resolved, node.id);
+  const array = useWorkspaceSelect((workspace) => arrayOf(workspace.resolved, node.id));
   const unwired = useUnwired(node.id, WANTS_ARRAY);
   const status = useArrayStore((store) => (array === null ? undefined : store.byNode[array]));
   const now = useNow(AGE_TICK_MS);
@@ -65,18 +65,26 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
     IS_COLORMAP,
   );
   const [picked, setPicked] = useState<number | null>(null);
-  const kind = processorKindOf(workspace.context.catalog, node);
+  const catalog = useWorkspaceSelect((workspace) => workspace.context.catalog);
+  const kind = processorKindOf(catalog, node);
   const stale = processorStale(state, now);
   const health = processorStatusOf(status, node.id);
-  const ask = tuningAsk(workspace.graph, array, kind.facets.tuning);
-  const subtitle = processorSubtitle(workspace.resolved, node.id, status, state, now);
+  const ask = useWorkspaceSelect((workspace) =>
+    tuningAsk(workspace.graph, array, kind.facets.tuning),
+  );
+  const subtitle = useWorkspaceSelect((workspace) =>
+    processorSubtitle(workspace.resolved, node.id, status, state, now),
+  );
+  const lanes = useWorkspaceSelect((workspace) =>
+    processorLanes(workspace.resolved, array, status),
+  );
   const surface = surfaceOf(kind.facets.views);
   const retune = (mode: ArrayTuningMode) => {
-    workspace.edit((snapshot) => {
+    current().edit((snapshot) => {
       const graph = tuneArrayEdit(snapshot.graph, array, mode);
       return graph === null ? snapshot : { ...snapshot, graph };
     });
-    workspace.apply();
+    current().apply();
   };
   return (
     <NodeShell
@@ -109,7 +117,7 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
           {kind.loaded && (
             <NodeForm
               node={node}
-              lanes={processorLanes(workspace.resolved, array, status)}
+              lanes={lanes}
               lead={
                 surface !== null &&
                 GRID_STREAMS.includes(surface) && (

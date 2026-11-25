@@ -6,7 +6,7 @@ import { SettingRow } from "../../components/Settings";
 import { serverOutputsQuery } from "../../lib/api";
 import { outputsSupported, revealOutputNames } from "../../lib/audio/outputs";
 import type { PatchNode, SpeakerOutput } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import {
   choiceOf,
@@ -63,7 +63,7 @@ function titleOf(output: SpeakerOutput | null, missing: boolean, serverError: st
 }
 
 export function SpeakerOutputChip({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const { listed, refresh } = useAudioOutputs();
   const served = useQuery(serverOutputsQuery());
   const output = speakerOutputOf(node);
@@ -74,7 +74,7 @@ export function SpeakerOutputChip({ node }: { node: PatchNode }) {
       ? outputMissing(listenerOutputOf(output), listed)
       : serverName !== null && server !== null && !server.includes(serverName);
   const pick = (next: string) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         withSpeakerOutput(current, outputOfChoice(next)),

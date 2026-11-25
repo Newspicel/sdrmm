@@ -21,7 +21,7 @@ import {
 } from "../../lib/signalSurvey";
 import { EMPTY_SURVEY, useSurveyControl, useSurveySeed, useSurveyStore } from "../../lib/survey";
 import type { PatchNode, PatchNodeOf, SurveyCell } from "../../lib/types";
-import { useWorkspaceContext, type Workspace } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect, type Workspace } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { iqSourceOf } from "../lanes";
@@ -36,9 +36,7 @@ const MAX_BANDWIDTH_HZ = 100_000_000;
 const WANTS: readonly Want[] = [{ port: "iq" }, { port: "position" }];
 
 export function SignalMapFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
-  const set = runningSetOf(workspace, node.id);
-  const iq = iqSourceOf(workspace.resolved, node.id);
+  const lane = useWorkspaceSelect((workspace) => laneOfSurvey(workspace, node.id));
   const radioFeeds = useFeeds(node.id, "iq");
   const positionNode = useFeeds(node.id, "position")[0]?.source ?? null;
   const positioned = usePositionStore(
@@ -52,13 +50,23 @@ export function SignalMapFace({ node }: { node: PatchNode }) {
   return (
     <SignalSurvey
       node={node}
-      centerHz={set === null || iq === null ? null : laneCenterHz(set, iq.stream)}
-      spanHz={set === null || iq === null ? null : (laneRateHz(set, iq.stream) ?? null)}
+      centerHz={lane.centerHz}
+      spanHz={lane.spanHz}
       radioWired={radioFeeds.length > 0}
       positionNode={positionNode}
       positioned={positioned}
     />
   );
+}
+
+/** The centre and span of the radio lane the survey hears, null while none runs. */
+function laneOfSurvey(workspace: Workspace, node: string) {
+  const set = runningSetOf(workspace, node);
+  const iq = iqSourceOf(workspace.resolved, node);
+  return {
+    centerHz: set === null || iq === null ? null : laneCenterHz(set, iq.stream),
+    spanHz: set === null || iq === null ? null : (laneRateHz(set, iq.stream) ?? null),
+  };
 }
 
 export function editSurveyBand(
@@ -99,7 +107,7 @@ function SignalSurvey({
   positionNode: string | null;
   positioned: boolean;
 }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const active = useFaceActive();
   useSurveySeed(node.id);
   const survey = useSurveyStore((store) => store.byNode[node.id] ?? EMPTY_SURVEY);
@@ -120,7 +128,7 @@ function SignalSurvey({
   };
 
   const updateSettings = (offsetHz: number, bandwidthHz: number): void =>
-    editSurveyBand(workspace, node.id, offsetHz, bandwidthHz);
+    editSurveyBand(now(), node.id, offsetHz, bandwidthHz);
 
   return (
     <NodeShell

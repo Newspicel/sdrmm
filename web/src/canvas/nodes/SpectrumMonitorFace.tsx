@@ -1,7 +1,7 @@
 import { Chips, NumberChip, OptionalNumberChip } from "../../components/face/Chips";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import type { PatchNode, SpectrumMonitorNode } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { FaceBody, NodeShell } from "./NodeShell";
@@ -22,10 +22,12 @@ export function bandLabel(start: number | null, stop: number | null): string {
 }
 
 export function SpectrumMonitorFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
+  const families = useWorkspaceSelect((workspace) => workspace.context.catalog.families);
+  const channelTypes = useWorkspaceSelect((workspace) => workspace.context.channelTypes);
   if (node.kind !== "spectrum_monitor") return null;
   const edit = (next: Partial<SpectrumMonitorNode>) =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "spectrum_monitor"
@@ -34,10 +36,7 @@ export function SpectrumMonitorFace({ node }: { node: PatchNode }) {
       ),
     }));
   const confidence = Math.round((node.data.min_confidence ?? DEFAULT_CONFIDENCE) * 100);
-  const groups = protocolGroups(
-    workspace.context.catalog.families ?? [],
-    workspace.context.channelTypes,
-  );
+  const groups = protocolGroups(families ?? [], channelTypes);
   const choice = {
     disabled: node.data.disabled_protocols ?? [],
     unidentified: node.data.report_unidentified ?? true,

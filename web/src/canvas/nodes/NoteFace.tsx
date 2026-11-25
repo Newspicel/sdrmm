@@ -6,7 +6,7 @@ import { Icon } from "../../components/Icon";
 import { Markdown } from "../../components/Markdown";
 import { MAX_NOTE_LEN } from "../../lib/limits";
 import type { PatchNode, PatchNodeOf } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 
@@ -20,7 +20,7 @@ export function NoteFace({ node }: { node: PatchNode }) {
 }
 
 function Face({ node }: { node: PatchNodeOf<"note"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const text = node.data.text;
   const [draft, setDraft] = useState<string | null>(null);
   const kept = useRef(true);
@@ -35,7 +35,7 @@ function Face({ node }: { node: PatchNodeOf<"note"> }) {
     if (!kept.current || draft === null || draft === text) {
       return;
     }
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "note" ? { ...current, data: { text: draft } } : current,

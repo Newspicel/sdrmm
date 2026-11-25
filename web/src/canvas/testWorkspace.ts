@@ -12,6 +12,7 @@ import type {
 } from "../lib/types";
 import { declaredPorts, faceOf, type GraphContext, isResizable, naturalSize } from "./graph";
 import { newNodeBody } from "./newNode";
+import { processorKindOf } from "./nodes/processorFace";
 
 export type TestContext = Pick<GraphContext, "catalog" | "channelTypes" | "encoderTypes">;
 
@@ -32,12 +33,16 @@ export interface TestWorkspace {
   snapshot: WorkspaceSnapshot;
 }
 
-/** The radio every wired copy reads, and the bench array an input that takes one wire per lane
- * reads instead. Both are virtual, so the patch needs no hardware. */
+/** The radio every wired copy reads, the bench array an input that takes one wire per lane
+ * reads instead, and the two dongles a spread-tuned array reads, since the bench array tunes
+ * its lanes together. All are virtual, so the patch needs no hardware. */
 export const TEST_RADIOS = {
   generator: { key: "gen-test", streams: 1 },
   lanes: { key: "kraken5", streams: 5 },
+  spread: { keys: ["dongle1", "dongle2"] },
 } as const;
+
+const SPREAD = "-spread";
 
 const VIRTUAL = "virtual";
 const NAME = "Test workspace";
@@ -204,9 +209,10 @@ function radioBody(body: NodeBody, key: string, stopped: boolean): NodeBody {
     : body;
 }
 
-/** Verdicts by output, then by input. One lineage of drafts shares it: a verdict holds while
- * wires are only added, and an input the draft has wired is never asked about again. */
-type Verdicts = Map<string, Map<string, string | null>>;
+/** Verdicts by output, then by input, with the wire count they were asked at. One lineage of
+ * drafts shares it: wires are only added, so a refusal holds, but an admission is asked again
+ * once wires were added, since an output may fill up (a radio holds so many channels). */
+type Verdicts = Map<string, { wires: number; to: Map<string, string | null> }>;
 
 class Draft {
   private nodes: PatchNode[] = [];
@@ -338,6 +344,10 @@ class Draft {
   }
 
   private feedLanes(node: PatchNode, input: PortSpec, state: State): void {
+    if (node.id.endsWith(SPREAD)) {
+      this.feedSpreadLanes(node, input, state);
+      return;
+    }
     const radio = this.rootOf(state, TEST_RADIOS.lanes.key, "-lanes");
     const out = (this.ports.get(radio?.id ?? "") ?? []).find(
       (port) => port.repeat === "per_rx_stream" && typed(port, input),
@@ -364,10 +374,98 @@ class Draft {
     const able = this.providers.filter((template) =>
       template.ports.some((port) => typed(port, input)),
     );
+    if (this.wantsSpread(target)) {
+      const spread = able.find((template) => template.body.kind === "array");
+      if (spread !== undefined) {
+        return this.spreadArray(spread, target, input, state, depth);
+      }
+    }
     return (
       (await this.heldOutput(able, target, input, state)) ??
+      (await this.spareRadio(able, target, input, state)) ??
       (await this.feederOutput(able, target, input, state, depth))
     );
+  }
+
+  private wantsSpread(target: PatchNode): boolean {
+    return processorKindOf(this.context.catalog, target).facets.tuning === "spread";
+  }
+
+  /** An array of its own, tuned spread, for a processor that needs its lanes spread. */
+  private async spreadArray(
+    template: Template,
+    target: PatchNode,
+    input: PortSpec,
+    state: State,
+    depth: number,
+  ): Promise<PortRef | undefined> {
+    if (template.body.kind !== "array") {
+      return undefined;
+    }
+    const id = `${homeOf(template, state)}-${template.id}${SPREAD}`;
+    const held = this.node(id);
+    if (held !== undefined) {
+      const port = await this.freeOutput(held, input, target);
+      return port === undefined ? undefined : { node: held.id, port };
+    }
+    const body: NodeBody = { ...template.body, data: { ...template.body.data, tuning: "spread" } };
+    const port = await this.admittedPort(placed(id, body), template.ports, input, target);
+    if (port === undefined) {
+      return undefined;
+    }
+    const array = this.put(id, body, template.ports);
+    await this.feed(array, state, depth + 1);
+    return { node: array.id, port };
+  }
+
+  private feedSpreadLanes(node: PatchNode, input: PortSpec, state: State): void {
+    TEST_RADIOS.spread.keys.forEach((key, lane) => {
+      const radio = this.rootOf(state, key, `-${key}`);
+      const out = (this.ports.get(radio?.id ?? "") ?? []).find(
+        (port) => port.repeat === "per_rx_stream" && typed(port, input),
+      );
+      if (radio !== undefined && out !== undefined) {
+        this.wire(
+          { node: radio.id, port: streamPort(out.name, 0) },
+          { node: node.id, port: streamPort(input.name, lane) },
+        );
+      }
+    });
+  }
+
+  /** Every drawn copy of `template` in the home it takes in `state`: the radio may be drawn more
+   * than once, `running-device`, `running-device-2`, ..., each holding so many channels. */
+  private drawn(template: Template, state: State): PatchNode[] {
+    const base = `${homeOf(template, state)}-${template.id}`;
+    const copies: PatchNode[] = [];
+    for (let held = this.node(base); held !== undefined; ) {
+      copies.push(held);
+      held = template === this.radio ? this.node(`${base}-${copies.length + 1}`) : undefined;
+    }
+    return copies;
+  }
+
+  /** Another radio like the drawn ones, when every one of them refuses `input`. */
+  private async spareRadio(
+    able: readonly Template[],
+    target: PatchNode,
+    input: PortSpec,
+    state: State,
+  ): Promise<PortRef | undefined> {
+    const radio = this.radio;
+    const drawn = radio === undefined ? [] : this.drawn(radio, state);
+    if (radio === undefined || drawn.length === 0 || !able.includes(radio)) {
+      return undefined;
+    }
+    const suffix = `-${drawn.length + 1}`;
+    const body = radioBody(radio.body, TEST_RADIOS.generator.key, state === "stopped");
+    const probe = placed(`${state}-${radio.id}${suffix}`, body);
+    const port = await this.admittedPort(probe, radio.ports, input, target);
+    if (port === undefined) {
+      return undefined;
+    }
+    const spare = this.rootOf(state, TEST_RADIOS.generator.key, suffix);
+    return spare && { node: spare.id, port };
   }
 
   private async heldOutput(
@@ -377,10 +475,11 @@ class Draft {
     state: State,
   ): Promise<PortRef | undefined> {
     for (const template of able) {
-      const held = this.node(`${homeOf(template, state)}-${template.id}`);
-      const port = held && (await this.freeOutput(held, input, target));
-      if (held !== undefined && port !== undefined) {
-        return { node: held.id, port };
+      for (const held of this.drawn(template, state)) {
+        const port = await this.freeOutput(held, input, target);
+        if (port !== undefined) {
+          return { node: held.id, port };
+        }
       }
     }
     return undefined;
@@ -450,14 +549,14 @@ class Draft {
    * when it is not drawn yet. An input the server does not list is refused. */
   private async refusal(from: PortRef, to: PortRef, source: PatchNode): Promise<string | null> {
     const known = this.verdicts.get(refKey(from));
-    const held = known?.get(refKey(to));
-    if (held !== undefined) {
+    const held = known?.to.get(refKey(to));
+    if (typeof held === "string" || (held === null && known?.wires === this.wires.length)) {
       return held;
     }
     const nodes = this.node(source.id) === undefined ? [...this.nodes, source] : this.nodes;
     const verdicts = await this.wiring({ nodes, edges: this.wires }, from);
     const fresh = new Map(verdicts.map((verdict) => [refKey(verdict.to), verdict.refusal ?? null]));
-    this.verdicts.set(refKey(from), fresh);
+    this.verdicts.set(refKey(from), { wires: this.wires.length, to: fresh });
     const verdict = fresh.get(refKey(to));
     return verdict === undefined ? "not offered" : verdict;
   }

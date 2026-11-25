@@ -1,14 +1,16 @@
 import { useEffect } from "react";
-import { useWorkspaceContext } from "./context";
+import { useWorkspaceSelect } from "./context";
+import { nodeOf } from "./graph";
 import { NoInspect } from "./inspector";
 import { faceSize, NodeFace } from "./nodes";
 import { inPopup, isTyping } from "./useHotkeys";
 
 export function FullFace() {
-  const workspace = useWorkspaceContext();
-  const expanded = workspace.expanded;
-  const expand = workspace.expand;
-  const node = workspace.graph.nodes.find((candidate) => candidate.id === expanded) ?? null;
+  const expanded = useWorkspaceSelect((workspace) => workspace.expanded);
+  const expand = useWorkspaceSelect((workspace) => workspace.expand);
+  const node = useWorkspaceSelect((workspace) =>
+    expanded === null ? null : (nodeOf(workspace.graph, expanded) ?? null),
+  );
   const missing = expanded !== null && node === null;
 
   useEffect(() => {

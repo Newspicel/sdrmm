@@ -21,7 +21,7 @@ import { useFeeds } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import { toastError } from "../../lib/toasts";
 import type { PatchNode, PatchNodeOf, PropagationCell, PropagationView } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { useNodeRemembered } from "../useNodeRemembered";
@@ -74,7 +74,7 @@ export function PropagationFace({ node }: { node: PatchNode }) {
 }
 
 function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const active = useFaceActive();
   const positionNode = useFeeds(node.id, "position")[0]?.source ?? null;
   const view = useSinkFeed(node.id).propagation ?? EMPTY_VIEW;
@@ -116,7 +116,7 @@ function Propagation({ node }: { node: PatchNodeOf<"propagation"> }) {
   );
 
   const update = (patch: Partial<PatchNodeOf<"propagation">["data"]>): void => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "propagation"

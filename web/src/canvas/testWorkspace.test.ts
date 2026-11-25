@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadCatalog } from "../lib/catalog";
-import { MAX_EDGES, MAX_NODES } from "../lib/limits";
+import { MAX_CHANNELS_PER_RADIO, MAX_EDGES, MAX_NODES } from "../lib/limits";
 import type {
   ChannelDescriptor,
   EncoderDescriptor,
@@ -49,7 +49,7 @@ const CONTEXT: TestContext = {
 
 const MANY: TestContext = {
   ...CONTEXT,
-  channelTypes: Array.from({ length: 150 }, (_, index) =>
+  channelTypes: Array.from({ length: Math.ceil(MAX_NODES / 3) + 1 }, (_, index) =>
     decoder(`voice${index}`, "iq", "control", "audio", "events"),
   ),
 };
@@ -75,6 +75,21 @@ function stubWiring(
             refusal: refuse(source, node) ? "refused" : null,
           })),
       );
+  };
+}
+
+/** Stands in for the server where a radio holds `MAX_CHANNELS_PER_RADIO` channels. */
+function fullRadios(context: TestContext): Wiring {
+  const base = stubWiring(context);
+  return async (graph: PatchGraph, from: PortRef): Promise<WireVerdict[]> => {
+    const kind = new Map(graph.nodes.map((node) => [node.id, node.kind]));
+    const held = (graph.edges ?? []).filter(
+      (edge) => edge.from.node === from.node && kind.get(edge.to.node) === "channel",
+    ).length;
+    const full = kind.get(from.node) === "device" && held >= MAX_CHANNELS_PER_RADIO;
+    return (await base(graph, from)).map((verdict) =>
+      full && kind.get(verdict.to.node) === "channel" ? { ...verdict, refusal: "full" } : verdict,
+    );
   };
 }
 
@@ -196,6 +211,28 @@ describe("testWorkspaces", () => {
     );
   });
 
+  it("gives a processor that needs spread tuning an array of its own on the dongles", () => {
+    const graphs = few.map(({ snapshot }) => snapshot.graph);
+    for (const state of ["stopped", "running"]) {
+      const graph = graphs.find((held) =>
+        held.nodes.some((node) => node.id === `${state}-array-spread`),
+      );
+      const edges = graph?.edges ?? [];
+      const array = graph?.nodes.find((node) => node.id === `${state}-array-spread`);
+      expect(array?.kind === "array" ? array.data.tuning : null).toBe("spread");
+      const readers = edges
+        .filter((edge) => edge.from.node === array?.id)
+        .map((edge) => edge.to.node);
+      expect(readers).toEqual([`${state}-processor-stitch`]);
+      const lanes = edges
+        .filter((edge) => edge.to.node === array?.id && edge.to.port.startsWith("lane"))
+        .map((edge) => edge.from.node);
+      expect(lanes).toEqual(TEST_RADIOS.spread.keys.map((key) => `${state}-device-${key}`));
+      const together = edges.filter((edge) => edge.from.node === `${state}-array`);
+      expect(together.some((edge) => edge.to.node === `${state}-processor-stitch`)).toBe(false);
+    }
+  });
+
   it("splits a catalog too big for one patch and keeps each within the limits", () => {
     expect(many.length).toBeGreaterThan(1);
     for (const { snapshot } of many) {
@@ -246,5 +283,43 @@ describe("testWorkspaces", () => {
     const maps = edges.filter((edge) => kind.get(edge.to.node) === "map");
     expect(maps.filter((edge) => kind.get(edge.from.node) === "channel")).toEqual([]);
     expect(maps.some((edge) => edge.to.port === "events")).toBe(true);
+  });
+
+  it("draws another radio when the held ones are full of channels", async () => {
+    const context: TestContext = {
+      ...CONTEXT,
+      channelTypes: Array.from({ length: MAX_CHANNELS_PER_RADIO * 2 + 1 }, (_, index) =>
+        decoder(`voice${index}`, "iq", "audio"),
+      ),
+    };
+    const workspaces = await testWorkspaces(context, fullRadios(context));
+    for (const { snapshot } of workspaces) {
+      const { nodes, edges = [] } = snapshot.graph;
+      const kind = new Map(nodes.map((node) => [node.id, node.kind]));
+      const fed = edges.filter(
+        (edge) => kind.get(edge.from.node) === "device" && kind.get(edge.to.node) === "channel",
+      );
+      const wired = nodes.filter(
+        (node) =>
+          node.kind === "channel" &&
+          (sectionOf(node) === "running" || sectionOf(node) === "stopped"),
+      );
+      for (const channel of wired) {
+        expect(
+          fed.filter((edge) => edge.to.node === channel.id),
+          channel.id,
+        ).toHaveLength(1);
+      }
+      for (const radio of new Set(fed.map((edge) => edge.from.node))) {
+        const held = fed.filter((edge) => edge.from.node === radio).length;
+        expect(held, radio).toBeLessThanOrEqual(MAX_CHANNELS_PER_RADIO);
+      }
+    }
+    const ids = new Set(nodesOf(workspaces).map((node) => node.id));
+    for (const state of ["stopped", "running"]) {
+      for (const suffix of ["", "-2", "-3"]) {
+        expect(ids.has(`${state}-device${suffix}`), state + suffix).toBe(true);
+      }
+    }
   });
 });

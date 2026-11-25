@@ -20,7 +20,7 @@ import type {
   ArrayTuningMode,
   DeviceSet,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { ArrayGeometryEditor } from "./ArrayGeometryEditor";
@@ -44,15 +44,15 @@ const CAL_WIDTH_HZ = ARRAY_LIMITS.cal_bandwidth_hz;
 type Edit = (next: Partial<ArrayNode>) => void;
 
 export function useArrayEdit(id: string): Edit {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   return (next) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, id, (stored) =>
         stored.kind === "array" ? { ...stored, data: { ...stored.data, ...next } } : stored,
       ),
     }));
-    workspace.apply();
+    now().apply();
   };
 }
 

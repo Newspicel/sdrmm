@@ -2,7 +2,7 @@ import { Button } from "../../components/BaseControls";
 import { FACE_BTN, FACE_BTN_DANGER } from "../../components/controls";
 import { useSkyScanControl, useSkyScanStore } from "../../lib/pointing";
 import type { Field, PatchNode, SkyCell, SkyScanParams, SkyScanStatus } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 import { NodeForm, nodeSettings, StatusGrid } from "./NodeForm";
 import { FaceBody, FaceFooter, FaceStanding, NodeShell } from "./NodeShell";
 import { useUnwired, type Want } from "./needs";
@@ -14,14 +14,14 @@ const CELL_PX = 12;
 const WANTS: readonly Want[] = [{ port: "iq" }, { port: "control", out: true }];
 
 export function SkyScanFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const catalog = useWorkspaceSelect((workspace) => workspace.context.catalog);
   const status = useSkyScanStore((store) => store.byNode[node.id]);
   const { control, pending } = useSkyScanControl(node.id);
   const unwired = useUnwired(node.id, WANTS);
   if (node.kind !== "sky_scan") {
     return null;
   }
-  const settings = nodeSettings(workspace.context.catalog, node) as SkyScanParams | null;
+  const settings = nodeSettings(catalog, node) as SkyScanParams | null;
   const running = status?.running === true;
   const cells = status?.cells ?? NO_CELLS;
   return (

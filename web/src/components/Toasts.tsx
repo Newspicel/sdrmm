@@ -29,9 +29,9 @@ export function Toasts({ onReport }: { onReport?: () => void }) {
               error ? "border-danger/60" : "border-line-strong"
             }`}
           >
-            <div className="flex items-start gap-2 p-2 pl-3">
+            <div className="flex items-center gap-2 p-2 pl-3">
               <span
-                className={`legend pt-1 ${error ? "text-danger" : "text-ink-dim"}`}
+                className={`legend ${error ? "text-danger" : "text-ink-dim"}`}
                 title={code === undefined ? undefined : `Reported by the server as \`${code}\``}
               >
                 {error ? (code ?? "Error") : "Note"}

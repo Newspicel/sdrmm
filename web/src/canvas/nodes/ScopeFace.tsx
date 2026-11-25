@@ -29,13 +29,14 @@ import { bookmarksQuery } from "../../lib/api";
 import { heardHz, type SetLevels, useLevelStore } from "../../lib/levels";
 import type { Bookmark, ChannelInfo, DeviceSet, PatchNode } from "../../lib/types";
 import { useBandPlan } from "../../lib/useBandPlan";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 import { type IqLane, iqSourceOf } from "../lanes";
 import { channelPicker } from "../palette";
 import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
 import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
+import { PlotHint } from "./PlotIdle";
 import { ScopeMenu } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
 import { type ScopeChannels, useScopeChannels } from "./scopeChannels";
@@ -60,9 +61,8 @@ const TRACE_MAX = 0.75;
 const LABEL_TOP_PX = 28;
 
 export function ScopeFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
-  const set = runningSetOf(workspace, node.id);
-  const source = iqSourceOf(workspace.resolved, node.id);
+  const set = useWorkspaceSelect((workspace) => runningSetOf(workspace, node.id));
+  const source = useWorkspaceSelect((workspace) => iqSourceOf(workspace.resolved, node.id));
   return (
     <NodeShell node={node} title="Scope" category="output">
       <FaceBody scroll={false}>
@@ -86,7 +86,8 @@ function Spectrum({
   set: DeviceSet | null;
   source: IqLane | null;
 }) {
-  const workspace = useWorkspaceContext();
+  const channelTypes = useWorkspaceSelect((workspace) => workspace.context.channelTypes);
+  const families = useWorkspaceSelect((workspace) => workspace.context.catalog.families);
   const setId = set?.id ?? null;
   const stream = source?.stream ?? 0;
   const levels = useLevelStore((state) => (setId === null ? undefined : state.byDeviceSet[setId]));
@@ -168,7 +169,7 @@ function Spectrum({
     channelTypeAt(
       plan === null ? null : suggestedAt(identify(plan, hz)),
       channels.find((channel) => channel.id === tuning.tunableChannel),
-      workspace.context.channelTypes[0]?.type_id,
+      channelTypes[0]?.type_id,
     );
 
   const onDoubleClick = (event: React.MouseEvent<HTMLDivElement>): void => {
@@ -259,11 +260,7 @@ function Spectrum({
         <ChannelPicker
           title="New channel"
           note={formatHz(openPicker.hz)}
-          groups={channelPicker(
-            workspace.context.catalog.families ?? [],
-            workspace.context.channelTypes,
-            suggestedType(openPicker.hz),
-          )}
+          groups={channelPicker(families ?? [], channelTypes, suggestedType(openPicker.hz))}
           onChannel={(channelType) => {
             tuning.addChannelAt(openPicker, channelType);
             picks.closePicker();
@@ -288,13 +285,7 @@ function ScopeIdle({ hint }: { hint: string | undefined }) {
   if (hint === undefined) {
     return null;
   }
-  return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <span className="rounded-inset bg-plot-bg/85 px-2 py-1 text-xs text-plot-ink-dim">
-        {hint}
-      </span>
-    </div>
-  );
+  return <PlotHint hint={hint} />;
 }
 
 function GraphicsFault({ error }: { error: string | null }) {

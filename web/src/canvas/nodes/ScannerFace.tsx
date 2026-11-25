@@ -1,6 +1,6 @@
 import { ScannerPanel } from "../../components/ScannerPanel";
 import type { PatchNode, PatchNodeOf, ScanSettings } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { defaultScannerSettings } from "../newNode";
 import { controlledOf } from "../workspaceDevice";
@@ -15,12 +15,13 @@ export function ScannerFace({ node }: { node: PatchNode }) {
 }
 
 function ScannerNodeFace({ node }: { node: PatchNodeOf<"scanner"> }) {
-  const workspace = useWorkspaceContext();
-  const decoder = controlledOf(workspace, node.id);
+  const now = useWorkspaceNow();
+  const decoder = useWorkspaceSelect((workspace) => controlledOf(workspace, node.id));
+  const catalog = useWorkspaceSelect((workspace) => workspace.context.catalog);
   const unwired = useUnwired(node.id, SWEEP_WANTS);
-  const settings = node.data?.settings ?? defaultScannerSettings(workspace.context.catalog);
+  const settings = node.data?.settings ?? defaultScannerSettings(catalog);
   const remember = (next: ScanSettings): void => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "scanner"

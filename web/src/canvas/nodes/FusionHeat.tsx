@@ -5,7 +5,7 @@ import type { FusionGridFrame } from "../../lib/frame";
 import type { DfEstimate, DfStation } from "../../lib/types";
 import { useBoxSize } from "../../lib/useBoxSize";
 import { useSurface } from "../../lib/useSurface";
-import { FaceEmpty } from "./NodeShell";
+import { PLOT_GRID, PlotHint } from "./PlotIdle";
 import { SurfaceRefused } from "./SurfaceRefused";
 import { type Box, type GridBounds, geoToGrid, insideBox } from "./triangulation";
 
@@ -38,23 +38,16 @@ export function FusionHeat({
     }
   });
   const box = { w: size.width, h: size.height };
-  if (frame === null && hint !== null) {
-    return <FaceEmpty hint={hint} />;
-  }
   return (
     <div
       ref={ref}
       className="relative shrink-0 bg-plot-bg"
-      style={{ height: HEAT_PX }}
+      style={frame === null ? { ...PLOT_GRID, height: HEAT_PX } : { height: HEAT_PX }}
       role="img"
       aria-label="Bearing heat"
     >
       {frame === null ? (
-        refused === null && (
-          <div className="absolute inset-0 flex">
-            <FaceEmpty hint={hint ?? "No bearings yet"} />
-          </div>
-        )
+        refused === null && <PlotHint hint={hint ?? "No bearings yet"} />
       ) : (
         <>
           <GridCanvas frame={frame} colormap="inferno" flipY={false} />

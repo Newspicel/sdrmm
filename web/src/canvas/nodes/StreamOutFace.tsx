@@ -5,11 +5,11 @@ import { FaceStats, Stat } from "../../components/face/Stats";
 import { TextChip } from "../../components/face/TextChip";
 import { DROPS_HINT, formatBytes, formatCount } from "../../components/format";
 import type { PatchNode, PatchNodeOf } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { hasFeed } from "../lanes";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
+import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { pictureSize, streamUrl, useStreamOutStatus } from "./streamOut";
 
 const TRANSPORTS = [
@@ -26,12 +26,12 @@ export function StreamOutFace({ node }: { node: PatchNode }) {
 }
 
 function StreamOutNodeFace({ node }: { node: PatchNodeOf<"stream_out"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const status = useStreamOutStatus(node.id);
-  const wired = hasFeed(workspace.resolved, node.id, "video");
+  const wired = useWorkspaceSelect((workspace) => hasFeed(workspace.resolved, node.id, "video"));
   const sends = node.data.transport !== "http";
   const edit = (next: Partial<typeof node.data>) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "stream_out"
@@ -70,41 +70,33 @@ function StreamOutNodeFace({ node }: { node: PatchNodeOf<"stream_out"> }) {
         </InspectSection>
       </Inspect>
       <FaceBody>
-        {!wired ? (
-          <FaceEmpty />
-        ) : (
-          <>
-            <Readouts>
-              <Readout label={sends ? "To" : "URL"} title={sends ? node.data.address : url} wide>
-                <span className="select-all">{sends ? node.data.address : url}</span>
-              </Readout>
-              <Readout label="Picture" title="Coded size, MPEG-2 at 25 frames a second">
-                {pictureSize(status)}
-              </Readout>
-            </Readouts>
-            {status?.error != null && <FaceFault message={status.error} />}
-          </>
-        )}
+        <Readouts>
+          <Readout label={sends ? "To" : "URL"} title={sends ? node.data.address : url} wide>
+            {wired && <span className="select-all">{sends ? node.data.address : url}</span>}
+          </Readout>
+          <Readout label="Picture" title="Coded size, MPEG-2 at 25 frames a second">
+            {wired ? pictureSize(status) : null}
+          </Readout>
+        </Readouts>
+        {wired && status?.error != null && <FaceFault message={status.error} />}
       </FaceBody>
-      {wired && (
-        <FaceFooter>
-          <FaceStats>
-            {!sends && (
-              <Stat label="Viewers" title="Players watching">
-                {status?.clients ?? 0}
-              </Stat>
-            )}
-            <Stat label="Sent" title="Bytes sent">
-              {formatBytes(status?.bytes ?? 0)}
+      <FaceFooter>
+        <FaceStats>
+          {!sends && (
+            <Stat label="Viewers" title="Players watching">
+              {status?.clients ?? 0}
             </Stat>
-            {(status?.dropped ?? 0) > 0 && (
-              <Stat label="Drops" title={DROPS_HINT} tone="warn">
-                {formatCount(status?.dropped ?? 0)}
-              </Stat>
-            )}
-          </FaceStats>
-        </FaceFooter>
-      )}
+          )}
+          <Stat label="Sent" title="Bytes sent">
+            {formatBytes(status?.bytes ?? 0)}
+          </Stat>
+          {(status?.dropped ?? 0) > 0 && (
+            <Stat label="Drops" title={DROPS_HINT} tone="warn">
+              {formatCount(status?.dropped ?? 0)}
+            </Stat>
+          )}
+        </FaceStats>
+      </FaceFooter>
     </NodeShell>
   );
 }

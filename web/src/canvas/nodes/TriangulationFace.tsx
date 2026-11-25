@@ -5,7 +5,7 @@ import { formatCount } from "../../components/format";
 import { useFusionClear, useFusionSeed, useFusionStore } from "../../lib/fusion";
 import type { DfFusionState, DfStation, Field, PatchNode } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 import { FusionHeat } from "./FusionHeat";
 import { NodeForm, StatusGrid } from "./NodeForm";
 import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
@@ -22,7 +22,7 @@ const STATION_HEADS = ["Station", "Last", "±", "Align", "Age"] as const;
 const NO_READOUTS: readonly Field[] = [];
 
 export function TriangulationFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const sources = useWorkspaceSelect((workspace) => fusionSources(workspace.resolved, node.id));
   const fusion = useFusionStore((store) => store.byNode[node.id]);
   const readouts = useFusionStore((store) => store.statusByNode[node.id]?.readouts ?? NO_READOUTS);
   useFusionSeed(node.id);
@@ -32,7 +32,6 @@ export function TriangulationFace({ node }: { node: PatchNode }) {
     return null;
   }
   const stations = fusion?.stations ?? [];
-  const sources = fusionSources(workspace.resolved, node.id);
   return (
     <NodeShell
       node={node}

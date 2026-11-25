@@ -599,9 +599,10 @@ pub enum Refusal {
     Direct,
     Group,
     Takes { node: String, what: String },
+    RadioFull { held: usize },
 }
 
-pub const REFUSALS: [(&str, &str); 8] = [
+pub const REFUSALS: [(&str, &str); 9] = [
     ("one_wire", "That input takes one wire"),
     ("lanes_only", "Only radio lanes share an input"),
     ("one_target", "That output drives one node"),
@@ -610,6 +611,7 @@ pub const REFUSALS: [(&str, &str); 8] = [
     ("direct", "Wire it straight from the source"),
     ("group", "Takes one source"),
     ("takes", "{node} takes {what}"),
+    ("radio_full", "That radio holds {held} channels"),
 ];
 
 impl Refusal {
@@ -624,6 +626,7 @@ impl Refusal {
             Self::Direct => "direct",
             Self::Group => "group",
             Self::Takes { .. } => "takes",
+            Self::RadioFull { .. } => "radio_full",
         }
     }
 
@@ -636,6 +639,7 @@ impl Refusal {
         match self {
             Self::LaneTaken { holder } => template.replace("{holder}", holder),
             Self::Takes { node, what } => template.replace("{node}", node).replace("{what}", what),
+            Self::RadioFull { held } => template.replace("{held}", &held.to_string()),
             Self::OneWire
             | Self::LanesOnly
             | Self::OneTarget

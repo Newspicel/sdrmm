@@ -23,16 +23,28 @@ import {
 import { SignalRow } from "../../components/SignalRow";
 import { useChannelBand } from "../../lib/channelBand";
 import { statusChoices, useChannelStatus } from "../../lib/channelStatus";
-import { audioPassing, heardHz, useLevelStore } from "../../lib/levels";
+import { useChannelLevel, useChannelOpen, useChannelShiftHz } from "../../lib/levels";
 import { channelQueueSummary, queueLagging, usePipelineHealth } from "../../lib/pipeline";
 import { controllerOf, heldByOf, runsOf, sweptBy } from "../../lib/resolved";
 import { namedReadouts } from "../../lib/settingsForm";
-import type { BandMiss, ChannelStatus, Field, PatchNode, PatchNodeOf } from "../../lib/types";
-import { channelSettingsOf, liveChannelOf, useChannelEdit } from "../../lib/useChannelEdit";
+import type {
+  BandMiss,
+  ChannelStatus,
+  Field,
+  PatchNode,
+  PatchNodeOf,
+  Squelch,
+} from "../../lib/types";
+import {
+  channelSettingsOf,
+  type LiveChannel,
+  liveChannelOf,
+  useChannelEdit,
+} from "../../lib/useChannelEdit";
 import type { ChannelEdit } from "../../lib/useChannelPatch";
 import { keyedFields } from "../../sinks/Fields";
 import { formatValue } from "../../sinks/values";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect, type Workspace } from "../context";
 import { nodeOf, patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { iqLanesOf } from "../lanes";
@@ -46,56 +58,44 @@ import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
 type ChannelNodeData = PatchNodeOf<"channel">["data"];
 
 export function ChannelFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
-  const set = runningSetOf(workspace, node.id);
-  const levels = useLevelStore((state) => (set === null ? undefined : state.byDeviceSet[set.id]));
+  const now = useWorkspaceNow();
+  const typeId = node.kind === "channel" ? node.data.channel_type : null;
+  const view = useWorkspaceSelect((workspace) => channelView(workspace, node.id, typeId));
   const editChannel = useChannelEdit();
-  const live = liveChannelOf(workspace, node.id);
   const channelStatus = useChannelStatus(node.id);
-  const channel = workspace.channels.get(node.id) ?? null;
-  const settings = channelSettingsOf(workspace, node.id);
-  const band = useChannelBand(settings, channel);
+  const band = useChannelBand(view.settings, view.channel);
+  const shiftHz = useChannelShiftHz(view.live);
+  const passing = useChannelOpen(view.live);
   if (node.kind !== "channel") {
     return null;
   }
 
-  const typeId = node.data.channel_type;
-  const descriptor = workspace.context.channelTypes.find((type) => type.type_id === typeId);
-  const name = descriptor?.name ?? typeId.toUpperCase();
-  const lanes = iqLanesOf(workspace.resolved, node.id);
-  const source = laneOf(workspace, node.id);
-  const unbound = unboundOf(runsOf(workspace.resolved, node.id));
-  const centerHz = set === null ? null : laneCenterHz(set, source?.stream ?? 0);
+  const { live, channel, settings, descriptor, radio, unbound } = view;
+  const name = descriptor?.name ?? node.data.channel_type.toUpperCase();
+  const centerHz = radio?.centerHz ?? null;
   const onEdit = (edit: ChannelEdit): void => editChannel(node.id, edit);
-  const level = live === null ? undefined : levels?.[live.id];
-  const frequencyHz = settings === null ? null : heardHz(channelFrequencyHz(settings), level);
-  const spanHz = set === null ? undefined : laneRateHz(set, source?.stream ?? 0);
+  const frequencyHz = settings === null ? null : channelFrequencyHz(settings) + shiftHz;
+  const spanHz = radio?.spanHz;
   const window = radioWindowHz(centerHz, spanHz, band);
   const miss = bandMissOf({
     reported: channel === null ? undefined : (channel.out_of_band ?? null),
-    reaches: set === null || frequencyHz === null || reachesHz(frequencyHz, window),
+    reaches: radio === null || frequencyHz === null || reachesHz(frequencyHz, window),
   });
   const locked = node.data.tuning_locked ?? false;
-  const scanned = sweptBy(workspace.resolved, node.id);
-  const controller = controllerOf(workspace.resolved, node.id);
   const editNode = (next: Partial<ChannelNodeData>): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "channel" ? { ...current, data: { ...current.data, ...next } } : current,
       ),
     }));
 
-  const carrier =
-    lanes.length > 1 && source !== null && set !== null
-      ? (nodeOf(workspace.graph, source.source)?.label ?? set.device.label)
-      : null;
   const status = faceStatus({
     live: live !== null,
     unbound,
     miss,
-    driver: scanned ? "scanning" : controller,
-    carrier,
+    driver: view.scanned ? "scanning" : view.controller,
+    carrier: view.carrier,
   });
   const widthHz = bandWidthHz(band);
   const action = live === null ? (unbound?.action ?? null) : null;
@@ -110,25 +110,25 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       badge={
         widthHz === null ? undefined : <span title="Channel bandwidth">{formatHz(widthHz)}</span>
       }
-      live={audioPassing(level)}
+      live={passing}
     >
       <FaceBody>
         {settings !== null && (
           <div className="@container flex flex-col gap-1 p-2">
             <ChannelDial
-              hz={heardHz(channelFrequencyHz(settings), level)}
+              hz={channelFrequencyHz(settings) + shiftHz}
               band={band}
               spanHz={spanHz ?? null}
               centerHz={centerHz}
-              range={set === null ? ANY_FREQUENCY : tuningRange(set.capabilities)}
+              range={radio?.range ?? ANY_FREQUENCY}
               dialId={dialId(node.id)}
-              wheelTunes={workspace.selected === node.id}
+              wheelTunes={view.selected}
               locked={locked}
-              heldBy={heldByOf(workspace.resolved, node.id)}
+              heldBy={view.heldBy}
               onTune={(frequency_hz) => onEdit({ frequency_hz })}
               onLock={(tuning_locked) => editNode({ tuning_locked })}
             />
-            <SignalRow level={live === null ? undefined : levels?.[live.id]} />
+            <ChannelSignal live={live} />
           </div>
         )}
         {standing !== null && <FaceEmpty hint={standing} />}
@@ -138,8 +138,8 @@ export function ChannelFace({ node }: { node: PatchNode }) {
           <InspectSection>
             {channelHasAudio(descriptor) && (
               <div className="flex flex-col gap-2">
-                <SignalRow
-                  level={live === null ? undefined : levels?.[live.id]}
+                <ChannelSignal
+                  live={live}
                   squelch={settings.squelch}
                   onSquelch={(squelch) => onEdit({ squelch })}
                 />
@@ -179,7 +179,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
             type="button"
             className={FACE_BTN}
             title={unbound?.hint}
-            onClick={workspace.apply}
+            onClick={() => now().apply()}
           >
             {action}
           </Button>
@@ -187,6 +187,52 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       </FaceFooter>
     </NodeShell>
   );
+}
+
+/** Everything the face shows from the workspace, picked as plain values so a change elsewhere
+ * leaves the face alone. */
+function channelView(workspace: Workspace, id: string, typeId: string | null) {
+  const set = runningSetOf(workspace, id);
+  const source = laneOf(workspace, id);
+  const stream = source?.stream ?? 0;
+  const lanes = iqLanesOf(workspace.resolved, id);
+  return {
+    live: liveChannelOf(workspace, id),
+    channel: workspace.channels.get(id) ?? null,
+    settings: channelSettingsOf(workspace, id),
+    descriptor: workspace.context.channelTypes.find((type) => type.type_id === typeId),
+    radio:
+      set === null
+        ? null
+        : {
+            centerHz: laneCenterHz(set, stream),
+            spanHz: laneRateHz(set, stream),
+            range: tuningRange(set.capabilities),
+          },
+    unbound: unboundOf(runsOf(workspace.resolved, id)),
+    carrier:
+      lanes.length > 1 && source !== null && set !== null
+        ? (nodeOf(workspace.graph, source.source)?.label ?? set.device.label)
+        : null,
+    scanned: sweptBy(workspace.resolved, id),
+    controller: controllerOf(workspace.resolved, id),
+    heldBy: heldByOf(workspace.resolved, id),
+    selected: workspace.selected === id,
+  };
+}
+
+/** The meter reads its own level, so the face does not redraw ten times a second. */
+function ChannelSignal({
+  live,
+  squelch,
+  onSquelch,
+}: {
+  live: LiveChannel | null;
+  squelch?: Squelch;
+  onSquelch?: (squelch: Squelch) => void;
+}) {
+  const level = useChannelLevel(live);
+  return <SignalRow level={level} squelch={squelch} onSquelch={onSquelch} />;
 }
 
 function faceStatus({

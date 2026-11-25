@@ -6,7 +6,7 @@ import { toastError } from "../../lib/toasts";
 import type { ChannelInfo, ChannelParams, DeviceSet } from "../../lib/types";
 import { useChannelPatch } from "../../lib/useChannelPatch";
 import { useNodeTune } from "../../lib/useNodeTune";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect, type Workspace } from "../context";
 import { addEdge, addNode, newNodeId, nodeIds, nodeOf } from "../graph";
 import type { IqLane } from "../lanes";
 import { useNodePlacement } from "../placement";
@@ -36,9 +36,11 @@ export interface ScopeChannels {
 
 function useLaneTune(node: string, set: DeviceSet | null, source: IqLane | null) {
   const tuneNode = useNodeTune();
-  const { graph } = useWorkspaceContext();
   const stream = source?.stream ?? 0;
-  const locked = source !== null && laneLocked(nodeOf(graph, source.source), stream);
+  const lane = source?.source ?? null;
+  const locked = useWorkspaceSelect(
+    (workspace) => lane !== null && laneLocked(nodeOf(workspace.graph, lane), stream),
+  );
   const centerHeld =
     source?.virtual === undefined && set !== null && (autoTuning(set, stream) || locked);
   return {
@@ -52,7 +54,7 @@ function useLaneTune(node: string, set: DeviceSet | null, source: IqLane | null)
 }
 
 function facesOn(
-  resolved: ReturnType<typeof useWorkspaceContext>["resolved"],
+  resolved: Workspace["resolved"],
   setId: number | null,
   channels: readonly ChannelInfo[],
   owners: ReadonlyMap<number, TrunkChannelOwner>,
@@ -74,6 +76,30 @@ function facesOn(
   return faces;
 }
 
+/** Who holds each channel on the stream, as entries so the pick compares by value. */
+interface ChannelHolds {
+  faces: [number, string][];
+  owners: [number, TrunkChannelOwner][];
+  locked: [number, string][];
+  selected: number | null;
+}
+
+function channelHolds(
+  workspace: Workspace,
+  setId: number | null,
+  channels: readonly ChannelInfo[],
+): ChannelHolds {
+  const owners = setId === null ? NO_OWNERS : trunkChannelRoles(workspace.trunks, setId);
+  const faces = facesOn(workspace.resolved, setId, channels, owners);
+  const locked = lockedChannels(workspace.resolved, faces);
+  return {
+    faces: [...faces],
+    owners: [...owners],
+    locked: [...locked],
+    selected: [...faces].find(([, id]) => id === workspace.selected)?.[0] ?? null,
+  };
+}
+
 export function useScopeChannels(input: {
   node: string;
   set: DeviceSet | null;
@@ -82,23 +108,23 @@ export function useScopeChannels(input: {
   meta: FrameMeta | null;
 }): ScopeChannels {
   const { node, set, source, channels, meta } = input;
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const setId = set?.id ?? null;
+  const holds = useWorkspaceSelect((workspace) => channelHolds(workspace, setId, channels));
   const { applyEdit } = useChannelPatch();
   const tuneNode = useNodeTune();
   const queryClient = useQueryClient();
   const placeNode = useNodePlacement();
   const [picked, setPicked] = useState<number | null>(null);
 
-  const owners = setId === null ? NO_OWNERS : trunkChannelRoles(workspace.trunks, setId);
-  const faces = facesOn(workspace.resolved, setId, channels, owners);
-  const locked = lockedChannels(workspace.resolved, faces);
+  const owners: ReadonlyMap<number, TrunkChannelOwner> = new Map(holds.owners);
+  const faces: ReadonlyMap<number, string> = new Map(holds.faces);
+  const locked: ReadonlyMap<number, string> = new Map(holds.locked);
   const heldChannel = (channel: number): boolean => owners.has(channel) || locked.has(channel);
   const { centerHeld, tuneCenter } = useLaneTune(node, set, source);
 
-  const workspaceChannel = [...faces].find(([, id]) => id === workspace.selected)?.[0] ?? null;
   const selectedChannel =
-    workspaceChannel ?? (channels.some((channel) => channel.id === picked) ? picked : null);
+    holds.selected ?? (channels.some((channel) => channel.id === picked) ? picked : null);
   const tunableChannel =
     selectedChannel !== null && !heldChannel(selectedChannel) ? selectedChannel : null;
 
@@ -163,7 +189,7 @@ export function useScopeChannels(input: {
       setPicked(channel);
       const face = faces.get(channel);
       if (face !== undefined) {
-        workspace.select(face);
+        now().select(face);
       }
     },
     tuneChannel,
@@ -177,6 +203,7 @@ export function useScopeChannels(input: {
     },
     onBandTune,
     addChannelAt: (pick, channelType) => {
+      const workspace = now();
       const feed = feedsOf(workspace.resolved, node, "iq")[0];
       if (feed === undefined) {
         return;

@@ -192,6 +192,20 @@ fn back(
     }
 }
 
+/// Every input the output `from` reaches, through any node that passes its type on.
+pub(super) fn reached(net: &Net<'_>, from: &PortRef, port_type: PortType) -> Vec<Reach> {
+    let mut reaches = Vec::new();
+    forward(
+        net,
+        (&from.node, &from.port),
+        port_type,
+        &KindSet::EMPTY,
+        &mut Vec::new(),
+        &mut reaches,
+    );
+    reaches
+}
+
 fn reaches_from(net: &Net<'_>, node: &str, spec: &PortSpec) -> Vec<Reach> {
     let mut reaches = Vec::new();
     forward(

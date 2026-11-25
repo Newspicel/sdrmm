@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { rowLevel } from "../../components/spectrumAlign";
 import { type Colormap, DEFAULT_COLORMAP } from "../../gl/colormap";
 import { attachWaterfall, GRAPHICS_HELP, type WaterfallView } from "../../gl/waterfall";
@@ -8,6 +8,7 @@ import {
   audioNyquistHz,
   spectrumHub,
 } from "../../lib/spectrum";
+import { PLOT_GRID } from "./PlotIdle";
 
 const TICKS_HZ = [3000, 6000, 12_000, 18_000];
 
@@ -70,19 +71,8 @@ export function AudioSpectrogramView({
   }, [node, port, source, playing]);
 
   return (
-    <div className="relative h-24 w-full overflow-hidden rounded-control bg-plot-bg">
+    <SpectrogramFrame>
       <canvas ref={canvasRef} className="h-full w-full" />
-
-      {TICKS_HZ.map((hz) => (
-        <span
-          key={hz}
-          className="pointer-events-none absolute bottom-0.5 legend font-mono text-2xs -translate-x-1/2 rounded-inset bg-plot-bg/85 px-0.5 leading-none text-plot-ink"
-          style={{ left: `${(hz / audioNyquistHz()) * 100}%` }}
-        >
-          {`${(hz / 1000).toFixed(0)}k`}
-        </span>
-      ))}
-
       {error !== null && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center px-2">
           <span
@@ -93,6 +83,27 @@ export function AudioSpectrogramView({
           </span>
         </span>
       )}
+    </SpectrogramFrame>
+  );
+}
+
+/** The audio spectrogram's ground and frequency ticks; empty, it is what an idle face shows. */
+export function SpectrogramFrame({ children }: { children?: ReactNode }) {
+  return (
+    <div
+      className="relative h-24 w-full overflow-hidden rounded-control bg-plot-bg"
+      style={children === undefined ? PLOT_GRID : undefined}
+    >
+      {children}
+      {TICKS_HZ.map((hz) => (
+        <span
+          key={hz}
+          className="pointer-events-none absolute bottom-0.5 legend font-mono text-2xs -translate-x-1/2 rounded-inset bg-plot-bg/85 px-0.5 leading-none text-plot-ink"
+          style={{ left: `${(hz / audioNyquistHz()) * 100}%` }}
+        >
+          {`${(hz / 1000).toFixed(0)}k`}
+        </span>
+      ))}
     </div>
   );
 }

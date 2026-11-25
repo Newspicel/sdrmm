@@ -153,7 +153,12 @@ describe("faces read the resolved patch", () => {
         ),
       ]),
     ]);
-    const harness = { graph: { nodes: [filter], edges: [] }, catalog: PROBE_CATALOG, resolved };
+    const harness = {
+      graph: { nodes: [filter], edges: [] },
+      catalog: PROBE_CATALOG,
+      resolved,
+      inspected: true,
+    };
     const face = renderFace(EventFilterFace, filter, harness);
     expect(face).toContain(`aria-label="Match Satellite events"`);
     expect(face).toContain(`aria-label="Match Probe plane events"`);

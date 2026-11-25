@@ -14,12 +14,12 @@ import { audioEngine, useChannelAudio } from "../../lib/audio/useChannelAudio";
 import { listOf } from "../../lib/remembered";
 import { type Input, useInputs } from "../../lib/resolved";
 import type { PatchNode } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
-import { patchNode } from "../graph";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
+import { nodeOf, patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { useNodeRemembered } from "../useNodeRemembered";
-import { AudioSpectrogramView } from "./AudioSpectrogramView";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
+import { AudioSpectrogramView, SpectrogramFrame } from "./AudioSpectrogramView";
+import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { SpeakerOutputChip } from "./SpeakerOutputChip";
 import { inputKey } from "./sinkInputs";
 import { METER_FILL, PlayToggle } from "./soundControls";
@@ -58,7 +58,7 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
       </Inspect>
       <FaceBody>
         {inputs.length === 0 ? (
-          <FaceEmpty />
+          <IdleInput />
         ) : (
           inputs.map((input, index) => (
             <AudioInput
@@ -90,6 +90,21 @@ export function SpeakerFace({ node }: { node: PatchNode }) {
   );
 }
 
+/** A speaker with nothing wired: an empty level and spectrogram, so the face keeps its shape. */
+function IdleInput() {
+  return (
+    <div className="flex flex-col gap-1 p-2">
+      <MeterRow
+        label="–"
+        port="audio"
+        meter={<MeterBar label="Level" value={0} valueText="–" />}
+        readout="–"
+      />
+      <SpectrogramFrame />
+    </div>
+  );
+}
+
 /** The sources this browser listens to on a speaker, kept across reloads and switches. */
 function useListening(node: string, source: string) {
   const [heard, setHeard] = useNodeRemembered(node, "speakerListening", NOTHING_HEARD, isSources);
@@ -103,10 +118,10 @@ function useListening(node: string, source: string) {
 
 /** The wire's fader, kept in the patch so the server card and every listener share it. */
 function useVolume(speaker: PatchNode, input: Input, setLive: (volume: number) => void) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const saved = speakerVolumeOf(speaker, input.node);
   const commit = useDebouncedCommit((volume) =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, speaker.id, (current) =>
         withSpeakerVolume(current, input.node, volume),
@@ -132,10 +147,11 @@ function AudioInput({
   port?: string;
   onServer: boolean;
 }) {
-  const workspace = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
+  const label = useWorkspaceSelect((workspace) => nodeOf(workspace.graph, input.node)?.label);
   const node = speaker.id;
   const tap = { node, port: "audio", source: input.source };
-  const audio = useChannelAudio(workspace.socket, tap);
+  const audio = useChannelAudio(socket, tap);
   const active = audio.playing || audio.pending || audio.suspended;
   const { listening, listen } = useListening(node, input.source);
   const fader = useVolume(speaker, input, audio.setVolume);
@@ -149,10 +165,7 @@ function AudioInput({
   }, [onServer, listening, start, stop]);
   const source = tapKey(tap);
   const peakDb = useAudioPeakDb(source, audio.playing);
-  const name =
-    workspace.graph.nodes.find((n) => n.id === input.node)?.label ??
-    input.channel?.settings.params.type.toUpperCase() ??
-    input.node;
+  const name = label ?? input.channel?.settings.params.type.toUpperCase() ?? input.node;
   return (
     <div className="flex flex-col gap-1 border-b border-line p-2 last:border-b-0">
       <MeterRow

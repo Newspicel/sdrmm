@@ -10,6 +10,7 @@ import {
   parseIds,
   parseWords,
   predicatesFor,
+  ruleCount,
   sectionsFor,
   stationLabel,
   textLength,
@@ -189,5 +190,13 @@ describe("filter words", () => {
 describe("the kind cap", () => {
   it("leaves room for every kind the catalog offers", () => {
     expect(CATALOG.event_kinds.length).toBeLessThanOrEqual(MAX_FILTER_KINDS);
+  });
+});
+
+describe("ruleCount", () => {
+  it("counts each set rule once and ignores the mode", () => {
+    expect(ruleCount({})).toBe(0);
+    expect(ruleCount({ mode: "drop", min_duration_ms: 0, stations: [] })).toBe(0);
+    expect(ruleCount({ contains: "x", encrypted: false, talkgroups: [1] })).toBe(3);
   });
 });

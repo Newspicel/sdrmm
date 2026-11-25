@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceContext } from "../canvas/context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../canvas/context";
 import { bandPlanQuery, bandRegionsQuery } from "./api";
 import type { BandPlan, BandRegion } from "./types";
 
@@ -13,9 +13,10 @@ export interface BandPlanState {
 }
 
 export function useBandPlan(): BandPlanState {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
+  const stored = useWorkspaceSelect((workspace) => workspace.settings.band_region ?? null);
+  const ruler = useWorkspaceSelect((workspace) => workspace.settings.band_ruler ?? true);
   const regions = useQuery(bandRegionsQuery());
-  const stored = workspace.settings.band_region ?? null;
   const region = stored ?? regions.data?.default_region ?? null;
   const plan = useQuery(bandPlanQuery(region));
 
@@ -23,8 +24,8 @@ export function useBandPlan(): BandPlanState {
     region,
     regions: regions.data?.regions ?? [],
     plan: plan.data ?? null,
-    ruler: workspace.settings.band_ruler ?? true,
-    setRegion: (next) => workspace.editSettings({ band_region: next }),
-    setRuler: (next) => workspace.editSettings({ band_ruler: next }),
+    ruler,
+    setRegion: (next) => now().editSettings({ band_region: next }),
+    setRuler: (next) => now().editSettings({ band_ruler: next }),
   };
 }

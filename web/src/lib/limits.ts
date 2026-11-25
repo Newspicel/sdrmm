@@ -25,6 +25,7 @@ export const MAX_NODES = limits.patch.nodes;
 export const DECODER_LOG_ROWS = limits.decoder_log_rows;
 export const MAX_EDGES = limits.patch.wires;
 export const MAX_STREAMS = limits.patch.streams;
+export const MAX_CHANNELS_PER_RADIO = limits.patch.channels_per_radio;
 export const MAX_SCAN_TARGETS = limits.scan.targets;
 export const MAX_NAME_LEN = limits.name_len;
 export const MAX_NOTE_LEN = limits.note_len;

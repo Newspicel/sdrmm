@@ -23,10 +23,10 @@ import type {
   SatelliteNode,
   SatelliteStatus,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
+import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 import { useUnwired, type Want } from "./needs";
 import { SkyDome } from "./SkyDome";
 import {
@@ -53,11 +53,11 @@ export function SatelliteFace({ node }: { node: PatchNode }) {
 }
 
 function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const status = useSatelliteStore((store) => store.byNode[node.id]) ?? null;
   const unwired = useUnwired(node.id, WANTS_POSITION);
   const edit = (next: Partial<SatelliteNode>): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "satellite" ? { ...current, data: { ...current.data, ...next } } : current,
@@ -73,7 +73,7 @@ function SatelliteNodeFace({ node }: { node: PatchNodeOf<"satellite"> }) {
           </InspectSection>
         </Inspect>
         <FaceBody>
-          <FaceEmpty hint="No satellite" />
+          <Track status={null} standing="No satellite" />
         </FaceBody>
       </NodeShell>
     );

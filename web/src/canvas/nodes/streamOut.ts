@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { withToken } from "../../lib/auth";
 import type { ServerEvent, StreamOutStatus } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 
 /** The address a player opens for a stream served at `path`. */
 export function streamUrl(path: string, origin: string): string {
@@ -14,7 +14,7 @@ export function pictureSize(status: StreamOutStatus | null): string {
 
 /** The node's latest status, cleared when the socket reconnects. */
 export function useStreamOutStatus(node: string): StreamOutStatus | null {
-  const { socket } = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const [status, setStatus] = useState<StreamOutStatus | null>(null);
   useEffect(() => {
     const offEvent = socket.on("event", (event: ServerEvent) => {

@@ -5,7 +5,7 @@ import { FaceFault } from "../../components/face/Fault";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount } from "../../components/format";
 import type { EventOutputTarget, FeedStatus, ServerEvent } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 import { FaceEmpty, FaceFooter } from "./NodeShell";
 
 type FeedTarget = Extract<EventOutputTarget, { service: "feed" }>;
@@ -41,7 +41,7 @@ export function FeedOutputControls({
   connected: boolean;
   onEdit: (target: FeedTarget) => void;
 }) {
-  const { socket } = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const [status, setStatus] = useState<FeedStatus | null>(null);
   useEffect(() => {
     const offEvent = socket.on("event", (event: ServerEvent) => {

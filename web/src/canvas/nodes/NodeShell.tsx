@@ -9,12 +9,14 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../../components/BaseControls";
 import { ICON_BTN_SM_DANGER, ICON_BTN_SM_FAINT } from "../../components/controls";
 import { FaceAlert } from "../../components/FaceAlert";
 import { FaceFault } from "../../components/face/Fault";
+import { FaultSlot, FaultSlotHolder, useFaultSlotHolder } from "../../components/face/faultSlot";
 import { Icon } from "../../components/Icon";
 import { PortalContainerProvider } from "../../components/PortalContainer";
 import { activityText, idlePort, usePortActivity } from "../../lib/activity";
@@ -24,7 +26,7 @@ import { ignoredOf, useNodeProblems } from "../../lib/resolved";
 import type { NodeCategory, PatchNode, PortSpec, PortType } from "../../lib/types";
 import { portKey, useWiringStore } from "../../lib/wiring";
 import { HUE_TEXT, portHue } from "../../sinks/hues";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import {
   echoesWire,
   handleSignature,
@@ -229,16 +231,17 @@ function FramedShell({
   rowPorts,
   children,
 }: NodeShellProps) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const surface = useContext(Surface);
   const signal = liveSignal(live);
   const remove = useRemoveNode(node);
-  const allPorts = nodePorts(workspace.context, node);
+  const allPorts = useWorkspaceSelect((workspace) => nodePorts(workspace.context, node));
+  const catalog = useWorkspaceSelect((workspace) => workspace.context.catalog);
   const ports = surface === "canvas" ? allPorts : [];
   const audioFx = audioFxOf(node, allPorts);
   const shownBadge = withAudioFxBadge(badge, audioFx);
-  const pinned = isPinned(workspace.rack, node.id);
-  const selected = workspace.selected === node.id;
+  const pinned = useWorkspaceSelect((workspace) => isPinned(workspace.rack, node.id));
+  const selected = useWorkspaceSelect((workspace) => workspace.selected === node.id);
   const active = surface === "rack" || selected;
   const minimum = nodeMinSize(node, ports);
   const scale = useUiScale();
@@ -246,8 +249,12 @@ function FramedShell({
   const holdWheel = useCallback<WheelHold>((claim) => {
     wheelClaim.current = claim;
   }, []);
-  const full = workspace.expanded === node.id;
-  const inspected = workspace.inspected === node.id;
+  const full = useWorkspaceSelect((workspace) => workspace.expanded === node.id);
+  const inspected = useWorkspaceSelect((workspace) => workspace.inspected === node.id);
+  const echoed = useWorkspaceSelect((workspace) =>
+    ports.filter((port) => echoesWire(workspace.graph, node.id, port)).map((port) => port.name),
+  );
+  const [faultSlot, setFaultSlot] = useState<HTMLElement | null>(null);
   const { container: portalContainer, anchors, slot: anchorSlot } = useFaceLayout();
   useWheelRouting(portalContainer, wheelClaim);
   useHandleRefresh(node.id, ports, anchors, portalContainer, surface === "canvas");
@@ -324,7 +331,7 @@ function FramedShell({
               aria-pressed={inspected}
               title="Settings and status"
               className={ICON_BTN_SM_FAINT}
-              onClick={() => workspace.inspect(inspected ? null : node.id)}
+              onClick={() => now().inspect(inspected ? null : node.id)}
             >
               <Icon glyph={SlidersHorizontal} size={12} />
             </Button>
@@ -334,7 +341,7 @@ function FramedShell({
               aria-pressed={full}
               title={full ? "Back to its usual size" : "Fill the window with this face"}
               className={ICON_BTN_SM_FAINT}
-              onClick={() => workspace.expand(full ? null : node.id)}
+              onClick={() => now().expand(full ? null : node.id)}
             >
               <Icon glyph={full ? Minimize2 : Maximize2} size={12} />
             </Button>
@@ -345,7 +352,7 @@ function FramedShell({
               title={pinned ? "On the rack: click to take it off" : "Pin to the rack"}
               className={ICON_BTN_SM_FAINT}
               onClick={() =>
-                workspace.edit((snapshot) => ({
+                now().edit((snapshot) => ({
                   ...snapshot,
                   rack: pinned
                     ? unpin(snapshot.rack ?? {}, node.id)
@@ -369,11 +376,15 @@ function FramedShell({
 
         <div
           className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-control nodrag nopan"
-          onPointerDownCapture={surface === "canvas" ? () => workspace.select(node.id) : undefined}
+          onPointerDownCapture={surface === "canvas" ? () => now().select(node.id) : undefined}
         >
           <Active value={active}>
             <WheelClaimSlot value={holdWheel}>
-              <PortAnchors value={anchorSlot}>{children}</PortAnchors>
+              <PortAnchors value={anchorSlot}>
+                <FaultSlotHolder value={setFaultSlot}>
+                  <FaultSlot value={faultSlot}>{children}</FaultSlot>
+                </FaultSlotHolder>
+              </PortAnchors>
             </WheelClaimSlot>
           </Active>
         </div>
@@ -384,12 +395,12 @@ function FramedShell({
             key={`${port.direction}:${port.name}`}
             node={node.id}
             port={port}
-            color={HUE_TEXT[portHue(workspace.context.catalog, port.port_type)]}
+            color={HUE_TEXT[portHue(catalog, port.port_type)]}
             label={portLabel(port.name, ports)}
             offset={
               anchors[port.name] ?? rem(PORT_TOP_PX + PORT_STEP_PX * indexOnSide(ports, index))
             }
-            labelled={!(port.name in anchors) && !echoesWire(workspace.graph, node.id, port)}
+            labelled={!(port.name in anchors || echoed.includes(port.name))}
             waiting={rowPorts?.includes(port.name) === true && !(port.name in anchors)}
           />
         ))}
@@ -509,8 +520,8 @@ function useHandleRefresh(
 }
 
 function useRemoveNode(node: PatchNode): () => void {
-  const workspace = useWorkspaceContext();
-  return () => dropNodes(workspace, [node.id]);
+  const now = useWorkspaceNow();
+  return () => dropNodes(now(), [node.id]);
 }
 
 function indexOnSide(ports: readonly PortSpec[], index: number): number {
@@ -539,9 +550,10 @@ function PortHandle({
   const refusal = useWiringStore((state) =>
     out ? undefined : state.verdicts?.get(portKey({ node, port: port.name })),
   );
-  const workspace = useWorkspaceContext();
-  const ignored = ignoredOf(workspace.resolved, node, port.name).map((kind) =>
-    kindLabel(kind, workspace.context.catalog.event_kinds),
+  const ignored = useWorkspaceSelect((workspace) =>
+    ignoredOf(workspace.resolved, node, port.name).map((kind) =>
+      kindLabel(kind, workspace.context.catalog.event_kinds),
+    ),
   );
   const activity = usePortActivity(node, port.name);
   const named = port.note == null ? `${label} (${port.port_type})` : `${label}: ${port.note}`;
@@ -611,6 +623,15 @@ export function FaceEmpty({ hint }: { hint?: string }) {
   );
 }
 
+/** An empty box where a face's records go, so an idle face keeps its shape. */
+export function FaceWell({ hint }: { hint?: string }) {
+  return (
+    <div className="m-2 flex min-h-16 flex-1 rounded-control border border-line">
+      <FaceEmpty hint={hint} />
+    </div>
+  );
+}
+
 /**
  * Why a node idles: a server fault, then what the server waits for. Only the fault is red.
  * An unwired node says nothing; its empty port already shows why.
@@ -652,6 +673,7 @@ export function FaceFooter({ children }: { children: ReactNode }) {
 function FramedFooter({ children }: { children: ReactNode }) {
   const inner = useRef<HTMLDivElement>(null);
   const height = useContentHeight(inner);
+  const holdFaults = useFaultSlotHolder();
   return (
     <div
       className="ease-height shrink-0 overflow-hidden bg-ink/5"
@@ -659,8 +681,12 @@ function FramedFooter({ children }: { children: ReactNode }) {
     >
       <div
         ref={inner}
-        className="flex flex-wrap items-center justify-end gap-2 px-2.5 py-2 empty:hidden"
+        className="hidden flex-wrap items-center justify-end gap-2 px-2.5 py-2 has-[>:not(:empty)]:flex"
       >
+        <div
+          ref={holdFaults}
+          className="flex min-w-0 flex-[0_1_auto] flex-col gap-0.5 empty:hidden"
+        />
         {children}
       </div>
     </div>

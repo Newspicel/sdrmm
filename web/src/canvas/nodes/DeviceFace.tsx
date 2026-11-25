@@ -37,7 +37,7 @@ import type {
   ResolvedPatch,
 } from "../../lib/types";
 import { useRadioTune } from "../../lib/useRadioTune";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode, rxStreamCount } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { activitySignal } from "./activity";
@@ -151,13 +151,13 @@ interface TunerProps {
 }
 
 function HeldBadge({ hold }: { hold: LaneHold }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   return (
     <Button
       type="button"
       className={`${BTN_SM} text-hue-indigo`}
       title={`Tuned by ${hold.label}`}
-      onClick={() => workspace.select(hold.array)}
+      onClick={() => now().select(hold.array)}
     >
       <Icon glyph={Link2} size={12} />
       Array
@@ -486,19 +486,24 @@ function ClosedRadioFace({
 }
 
 export function DeviceFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const queryClient = useQueryClient();
   const reference = node.kind === "device" ? (node.data.device ?? null) : null;
   const lockedStreams = node.kind === "device" ? (node.data.locked_streams ?? []) : [];
   const split = node.kind === "device" && node.data.split_tuning === true;
   const stopped = node.kind === "device" && node.data.stopped === true;
-  const set = workspace.devices.get(node.id) ?? null;
-  const runs = runsOf(workspace.resolved, node.id);
+  const set = useWorkspaceSelect((workspace) => workspace.devices.get(node.id) ?? null);
+  const runs = useWorkspaceSelect((workspace) => runsOf(workspace.resolved, node.id));
+  const holdEntries = useWorkspaceSelect((workspace) => {
+    const open = workspace.devices.get(node.id);
+    return open === undefined ? [] : [...laneHolds(workspace.graph, open)];
+  });
+  const iqPorts = useWorkspaceSelect((workspace) => iqOutputs(workspace.resolved, node.id));
   const onBus = runs?.runs === "unbound" && runs.reason === "radio_closed";
   const waiting = runs?.runs === "unbound" && runs.reason === "waiting";
 
   const editNode = (next: Partial<DeviceNodeData>): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (stored) =>
         stored.kind === "device" ? { ...stored, data: { ...stored.data, ...next } } : stored,
@@ -512,14 +517,14 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   const bind = (device: DeviceInfo): void => {
     nameRadio(deviceRefOf(device));
-    workspace.apply();
+    now().apply();
   };
 
   const stop = (): void => editNode({ stopped: true });
 
   const start = (): void => {
     editNode({ stopped: false });
-    workspace.apply();
+    now().apply();
   };
 
   const openNetwork = useMutation({
@@ -531,7 +536,7 @@ export function DeviceFace({ node }: { node: PatchNode }) {
 
   const pin = (chosen: DeviceRef): void => {
     nameRadio(chosen);
-    workspace.apply();
+    now().apply();
   };
 
   if (reference === null) {
@@ -583,17 +588,17 @@ export function DeviceFace({ node }: { node: PatchNode }) {
         onBus={onBus}
         onForget={forget}
         onStart={start}
-        onOpen={() => workspace.apply()}
+        onOpen={() => now().apply()}
       />
     );
   }
 
-  const holds = laneHolds(workspace.graph, set);
+  const holds = new Map(holdEntries);
   const heldBy = new Map([...holds].map(([stream, hold]) => [stream, hold.label]));
   const perLane = lanesMerged(set) && split;
   const rowPorts =
     perLane && laneLayout(set.capabilities).lanes === rxStreamCount(set.capabilities)
-      ? iqOutputs(workspace.resolved, node.id)
+      ? iqPorts
       : undefined;
 
   return (
@@ -647,9 +652,9 @@ export function DeviceFace({ node }: { node: PatchNode }) {
                 set={set}
                 value={radioUseOf(node, set)}
                 onChange={(radioUse) =>
-                  workspace.edit((snapshot) => ({
+                  now().edit((snapshot) => ({
                     ...snapshot,
-                    graph: withRadioUse(snapshot.graph, workspace.context, node.id, radioUse),
+                    graph: withRadioUse(snapshot.graph, now().context, node.id, radioUse),
                   }))
                 }
               />

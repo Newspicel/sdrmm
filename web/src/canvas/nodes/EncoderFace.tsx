@@ -19,7 +19,7 @@ import type {
   PatchNode,
   PatchNodeOf,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { nodeOf, patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { AirLabel } from "./AirLabel";
@@ -42,9 +42,9 @@ export function EncoderFace({ node }: { node: PatchNode }) {
 }
 
 function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
-  const workspace = useWorkspaceContext();
-  const descriptor = workspace.context.encoderTypes?.find(
-    (type) => type.type_id === node.data.encoder_type,
+  const now = useWorkspaceNow();
+  const descriptor = useWorkspaceSelect((workspace) =>
+    workspace.context.encoderTypes?.find((type) => type.type_id === node.data.encoder_type),
   );
   const settings = encoderSettings(node.data.settings, descriptor);
   const [message, setMessage] = useState<Settings>(NO_MESSAGE);
@@ -52,12 +52,14 @@ function EncoderNodeFace({ node }: { node: PatchNodeOf<"encoder"> }) {
   const audio = node.data.audio ?? {};
   const voice = descriptor !== undefined && (descriptor.input ?? "audio") === "audio";
   const widthHz = encoderWidthHz(settings, descriptor);
-  const transmitter = transmitterOf(workspace.resolved, workspace.graph.nodes, node.id);
-  const air = airOf(
-    transmitter === null ? null : transmitStatusOf(workspace.deviceSets, transmitter),
+  const transmitter = useWorkspaceSelect((workspace) =>
+    transmitterOf(workspace.resolved, workspace.graph.nodes, node.id),
+  );
+  const air = useWorkspaceSelect((workspace) =>
+    airOf(transmitter === null ? null : transmitStatusOf(workspace.deviceSets, transmitter)),
   );
   const edit = (change: (current: PatchNode) => PatchNode): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, change),
     }));
@@ -164,17 +166,18 @@ function EncoderState({
   settings: Settings;
   transmitter: string | null;
 }) {
-  const workspace = useWorkspaceContext();
   const level = useBasebandLevel(node);
   const need = descriptor === undefined ? "Mode not loaded" : null;
-  const target = transmitter === null ? undefined : nodeOf(workspace.graph, transmitter);
+  const target = useWorkspaceSelect((workspace) =>
+    transmitter === null ? undefined : nodeOf(workspace.graph, transmitter)?.label,
+  );
   const changed = settingsSummary(descriptor?.settings ?? [], settings).filter(
     (row) => row.key !== WIDTH_KEY,
   );
   return (
     <div className="@container flex flex-col gap-1 p-2">
       <FaceState need={need}>
-        <StateValue label="To">{target?.label ?? "-"}</StateValue>
+        <StateValue label="To">{target ?? "-"}</StateValue>
         {changed.map((row) => (
           <StateValue key={row.key} label={row.label}>
             {row.value}

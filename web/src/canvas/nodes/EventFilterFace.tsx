@@ -1,14 +1,17 @@
 import { Chips, ChoiceChip, NumberChip, ToggleChip } from "../../components/face/Chips";
+import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import { isEventKind, kindLabel } from "../../lib/eventKinds";
 import { MAX_FILTER_DURATION_MS, MAX_FILTER_TEXT_LEN } from "../../lib/limits";
 import { useFeeds } from "../../lib/resolved";
 import type { EventFilterNode, EventKindEntry, PatchNode, PatchNodeOf } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import {
   FILTER_MODES,
   filterMode,
+  filterModeLabel,
   formatIds,
   formatWords,
   fromTriState,
@@ -16,6 +19,7 @@ import {
   type PredicateKey,
   parseIds,
   parseWords,
+  ruleCount,
   sectionsFor,
   stationLabel,
   type TriState,
@@ -39,17 +43,17 @@ export function EventFilterFace({ node }: { node: PatchNode }) {
 }
 
 function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const settings: EventFilterNode = node.data ?? {};
   const sources = useFeeds(node.id, "events");
-  const entries = workspace.context.catalog.event_kinds;
+  const entries = useWorkspaceSelect((workspace) => workspace.context.catalog.event_kinds);
   const offered = offeredBy(sources).filter((kind) => isEventKind(kind, entries));
   const kinds = settings.kinds ?? [];
   const narrowed = kinds.length > 0 ? kinds : offered;
   const sections = sectionsFor(narrowed, entries);
 
   const edit = (next: Partial<EventFilterNode>) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "event_filter"
@@ -62,43 +66,60 @@ function Face({ node }: { node: PatchNodeOf<"event_filter"> }) {
   return (
     <NodeShell node={node} title="Event filter" category="tool">
       <FaceBody>
-        <Chips>
-          <ChoiceChip
-            label="Mode"
-            title="Keep passes only what matches; Drop removes what matches"
-            value={filterMode(settings)}
-            options={FILTER_MODES}
-            onChange={(mode) => edit({ mode })}
-          />
-          {offered.length > 1 &&
-            offered.map((kind) => (
-              <ToggleChip
-                key={kind}
-                label={kindLabel(kind, entries)}
-                title={`Match ${kindLabel(kind, entries)} events`}
-                on={kinds.includes(kind)}
-                onChange={(on) =>
-                  edit({
-                    kinds: on ? [...kinds, kind].toSorted() : kinds.filter((held) => held !== kind),
-                  })
-                }
-              />
-            ))}
-          {sections.flatMap((section) =>
-            section.predicates.map((predicate) => (
-              <Predicate
-                key={predicate}
-                which={predicate}
-                applies={section.applies}
-                settings={settings}
-                kinds={narrowed}
-                entries={entries}
-                edit={edit}
-              />
-            )),
-          )}
-        </Chips>
+        <Readouts>
+          <Readout label="Mode" title="Keep passes only what matches; Drop removes what matches">
+            {filterModeLabel(settings)}
+          </Readout>
+          <Readout label="Kinds" title="Event kinds the rules look at">
+            {kinds.length === 0 ? "all" : kinds.map((kind) => kindLabel(kind, entries)).join(", ")}
+          </Readout>
+          <Readout label="Rules" title="Rules set in the settings">
+            {ruleCount(settings)}
+          </Readout>
+        </Readouts>
       </FaceBody>
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <ChoiceChip
+              label="Mode"
+              title="Keep passes only what matches; Drop removes what matches"
+              value={filterMode(settings)}
+              options={FILTER_MODES}
+              onChange={(mode) => edit({ mode })}
+            />
+            {offered.length > 1 &&
+              offered.map((kind) => (
+                <ToggleChip
+                  key={kind}
+                  label={kindLabel(kind, entries)}
+                  title={`Match ${kindLabel(kind, entries)} events`}
+                  on={kinds.includes(kind)}
+                  onChange={(on) =>
+                    edit({
+                      kinds: on
+                        ? [...kinds, kind].toSorted()
+                        : kinds.filter((held) => held !== kind),
+                    })
+                  }
+                />
+              ))}
+            {sections.flatMap((section) =>
+              section.predicates.map((predicate) => (
+                <Predicate
+                  key={predicate}
+                  which={predicate}
+                  applies={section.applies}
+                  settings={settings}
+                  kinds={narrowed}
+                  entries={entries}
+                  edit={edit}
+                />
+              )),
+            )}
+          </Chips>
+        </InspectSection>
+      </Inspect>
     </NodeShell>
   );
 }

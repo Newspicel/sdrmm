@@ -8,20 +8,20 @@ import { RadioSettings } from "../../components/RadioSettings";
 import { TuneTo } from "../../components/TuneTo";
 import type { PatchNode } from "../../lib/types";
 import { useDevicePatch } from "../../lib/useDevicePatch";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { FaceBody, FaceFooter, NodeShell, useFaceActive } from "./NodeShell";
 import { SourceHealth } from "./SourceHealth";
 
 export function SignalGenFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const { applyPatch } = useDevicePatch();
   const active = useFaceActive();
-  const set = workspace.devices.get(node.id) ?? null;
+  const set = useWorkspaceSelect((workspace) => workspace.devices.get(node.id) ?? null);
 
   const hold = (stopped: boolean): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (stored) =>
         stored.kind === "device" ? { ...stored, data: { ...stored.data, stopped } } : stored,
@@ -30,7 +30,7 @@ export function SignalGenFace({ node }: { node: PatchNode }) {
 
   const start = (): void => {
     hold(false);
-    workspace.apply();
+    now().apply();
   };
 
   const stop = (): void => hold(true);

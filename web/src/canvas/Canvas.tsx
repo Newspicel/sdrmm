@@ -38,7 +38,7 @@ import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
 import { useWorkspaceContext } from "./context";
-import { toFlowEdges } from "./flowEdges";
+import { keptEdges, toFlowEdges } from "./flowEdges";
 import { movedGeometry, withGeometry } from "./geometry";
 import {
   isPinned,
@@ -104,7 +104,7 @@ export function Canvas() {
   const context = workspace.context;
   useEffect(() => {
     if (sameGraph(held.current, workspace.graph) && heldScale.current === scale) {
-      setEdges(toFlowEdges(workspace.graph, context));
+      setEdges((previous) => keptEdges(previous, toFlowEdges(workspace.graph, context)));
       return;
     }
     held.current = workspace.graph;
@@ -114,18 +114,21 @@ export function Canvas() {
     if (arrived) {
       pasted.current = new Set();
     }
-    setNodes((previous) =>
-      toFlowNodes(workspace.graph, scale).map((node) => {
-        const mounted = previous.find((candidate) => candidate.id === node.id);
+    setNodes((previous) => {
+      const mountedById = new Map(previous.map((node) => [node.id, node]));
+      return toFlowNodes(workspace.graph, scale).map((node) => {
+        const mounted = mountedById.get(node.id);
         const selected = arrived ? fresh.has(node.id) : (mounted?.selected ?? false);
         if (mounted === undefined) {
           return { ...node, selected };
         }
         const position = mounted.dragging === true ? mounted.position : node.position;
-        return { ...mounted, ...node, position, selected };
-      }),
-    );
-    setEdges(toFlowEdges(workspace.graph, context));
+        return sameFlowNode(mounted, node, position, selected)
+          ? mounted
+          : { ...mounted, ...node, position, selected };
+      });
+    });
+    setEdges((previous) => keptEdges(previous, toFlowEdges(workspace.graph, context)));
   }, [workspace.graph, context, scale, setNodes, setEdges]);
 
   const focus = workspace.selected;
@@ -202,6 +205,7 @@ export function Canvas() {
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        onlyRenderVisibleElements
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onNodeDrag={(_event, _node, dragged) =>
@@ -504,6 +508,23 @@ function ContextMenu({
         </span>
       )}
     </div>
+  );
+}
+
+/** A node that kept its patch entry, place and size keeps its object, so its face does not redraw
+ * when some other node changed. */
+function sameFlowNode(
+  mounted: Node<FlowData>,
+  next: Node<FlowData>,
+  position: Node["position"],
+  selected: boolean,
+): boolean {
+  return (
+    mounted.data.node === next.data.node &&
+    mounted.position === position &&
+    mounted.width === next.width &&
+    mounted.height === next.height &&
+    (mounted.selected ?? false) === selected
   );
 }
 

@@ -3,13 +3,13 @@ import { FaceFault } from "../../components/face/Fault";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import { formatCount } from "../../components/format";
 import type { ServerEvent } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 import { FaceFooter } from "./NodeShell";
 
 export type DeliveryStatus = Extract<ServerEvent, { type: "EventOutputStatus" }>["data"];
 
 export function OutputDelivery({ node }: { node: string }) {
-  const { socket } = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const [status, setStatus] = useState<DeliveryStatus | null>(null);
   useEffect(() => {
     const offEvent = socket.on("event", (event: ServerEvent) => {

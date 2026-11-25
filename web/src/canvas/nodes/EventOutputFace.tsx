@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Chips, ChoiceChip, NumberChip } from "../../components/face/Chips";
+import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
 import {
   ACCOUNT_SPECS,
@@ -17,8 +18,9 @@ import type {
   PatchNode,
   PatchNodeOf,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
+import { Inspect, InspectSection } from "../inspector";
 import {
   eventOutputConfigured,
   feedTarget,
@@ -26,6 +28,7 @@ import {
   outputServices,
   placeOf,
   type SigningTarget,
+  serviceLabel,
   signsIn,
   takesMessage,
   WEBHOOK_FORMATS,
@@ -36,6 +39,7 @@ import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { OutputDelivery } from "./OutputDelivery";
 
 const NO_ACCOUNTS: readonly Account[] = [];
+const NO_FEEDS: readonly FeedEntry[] = [];
 
 export function EventOutputFace({ node }: { node: PatchNode }) {
   if (node.kind !== "event_output") {
@@ -45,16 +49,18 @@ export function EventOutputFace({ node }: { node: PatchNode }) {
 }
 
 function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const notify = useQuery(aboutQuery(true)).data?.notify === true;
   const accounts = useQuery(accountsQuery()).data ?? NO_ACCOUNTS;
   const target = node.data.target;
-  const feeds = workspace.context.catalog.feeds ?? [];
+  const feeds = useWorkspaceSelect((workspace) => workspace.context.catalog.feeds) ?? NO_FEEDS;
   const inputs = useFeeds(node.id, "events").length;
   const configured = eventOutputConfigured(target);
-  const audio = portOn(workspace.resolved, node.id, "audio", "in") !== undefined;
+  const audio = useWorkspaceSelect(
+    (workspace) => portOn(workspace.resolved, node.id, "audio", "in") !== undefined,
+  );
   const editOutput = (next: Partial<PatchNodeOf<"event_output">["data"]>) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "event_output"
@@ -66,23 +72,32 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
   const editTarget = (next: EventOutputTarget) => editOutput({ target: next });
   return (
     <NodeShell node={node} title="Event output" category="output">
-      <FaceBody>
-        <Chips>
-          <ChoiceChip
-            label="Service"
-            title="Output service"
-            value={target.service}
-            options={outputServices(notify, target.service, feeds)}
-            onChange={(service) => editTarget(newOutputTarget(service, feeds))}
-          />
-          <TargetChips target={target} feeds={feeds} accounts={accounts} onEdit={editTarget} />
-          {takesMessage(target.service) && (
-            <MessageChip
-              value={node.data.message ?? ""}
-              onCommit={(message) => editOutput({ message })}
+      <Inspect node={node.id}>
+        <InspectSection>
+          <Chips inset="none">
+            <ChoiceChip
+              label="Service"
+              title="Output service"
+              value={target.service}
+              options={outputServices(notify, target.service, feeds)}
+              onChange={(service) => editTarget(newOutputTarget(service, feeds))}
             />
-          )}
-        </Chips>
+            <TargetChips target={target} feeds={feeds} accounts={accounts} onEdit={editTarget} />
+            {takesMessage(target.service) && (
+              <MessageChip
+                value={node.data.message ?? ""}
+                onCommit={(message) => editOutput({ message })}
+              />
+            )}
+          </Chips>
+        </InspectSection>
+      </Inspect>
+      <FaceBody>
+        <Readouts>
+          <Readout label="Service" title="Where events go">
+            {serviceLabel(target.service, feeds)}
+          </Readout>
+        </Readouts>
         {target.service === "feed" ? (
           <FeedOutputControls
             node={node.id}
@@ -92,13 +107,18 @@ function EventOutputNodeFace({ node }: { node: PatchNodeOf<"event_output"> }) {
           />
         ) : (
           <>
-            <FaceEmpty hint={emptyHint(inputs, configured, target, audio)} />
+            <OutputHint hint={emptyHint(inputs, configured, target, audio)} />
             <OutputDelivery node={node.id} />
           </>
         )}
       </FaceBody>
     </NodeShell>
   );
+}
+
+/** What the output does or still needs; nothing while it has no wire. */
+function OutputHint({ hint }: { hint: string | undefined }) {
+  return hint === undefined ? null : <FaceEmpty hint={hint} />;
 }
 
 function emptyHint(inputs: number, configured: boolean, target: EventOutputTarget, audio: boolean) {

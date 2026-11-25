@@ -1,4 +1,4 @@
-import { useWorkspaceContext, type Workspace } from "../canvas/context";
+import { useWorkspaceSelect, type Workspace } from "../canvas/context";
 import { nodeOf } from "../canvas/graph";
 import type { TuneTarget } from "../canvas/libraryTarget";
 import { channelSettingsOf } from "./useChannelEdit";
@@ -13,7 +13,12 @@ export interface Tuner {
 }
 
 export function useTuner(target: TuneTarget | null): Tuner {
-  const workspace = useWorkspaceContext();
+  const frequencyHz = useWorkspaceSelect((workspace) =>
+    target === null ? null : frequencyOf(workspace, target),
+  );
+  const channelType = useWorkspaceSelect((workspace) =>
+    target === null || target.kind === "device" ? null : channelTypeOf(workspace, target.node),
+  );
   const tuneNode = useNodeTune();
   return {
     tune: (hz) => {
@@ -21,9 +26,8 @@ export function useTuner(target: TuneTarget | null): Tuner {
         tuneNode(target.node, hz);
       }
     },
-    frequencyHz: target === null ? null : frequencyOf(workspace, target),
-    channelType:
-      target === null || target.kind === "device" ? null : channelTypeOf(workspace, target.node),
+    frequencyHz,
+    channelType,
     ready: target !== null,
   };
 }

@@ -22,7 +22,7 @@ import { SAMPLE_RATE as AUDIO_RATE_HZ } from "../../lib/audio/worklet";
 import { useFeeds, useInputs } from "../../lib/resolved";
 import type { PatchNode, PatchNodeOf, PreRollStatus, RecordingStatus } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect, type Workspace } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { runningSetOf } from "../workspaceDevice";
@@ -39,12 +39,12 @@ function RecorderSwitch({
   title: string;
   unwired: string | null;
 }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const recording = node.data?.recording ?? false;
   const ruled = useRunWired(node.id);
   const blocked = ruled ? null : unwired;
   const switchTo = (next: boolean) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) => withRecording(current, next)),
     }));
@@ -132,17 +132,17 @@ export function RecorderFace({ node }: { node: PatchNode }) {
 }
 
 function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
-  const workspace = useWorkspaceContext();
-  const set = runningSetOf(workspace, node.id);
+  const now = useWorkspaceNow();
+  const view = useWorkspaceSelect((workspace) => iqRecorderView(workspace, node.id));
   const preRollS = node.data?.pre_roll_s ?? 0;
-  const phase = preRollPhase(set, node.id);
+  const phase = view.phase;
   const held = phase.kind === "held" || phase.kind === "capturing" ? phase.status : null;
-  const status = held?.capture ?? (set?.recording?.node === node.id ? set.recording : null);
+  const status = held?.capture ?? view.capture;
   const recording = node.data?.recording ?? false;
   const ruled = useRunWired(node.id);
 
   const setPreRoll = (pre_roll_s: number) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "recorder"
@@ -184,7 +184,7 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
         <Readouts ruled={false}>
           {status === null ? (
             <Readout label="File">
-              {recording && (set !== null || ruled) ? "Waiting" : IDLE}
+              {recording && (view.running || ruled) ? "Waiting" : IDLE}
             </Readout>
           ) : (
             <FileReadout label="File" file={status.file} />
@@ -195,15 +195,32 @@ function IqRecorder({ node }: { node: PatchNodeOf<"recorder"> }) {
         {held?.error != null && <FaceFault message={held.error} />}
       </FaceBody>
       <FaceFooter>
-        <IqRecordStats status={status} sampleRate={set?.settings.sample_rate ?? 0} />
+        <IqRecordStats status={status} sampleRate={view.sampleRate} />
         <RecorderSwitch
           node={node}
           title="Record IQ to a SigMF pair"
-          unwired={unwiredSaid(phase, set === null)}
+          unwired={unwiredSaid(phase, !view.running)}
         />
       </FaceFooter>
     </NodeShell>
   );
+}
+
+interface IqRecorderView {
+  phase: PreRollPhase;
+  capture: RecordingStatus | null;
+  sampleRate: number;
+  running: boolean;
+}
+
+function iqRecorderView(workspace: Workspace, id: string): IqRecorderView {
+  const set = runningSetOf(workspace, id);
+  return {
+    phase: preRollPhase(set, id),
+    capture: set?.recording?.node === id ? set.recording : null,
+    sampleRate: set?.settings.sample_rate ?? 0,
+    running: set !== null,
+  };
 }
 
 function unwiredSaid(phase: PreRollPhase, noSet: boolean): string | null {
@@ -252,9 +269,9 @@ export function AudioRecorderFace({ node }: { node: PatchNode }) {
 }
 
 function SkipSilenceChip({ node }: { node: PatchNodeOf<"audio_recorder"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const switchTo = (skip_silence: boolean) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         withSkipSilence(current, skip_silence),

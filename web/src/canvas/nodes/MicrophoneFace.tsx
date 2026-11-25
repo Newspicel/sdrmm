@@ -6,7 +6,7 @@ import { MeterBar } from "../../components/face/Meter";
 import { VOICE_CHAT_LIMITS } from "../../lib/limits";
 import { peakDb } from "../../lib/microphone";
 import type { PatchNode, PatchNodeOf, VoiceGateSettings } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { talkTargets } from "../pushToTalk";
@@ -57,24 +57,24 @@ function keyHint(heard: boolean, keys: boolean, error: string | null): string {
 }
 
 function MicrophoneNodeFace({ node }: { node: PatchNodeOf<"microphone"> }) {
-  const workspace = useWorkspaceContext();
-  const held =
-    workspace.talking && talkTargets(workspace.graph, workspace.selected).includes(node.id);
-  const heard = reachesListener(
-    workspace.resolved,
-    workspace.graph.nodes,
-    workspace.deviceSets,
-    node.id,
+  const now = useWorkspaceNow();
+  const held = useWorkspaceSelect(
+    (workspace) =>
+      workspace.talking && talkTargets(workspace.graph, workspace.selected).includes(node.id),
   );
+  const heard = useWorkspaceSelect((workspace) =>
+    reachesListener(workspace.resolved, workspace.graph.nodes, workspace.deviceSets, node.id),
+  );
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const keys = node.data.send === "push_to_talk";
-  const microphone = useMicrophone(node.id, workspace.socket, {
+  const microphone = useMicrophone(node.id, socket, {
     send: node.data.send,
     heard,
     held,
   });
   const [latched, setLatched] = useState(false);
   const edit = (next: Partial<VoiceGateSettings>): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) => withMicrophoneGate(current, next)),
     }));

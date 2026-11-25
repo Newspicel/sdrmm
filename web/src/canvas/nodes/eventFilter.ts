@@ -101,6 +101,26 @@ export function filterMode(filter: EventFilterNode): FilterMode {
   return filter.mode ?? "keep";
 }
 
+export function filterModeLabel(filter: EventFilterNode): string {
+  const mode = filterMode(filter);
+  return FILTER_MODES.find((option) => option.value === mode)?.label ?? mode;
+}
+
+/** How many rules narrow the filter: each set predicate counts once. */
+export function ruleCount(filter: EventFilterNode): number {
+  const set = [
+    (filter.stations ?? []).length > 0,
+    (filter.contains ?? "") !== "",
+    filter.has_position != null,
+    (filter.talkgroups ?? []).length > 0,
+    (filter.radios ?? []).length > 0,
+    filter.encrypted != null,
+    filter.emergency != null,
+    (filter.min_duration_ms ?? 0) > 0,
+  ];
+  return set.filter(Boolean).length;
+}
+
 export type PredicateKey =
   | "stations"
   | "contains"

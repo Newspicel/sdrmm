@@ -92,6 +92,29 @@ export const useLevelStore = create<LevelState>((set) => {
   };
 });
 
+/** A channel on a running radio, as the level stream names it. */
+export interface LevelSource {
+  deviceSet: number;
+  id: number;
+}
+
+export function levelOf(state: LevelState, source: LevelSource | null): ChannelLevel | undefined {
+  return source === null ? undefined : state.byDeviceSet[source.deviceSet]?.[source.id];
+}
+
+export function useChannelLevel(source: LevelSource | null): ChannelLevel | undefined {
+  return useLevelStore((state) => levelOf(state, source));
+}
+
+/** The tuning offset the channel heard, in whole hertz, so a face redraws only when it moves. */
+export function useChannelShiftHz(source: LevelSource | null): number {
+  return useLevelStore((state) => Math.round(levelOf(state, source)?.shift_hz ?? 0));
+}
+
+export function useChannelOpen(source: LevelSource | null): boolean {
+  return useLevelStore((state) => audioPassing(levelOf(state, source)));
+}
+
 export function levelUnit(db: number, floorDb = -90): number {
   if (!Number.isFinite(db) || db <= floorDb) {
     return 0;

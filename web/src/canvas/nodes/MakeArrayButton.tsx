@@ -2,18 +2,21 @@ import { Button } from "../../components/BaseControls";
 import { FACE_BTN } from "../../components/controls";
 import { resolvedNode } from "../../lib/resolved";
 import { pushToast } from "../../lib/toasts";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { newNodeId, nodeIds } from "../graph";
 import { MAKE_ARRAY_TITLE, makeArray } from "../makeArray";
 import { defaultBody } from "../newNode";
 
 export function MakeArrayButton({ node }: { node: string }) {
-  const workspace = useWorkspaceContext();
-  const offer = resolvedNode(workspace.resolved, node)?.array_offer;
+  const now = useWorkspaceNow();
+  const offer = useWorkspaceSelect(
+    (workspace) => resolvedNode(workspace.resolved, node)?.array_offer,
+  );
   if (offer == null) {
     return null;
   }
   const make = (): void => {
+    const workspace = now();
     const body = defaultBody(workspace.context.catalog, "array");
     if (body?.kind !== "array") {
       pushToast("Unknown node: array");

@@ -10,7 +10,7 @@ import { SCHEDULE_LIMITS } from "../../lib/limits";
 import { useScheduleStore } from "../../lib/schedule";
 import type { PatchNode, PatchNodeOf, ScheduleNode, ScheduleWindow } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
@@ -36,13 +36,13 @@ export function ScheduleFace({ node }: { node: PatchNode }) {
 }
 
 function ScheduleNodeFace({ node }: { node: PatchNodeOf<"schedule"> }) {
-  const workspace = useWorkspaceContext();
+  const workspaceNow = useWorkspaceNow();
   const status = useScheduleStore((store) => store.byNode[node.id]) ?? null;
   const now = useNow(NOW_EVERY_MS);
   const unwired = useUnwired(node.id, WANTS);
   const windows = node.data.windows ?? [];
   const edit = (next: ScheduleNode): void =>
-    workspace.edit((snapshot) => ({
+    workspaceNow().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "schedule" ? { ...current, data: next } : current,

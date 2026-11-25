@@ -362,6 +362,20 @@ pub fn fields(entries: &[(&str, &str, Option<FieldValue>)]) -> Vec<Field> {
         .collect()
 }
 
+/// `fields` for a face: a value not known yet keeps its row, empty, so the face keeps its shape.
+#[must_use]
+pub fn face_fields(entries: &[(&str, &str, Option<FieldValue>)]) -> Vec<Field> {
+    entries
+        .iter()
+        .map(|(key, label, value)| {
+            let shown = value
+                .clone()
+                .unwrap_or_else(|| FieldValue::Text(String::new()));
+            Field::new(*key, *label, shown)
+        })
+        .collect()
+}
+
 /// `fields` with each repeated key numbered from its second use, so every key names one
 /// field. A payload listing one thing twice, such as two records of one meter, keeps both.
 #[must_use]

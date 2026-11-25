@@ -103,8 +103,8 @@
     "zone_len": 64
   },
   "patch": {
-    "nodes": 128,
-    "wires": 256,
+    "nodes": 1024,
+    "wires": 2048,
     "streams": 16,
     "channels_per_radio": 64,
     "monitors_per_radio": 128

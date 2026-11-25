@@ -27,6 +27,17 @@ export function outputServices(
   );
 }
 
+/** The name a service goes by, as the settings list it. */
+export function serviceLabel(
+  service: EventOutputTarget["service"],
+  feeds: readonly FeedEntry[] = [],
+): string {
+  return (
+    outputServices(true, service, feeds).find((option) => option.value === service)?.label ??
+    service
+  );
+}
+
 type FeedTarget = Extract<EventOutputTarget, { service: "feed" }>;
 
 /** A closed feed server in `feed`'s format on its usual address. */

@@ -17,18 +17,19 @@ import {
   channelExportSource,
   deriveNetworkExportControl,
   deviceExportSource,
+  type NetworkExportSource,
   networkExportControlsLocked,
   networkExportMutationOptions,
   nodeExportSource,
 } from "../../components/networkExport";
 import { ownSourceOf } from "../../lib/resolved";
 import type { NetworkExportStatus, PatchNode, PatchNodeOf } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect, type Workspace } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
-import { basebandSourceOf, hasFeed } from "../lanes";
+import { basebandSourceOf } from "../lanes";
 import { runningSetOf } from "../workspaceDevice";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
+import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 
 const TRANSPORTS = [
   { value: "udp", label: "UDP datagrams" },
@@ -50,22 +51,8 @@ export function NetworkExportFace({ node }: { node: PatchNode }) {
 }
 
 function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }) {
-  const workspace = useWorkspaceContext();
-  const set = runningSetOf(workspace, node.id);
-  const channel = basebandSourceOf(workspace.resolved, workspace.deviceSets, node.id);
-  const encoder = ownSourceOf(workspace.resolved, node.id, "baseband");
-  const owner =
-    channel === null
-      ? set
-      : ([...workspace.devices.values()].find((bound) => bound.id === channel.deviceSet) ?? null);
-  const wired =
-    hasFeed(workspace.resolved, node.id, "iq") || hasFeed(workspace.resolved, node.id, "baseband");
-  const source =
-    encoder !== null
-      ? nodeExportSource(workspace.nodeStreams.find((stream) => stream.node === encoder) ?? null)
-      : channel === null
-        ? deviceExportSource(set)
-        : channelExportSource(owner, channel.channel);
+  const now = useWorkspaceNow();
+  const { source, baseband } = useWorkspaceSelect((workspace) => exportView(workspace, node.id));
   const control = deriveNetworkExportControl(source, node.id);
   const settings = {
     transport: node.data.transport,
@@ -73,7 +60,7 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
     address: node.data.address,
   };
   const edit = (next: Partial<typeof settings>) => {
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "network_export"
@@ -85,13 +72,10 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
   const exportIq = useMutation(networkExportMutationOptions(node.id));
   const locked = networkExportControlsLocked(control, exportIq.isPending);
   const rtlTcp = node.data.transport === "rtl_tcp";
+  const active = control.kind === "active" ? control.status : null;
 
   return (
-    <NodeShell
-      node={node}
-      title={channel === null && encoder === null ? "Network IQ" : "Network baseband"}
-      category="output"
-    >
+    <NodeShell node={node} title={baseband ? "Network baseband" : "Network IQ"} category="output">
       <Inspect node={node.id}>
         <InspectSection>
           <Chips inset="none">
@@ -137,26 +121,19 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
         </InspectSection>
       </Inspect>
       <FaceBody>
-        {!wired ? (
-          <FaceEmpty />
-        ) : control.kind === "active" ? (
-          <>
-            <Readouts columns={2}>
-              <Readout label="Rate">{formatSampleRate(control.status.sample_rate)}</Readout>
-              <Readout label="Center">{formatHz(control.status.center_hz)}</Readout>
-            </Readouts>
-            {control.status.error != null && <FaceFault message={control.status.error} />}
-          </>
-        ) : (
-          <FaceEmpty
-            hint={
-              control.kind === "busy" ? "Another network sink already uses this input" : undefined
-            }
-          />
+        <Readouts columns={2}>
+          <Readout label="Rate">
+            {active === null ? null : formatSampleRate(active.sample_rate)}
+          </Readout>
+          <Readout label="Center">{active === null ? null : formatHz(active.center_hz)}</Readout>
+        </Readouts>
+        {active?.error != null && <FaceFault message={active.error} />}
+        {control.kind === "busy" && (
+          <FaceFault message="Another network sink already uses this input" />
         )}
       </FaceBody>
       <FaceFooter>
-        {control.kind === "active" && <ExportStats status={control.status} rtlTcp={rtlTcp} />}
+        <ExportStats status={active} transport={node.data.transport} />
         {control.kind === "active" ? (
           <Button
             type="button"
@@ -182,26 +159,54 @@ function NetworkExportNodeFace({ node }: { node: PatchNodeOf<"network_export"> }
   );
 }
 
-function ExportStats({ status, rtlTcp }: { status: NetworkExportStatus; rtlTcp: boolean }) {
+function exportView(
+  workspace: Workspace,
+  id: string,
+): { source: NetworkExportSource | null; baseband: boolean } {
+  const set = runningSetOf(workspace, id);
+  const channel = basebandSourceOf(workspace.resolved, workspace.deviceSets, id);
+  const encoder = ownSourceOf(workspace.resolved, id, "baseband");
+  if (encoder !== null) {
+    const stream = workspace.nodeStreams.find((made) => made.node === encoder) ?? null;
+    return { source: nodeExportSource(stream), baseband: true };
+  }
+  if (channel === null) {
+    return { source: deviceExportSource(set), baseband: false };
+  }
+  const owner =
+    [...workspace.devices.values()].find((bound) => bound.id === channel.deviceSet) ?? null;
+  return { source: channelExportSource(owner, channel.channel), baseband: true };
+}
+
+/** What the export has sent; zero before it starts, so the footer keeps its shape. */
+function ExportStats({
+  status,
+  transport,
+}: {
+  status: NetworkExportStatus | null;
+  transport: NetworkExportStatus["settings"]["transport"];
+}) {
+  const sending = status?.settings.transport ?? transport;
+  const overruns = status?.overruns ?? 0;
   return (
     <FaceStats>
-      {rtlTcp && (
+      {sending === "rtl_tcp" && (
         <Stat label="Clients" title="rtl_tcp clients connected">
-          {status.clients ?? 0}
+          {status?.clients ?? 0}
         </Stat>
       )}
       <Stat label="Sent" title="Bytes sent">
-        {formatBytes(status.bytes)}
+        {formatBytes(status?.bytes ?? 0)}
       </Stat>
       <Stat
-        label={status.settings.transport === "udp" ? "Datagrams" : "Writes"}
-        title={status.settings.transport === "udp" ? "Datagrams sent" : "Socket writes"}
+        label={sending === "udp" ? "Datagrams" : "Writes"}
+        title={sending === "udp" ? "Datagrams sent" : "Socket writes"}
       >
-        {formatCount(status.packets)}
+        {formatCount(status?.packets ?? 0)}
       </Stat>
-      {status.overruns > 0 && (
+      {overruns > 0 && (
         <Stat label="Drops" title={DROPS_HINT} tone="warn">
-          {formatCount(status.overruns)}
+          {formatCount(overruns)}
         </Stat>
       )}
     </FaceStats>

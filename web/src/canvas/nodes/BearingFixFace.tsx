@@ -1,13 +1,18 @@
+import { Readout, Readouts } from "../../components/face/Readouts";
+import { useFeeds } from "../../lib/resolved";
 import type { PatchNode } from "../../lib/types";
-import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
-import { useWireScope } from "./sinkInputs";
+import { FaceBody, NodeShell } from "./NodeShell";
 
 export function BearingFixFace({ node }: { node: PatchNode }) {
-  const wires = useWireScope(node.id);
+  const sources = useFeeds(node.id, "events").length;
   return (
     <NodeShell node={node} title="Bearing fix" category="tool">
       <FaceBody>
-        <FaceEmpty hint={wires.wired ? "Fix goes out on events" : undefined} />
+        <Readouts>
+          <Readout label="Sources" title="Wires bringing bearings in; the fix goes out on events">
+            {sources}
+          </Readout>
+        </Readouts>
       </FaceBody>
     </NodeShell>
   );

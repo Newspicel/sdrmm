@@ -14,7 +14,7 @@ import {
   saveName,
   usePeople,
 } from "../lib/presence";
-import { useWorkspaceContext } from "./context";
+import { useWorkspaceSelect } from "./context";
 
 const STACKED = 3;
 
@@ -121,7 +121,7 @@ function Account({ role, email }: { role: string; email: string | undefined }) {
 }
 
 function NameForm({ current, onDone }: { current: string; onDone: () => void }) {
-  const { socket } = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const [name, setName] = useState(savedName() || current);
   return (
     <Form

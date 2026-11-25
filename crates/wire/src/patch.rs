@@ -27,8 +27,8 @@ pub use resolve::{
     UnboundReason,
 };
 
-pub const MAX_NODES: usize = 128;
-pub const MAX_EDGES: usize = 256;
+pub const MAX_NODES: usize = 1024;
+pub const MAX_EDGES: usize = 2048;
 pub const MAX_NODE_ID_LEN: usize = 64;
 pub const MAX_COORD: f32 = 100_000.0;
 pub const MAX_NODE_SIZE: f32 = 10_000.0;

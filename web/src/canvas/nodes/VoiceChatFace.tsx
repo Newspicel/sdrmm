@@ -25,7 +25,7 @@ import type {
   ServerEvent,
   VoiceChatStatus,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { GateControls, gateUnit } from "./GateControls";
@@ -54,7 +54,7 @@ export function VoiceChatFace({ node }: { node: PatchNode }) {
 
 /** The latest status the server sent for `node`; none again after the socket reconnects. */
 function useVoiceChatStatus(node: string): VoiceChatStatus | null {
-  const { socket } = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const [status, setStatus] = useState<VoiceChatStatus | null>(null);
   useEffect(() => {
     const offEvent = socket.on("event", (event: ServerEvent) => {
@@ -72,12 +72,12 @@ function useVoiceChatStatus(node: string): VoiceChatStatus | null {
 }
 
 function VoiceChatNodeFace({ node }: { node: PatchNodeOf<"voice_chat"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const accounts = accountsOf(useQuery(accountsQuery()).data ?? NO_ACCOUNTS, CHAT_KINDS);
   const status = useVoiceChatStatus(node.id);
   const account = accountOf(accounts, node.data.account);
   const edit = (change: (current: PatchNode) => PatchNode): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, change),
     }));

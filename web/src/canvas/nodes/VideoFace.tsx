@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { channelHasAudio } from "../../components/channelSettings";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import {
+  IdleVideo,
   useVideoDrops,
   type VideoSignal,
   VideoView,
@@ -12,8 +13,8 @@ import { type Input, useInputs } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import type { CapturedImage, PatchNode } from "../../lib/types";
 import type { VideoInput } from "../../lib/video";
-import { useWorkspaceContext } from "../context";
-import { FaceBody, FaceEmpty, FaceFooter, NodeShell } from "./NodeShell";
+import { useWorkspaceSelect } from "../context";
+import { FaceBody, FaceFooter, NodeShell } from "./NodeShell";
 import { useInputName } from "./sinkInputs";
 import { VideoSound } from "./VideoSound";
 
@@ -27,7 +28,7 @@ export function VideoFace({ node }: { node: PatchNode }) {
     <NodeShell node={node} title="Video" category="output">
       <FaceBody>
         {inputs.length === 0 ? (
-          <FaceEmpty />
+          <IdleVideo />
         ) : (
           inputs.map((input) => (
             <Fragment key={input.source}>
@@ -43,38 +44,41 @@ export function VideoFace({ node }: { node: PatchNode }) {
         )}
         {pictures.length > 0 && <Gallery pictures={pictures} />}
       </FaceBody>
-      {inputs.length > 0 && (
-        <FaceFooter>
-          <FaceStats>
-            {inputs.map((input) => {
-              const signal = signals[input.node] ?? null;
-              return (
-                <Stat
-                  key={input.node}
-                  label={inputs.length > 1 ? nameOf(input) : "Picture"}
-                  title="Decoded picture size and sync"
-                  tone={signal?.live === true ? undefined : "warn"}
-                >
-                  {videoSignalText(signal)}
-                </Stat>
-              );
-            })}
-            {inputs.map((input) => (
-              <DroppedPictures
-                key={input.source}
-                scope={{ node: node.id, port: "video", source: input.source }}
-              />
-            ))}
-          </FaceStats>
-        </FaceFooter>
-      )}
+      <FaceFooter>
+        <FaceStats>
+          {inputs.length === 0 && (
+            <Stat label="Picture" title="Decoded picture size and sync">
+              –
+            </Stat>
+          )}
+          {inputs.map((input) => {
+            const signal = signals[input.node] ?? null;
+            return (
+              <Stat
+                key={input.node}
+                label={inputs.length > 1 ? nameOf(input) : "Picture"}
+                title="Decoded picture size and sync"
+                tone={signal?.live === true ? undefined : "warn"}
+              >
+                {videoSignalText(signal)}
+              </Stat>
+            );
+          })}
+          {inputs.map((input) => (
+            <DroppedPictures
+              key={input.source}
+              scope={{ node: node.id, port: "video", source: input.source }}
+            />
+          ))}
+        </FaceStats>
+      </FaceFooter>
     </NodeShell>
   );
 }
 
 /** Whether a video wire's decoder sends sound along with its pictures. */
 function useCarriesSound(): (input: Input) => boolean {
-  const types = useWorkspaceContext().context.channelTypes;
+  const types = useWorkspaceSelect((workspace) => workspace.context.channelTypes);
   return (input) =>
     input.channel !== null &&
     channelHasAudio(types.find((type) => type.type_id === input.channel?.settings.params.type));

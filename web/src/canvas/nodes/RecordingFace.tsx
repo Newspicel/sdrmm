@@ -17,7 +17,7 @@ import {
 import { recordingsQuery } from "../../lib/api";
 import { gridLocator, usePositionStore } from "../../lib/position";
 import type { DeviceRef, PatchNode, RecordingInfo } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { pinnedRef, recordingRef } from "./deviceNode";
 import { MakeArrayButton } from "./MakeArrayButton";
@@ -32,11 +32,11 @@ export function Library({
   node: string;
   onPick: (recording: RecordingInfo) => void;
 }) {
-  const workspace = useWorkspaceContext();
+  const claimed = useWorkspaceSelect((workspace) => claimedRecordings(workspace.graph, node));
   const library = useQuery(recordingsQuery());
   const [search, setSearch] = useState("");
   const all = library.data?.recordings ?? [];
-  const choices = recordingChoices(all, claimedRecordings(workspace.graph, node), search);
+  const choices = recordingChoices(all, claimed, search);
 
   return (
     <div className="flex flex-col gap-2 p-2">
@@ -125,17 +125,17 @@ export function RecordingFacts({ recording }: { recording: RecordingInfo }) {
 }
 
 export function RecordingFace({ node }: { node: PatchNode }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const library = useQuery(recordingsQuery());
   const stem = pinnedRef(node)?.key ?? null;
-  const set = workspace.devices.get(node.id) ?? null;
+  const set = useWorkspaceSelect((workspace) => workspace.devices.get(node.id) ?? null);
   const known =
     stem === null
       ? null
       : (library.data?.recordings.find((recording) => recording.file === stem) ?? null);
 
   const pin = (chosen: DeviceRef | null): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (stored) =>
         stored.kind === "device"
@@ -148,7 +148,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
 
   const pick = (recording: RecordingInfo): void => {
     pin(recordingRef(recording.file));
-    workspace.apply();
+    now().apply();
   };
 
   if (stem === null) {
@@ -195,7 +195,7 @@ export function RecordingFace({ node }: { node: PatchNode }) {
                 ? "This recording is no longer in the library"
                 : "Start playing this recording into whatever is wired to it"
             }
-            onClick={() => workspace.apply()}
+            onClick={() => now().apply()}
             disabled={gone}
           >
             Play

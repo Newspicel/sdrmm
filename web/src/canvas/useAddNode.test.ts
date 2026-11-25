@@ -14,7 +14,7 @@ const workspace = vi.hoisted(
     }) as unknown as Workspace,
 );
 
-vi.mock("./context", () => ({ useWorkspaceContext: () => workspace }));
+vi.mock("./context", () => ({ useWorkspaceNow: () => () => workspace }));
 vi.mock("./placement", () => ({ useNodePlacement: () => place }));
 
 const { CATALOG } = await import("../test/catalog");

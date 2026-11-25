@@ -3,7 +3,7 @@ import { AudioControls } from "../../components/AudioControls";
 import { audioChainActive } from "../../components/channelSettings";
 import { Chips } from "../../components/face/Chips";
 import type { AudioProcessing, PatchNode, PortSpec } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 
@@ -41,12 +41,12 @@ export function AudioFxInspect({
   node: PatchNode;
   audio: AudioProcessing | undefined;
 }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   if (audio === undefined) {
     return null;
   }
   const edit = (next: AudioProcessing): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) => withAudio(current, next)),
     }));

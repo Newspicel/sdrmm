@@ -21,16 +21,17 @@ import { useRotatorStore } from "../../lib/rotator";
 import type {
   PatchNode,
   PatchNodeOf,
+  RotatorAxes,
   RotatorLink,
   RotatorNode,
   RotatorStatus,
   SkyPoint,
 } from "../../lib/types";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { nmeaSuggestion, serialDetail, validHostPort } from "./gpsSource";
-import { FaceBody, FaceEmpty, FaceStanding, NodeShell } from "./NodeShell";
+import { FaceBody, FaceStanding, NodeShell } from "./NodeShell";
 import { NO_WANTS, useUnwired, type Want } from "./needs";
 import {
   AZIMUTH_RANGES,
@@ -83,10 +84,10 @@ export function RotatorFace({ node }: { node: PatchNode }) {
 }
 
 function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const status = useRotatorStore((store) => store.byNode[node.id]) ?? null;
   const edit = (next: Partial<RotatorNode>): void =>
-    workspace.edit((snapshot) => ({
+    now().edit((snapshot) => ({
       ...snapshot,
       graph: patchNode(snapshot.graph, node.id, (current) =>
         current.kind === "rotator" ? { ...current, data: { ...current.data, ...next } } : current,
@@ -97,14 +98,14 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
   const unwired = useUnwired(node.id, (data.mode ?? "track") === "track" ? WANTS_TARGET : NO_WANTS);
   if (link === null) {
     return (
-      <NodeShell node={node} title="Rotator" category="output">
+      <NodeShell node={node} title="Rotator" category="output" subtitle="no link">
         <Inspect node={node.id}>
           <InspectSection label="Link">
             <LinkChoices onPick={(picked) => edit({ link: picked })} />
           </InspectSection>
         </Inspect>
         <FaceBody>
-          <FaceEmpty hint="No link" />
+          <RotatorReadouts status={null} axes={data.axes ?? "azimuth_elevation"} />
         </FaceBody>
       </NodeShell>
     );
@@ -147,13 +148,7 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
         </InspectSection>
       </Inspect>
       <FaceBody>
-        <Readouts>
-          <FollowReadouts status={status} />
-          <Readout label="Pointing">{aimLabel(status?.position, axes)}</Readout>
-          <Readout label="Target" title="Where the satellite is, or where it rises next">
-            {aimLabel(status?.target, axes)}
-          </Readout>
-        </Readouts>
+        <RotatorReadouts status={status} axes={axes} />
         <FaceStanding unwired={unwired} error={status?.error} waiting={status?.waiting} />
       </FaceBody>
     </NodeShell>
@@ -162,14 +157,26 @@ function RotatorNodeFace({ node }: { node: PatchNodeOf<"rotator"> }) {
 
 const WANTS_TARGET: readonly Want[] = [{ port: "control" }];
 
+function RotatorReadouts({ status, axes }: { status: RotatorStatus | null; axes: RotatorAxes }) {
+  return (
+    <Readouts>
+      <FollowReadouts status={status} />
+      <Readout label="Pointing">{aimLabel(status?.position, axes)}</Readout>
+      <Readout label="Target" title="Where the satellite is, or where it rises next">
+        {aimLabel(status?.target, axes)}
+      </Readout>
+    </Readouts>
+  );
+}
+
 function FollowReadouts({ status }: { status: RotatorStatus | null }) {
-  const nodes = useWorkspaceContext().graph.nodes;
-  const now = useSecondsNow();
   const lead = status?.following;
+  const following = useWorkspaceSelect((workspace) => leadLabel(lead, workspace.graph.nodes));
+  const now = useSecondsNow();
   return (
     <>
       <Readout label="Following" title="The best pass in view, or the first to rise">
-        {leadLabel(lead, nodes) ?? "-"}
+        {following ?? "-"}
       </Readout>
       <Readout label="Pass">
         {lead?.next_pass == null ? "-" : passWhen(lead.next_pass, now)}

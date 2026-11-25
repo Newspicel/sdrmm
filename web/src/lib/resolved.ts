@@ -1,5 +1,5 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
-import { useWorkspaceContext } from "../canvas/context";
+import { useWorkspaceSelect } from "../canvas/context";
 import { client, RESOLVED_KEY, unwrap } from "./api";
 import { streamSource } from "./ports";
 import type {
@@ -103,8 +103,19 @@ export function activePatch(
     : null;
 }
 
+const BY_ID = new WeakMap<ResolvedPatch, ReadonlyMap<string, ResolvedNode>>();
+
+/** Indexed once per patch: every face looks itself up on each change. */
 export function resolvedNode(patch: ResolvedPatch | null, id: string): ResolvedNode | undefined {
-  return patch?.nodes.find((node) => node.id === id);
+  if (patch === null) {
+    return undefined;
+  }
+  let index = BY_ID.get(patch);
+  if (index === undefined) {
+    index = new Map(patch.nodes.map((node) => [node.id, node]));
+    BY_ID.set(patch, index);
+  }
+  return index.get(id);
 }
 
 export function portOn(
@@ -361,14 +372,15 @@ export function ownSourceOf(
 }
 
 export function useInputs(node: string, port: string): Input[] {
-  const workspace = useWorkspaceContext();
-  return inputsOf(workspace.resolved, workspace.deviceSets, node, port, workspace.nodeStreams);
+  return useWorkspaceSelect((workspace) =>
+    inputsOf(workspace.resolved, workspace.deviceSets, node, port, workspace.nodeStreams),
+  );
 }
 
 export function useFeeds(node: string, port: string): readonly Feed[] {
-  return feedsOf(useWorkspaceContext().resolved, node, port);
+  return useWorkspaceSelect((workspace) => feedsOf(workspace.resolved, node, port));
 }
 
 export function useNodeProblems(node: string): NodeProblem[] {
-  return problemsOf(useWorkspaceContext().problems, node);
+  return useWorkspaceSelect((workspace) => problemsOf(workspace.problems, node));
 }

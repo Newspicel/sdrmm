@@ -8,7 +8,7 @@ import { tapKey } from "../../lib/audio/engine";
 import { useChannelAudio } from "../../lib/audio/useChannelAudio";
 import { isBoolean, within } from "../../lib/remembered";
 import type { Input } from "../../lib/resolved";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceSelect } from "../context";
 import { Inspect, InspectSection } from "../inspector";
 import { useNodeRemembered } from "../useNodeRemembered";
 import { METER_FILL, PlayToggle } from "./soundControls";
@@ -18,9 +18,9 @@ const isVolume = within(0, 1);
 
 /** The sound a video wire carries with its pictures, heard in this browser. */
 export function VideoSound({ node, input, name }: { node: string; input: Input; name: string }) {
-  const workspace = useWorkspaceContext();
+  const socket = useWorkspaceSelect((workspace) => workspace.socket);
   const tap = { node, port: "video", source: input.source };
-  const audio = useChannelAudio(workspace.socket, tap);
+  const audio = useChannelAudio(socket, tap);
   const [listening, setListening] = useNodeRemembered(
     node,
     `videoListening:${input.source}`,

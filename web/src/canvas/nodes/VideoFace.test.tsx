@@ -55,6 +55,12 @@ describe("video face", () => {
   it("shows no gallery before a picture arrives", () => {
     expect(render([])).not.toContain("<img");
   });
+
+  it("keeps an empty screen and its picture stat while unwired", () => {
+    const html = render([]);
+    expect(html).toContain('aria-label="No picture"');
+    expect(html).toContain(">Picture<");
+  });
 });
 
 const TV: ChannelInfo = {

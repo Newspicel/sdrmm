@@ -1,6 +1,6 @@
 import { pushToast } from "../lib/toasts";
 import type { NodeKind, PatchNode, Position } from "../lib/types";
-import { useWorkspaceContext } from "./context";
+import { useWorkspaceNow } from "./context";
 import { addNode, newNodeId, nodeIds, opensDevice } from "./graph";
 import { newNodeBody } from "./newNode";
 import { useNodePlacement } from "./placement";
@@ -10,10 +10,11 @@ import { useNodePlacement } from "./placement";
 export type AddNode = (kind: NodeKind, typeId?: string, at?: Position) => void;
 
 export function useAddNode(): AddNode {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   const placeNode = useNodePlacement();
 
   return (kind, typeId, at) => {
+    const workspace = now();
     const firstDecoder =
       kind === "channel" ? workspace.context.channelTypes[0]?.type_id : undefined;
     const body = newNodeBody(workspace.context.catalog, kind, { typeId: typeId ?? firstDecoder });

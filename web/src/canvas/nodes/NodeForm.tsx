@@ -6,7 +6,7 @@ import { clearAction, useRefusalStore } from "../../lib/refusals";
 import { type Form, type Settings, sections } from "../../lib/settingsForm";
 import type { Field, ParamChoice, PatchCatalog, PatchNode } from "../../lib/types";
 import { formatValue } from "../../sinks/values";
-import { useWorkspaceContext } from "../context";
+import { useWorkspaceNow, useWorkspaceSelect } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
 import { defaultBody, processorDefaults, processorTypeOf } from "../newNode";
@@ -44,8 +44,9 @@ function withSettings(node: PatchNode, settings: Settings): PatchNode {
 }
 
 export function useSettingsCommit(node: PatchNode): (settings: Settings) => void {
-  const workspace = useWorkspaceContext();
+  const now = useWorkspaceNow();
   return (settings) => {
+    const workspace = now();
     if (nodeSettings(workspace.context.catalog, node) === null) {
       useRefusalStore.getState().flag(node.id, NO_CATALOG, "action", SETTINGS_ACTION);
       return;
@@ -76,9 +77,8 @@ export function NodeForm({
   choices?: readonly ParamChoice[];
   lead?: ReactNode;
 }) {
-  const workspace = useWorkspaceContext();
+  const catalog = useWorkspaceSelect((workspace) => workspace.context.catalog);
   const commit = useSettingsCommit(node);
-  const catalog = workspace.context.catalog;
   const form = formOf(catalog, node);
   const settings = nodeSettings(catalog, node);
   if (settings === null) {

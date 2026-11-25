@@ -1,5 +1,5 @@
 use super::*;
-use crate::{array::ArrayNode, device::Coherence};
+use crate::{MAX_CHANNELS_PER_RADIO, array::ArrayNode, device::Coherence};
 
 fn lanes(coherence: Coherence) -> StateSnapshot {
     let mut radio = set(1, "band", Vec::new());
@@ -93,4 +93,52 @@ fn lanes_of_one_radio_without_a_shared_clock_are_a_node_problem() {
     ));
     let (_, problems) = bound(&graph, &lanes(Coherence::PhaseCoherent));
     assert!(problems.iter().all(|problem| problem.node != "arr"));
+}
+
+fn crowded(channels: usize) -> PatchGraph {
+    let mut graph = PatchGraph {
+        nodes: vec![radio("dev", "band")],
+        edges: Vec::new(),
+    };
+    for index in 0..channels {
+        let id = format!("ch{index}");
+        graph.nodes.push(channel(&id, "probe_voice"));
+        graph.edges.push(wire(("dev", "iq"), (&id, "iq")));
+    }
+    graph
+}
+
+fn full_text() -> String {
+    format!("That radio holds {MAX_CHANNELS_PER_RADIO} channels")
+}
+
+#[test]
+fn a_full_radio_stream_refuses_one_more_channel() {
+    let mut graph = crowded(MAX_CHANNELS_PER_RADIO);
+    graph.nodes.push(channel("extra", "probe_voice"));
+    let state = lanes(Coherence::None);
+    let full = verdicts(&graph, ("dev", "iq"), &state);
+    assert_eq!(verdict(&full, "extra", "iq"), Some(&Some(full_text())));
+    let other = verdicts(&graph, ("dev", "iq2"), &state);
+    assert_eq!(verdict(&other, "extra", "iq"), Some(&None));
+}
+
+#[test]
+fn a_radio_stream_with_room_takes_another_channel() {
+    let mut graph = crowded(MAX_CHANNELS_PER_RADIO - 1);
+    graph.nodes.push(channel("extra", "probe_voice"));
+    let room = verdicts(&graph, ("dev", "iq"), &lanes(Coherence::None));
+    assert_eq!(verdict(&room, "extra", "iq"), Some(&None));
+}
+
+#[test]
+fn a_patch_refuses_only_the_wire_past_a_full_radio_stream() {
+    let graph = crowded(MAX_CHANNELS_PER_RADIO + 1);
+    let (patch, refused) = compile_draft(&graph, &ResolveCtx::default());
+    let last = format!("ch{MAX_CHANNELS_PER_RADIO}");
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].edge.to.node, last);
+    assert_eq!(refused[0].reason, full_text());
+    assert!(patch.feeds(&last, "iq").is_empty());
+    assert_eq!(patch.feeds("ch0", "iq").len(), 1);
 }

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { FaceWell } from "../canvas/nodes/NodeShell";
 import { Button } from "../components/BaseControls";
 import { BTN } from "../components/controls";
 import { buildTranscript, fieldColumns, isAtBottom } from "../components/decoderViews";
@@ -29,7 +30,7 @@ export function ReadoutView({
   const entries = useEventKinds();
   const groups = groupsOf(feed);
   if (groups.length === 0) {
-    return <span className={`${EMPTY} p-3`}>Nothing arrived yet.</span>;
+    return <FaceWell hint="Nothing arrived yet" />;
   }
   return (
     <>
