@@ -108,7 +108,7 @@ impl Sample for f32 {
         use std::arch::x86_64::{_mm_loadu_ps, _mm_shuffle_ps, _mm_storeu_ps};
         let n = src.len().min(r0.len()).min(r1.len()) & !3;
         unsafe {
-            let sp = src.as_ptr().cast::<f32>();
+            let sp = src.as_ptr().cast::<Self>();
             let d0 = r0.as_mut_ptr();
             let d1 = r1.as_mut_ptr();
             let mut i = 0;
@@ -143,7 +143,7 @@ impl Sample for f32 {
             .min(r3.len())
             & !3;
         unsafe {
-            let sp = src.as_ptr().cast::<f32>();
+            let sp = src.as_ptr().cast::<Self>();
             let (d0, d1, d2, d3) = (
                 r0.as_mut_ptr(),
                 r1.as_mut_ptr(),

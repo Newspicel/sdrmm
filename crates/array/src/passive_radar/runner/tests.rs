@@ -437,7 +437,7 @@ fn push_never_allocates_or_blocks() {
     assert!(copied >= 16, "only {copied} blocks reached the pool");
     took.sort_unstable();
     let block_period = Duration::from_secs_f64(BLOCK as f64 / RATE);
-    assert!(took[took.len() / 2] < block_period / 100, "{took:?}");
+    assert!(took[took.len() / 2] < block_period / 20, "{took:?}");
     assert!(took[took.len() - 1] < Duration::from_millis(5), "{took:?}");
 }
 

@@ -9,7 +9,7 @@ use num_complex::Complex;
 
 pub use fixed::{FixedFramer, Framed};
 pub use rotation::{conj_product, derotate, derotate_from, rotor};
-pub use soft::{SyncDistance, sync_distance};
+pub use soft::{SyncDistance, SyncPattern, sync_distance};
 pub use tone_array::ToneArray;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

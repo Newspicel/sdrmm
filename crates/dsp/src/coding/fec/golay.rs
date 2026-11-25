@@ -1,7 +1,7 @@
 use super::{
     conv::Soft,
     remainder::remainder,
-    soft_ml::{SoftWord, confident, span},
+    soft_ml::{SoftWord, confident},
 };
 
 const GOLAY23_POLY: u32 = 0xC75;
@@ -34,14 +34,16 @@ const GOLAY23_ERROR_PATTERNS: [u32; 1 << GOLAY23_CHECK_BITS] = {
     table
 };
 
-const GOLAY23_ROWS: [u64; GOLAY23_DATA_BITS as usize] = {
-    let mut rows = [0; GOLAY23_DATA_BITS as usize];
-    let mut bit = 0;
-    while bit < rows.len() {
-        rows[bit] = golay23_encode(1 << bit) as u64;
-        bit += 1;
+/// Every codeword, by message: soft decoding scores them all, and a table walks faster than
+/// spanning them row by row.
+static GOLAY23_CODEWORDS: [u32; 1 << GOLAY23_DATA_BITS] = {
+    let mut words = [0; 1 << GOLAY23_DATA_BITS];
+    let mut data = 0;
+    while data < words.len() {
+        words[data] = golay23_encode(data as u16);
+        data += 1;
     }
-    rows
+    words
 };
 
 #[must_use]
@@ -69,8 +71,8 @@ pub fn golay23_correct(word: u32) -> (u32, u32) {
 pub fn golay23_decode_soft(soft: &[Soft; GOLAY23_CODE_BITS as usize]) -> (u32, u32) {
     let (values, len) = confident(soft);
     let received = SoftWord::new(&values[..len]);
-    let (_, codeword) = received.best(span(&GOLAY23_ROWS));
-    (codeword as u32, received.overturned(codeword))
+    let codeword = received.best_short(&GOLAY23_CODEWORDS);
+    (codeword, received.overturned(u64::from(codeword)))
 }
 
 const fn golay23_remainder(word: u32) -> u32 {

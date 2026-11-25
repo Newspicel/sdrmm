@@ -473,6 +473,26 @@ mod dev_command_tests {
     }
 
     #[test]
+    fn a_prebuilt_smoke_server_runs_against_the_media_it_unpacked() {
+        let root = tempfile::tempdir().expect("root");
+        let root = root.path();
+        let archive = root.join("archive");
+        let triple = xtask_release::media::host_triple().expect("host triple");
+        let packed = archive.join(MEDIA_DIR).join(&triple);
+        std::fs::create_dir_all(packed.join("lib")).expect("media dir");
+        std::fs::write(packed.join("sdrmm-build.txt"), "").expect("build stamp");
+        std::fs::create_dir_all(archive.join(RECORDINGS_DIR)).expect("recordings");
+        std::fs::write(archive.join(server_binary()), "").expect("server");
+
+        let server = unpack_smoke(root, &archive, &root.join("scratch")).expect("unpack");
+        let env = smoke_env(root, Some(&server)).expect("env");
+
+        let media = root.join(".media").join(triple);
+        assert!(env.contains(&("FFMPEG_DIR", media.to_string_lossy().into_owned())));
+        assert!(env.contains(&("E2E_SERVER", server.to_string_lossy().into_owned())));
+    }
+
+    #[test]
     fn backend_change_filter_accepts_only_watched_build_inputs() {
         let root = Path::new("/workspace");
         for path in [
@@ -1443,21 +1463,28 @@ fn smoke(root: &Path, prebuilt: Option<&Path>) -> Result<()> {
             .with_context(|| format!("remove {}", scratch.display()))?;
     }
     let recordings = scratch.join(RECORDINGS_DIR);
-    let mut env = test_env(root)?;
-    env.push(("E2E_PREBUILT", "1".to_owned()));
-    match prebuilt {
-        Some(dir) => {
-            let server = unpack_smoke(root, &root.join(dir), &recordings)?;
-            env.push(("E2E_SERVER", utf8(&server)?.to_owned()));
-        }
-        None => build_smoke(root, &recordings)?,
-    }
+    let server = if let Some(dir) = prebuilt {
+        Some(unpack_smoke(root, &root.join(dir), &recordings)?)
+    } else {
+        build_smoke(root, &recordings)?;
+        None
+    };
     with_env(
         PNPM,
         &["--dir", "web", "exec", "playwright", "test"],
         root,
-        &env,
+        &smoke_env(root, server.as_deref())?,
     )
+}
+
+/// Read only once `unpack_smoke` has restored the media libraries, or the server cannot load them.
+fn smoke_env(root: &Path, server: Option<&Path>) -> Result<Vec<(&'static str, String)>> {
+    let mut env = test_env(root)?;
+    env.push(("E2E_PREBUILT", "1".to_owned()));
+    if let Some(server) = server {
+        env.push(("E2E_SERVER", utf8(server)?.to_owned()));
+    }
+    Ok(env)
 }
 
 fn build_smoke(root: &Path, recordings: &Path) -> Result<()> {

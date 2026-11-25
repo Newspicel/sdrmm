@@ -7,6 +7,8 @@ use super::{
 
 pub(crate) const MAX_BITS: usize = 64;
 const BYTES: usize = MAX_BITS / 8;
+/// Codewords [`SoftWord::best_short`] scores side by side, so no one comparison waits on the last.
+const SHORT_LANES: usize = 4;
 
 /// Every codeword spanned by `rows`, as (message, codeword), each one row away from the last
 /// in Gray order and starting with message zero.
@@ -73,9 +75,13 @@ impl SoftWord {
             word.erased |= u64::from(value == 0.0) << place;
         }
         for (byte, table) in word.ones.iter_mut().enumerate().take(word.bytes) {
-            for pattern in 1..256usize {
-                let place = byte * 8 + pattern.trailing_zeros() as usize;
-                table[pattern] = table[pattern & (pattern - 1)] + values[place];
+            for bit in 0..8 {
+                let half = 1 << bit;
+                let value = values[byte * 8 + bit];
+                let (without, with) = table.split_at_mut(half);
+                for (sum, &base) in with.iter_mut().zip(without.iter()) {
+                    *sum = base + value;
+                }
             }
         }
         word
@@ -112,6 +118,43 @@ impl SoftWord {
                     }
                 });
         (message, codeword)
+    }
+
+    /// The best correlated of `codewords`, each at most 24 bits, the earliest on a tie: a word
+    /// as short as Golay's scores a codeword in three lookups.
+    pub(crate) fn best_short(&self, codewords: &[u32]) -> u32 {
+        let [low, middle, high, ..] = &self.ones;
+        let score = |codeword: u32| {
+            let [a, b, c, _] = codeword.to_le_bytes();
+            low[usize::from(a)] + middle[usize::from(b)] + high[usize::from(c)]
+        };
+        let mut lanes = [(f32::NEG_INFINITY, 0usize); SHORT_LANES];
+        let (chunks, rest) = codewords.as_chunks::<SHORT_LANES>();
+        for (chunk, words) in chunks.iter().enumerate() {
+            for (lane, (best, &codeword)) in lanes.iter_mut().zip(words).enumerate() {
+                let ones = score(codeword);
+                if ones > best.0 {
+                    *best = (ones, chunk * SHORT_LANES + lane);
+                }
+            }
+        }
+        let first_rest = chunks.len() * SHORT_LANES;
+        let tail = rest
+            .iter()
+            .enumerate()
+            .map(|(at, &codeword)| (score(codeword), first_rest + at));
+        let (_, index) =
+            lanes
+                .into_iter()
+                .chain(tail)
+                .fold((f32::NEG_INFINITY, usize::MAX), |best, lane| {
+                    if lane.0 > best.0 || (lane.0 == best.0 && lane.1 < best.1) {
+                        lane
+                    } else {
+                        best
+                    }
+                });
+        codewords.get(index).copied().unwrap_or(0)
     }
 
     /// Whether `codeword`, of a code of minimum distance `distance`, [`stands`] for this word.

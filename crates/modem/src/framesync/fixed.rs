@@ -1,4 +1,4 @@
-use super::{SyncDistance, sync_distance};
+use super::{SyncDistance, SyncPattern};
 
 /// What one completed frame went through.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,9 +43,9 @@ impl SoftWindow {
         self.next = (self.next + 1) % 64;
     }
 
-    fn newest(&self, count: usize) -> &[f32] {
-        let end = self.next + 64;
-        &self.values[end - count..end]
+    fn newest(&self) -> &[f32; 64] {
+        let (_, newest) = self.values.split_at(self.next);
+        newest.first_chunk().unwrap_or(&[0.0; 64])
     }
 }
 
@@ -54,7 +54,7 @@ impl SoftWindow {
 /// in a row are carried on position before the search starts over. A frame is handed out once
 /// the word after it has been judged, so a lock no second word bears out yields nothing and
 /// gives way to a match at least as good. Fed soft values, words are judged by
-/// [`sync_distance`], so weak wrong bits cost less than confident ones.
+/// [`super::sync_distance`], so weak wrong bits cost less than confident ones.
 pub struct FixedFramer {
     word: u64,
     mask: u64,
@@ -65,6 +65,7 @@ pub struct FixedFramer {
     max_misses: u8,
     raw: u64,
     soft: Box<SoftWindow>,
+    pattern: Box<SyncPattern>,
     soft_fed: bool,
     shift: u64,
     lock: Option<Lock>,
@@ -99,6 +100,7 @@ impl FixedFramer {
             max_misses,
             raw: 0,
             soft: Box::new(SoftWindow::new()),
+            pattern: Box::new(SyncPattern::new(word & mask, mask)),
             soft_fed: false,
             shift: 0,
             lock: None,
@@ -174,7 +176,7 @@ impl FixedFramer {
     /// The last word's distance from the sync word, upright and inverted.
     fn distance(&self) -> SyncDistance {
         if self.soft_fed {
-            sync_distance(self.soft.newest(self.word_bits), self.word, self.mask)
+            self.pattern.distance(self.soft.newest())
         } else {
             SyncDistance::hard(self.raw, self.word, self.mask)
         }

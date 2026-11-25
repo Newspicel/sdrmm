@@ -51,16 +51,71 @@ pub fn sync_distance<T: Copy + Into<f32>>(soft: &[T], word: u64, mask: u64) -> S
             wrong += value.abs();
         }
     }
-    let unsure = erased as f32 / 2.0;
-    let scale = if total > 0.0 {
-        heard as f32 / total
-    } else {
-        0.0
-    };
+    scaled(wrong, total, heard as f32, erased as f32)
+}
+
+fn scaled(wrong: f32, total: f32, heard: f32, erased: f32) -> SyncDistance {
+    let unsure = erased / 2.0;
+    let scale = if total > 0.0 { heard / total } else { 0.0 };
     SyncDistance {
         upright: wrong * scale + unsure,
         inverted: (total - wrong) * scale + unsure,
     }
+}
+
+/// Partial sums kept apart, so judging a window vectorizes.
+const LANES: usize = 8;
+
+/// A sync word laid out against the newest 64 soft values, so judging a window takes no
+/// shifts or branches.
+#[derive(Clone, Debug)]
+pub struct SyncPattern {
+    signs: [f32; 64],
+    counts: [f32; 64],
+    counted: f32,
+}
+
+impl SyncPattern {
+    /// Only bits set in `mask` count.
+    #[must_use]
+    pub fn new(word: u64, mask: u64) -> Self {
+        let counts: [f32; 64] = std::array::from_fn(|index| bit(mask, index) as f32);
+        Self {
+            signs: std::array::from_fn(|index| {
+                counts[index] * (2.0 * bit(word, index) as f32 - 1.0)
+            }),
+            counts,
+            counted: mask.count_ones() as f32,
+        }
+    }
+
+    /// As [`sync_distance`] over `soft`, the newest 64 values, the newest last.
+    #[must_use]
+    pub fn distance(&self, soft: &[f32; 64]) -> SyncDistance {
+        let mut magnitude = [0.0f32; LANES];
+        let mut agreement = [0.0f32; LANES];
+        let mut erased = [0.0f32; LANES];
+        let (values, _) = soft.as_chunks::<LANES>();
+        let (signs, _) = self.signs.as_chunks::<LANES>();
+        let (counts, _) = self.counts.as_chunks::<LANES>();
+        for ((values, signs), counts) in values.iter().zip(signs).zip(counts) {
+            for lane in 0..LANES {
+                let value = values[lane];
+                magnitude[lane] += counts[lane] * value.abs();
+                agreement[lane] += signs[lane] * value;
+                erased[lane] += if value == 0.0 { counts[lane] } else { 0.0 };
+            }
+        }
+        let total: f32 = magnitude.iter().sum();
+        let erased: f32 = erased.iter().sum();
+        let wrong = (total - agreement.iter().sum::<f32>()) / 2.0;
+        scaled(wrong, total, self.counted - erased, erased)
+    }
+}
+
+/// The bit of `word` that lines up with `index` of 64 values, the last one bit 0.
+const fn bit(word: u64, index: usize) -> u64 {
+    word >> (63 - index) & 1
 }
 
 #[cfg(test)]
@@ -104,6 +159,25 @@ mod tests {
         soft[2] = -1.0;
         soft[4] = 1.0;
         assert_eq!(sync_distance(&soft, WORD, 0xFF).upright, 2.0);
+    }
+
+    #[test]
+    fn a_pattern_judges_the_newest_values_as_the_plain_search_does() {
+        let mut soft: [f32; 64] = std::array::from_fn(|index| (index as f32 * 0.37).sin() * 3.0);
+        soft[60] = 0.0;
+        for (word, mask) in [(WORD, 0xFFu64), (0x1ACF_FC1D, 0xFFFF_FFFF), (WORD, 0x7F)] {
+            let bits = 64 - mask.leading_zeros() as usize;
+            let plain = sync_distance(&soft[64 - bits..], word, mask);
+            let laid = SyncPattern::new(word, mask).distance(&soft);
+            assert!(
+                (plain.upright - laid.upright).abs() < 1e-4,
+                "{plain:?} {laid:?}"
+            );
+            assert!(
+                (plain.inverted - laid.inverted).abs() < 1e-4,
+                "{plain:?} {laid:?}"
+            );
+        }
     }
 
     #[test]
