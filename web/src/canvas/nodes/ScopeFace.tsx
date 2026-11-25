@@ -35,7 +35,7 @@ import { channelPicker } from "../palette";
 import { runningSetOf } from "../workspaceDevice";
 import { BAND_RULER_H, BandRuler } from "./BandRuler";
 import { ChannelPicker } from "./ChannelPicker";
-import { FaceBody, FaceEmpty, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
+import { FaceBody, NodeShell, useFaceActive, useFaceWheel } from "./NodeShell";
 import { ScopeMenu } from "./ScopeMenu";
 import { ScopeSettings } from "./ScopeSettings";
 import { type ScopeChannels, useScopeChannels } from "./scopeChannels";
@@ -227,7 +227,7 @@ function Spectrum({
         waterfall={feed.waterfall}
       />
 
-      {meta === null && <ScopeEmpty hint={emptyHint(source, set)} />}
+      {meta === null && <ScopeIdle hint={emptyHint(source, set)} />}
 
       <ScopeChrome
         node={node}
@@ -284,10 +284,15 @@ function emptyHint(source: IqLane | null, set: DeviceSet | null): string | undef
   return set === null ? "Radio stopped" : "Waiting for samples";
 }
 
-function ScopeEmpty({ hint }: { hint: string | undefined }) {
+function ScopeIdle({ hint }: { hint: string | undefined }) {
+  if (hint === undefined) {
+    return null;
+  }
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex bg-panel">
-      <FaceEmpty hint={hint} />
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <span className="rounded-inset bg-plot-bg/85 px-2 py-1 text-xs text-plot-ink-dim">
+        {hint}
+      </span>
     </div>
   );
 }

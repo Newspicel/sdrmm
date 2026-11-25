@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FULL_VIEW } from "../../components/spectrumView";
-import { type PlotFrame, readoutAt, rollOffShare, tracePoints } from "./scopePlot";
+import { gridColumns, type PlotFrame, readoutAt, rollOffShare, tracePoints } from "./scopePlot";
 
 function frame(db: number[]): PlotFrame {
   return {
@@ -76,6 +76,20 @@ describe("tracePoints", () => {
 
   it("has nothing to draw without bins", () => {
     expect(tracePoints(Float32Array.of(-90), FULL_VIEW, 100, -50).count).toBe(0);
+  });
+});
+
+describe("gridColumns", () => {
+  it("divides an idle plot evenly, without labels", () => {
+    const columns = gridColumns(null, FULL_VIEW, 440, false);
+    expect(columns.map((column) => column.at)).toEqual([0.25, 0.5, 0.75]);
+    expect(columns.every((column) => column.label === null)).toBe(true);
+  });
+
+  it("labels the frequency of each column once a frame arrives", () => {
+    const columns = gridColumns(frame([-90, -80]), FULL_VIEW, 440, false);
+    expect(columns.length).toBeGreaterThan(0);
+    expect(columns.every((column) => column.label !== null)).toBe(true);
   });
 });
 

@@ -206,18 +206,23 @@ export function drawPlot(canvas: HTMLCanvasElement | null, options: PlotOptions)
     return;
   }
   const { ctx, width, height } = prepared;
-  const { frame, view, window: dbWindow } = options;
-  if (frame === null || frame.db.length < 2 || !(dbWindow.max > dbWindow.min)) {
+  const { view, window: dbWindow } = options;
+  if (!(dbWindow.max > dbWindow.min)) {
     return;
   }
+  const frame = options.frame !== null && options.frame.db.length >= 2 ? options.frame : null;
   const plotH = Math.max(1, height - AXIS_H);
-
-  options.density?.blit(ctx, width, plotH);
-
   ctx.font = PLOT_FONT;
   ctx.textBaseline = "middle";
   ctx.lineWidth = 1;
-  drawGrid(ctx, frame, view, dbWindow, width, height, plotH, options.offsetAxis === true);
+  const offsetAxis = options.offsetAxis === true;
+  if (frame === null) {
+    drawGrid(ctx, null, view, dbWindow, width, height, plotH, offsetAxis);
+    return;
+  }
+
+  options.density?.blit(ctx, width, plotH);
+  drawGrid(ctx, frame, view, dbWindow, width, height, plotH, offsetAxis);
   drawRollOff(ctx, view, options.rollOff ?? 0, width, plotH);
 
   ctx.lineJoin = "round";
@@ -313,9 +318,32 @@ function drawCursor(
   ctx.fillText(text, left + 4, 11);
 }
 
+export interface GridColumn {
+  at: number;
+  label: string | null;
+}
+
+/// Without a frame the columns still divide the plot evenly, so an idle scope keeps its grid.
+export function gridColumns(
+  frame: PlotFrame | null,
+  view: SpectrumView,
+  width: number,
+  offsetAxis: boolean,
+): GridColumn[] {
+  const count = Math.max(2, Math.floor(width / 110));
+  if (frame === null) {
+    return Array.from({ length: count - 1 }, (_, i) => ({ at: (i + 1) / count, label: null }));
+  }
+  const visible = frame.spanHz * viewWidth(view);
+  return frequencyTicks(frame.centerHz, frame.spanHz, view, count).map((tick) => ({
+    at: tick.at,
+    label: offsetAxis ? formatOffset(tick.hz - frame.centerHz) : formatTick(tick.hz, visible),
+  }));
+}
+
 function drawGrid(
   ctx: CanvasRenderingContext2D,
-  frame: PlotFrame,
+  frame: PlotFrame | null,
   view: SpectrumView,
   dbWindow: DbWindow,
   width: number,
@@ -336,23 +364,16 @@ function drawGrid(
     ctx.stroke();
   }
 
-  const visible = frame.spanHz * viewWidth(view);
-  const ticks = frequencyTicks(
-    frame.centerHz,
-    frame.spanHz,
-    view,
-    Math.max(2, Math.floor(width / 110)),
-  );
   ctx.textAlign = "center";
-  for (const tick of ticks) {
-    const x = Math.round(tick.at * width) + 0.5;
+  for (const { at, label } of gridColumns(frame, view, width, offsetAxis)) {
+    const x = Math.round(at * width) + 0.5;
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, plotH);
     ctx.stroke();
-    const label = offsetAxis
-      ? formatOffset(tick.hz - frame.centerHz)
-      : formatTick(tick.hz, visible);
+    if (label === null) {
+      continue;
+    }
     const half = ctx.measureText(label).width / 2;
     if (x - half >= 2 && x + half <= width - 2) {
       ctx.fillText(label, x, height - AXIS_H / 2);
