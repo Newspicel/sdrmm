@@ -10,6 +10,7 @@ import {
   LABEL,
   listItem,
 } from "../components/controls";
+import { DevOnly } from "../components/DevOnly";
 import { Icon } from "../components/Icon";
 import { workspaceExportUrl } from "../lib/api";
 import { useT } from "../lib/i18n/translate";
@@ -17,6 +18,7 @@ import { MAX_NAME_LEN } from "../lib/limits";
 import { pickFile } from "../lib/pickFile";
 import type { WorkspaceInfo } from "../lib/types";
 
+import { TestWorkspaceButton } from "./TestWorkspaceButton";
 import { WORKSPACE_FILE_ACCEPT } from "./workspaceExport";
 
 export function WorkspaceMenu({
@@ -94,6 +96,9 @@ export function WorkspaceMenu({
         >
           {t("workspace.import")}
         </Button>
+        <DevOnly>
+          <TestWorkspaceButton onCreated={onActivate} />
+        </DevOnly>
       </div>
     </div>
   );

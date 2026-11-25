@@ -42,6 +42,8 @@ export const de: Catalog = {
   "workspace.import": "Arbeitsbereichsdatei importieren",
   "workspace.importTitle":
     "Eine hier oder auf einem anderen Rechner exportierte Arbeitsbereichsdatei lesen",
+  "workspace.test": "Testarbeitsbereich",
+  "workspace.testTitle": "Neue Arbeitsbereiche mit jedem Knoten in jedem Zustand",
   "workspace.renameField": "Neuer Name für {name}",
   "workspace.deleteAsk": "{name} löschen?",
   "workspace.deleteTitle": "Der Arbeitsbereich, sein Layout und sein Verlauf werden entfernt",

@@ -39,6 +39,7 @@ export const AUDIO_RATE_HZ = limits.audio.rate_hz;
 export const IF_FILTER_LIMITS = limits.if_filter;
 export const SURVEY_LIMITS = limits.survey;
 export const WORKSPACE_STATE_VERSION = limits.workspace_state_version;
+export const WORKSPACE_SNAPSHOT_VERSION = limits.workspace_snapshot_version;
 export const VOICE_CHAT_LIMITS = limits.voice_chat;
 export const ACCOUNT_LIMITS = limits.account;
 

@@ -101,11 +101,13 @@ function specOf({
 }
 
 export function catalogPorts(context: GraphContext, node: PatchNode): PortSpec[] {
+  return declaredPorts(context, node).map((port) => ({ ...port, repeat: "once" as const }));
+}
+
+/** The ports a node's kind, or the type it picks, declares, each repeat still unexpanded. */
+export function declaredPorts(context: GraphContext, node: PatchNode): PortSpec[] {
   const entry = context.catalog.nodes.find((type) => type.kind === node.kind);
-  return (pickedPorts(context, node) ?? entry?.ports ?? []).map((port) => ({
-    ...port,
-    repeat: "once" as const,
-  }));
+  return pickedPorts(context, node) ?? entry?.ports ?? [];
 }
 
 /** The ports of the decoder or processor a node runs, when it picks one. */

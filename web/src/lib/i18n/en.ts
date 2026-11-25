@@ -40,6 +40,8 @@ export const en = {
   "workspace.add": "Add",
   "workspace.import": "Import a workspace file",
   "workspace.importTitle": "Read a workspace file exported here or on another machine",
+  "workspace.test": "Test workspace",
+  "workspace.testTitle": "New workspaces with every node in every state",
   "workspace.renameField": "New name for {name}",
   "workspace.deleteAsk": "Delete {name}?",
   "workspace.deleteTitle": "The workspace, its layout and its history are removed",

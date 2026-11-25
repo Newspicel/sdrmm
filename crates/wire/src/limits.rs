@@ -85,6 +85,7 @@ pub struct Limits {
     pub survey: SurveyLimits,
     pub decoder_log_rows: u32,
     pub workspace_state_version: u32,
+    pub workspace_snapshot_version: u32,
     pub voice_chat: VoiceChatLimits,
     pub account: AccountLimits,
 }
@@ -423,6 +424,7 @@ pub const LIMITS: Limits = Limits {
     survey: SURVEY_LIMITS,
     decoder_log_rows: crate::rest::MAX_DECODER_LOG_ROWS,
     workspace_state_version: crate::workspace_state::WORKSPACE_STATE_VERSION,
+    workspace_snapshot_version: crate::workspace::WORKSPACE_SNAPSHOT_VERSION,
     voice_chat: VOICE_CHAT_LIMITS,
     account: ACCOUNT_LIMITS,
 };

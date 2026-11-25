@@ -145,6 +145,10 @@ fn the_published_limits_name_their_wire_constants() {
         json["workspace_state_version"],
         crate::workspace_state::WORKSPACE_STATE_VERSION
     );
+    assert_eq!(
+        json["workspace_snapshot_version"],
+        crate::workspace::WORKSPACE_SNAPSHOT_VERSION
+    );
 }
 
 #[test]

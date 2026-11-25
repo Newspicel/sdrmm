@@ -195,6 +195,7 @@
   },
   "decoder_log_rows": 5000,
   "workspace_state_version": 2,
+  "workspace_snapshot_version": 4,
   "voice_chat": {
     "threshold_db": {
       "min": -90.0,
