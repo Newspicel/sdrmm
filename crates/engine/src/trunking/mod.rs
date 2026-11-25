@@ -8,6 +8,7 @@ mod follow;
 mod prospect;
 mod search;
 mod status;
+mod talkgroups;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -22,6 +23,7 @@ use sdrmm_wire::{
     TrunkCallSettings, TrunkChannelEntry, TrunkDiscovery, TrunkKind, TrunkScheme, TrunkSite,
     TrunkSpec, TrunkSystemStatus, TrunkTalkgroups, VoiceKey,
 };
+use talkgroups::HeardTalkgroups;
 
 use crate::Engine;
 
@@ -219,6 +221,7 @@ pub(crate) fn spawn(
         followers: HashMap::new(),
         problems: HashMap::new(),
         detected: HashMap::new(),
+        heard_talkgroups: HashMap::new(),
         prospectors: HashMap::new(),
         probes: HashMap::new(),
         controls: HashMap::new(),
@@ -249,6 +252,7 @@ struct Follower {
     followers: HashMap<FollowerKey, FollowerChannel>,
     problems: HashMap<FollowerKey, Problem>,
     detected: HashMap<String, String>,
+    heard_talkgroups: HashMap<String, HeardTalkgroups>,
     sites: HashMap<String, TrunkSite>,
     prospectors: HashMap<String, Prospector>,
     probes: HashMap<(u32, u32), Probe>,
@@ -363,7 +367,7 @@ impl Follower {
             return false;
         };
         let frame = &frame;
-        if self.note_traffic(record.device_set, record.channel) {
+        if self.note_traffic(record.device_set, record.channel, frame) {
             return false;
         }
         if let Some(probe) = self.probes.get(&(record.device_set, record.channel)) {
@@ -453,6 +457,8 @@ impl Follower {
         self.detected
             .retain(|node, _| nodes.contains(&node.as_str()));
         self.sites.retain(|node, _| nodes.contains(&node.as_str()));
+        self.heard_talkgroups
+            .retain(|node, _| nodes.contains(&node.as_str()));
         let settled: Vec<FollowerKey> = self
             .problems
             .keys()

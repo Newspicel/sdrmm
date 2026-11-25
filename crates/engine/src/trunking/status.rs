@@ -5,7 +5,7 @@ use sdrmm_wire::{
     TrunkSystemStatus,
 };
 
-use super::{Follower, TrunkSystem, prospect::Prospector};
+use super::{Follower, HeardTalkgroups, TrunkSystem, prospect::Prospector};
 
 impl Follower {
     pub(super) fn publish(&self) {
@@ -65,6 +65,10 @@ impl Follower {
                 })
                 .collect(),
             channel_map: self.channel_map_of(&system.node),
+            heard: self
+                .heard_talkgroups
+                .get(&system.node)
+                .map_or_default(HeardTalkgroups::listed),
             probes: self
                 .probes
                 .iter()

@@ -79,8 +79,17 @@ export function Readout({
         {hint !== undefined && <InfoTip text={hint} />}
       </dt>
       <dd className={`min-w-0 truncate text-right font-mono text-xs tabular-nums ${ink}`}>
-        <WithUnit>{children}</WithUnit>
+        {isBlank(children) ? (
+          <span className="text-ink-faint">–</span>
+        ) : (
+          <WithUnit>{children}</WithUnit>
+        )}
       </dd>
     </div>
   );
+}
+
+/** An empty value still shows a placeholder, so a readout never reads as a bare label. */
+export function isBlank(value: ReactNode): boolean {
+  return value === null || value === undefined || value === "" || value === false;
 }

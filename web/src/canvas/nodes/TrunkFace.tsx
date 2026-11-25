@@ -1,4 +1,4 @@
-import { Chips, ChoiceChip, ToggleChip } from "../../components/face/Chips";
+import { Chips, ChoiceChip, OptionalNumberChip, ToggleChip } from "../../components/face/Chips";
 import { FaceFault } from "../../components/face/Fault";
 import { Readout, Readouts } from "../../components/face/Readouts";
 import { TextChip } from "../../components/face/TextChip";
@@ -9,11 +9,11 @@ import { useFeeds } from "../../lib/resolved";
 import { isQuiet } from "../../lib/settingsForm";
 import type {
   ChannelDescriptor,
+  HeardTalkgroup,
   PatchNode,
   PatchNodeOf,
   SettingField,
   TalkgroupName,
-  TrunkBand,
   TrunkSpec,
   TrunkSystemStatus,
   TrunkTalkgroups,
@@ -22,7 +22,7 @@ import type {
 import { useWorkspaceContext } from "../context";
 import { patchNode } from "../graph";
 import { Inspect, InspectSection } from "../inspector";
-import { ChannelPlanAdd, ChannelPlanTable } from "./ChannelPlanTable";
+import { ChannelPlanTable } from "./ChannelPlanTable";
 import { FaceBody, FaceEmpty, NodeShell } from "./NodeShell";
 import { useUnwired, type Want } from "./needs";
 import {
@@ -30,32 +30,34 @@ import {
   activeScheme,
   adoptable,
   awaitingControlChannel,
+  channelItem,
+  channelPlanEntries,
+  channelPlanFrom,
   channelPlanRows,
   controlChannelStalled,
   fallbackControl,
   followerCall,
   followerPlace,
   formatSearchRanges,
-  formatTalkgroups,
+  heardLatest,
   maxChannel,
+  megahertzHz,
   otherControlLabel,
-  parseControlHz,
   parseSearchRanges,
-  parseTalkgroups,
   planLabel,
   searchSummary,
   siteLabel,
   slotLabel,
-  TALKGROUP_NAME_ITEM,
-  talkgroupNames,
+  TALKGROUP_ITEM,
+  talkgroupEntries,
+  talkgroupsFrom,
   trunkDecoders,
   trunkKeysField,
   trunkProtocolLabel,
   trunkProtocols,
   trunkSpec,
   voiceKeys,
-  withBandBase,
-  withBandSpacing,
+  withHeard,
 } from "./trunk";
 
 const WANTS_IQ: readonly Want[] = [{ port: "iq" }];
@@ -83,6 +85,8 @@ export function TrunkFace({ node }: { node: PatchNode }) {
     names: [],
     ...node.data.talkgroups,
   };
+  const keysField = trunkKeysField(workspace.context.channelTypes, node.data.decoder ?? "");
+  const vocoder = spec?.vocoder === true ? (node.data.vocoder ?? null) : undefined;
   const discovery = node.data.discovery ?? { enabled: false, ranges: [], max_probes: 0 };
   const channelMap = node.data.channel_map ?? [];
   const learned = status?.channel_map ?? [];
@@ -136,28 +140,36 @@ export function TrunkFace({ node }: { node: PatchNode }) {
               searchTitle={summary}
               onEdit={edit}
             />
+            {vocoder !== undefined && (
+              <VocoderChip vocoder={vocoder} onChange={(next) => edit({ vocoder: next })} />
+            )}
+            {keysField !== null && (
+              <KeysChip
+                field={keysField}
+                keys={node.data.keys ?? []}
+                onChange={(keys) => edit({ keys })}
+              />
+            )}
           </Chips>
         </InspectSection>
         <InspectSection label="Calls">
-          <CallChips
+          <TalkgroupChips
             talkgroups={talkgroups}
-            keys={node.data.keys ?? []}
-            keysField={trunkKeysField(workspace.context.channelTypes, node.data.decoder ?? "")}
-            vocoder={spec?.vocoder === true ? (node.data.vocoder ?? null) : undefined}
+            heard={status?.heard}
             onChange={(next) => edit({ talkgroups: { ...talkgroups, ...next } })}
-            onKeys={(keys) => edit({ keys })}
-            onVocoder={(vocoder) => edit({ vocoder })}
           />
         </InspectSection>
-        <InspectSection label="Band">
-          <BandChips band={node.data.band ?? null} onChange={(band) => edit({ band })} />
-        </InspectSection>
-        <InspectSection label="Add channel">
-          <ChannelPlanAdd
-            entries={channelMap}
-            maxChannel={maxChannel(spec)}
-            onChange={(channel_map) => edit({ channel_map })}
-          />
+        <InspectSection label="Channel plan">
+          <Chips inset="none">
+            <ListChip
+              label="Channels"
+              title="Channels the site never announces: one by one, or a band spaced from channel 0"
+              item={channelItem(maxChannel(spec))}
+              entries={channelPlanEntries(channelMap, node.data.band)}
+              quiet={channelMap.length === 0 && node.data.band == null}
+              onChange={(next) => edit(channelPlanFrom(next, maxChannel(spec)))}
+            />
+          </Chips>
         </InspectSection>
       </Inspect>
       <FaceBody>
@@ -236,28 +248,29 @@ function SystemChips({
         quiet={protocol === AUTO_PROTOCOL}
         onChange={(next) => onEdit({ protocol: next })}
       />
-      <TextChip
-        label="Control"
-        name="Control channel"
+      <OptionalNumberChip
+        label="Control channel"
         title={
           awaiting
-            ? "Name the control channel in MHz. The radio stays untuned until then"
-            : "Control channel in MHz"
+            ? "The control channel the site announces on. The radio stays untuned until it is set"
+            : "The control channel the site announces on"
         }
-        value={data.control_hz == null ? "" : (data.control_hz / 1e6).toString()}
-        shown={data.control_hz == null ? "none" : undefined}
-        placeholder="451.0125"
-        onCommit={(text) => onEdit({ control_hz: parseControlHz(text) })}
+        value={data.control_hz == null ? null : data.control_hz / 1e6}
+        placeholder="none"
+        unit="MHz"
+        min={0}
+        step={0.0125}
+        onCommit={(mhz) => onEdit({ control_hz: megahertzHz(mhz) })}
       />
       <ToggleChip
-        label="Search"
-        title="Find the rest of the site's channels"
+        label="Find channels"
+        title="Search for the site's other channels"
         on={discovery.enabled ?? false}
         onChange={(next) => onEdit({ discovery: { ...discovery, enabled: next } })}
       />
       {discovery.enabled === true && (
         <TextChip
-          label="Range"
+          label="Search range"
           name="Search range"
           title={`Narrow the search to start-end in MHz / step in kHz. ${searchTitle}`}
           value={formatSearchRanges(discovery.ranges)}
@@ -271,115 +284,80 @@ function SystemChips({
   );
 }
 
-function BandChips({
-  band,
+function TalkgroupChips({
+  talkgroups,
+  heard,
   onChange,
 }: {
-  band: TrunkBand | null;
-  onChange: (band: TrunkBand | null) => void;
+  talkgroups: TrunkTalkgroups;
+  heard: readonly HeardTalkgroup[] | undefined;
+  onChange: (next: Partial<TrunkTalkgroups>) => void;
 }) {
+  const listed = talkgroupEntries(talkgroups);
+  const entries = withHeard(listed, heard);
   return (
     <Chips inset="none">
-      <TextChip
-        label="Ch 0"
-        name="Channel 0 frequency"
-        title="Channel 0 in MHz. Channel N sits N spacings above it"
-        value={band == null ? "" : (band.base_hz / 1e6).toString()}
-        shown={band == null ? "none" : undefined}
-        placeholder="423.0"
-        onCommit={(text) => onChange(withBandBase(band, text))}
+      <ListChip
+        label="Talkgroups"
+        title="Talkgroups listed or heard, with the name shown on calls and how each is followed"
+        item={TALKGROUP_ITEM}
+        entries={entries}
+        quiet={listed.length === 0}
+        onChange={(next) => onChange(talkgroupsFrom(next))}
       />
-      {band != null && (
-        <TextChip
-          label="Spacing"
-          name="Channel spacing"
-          title="Channel spacing in kHz"
-          value={(band.spacing_hz / 1e3).toString()}
-          placeholder="12.5"
-          onCommit={(text) => onChange(withBandSpacing(band, text))}
+      {talkgroups.priority.length > 0 && (
+        <ToggleChip
+          label="Priority only"
+          title="Follow only the priority talkgroups"
+          on={talkgroups.listed_only}
+          onChange={(next) => onChange({ listed_only: next })}
         />
       )}
     </Chips>
   );
 }
 
-function CallChips({
-  talkgroups,
+function KeysChip({
+  field,
   keys,
-  keysField,
+  onChange,
+}: {
+  field: SettingField;
+  keys: VoiceKey[];
+  onChange: (keys: VoiceKey[]) => void;
+}) {
+  if (field.control.type !== "list") {
+    return null;
+  }
+  return (
+    <ListChip
+      label={field.label}
+      title={field.title ?? field.label}
+      item={field.control.item}
+      entries={keys}
+      empty={field.control.empty}
+      quiet={isQuiet(field, keys)}
+      onChange={(entries) => onChange(voiceKeys(entries))}
+    />
+  );
+}
+
+function VocoderChip({
   vocoder,
   onChange,
-  onKeys,
-  onVocoder,
 }: {
-  talkgroups: TrunkTalkgroups;
-  keys: VoiceKey[];
-  keysField: SettingField | null;
-  vocoder: string | null | undefined;
-  onChange: (next: Partial<TrunkTalkgroups>) => void;
-  onKeys: (keys: VoiceKey[]) => void;
-  onVocoder: (vocoder: string | null) => void;
+  vocoder: string | null;
+  onChange: (vocoder: string | null) => void;
 }) {
-  const priority = talkgroups.priority;
-  const names = talkgroups.names ?? [];
   return (
-    <Chips inset="none">
-      <ListChip
-        label="Names"
-        title="Talkgroup names, shown on calls and accepted in Priority and Lockout"
-        item={TALKGROUP_NAME_ITEM}
-        entries={names}
-        quiet={names.length === 0}
-        onChange={(entries) => onChange({ names: talkgroupNames(entries) })}
-      />
-      <TextChip
-        label="Priority"
-        name="Priority talkgroups"
-        title="Talkgroups that take a receiver from other calls when all are busy, by number or name"
-        value={formatTalkgroups(priority, names)}
-        shown={priority.length === 0 ? "none" : undefined}
-        placeholder="101, 102"
-        onCommit={(text) => onChange({ priority: parseTalkgroups(text, names) })}
-      />
-      <TextChip
-        label="Lockout"
-        name="Locked out talkgroups"
-        title="Talkgroups never followed, by number or name"
-        value={formatTalkgroups(talkgroups.lockout, names)}
-        shown={talkgroups.lockout.length === 0 ? "none" : undefined}
-        placeholder="900"
-        onCommit={(text) => onChange({ lockout: parseTalkgroups(text, names) })}
-      />
-      {priority.length > 0 && (
-        <ToggleChip
-          label="Only these"
-          title="Follow only the priority talkgroups"
-          on={talkgroups.listed_only}
-          onChange={(next) => onChange({ listed_only: next })}
-        />
-      )}
-      {keysField?.control.type === "list" && (
-        <ListChip
-          label={keysField.label}
-          title={keysField.title ?? keysField.label}
-          item={keysField.control.item}
-          entries={keys}
-          empty={keysField.control.empty}
-          quiet={isQuiet(keysField, keys)}
-          onChange={(entries) => onKeys(voiceKeys(entries))}
-        />
-      )}
-      {vocoder !== undefined && (
-        <SerialPortChip
-          label="Vocoder"
-          title="blip25 in software, or a DVSI AMBE-3000/3003 chip such as a ThumbDV or USB-3003"
-          quiet={false}
-          empty="blip25"
-          value={vocoder}
-          onCommit={onVocoder}
-        />
-      )}
-    </Chips>
+    <SerialPortChip
+      label="Vocoder"
+      title="blip25 in software, or a DVSI AMBE-3000/3003 chip such as a ThumbDV or USB-3003"
+      quiet={false}
+      empty="blip25"
+      value={vocoder}
+      onCommit={onChange}
+    />
   );
 }
 
@@ -399,9 +377,12 @@ function TrunkActivity({
   const otherControl = status?.other_control_hz ?? [];
   const fallback = fallbackControl(status, controlHz);
   return (
-    <Readouts>
+    <Readouts columns="fit">
       <Readout label="Site" title="Identity the control channel broadcasts">
         {siteLabel(status?.site) ?? ""}
+      </Readout>
+      <Readout label="Talkgroups" title={heardLatest(status?.heard, names) || "Heard calling"}>
+        {status?.heard?.length ?? 0}
       </Readout>
       {fallback !== null && (
         <Readout label="Control" title="The set control channel went quiet">

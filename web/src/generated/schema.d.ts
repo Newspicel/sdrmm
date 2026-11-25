@@ -4389,6 +4389,17 @@ export interface components {
             /** Format: float */
             snr_db: number;
         };
+        /** @description A group talkgroup the system called, as the trunk node heard it. */
+        HeardTalkgroup: {
+            /**
+             * Format: int32
+             * @description Calls heard, each counted once however often the site repeats its grant.
+             */
+            calls: number;
+            /** Format: int32 */
+            id: number;
+            last_heard: string;
+        };
         Held: {
             /** @enum {string} */
             by: "hand";
@@ -8057,6 +8068,8 @@ export interface components {
              */
             dropped?: number;
             followers: components["schemas"]["TrunkFollower"][];
+            /** @description The talkgroups heard calling; the least recently heard drop out first. */
+            heard?: components["schemas"]["HeardTalkgroup"][];
             node: string;
             /** @description Other frequencies the site runs a control channel on, found while searching. */
             other_control_hz?: number[];

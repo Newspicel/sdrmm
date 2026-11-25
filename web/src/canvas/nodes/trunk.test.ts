@@ -11,25 +11,27 @@ import {
   adoptable,
   awaitingControlChannel,
   channelEntry,
+  channelPlanEntries,
+  channelPlanFrom,
   channelPlanRows,
   controlChannelStalled,
   fallbackControl,
   followerCall,
   followerPlace,
   formatSearchRanges,
-  formatTalkgroups,
+  heardLatest,
+  megahertzHz,
   otherControlLabel,
-  parseControlHz,
   parseSearchRanges,
-  parseTalkgroups,
   planLabel,
   planSummary,
   searchCandidates,
   searchSummary,
   siteLabel,
   slotLabel,
+  talkgroupEntries,
   talkgroupLabel,
-  talkgroupNames,
+  talkgroupsFrom,
   trunkChannelRoles,
   trunkDecoders,
   trunkProtocolLabel,
@@ -37,9 +39,8 @@ import {
   trunkSpec,
   usable,
   voiceKeys,
-  withBandBase,
-  withBandSpacing,
   withChannel,
+  withHeard,
   withoutChannel,
 } from "./trunk";
 
@@ -125,9 +126,31 @@ describe("voice keys", () => {
 });
 
 describe("talkgroups", () => {
-  it("reads a list of talkgroups however it is separated", () => {
-    expect(parseTalkgroups("101, 102;103 101 x")).toEqual([101, 102, 103]);
-    expect(formatTalkgroups([101, 102])).toBe("101, 102");
+  const TALKGROUPS = {
+    priority: [101],
+    lockout: [900],
+    listed_only: false,
+    names: [
+      { id: 91, name: "Fire Dispatch" },
+      { id: 101, name: "Police" },
+    ],
+  };
+
+  it("lists each talkgroup once, with its name and how it is followed", () => {
+    expect(talkgroupEntries(TALKGROUPS)).toEqual([
+      { id: 91, name: "Fire Dispatch", follow: "normal" },
+      { id: 101, name: "Police", follow: "priority" },
+      { id: 900, name: "", follow: "lockout" },
+    ]);
+  });
+
+  it("reads the list back, dropping entries without a number", () => {
+    expect(talkgroupsFrom([...talkgroupEntries(TALKGROUPS), { name: "Half typed" }])).toEqual({
+      names: TALKGROUPS.names,
+      priority: [101],
+      lockout: [900],
+    });
+    expect(talkgroupsFrom([{ id: 7, name: "  ", follow: "normal" }]).names).toEqual([]);
   });
 
   const NAMES = [{ id: 91, name: "Fire Dispatch" }];
@@ -152,17 +175,8 @@ describe("talkgroups", () => {
     expect(followerPlace(FOLLOWER)).toBe(`${formatHz(451_012_500)} · LCN 17`);
   });
 
-  it("takes talkgroups by name as well as number", () => {
-    expect(parseTalkgroups("fire dispatch, 102", NAMES)).toEqual([91, 102]);
-    expect(parseTalkgroups("Unknown, 7", NAMES)).toEqual([7]);
-    expect(formatTalkgroups([91, 102], NAMES)).toBe("Fire Dispatch, 102");
+  it("labels a talkgroup without a name by number", () => {
     expect(talkgroupLabel(5, NAMES)).toBe("TG 5");
-  });
-
-  it("keeps only whole names", () => {
-    expect(talkgroupNames([{ id: 91, name: " Fire " }, { id: 2 }, { id: 3, name: " " }])).toEqual([
-      { id: 91, name: "Fire" },
-    ]);
   });
 });
 
@@ -357,7 +371,7 @@ describe("the channel plan table", () => {
     expect(planSummary(rows)).toBe(
       "4 logical channels: 1 announced, 1 entered, 1 found, 1 guessed.",
     );
-    expect(planSummary([])).toContain("No logical channels");
+    expect(planSummary([])).toBeNull();
   });
 
   it("marks a guess as something the system will not tune", () => {
@@ -379,14 +393,14 @@ describe("the channel plan table", () => {
 
 describe("the control channel field", () => {
   it("reads a frequency in MHz", () => {
-    expect(parseControlHz("451.0125")).toBe(451_012_500);
-    expect(parseControlHz(" 451 ")).toBe(451_000_000);
+    expect(megahertzHz(451.0125)).toBe(451_012_500);
+    expect(megahertzHz(451)).toBe(451_000_000);
   });
 
   it("clears itself rather than guessing at nonsense", () => {
-    expect(parseControlHz("")).toBeUndefined();
-    expect(parseControlHz("abc")).toBeUndefined();
-    expect(parseControlHz("-451")).toBeUndefined();
+    expect(megahertzHz(null)).toBeNull();
+    expect(megahertzHz(Number.NaN)).toBeNull();
+    expect(megahertzHz(-451)).toBeNull();
   });
 
   it("says a radio waits for it instead of failing quietly", () => {
@@ -456,21 +470,69 @@ describe("the receivers a trunk system owns", () => {
   });
 });
 
-describe("channel band", () => {
-  it("starts a band at the typed channel 0 in 12.5 kHz steps", () => {
-    expect(withBandBase(null, "423.0")).toEqual({ base_hz: 423_000_000, spacing_hz: 12_500 });
+describe("channel plan list", () => {
+  const BAND = { base_hz: 423_000_000, spacing_hz: 12_500 };
+
+  it("lists each channel, then the band", () => {
+    expect(channelPlanEntries([{ lcn: 17, freq_hz: 451_012_500 }], BAND)).toEqual([
+      { kind: "channel", lcn: 17, freq_hz: 451_012_500 },
+      { kind: "band", ...BAND },
+    ]);
   });
 
-  it("keeps the spacing when the base moves and drops the band when cleared", () => {
-    const band = { base_hz: 423_000_000, spacing_hz: 25_000 };
-    expect(withBandBase(band, "424")).toEqual({ base_hz: 424_000_000, spacing_hz: 25_000 });
-    expect(withBandBase(band, "")).toBeNull();
+  it("reads rows back, keeping one band and skipping rows still being typed", () => {
+    const plan = channelPlanFrom(
+      [
+        { kind: "channel", lcn: 18, freq_hz: 451_025_000 },
+        { kind: "channel", lcn: 17 },
+        { kind: "channel", lcn: 4096, freq_hz: 451_000_000 },
+        { kind: "band", ...BAND },
+        { kind: "band", base_hz: 424_000_000, spacing_hz: 25_000 },
+      ],
+      4095,
+    );
+    expect(plan).toEqual({ channel_map: [{ lcn: 18, freq_hz: 451_025_000 }], band: BAND });
   });
 
-  it("takes a spacing in kHz and refuses one out of range", () => {
-    const band = { base_hz: 423_000_000, spacing_hz: 12_500 };
-    expect(withBandSpacing(band, "6.25")).toEqual({ base_hz: 423_000_000, spacing_hz: 6_250 });
-    expect(withBandSpacing(band, "0")).toBe(band);
-    expect(withBandSpacing(band, "abc")).toBe(band);
+  it("drops a band whose spacing is out of range", () => {
+    expect(
+      channelPlanFrom([{ kind: "band", base_hz: 423_000_000, spacing_hz: 0 }], 4095).band,
+    ).toBeNull();
+  });
+});
+
+describe("heard talkgroups", () => {
+  const HEARD = [
+    { id: 91, calls: 4, last_heard: "2026-11-25T10:00:00Z" },
+    { id: 92, calls: 1, last_heard: "2026-11-25T10:05:00Z" },
+    { id: 93, calls: 2, last_heard: "2026-11-25T09:00:00Z" },
+  ];
+
+  it("lists a heard talkgroup after the listed ones until it is named or ruled", () => {
+    const listed = talkgroupEntries({
+      priority: [],
+      lockout: [92],
+      listed_only: false,
+      names: [{ id: 91, name: "Fire" }],
+    });
+    const rows = withHeard(listed, HEARD);
+    expect(rows.map((row) => row.id)).toEqual([91, 92, 93]);
+    expect(rows[2]).toEqual({ id: 93, name: "", follow: "normal" });
+    expect(talkgroupsFrom(rows)).toEqual({
+      names: [{ id: 91, name: "Fire" }],
+      priority: [],
+      lockout: [92],
+    });
+    expect(
+      talkgroupsFrom(rows.with(2, { id: 93, name: "Police", follow: "normal" })).names,
+    ).toEqual([
+      { id: 91, name: "Fire" },
+      { id: 93, name: "Police" },
+    ]);
+  });
+
+  it("names the latest heard first, with their calls", () => {
+    expect(heardLatest(HEARD, [{ id: 91, name: "Fire" }])).toBe("TG 92 ×1, Fire ×4, TG 93 ×2");
+    expect(heardLatest(undefined, undefined)).toBe("");
   });
 });

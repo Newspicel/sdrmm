@@ -286,9 +286,10 @@ pub use speech::{
     TranscriberNode, TranscriberParams, TranscriberStatus,
 };
 pub use state::{
-    AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, LaneLevel,
-    NodeStream, PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot, TrunkChannel,
-    TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem, TrunkSystemStatus,
+    AudioRecordingStatus, ChannelLevel, DeviceFault, DeviceSet, DeviceSetStatus, HeardTalkgroup,
+    LaneLevel, NodeStream, PlaybackStatus, RecordingStatus, SettingsRefused, StateSnapshot,
+    TrunkChannel, TrunkChannelSource, TrunkControl, TrunkFollower, TrunkProbe, TrunkProblem,
+    TrunkSystemStatus,
 };
 pub use stream_out::{
     MAX_STREAM_ADDRESS_LEN, StreamOutNode, StreamOutStatus, StreamTransport, stream_out_path,

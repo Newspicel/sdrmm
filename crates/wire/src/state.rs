@@ -195,6 +195,15 @@ pub struct TrunkChannel {
     pub confidence: u8,
 }
 
+/// A group talkgroup the system called, as the trunk node heard it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct HeardTalkgroup {
+    pub id: u32,
+    /// Calls heard, each counted once however often the site repeats its grant.
+    pub calls: u32,
+    pub last_heard: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkProbe {
     pub device_set: u32,
@@ -221,6 +230,9 @@ pub struct TrunkSystemStatus {
     pub problems: Vec<TrunkProblem>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub channel_map: Vec<TrunkChannel>,
+    /// The talkgroups heard calling; the least recently heard drop out first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub heard: Vec<HeardTalkgroup>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub probes: Vec<TrunkProbe>,
     #[serde(default)]

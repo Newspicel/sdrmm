@@ -109,6 +109,7 @@ fn searching_follower(
         followers: HashMap::new(),
         problems: HashMap::new(),
         detected: HashMap::new(),
+        heard_talkgroups: HashMap::new(),
         prospectors: HashMap::new(),
         probes: HashMap::new(),
         unreachable: HashSet::new(),
@@ -545,6 +546,7 @@ fn a_system_given_a_radio_opens_its_own_control_channel() {
         followers: HashMap::new(),
         problems: HashMap::new(),
         detected: HashMap::new(),
+        heard_talkgroups: HashMap::new(),
         prospectors: HashMap::new(),
         probes: HashMap::new(),
         controls: HashMap::new(),
@@ -619,6 +621,7 @@ fn moving_the_control_frequency_retunes_the_receiver_in_place() {
         followers: HashMap::new(),
         problems: HashMap::new(),
         detected: HashMap::new(),
+        heard_talkgroups: HashMap::new(),
         prospectors: HashMap::new(),
         probes: HashMap::new(),
         controls: HashMap::new(),
@@ -677,6 +680,7 @@ fn retuning_the_radio_keeps_the_control_receiver_on_its_frequency() {
         followers: HashMap::new(),
         problems: HashMap::new(),
         detected: HashMap::new(),
+        heard_talkgroups: HashMap::new(),
         prospectors: HashMap::new(),
         probes: HashMap::new(),
         controls: HashMap::new(),
@@ -1572,4 +1576,82 @@ fn an_analog_grant_is_followed_by_a_squelched_fm_receiver_on_the_band() {
     let status = status(&follower);
     assert_eq!(status.followers[0].logical_channel, Some(14));
     assert_eq!(status.followers[0].destination, Some(10 * 8192 + 4105));
+}
+
+#[test]
+fn every_talkgroup_the_site_calls_is_heard_even_one_locked_out() {
+    let engine = engine();
+    let (device_set, channel, center_hz) = control_channel(&engine);
+    let carrier = (device_set, channel);
+    let mut follower = ruled_follower(
+        &engine,
+        carrier,
+        TrunkTalkgroups {
+            lockout: vec![91],
+            ..TrunkTalkgroups::default()
+        },
+    );
+    follower.observe(&record(carrier, &definition(center_hz as u64 + 125_000)));
+    follower.observe(&record(carrier, &grant(1)));
+    follower.observe(&record(carrier, &grant(1)));
+    follower.observe(&record(carrier, &grant_to(LOGICAL_CHANNEL, 2, 92)));
+    follower.observe(&record(
+        carrier,
+        &DvFrame {
+            group_call: Some(false),
+            ..grant_to(LOGICAL_CHANNEL, 2, 4_001)
+        },
+    ));
+    follower.publish();
+
+    let heard: Vec<(u32, u32)> = status(&follower)
+        .heard
+        .iter()
+        .map(|talkgroup| (talkgroup.id, talkgroup.calls))
+        .collect();
+    assert_eq!(heard, [(91, 1), (92, 1)]);
+}
+
+#[test]
+fn a_followed_call_names_the_talkgroup_it_carries() {
+    let engine = engine();
+    let (mut follower, _) = open_call(&engine);
+    let traffic = follower
+        .followers
+        .values()
+        .map(|open| (open.device_set, open.channel))
+        .next()
+        .expect("a traffic channel");
+
+    follower.observe(&record(traffic, &traffic_frame(95)));
+    follower.publish();
+
+    assert!(
+        status(&follower)
+            .heard
+            .iter()
+            .any(|talkgroup| talkgroup.id == 95)
+    );
+}
+
+fn traffic_frame(destination: u32) -> DvFrame {
+    DvFrame {
+        destination: Some(destination),
+        ..DvFrame::new("DMR", DvFrameKind::Voice)
+    }
+}
+
+#[test]
+fn dropping_the_system_forgets_its_talkgroups() {
+    let engine = engine();
+    let (device_set, channel, _) = control_channel(&engine);
+    let carrier = (device_set, channel);
+    let mut follower = follower(&engine, "tier_three", carrier);
+    follower.observe(&record(carrier, &grant(1)));
+    assert!(follower.heard_talkgroups.contains_key("trunk"));
+
+    follower.systems.clear();
+    follower.reconcile();
+
+    assert!(follower.heard_talkgroups.is_empty());
 }

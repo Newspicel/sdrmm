@@ -7,7 +7,7 @@ use sdrmm_wire::{
 
 use super::{
     Carrier, Follower, FollowerChannel, FollowerKey, Grant, MAX_FOLLOWERS_PER_SYSTEM, Problem,
-    RETRY_BASE, RETRY_MAX, prospect::Prospector,
+    RETRY_BASE, RETRY_MAX, prospect::Prospector, talkgroups,
 };
 use crate::Engine;
 
@@ -47,6 +47,14 @@ impl Follower {
         carrier: &Carrier,
         call: TrunkGrant,
     ) -> bool {
+        if call.group_call != Some(false) {
+            talkgroups::hear(
+                &mut self.heard_talkgroups,
+                &carrier.system_node,
+                call.destination,
+                Instant::now(),
+            );
+        }
         if call.group_call != Some(false)
             && self
                 .talkgroups_of(&carrier.system_node)
@@ -268,17 +276,26 @@ impl Follower {
         true
     }
 
-    /// Keeps a traffic channel open while bursts decode on it. Reports whether the record came
-    /// from one.
-    pub(super) fn note_traffic(&mut self, device_set: u32, channel: u32) -> bool {
-        let Some(follower) = self
+    /// Keeps a traffic channel open while bursts decode on it, and notes the talkgroup they
+    /// call. Reports whether the record came from one.
+    pub(super) fn note_traffic(&mut self, device_set: u32, channel: u32, frame: &DvFrame) -> bool {
+        let Some((key, follower)) = self
             .followers
-            .values_mut()
-            .find(|follower| follower.device_set == device_set && follower.channel == channel)
+            .iter_mut()
+            .find(|(_, follower)| follower.device_set == device_set && follower.channel == channel)
         else {
             return false;
         };
-        follower.heard = Instant::now();
+        let now = Instant::now();
+        follower.heard = now;
+        if let Some(talkgroup) = talkgroups::called_group(frame) {
+            talkgroups::hear(
+                &mut self.heard_talkgroups,
+                key.system_node(),
+                talkgroup,
+                now,
+            );
+        }
         true
     }
 

@@ -1,7 +1,8 @@
 import { formatHz } from "../../components/format";
-import type { Form } from "../../lib/settingsForm";
+import type { Form, Settings } from "../../lib/settingsForm";
 import type {
   ChannelDescriptor,
+  HeardTalkgroup,
   SettingField,
   TalkgroupName,
   TrunkBand,
@@ -14,6 +15,7 @@ import type {
   TrunkSite,
   TrunkSpec,
   TrunkSystemStatus,
+  TrunkTalkgroups,
   VoiceKey,
 } from "../../lib/types";
 
@@ -83,59 +85,218 @@ export function planLabel(scheme: TrunkScheme | null): string {
 }
 
 /** Talkgroups typed by number or by name, comma separated; unknown names drop out. */
-export function parseTalkgroups(text: string, names?: readonly TalkgroupName[]): number[] {
-  const ids = text
-    .split(/[,;]+/)
-    .map((part) => part.trim())
-    .flatMap((part) => idOf(part, names) ?? numbersIn(part))
-    .filter((id) => Number.isSafeInteger(id) && id <= 0xffff_ffff);
-  return [...new Set(ids)].slice(0, MAX_TALKGROUPS);
-}
+const MAX_TALKGROUP_ID = 0xffff_ffff;
 
-function idOf(name: string, names: readonly TalkgroupName[] | undefined): number[] | null {
-  const wanted = name.toLowerCase();
-  const named = (names ?? []).findLast((entry) => entry.name.trim().toLowerCase() === wanted);
-  return named === undefined ? null : [named.id];
-}
+export type TalkgroupFollow = "normal" | "priority" | "lockout";
 
-function numbersIn(part: string): number[] {
-  return part
-    .split(/\s+/)
-    .filter((word) => /^\d+$/.test(word))
-    .map(Number);
-}
-
-export function formatTalkgroups(
-  ids: readonly number[] | undefined,
-  names?: readonly TalkgroupName[],
-): string {
-  return (ids ?? []).map((id) => nameOf(id, names) ?? String(id)).join(", ");
-}
-
-export const TALKGROUP_NAME_ITEM: Form = [
+/** One talkgroup per entry: its number, the name shown on calls, and how it is followed. */
+export const TALKGROUP_ITEM: Form = [
   {
     key: "id",
     label: "Talkgroup",
-    control: { type: "number", min: 0, max: 0xffff_ffff, step: 1 },
+    control: { type: "number", min: 0, max: MAX_TALKGROUP_ID, step: 1 },
   },
   {
     key: "name",
     label: "Name",
-    control: { type: "text", placeholder: "Fire Dispatch", max_len: MAX_TALKGROUP_NAME_LEN },
+    control: { type: "text", placeholder: "Name", optional: true, max_len: MAX_TALKGROUP_NAME_LEN },
+  },
+  {
+    key: "follow",
+    label: "Follow",
+    fallback: "normal",
+    control: {
+      type: "choice",
+      options: [
+        { value: "normal", label: "Normal" },
+        {
+          value: "priority",
+          label: "Priority",
+          title: "Takes a receiver from other calls when all are busy",
+        },
+        { value: "lockout", label: "Locked out", title: "Never followed" },
+      ],
+    },
   },
 ];
 
-/** List entries as talkgroup names, dropping any not yet whole. */
-export function talkgroupNames(
-  entries: readonly Readonly<Record<string, unknown>>[],
-): TalkgroupName[] {
+function followOf(id: number, talkgroups: TrunkTalkgroups): TalkgroupFollow {
+  if (talkgroups.lockout.includes(id)) {
+    return "lockout";
+  }
+  return talkgroups.priority.includes(id) ? "priority" : "normal";
+}
+
+/** The talkgroups as list entries: every one named, prioritised or locked out, once. */
+export function talkgroupEntries(talkgroups: TrunkTalkgroups): Settings[] {
+  const ids = new Set([
+    ...(talkgroups.names ?? []).map((entry) => entry.id),
+    ...talkgroups.priority,
+    ...talkgroups.lockout,
+  ]);
+  return [...ids].map((id) => ({
+    id,
+    name: nameOf(id, talkgroups.names) ?? "",
+    follow: followOf(id, talkgroups),
+  }));
+}
+
+/** The listed talkgroups, then each one heard but not listed yet, ready to name or rule. */
+export function withHeard(
+  entries: readonly Settings[],
+  heard: readonly HeardTalkgroup[] | undefined,
+): Settings[] {
+  const listed = new Set(entries.map((entry) => entry.id));
+  const unlisted = (heard ?? [])
+    .filter((talkgroup) => !listed.has(talkgroup.id))
+    .map((talkgroup) => ({ id: talkgroup.id, name: "", follow: "normal" }));
+  return [...entries, ...unlisted];
+}
+
+const HEARD_SHOWN = 5;
+
+/** The talkgroups heard most recently, each with its calls. */
+export function heardLatest(
+  heard: readonly HeardTalkgroup[] | undefined,
+  names: readonly TalkgroupName[] | undefined,
+): string {
+  return (heard ?? [])
+    .toSorted((a, b) => (a.last_heard < b.last_heard ? 1 : a.last_heard > b.last_heard ? -1 : 0))
+    .slice(0, HEARD_SHOWN)
+    .map((talkgroup) => `${talkgroupLabel(talkgroup.id, names)} ×${talkgroup.calls}`)
+    .join(", ");
+}
+
+interface TalkgroupEntry {
+  id: number;
+  name: string;
+  follow: unknown;
+}
+
+function wholeTalkgroups(entries: readonly Settings[]): TalkgroupEntry[] {
   return entries
-    .flatMap(({ id, name }) =>
-      typeof id === "number" && typeof name === "string" && name.trim() !== ""
-        ? [{ id, name: name.trim().slice(0, MAX_TALKGROUP_NAME_LEN) }]
+    .flatMap(({ id, name, follow }) =>
+      typeof id === "number" && Number.isSafeInteger(id) && id >= 0 && id <= MAX_TALKGROUP_ID
+        ? [
+            {
+              id,
+              follow,
+              name: typeof name === "string" ? name.trim().slice(0, MAX_TALKGROUP_NAME_LEN) : "",
+            },
+          ]
         : [],
     )
     .slice(0, MAX_TALKGROUPS);
+}
+
+/** List entries back as names, priority and lockout, dropping any without a number yet. */
+export function talkgroupsFrom(
+  entries: readonly Settings[],
+): Pick<TrunkTalkgroups, "names" | "priority" | "lockout"> {
+  const whole = wholeTalkgroups(entries);
+  const following = (follow: TalkgroupFollow): number[] => [
+    ...new Set(whole.filter((entry) => entry.follow === follow).map((entry) => entry.id)),
+  ];
+  return {
+    names: whole.filter((entry) => entry.name !== "").map(({ id, name }) => ({ id, name })),
+    priority: following("priority"),
+    lockout: following("lockout"),
+  };
+}
+
+const CHANNEL_KIND = { key: "kind", any_of: ["channel"] };
+const BAND_KIND = { key: "kind", any_of: ["band"] };
+
+/** One row of the channel plan: a single channel, or a band that places every channel by spacing. */
+export function channelItem(max: number): Form {
+  return [
+    {
+      key: "kind",
+      label: "Kind",
+      fallback: "channel",
+      control: {
+        type: "choice",
+        options: [
+          { value: "channel", label: "Channel" },
+          {
+            value: "band",
+            label: "Spaced band",
+            title: "Channel N sits N spacings above channel 0",
+          },
+        ],
+      },
+    },
+    {
+      key: "lcn",
+      label: "LCN",
+      when: [CHANNEL_KIND],
+      control: { type: "number", min: 0, max, step: 1 },
+    },
+    {
+      key: "freq_hz",
+      label: "Frequency",
+      when: [CHANNEL_KIND],
+      control: { type: "number", min: 1, step: 12_500, scale: 1e6, unit: "MHz" },
+    },
+    {
+      key: "base_hz",
+      label: "Channel 0",
+      when: [BAND_KIND],
+      control: { type: "number", min: 1, step: 12_500, scale: 1e6, unit: "MHz" },
+    },
+    {
+      key: "spacing_hz",
+      label: "Spacing",
+      when: [BAND_KIND],
+      fallback: DEFAULT_BAND_SPACING_HZ,
+      control: {
+        type: "number",
+        min: MIN_BAND_SPACING_HZ,
+        max: MAX_BAND_SPACING_HZ,
+        step: 500,
+        scale: 1e3,
+        unit: "kHz",
+      },
+    },
+  ];
+}
+
+/** The plan as list rows: each listed channel, then the band if there is one. */
+export function channelPlanEntries(
+  map: readonly TrunkChannelEntry[],
+  band: TrunkBand | null | undefined,
+): Settings[] {
+  const channels = map.map((entry) => ({ kind: "channel", ...entry }));
+  return band == null ? channels : [...channels, { kind: "band", ...band }];
+}
+
+function bandOf({ base_hz, spacing_hz }: Settings): TrunkBand | null {
+  const valid =
+    typeof base_hz === "number" &&
+    base_hz > 0 &&
+    typeof spacing_hz === "number" &&
+    spacing_hz >= MIN_BAND_SPACING_HZ &&
+    spacing_hz <= MAX_BAND_SPACING_HZ;
+  return valid ? { base_hz: Math.round(base_hz), spacing_hz: Math.round(spacing_hz) } : null;
+}
+
+/** List rows back as the channel map and band, keeping only whole, valid rows; one band at most. */
+export function channelPlanFrom(
+  entries: readonly Settings[],
+  max: number,
+): { channel_map: TrunkChannelEntry[]; band: TrunkBand | null } {
+  const band = entries
+    .filter((entry) => entry.kind === "band")
+    .map(bandOf)
+    .find((b) => b !== null);
+  const channel_map = entries.reduce<TrunkChannelEntry[]>((map, { kind, lcn, freq_hz }) => {
+    const entry =
+      kind !== "band" && typeof lcn === "number" && typeof freq_hz === "number"
+        ? channelEntry(lcn, freq_hz / 1e6, max)
+        : null;
+    return entry === null ? map : withChannel(map, entry);
+  }, []);
+  return { channel_map, band: band ?? null };
 }
 
 /** Voice keys typed as `key ID:hex key`, comma separated; a later entry for an ID wins. */
@@ -293,31 +454,9 @@ export function withChannel(
   return [...kept, entry].toSorted((a, b) => a.lcn - b.lcn);
 }
 
-export function parseControlHz(text: string): number | undefined {
-  const value = Number(text.trim());
-  if (!Number.isFinite(value) || value <= 0) {
-    return undefined;
-  }
-  return Math.round(value * 1e6);
-}
-
-/** The band with channel 0 typed in MHz; blank or nonsense drops the band. */
-export function withBandBase(band: TrunkBand | null | undefined, text: string): TrunkBand | null {
-  const base_hz = parseControlHz(text);
-  if (base_hz === undefined) {
-    return null;
-  }
-  return { base_hz, spacing_hz: band?.spacing_hz ?? DEFAULT_BAND_SPACING_HZ };
-}
-
-/** The band with its spacing typed in kHz; a spacing out of range leaves it as it was. */
-export function withBandSpacing(band: TrunkBand, text: string): TrunkBand {
-  const spacing_hz = Math.round(Number(text.trim()) * 1e3);
-  const inRange =
-    Number.isFinite(spacing_hz) &&
-    spacing_hz >= MIN_BAND_SPACING_HZ &&
-    spacing_hz <= MAX_BAND_SPACING_HZ;
-  return inRange ? { ...band, spacing_hz } : band;
+/** A frequency typed in MHz; blank or not above zero clears it. */
+export function megahertzHz(mhz: number | null): number | null {
+  return mhz === null || !Number.isFinite(mhz) || mhz <= 0 ? null : Math.round(mhz * 1e6);
 }
 
 export function controlChannelStalled(
@@ -394,9 +533,9 @@ export function withoutChannel(
   return (entries ?? []).filter((entry) => entry.lcn !== lcn);
 }
 
-export function planSummary(rows: readonly TrunkChannel[]): string {
+export function planSummary(rows: readonly TrunkChannel[]): string | null {
   if (rows.length === 0) {
-    return "No logical channels placed yet.";
+    return null;
   }
   const counted = rows.reduce<Record<string, number>>((totals, row) => {
     totals[row.source] = (totals[row.source] ?? 0) + 1;

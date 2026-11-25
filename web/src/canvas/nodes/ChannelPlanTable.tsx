@@ -1,18 +1,14 @@
-import { useState } from "react";
 import { Button } from "../../components/BaseControls";
 import { BTN_SM, TABLE_CELL, TABLE_HEAD } from "../../components/controls";
-import { MHZ_DIGITS } from "../../components/format";
-import { OptionalNumberField } from "../../components/NumberField";
 import { Unit } from "../../components/Unit";
 import type { TrunkChannel, TrunkChannelEntry } from "../../lib/types";
+import { FaceEmpty } from "./NodeShell";
 import {
-  channelEntry,
   planSummary,
   trunkChannelSourceHint,
   trunkChannelSourceLabel,
   trunkChannelSourceTone,
   usable,
-  withChannel,
   withoutChannel,
 } from "./trunk";
 
@@ -31,8 +27,9 @@ export function ChannelPlanTable({
   following: ReadonlySet<number>;
   onChange: (entries: TrunkChannelEntry[]) => void;
 }) {
+  const summary = planSummary(rows);
   return (
-    <div className="border-b border-line">
+    <div className="flex min-h-32 flex-1 flex-col">
       <div className="flex items-center justify-between gap-2 px-2 pt-2">
         <span className="legend">{label}</span>
         {found.length > 0 && (
@@ -41,12 +38,12 @@ export function ChannelPlanTable({
           </Button>
         )}
       </div>
-      <div className="max-h-48 overflow-y-auto">
+      <div className="m-2 flex min-h-0 flex-1 flex-col overflow-y-auto rounded-inset border border-line bg-well">
         <table className="w-full border-collapse font-mono text-xs">
-          <thead className="sticky top-0 bg-panel">
+          <thead className="sticky top-0 bg-well">
             <tr>
-              <th className={`${TABLE_HEAD} text-right`}>LCN</th>
-              <th className={`${TABLE_HEAD} text-right`}>
+              <th className={`${TABLE_HEAD} w-0 text-right`}>LCN</th>
+              <th className={`${TABLE_HEAD} w-0 text-right`}>
                 <Unit symbol="MHz" />
               </th>
               <th className={TABLE_HEAD}>Known by</th>
@@ -59,7 +56,7 @@ export function ChannelPlanTable({
             {rows.map((channel) => (
               <tr
                 key={channel.logical_channel}
-                className={following.has(channel.logical_channel) ? "bg-accent/10" : undefined}
+                className={`border-t border-line ${following.has(channel.logical_channel) ? "bg-accent/10" : ""}`}
               >
                 <td className={`${TABLE_CELL} text-right text-ink`}>{channel.logical_channel}</td>
                 <td
@@ -92,59 +89,9 @@ export function ChannelPlanTable({
             ))}
           </tbody>
         </table>
+        {rows.length === 0 && <FaceEmpty hint="No channels yet" />}
       </div>
-      <p className="px-2 py-2 text-xs text-ink-dim">{planSummary(rows)}</p>
-    </div>
-  );
-}
-
-/** Adds a channel the site never announces, by logical number and frequency. */
-export function ChannelPlanAdd({
-  entries,
-  maxChannel,
-  onChange,
-}: {
-  entries: readonly TrunkChannelEntry[];
-  maxChannel: number;
-  onChange: (entries: TrunkChannelEntry[]) => void;
-}) {
-  const [lcn, setLcn] = useState<number | null>(null);
-  const [mhz, setMhz] = useState<number | null>(null);
-  const pending = channelEntry(lcn, mhz, maxChannel);
-  const add = () => {
-    if (pending === null) {
-      return;
-    }
-    onChange(withChannel(entries, pending));
-    setLcn(null);
-    setMhz(null);
-  };
-  return (
-    <div className="flex items-center gap-2">
-      <OptionalNumberField
-        label="Logical channel to add"
-        placeholder="LCN"
-        value={lcn}
-        min={0}
-        max={maxChannel}
-        step={1}
-        className="w-16"
-        onCommit={setLcn}
-      />
-      <OptionalNumberField
-        label="Frequency to add"
-        placeholder="451.0125"
-        value={mhz}
-        min={0}
-        step={0.0125}
-        digits={MHZ_DIGITS}
-        className="w-28"
-        unit="MHz"
-        onCommit={setMhz}
-      />
-      <Button type="button" className={BTN_SM} disabled={pending === null} onClick={add}>
-        Add
-      </Button>
+      {summary !== null && <p className="px-2 pb-2 text-xs text-ink-dim">{summary}</p>}
     </div>
   );
 }

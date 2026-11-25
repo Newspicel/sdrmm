@@ -15431,6 +15431,31 @@
           }
         }
       },
+      "HeardTalkgroup": {
+        "type": "object",
+        "description": "A group talkgroup the system called, as the trunk node heard it.",
+        "required": [
+          "id",
+          "calls",
+          "last_heard"
+        ],
+        "properties": {
+          "calls": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Calls heard, each counted once however often the site repeats its grant.",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "last_heard": {
+            "type": "string"
+          }
+        }
+      },
       "Held": {
         "oneOf": [
           {
@@ -29077,6 +29102,13 @@
             "items": {
               "$ref": "#/components/schemas/TrunkFollower"
             }
+          },
+          "heard": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HeardTalkgroup"
+            },
+            "description": "The talkgroups heard calling; the least recently heard drop out first."
           },
           "node": {
             "type": "string"

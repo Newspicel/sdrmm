@@ -132,6 +132,7 @@ export type TrunkProblem = components["schemas"]["TrunkProblem"];
 export type TrunkChannel = components["schemas"]["TrunkChannel"];
 export type TrunkChannelSource = components["schemas"]["TrunkChannelSource"];
 export type TrunkProbe = components["schemas"]["TrunkProbe"];
+export type HeardTalkgroup = components["schemas"]["HeardTalkgroup"];
 export type CapturedImage = components["schemas"]["CapturedImage"];
 export type CapturedImagesResponse = components["schemas"]["CapturedImagesResponse"];
 export type RecordingFormat = components["schemas"]["RecordingFormat"];

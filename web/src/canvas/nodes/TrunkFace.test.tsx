@@ -99,7 +99,7 @@ describe("TrunkFace", () => {
     expect(markup).toMatch(/Control<\/dt><dd[^>]*>451\.025 /);
   });
 
-  it("lists the priority and locked out talkgroups", () => {
+  it("lists each talkgroup with how it is followed", () => {
     const markup = render(
       trunk({
         talkgroups: { priority: [101, 102], lockout: [900], listed_only: false, names: [] },
@@ -107,9 +107,10 @@ describe("TrunkFace", () => {
       undefined,
       true,
     );
-    expect(markup).toContain("101, 102");
-    expect(markup).toContain("900");
-    expect(markup).toContain("Only these");
+    expect(markup).toContain('value="101"');
+    expect(markup).toContain('value="900"');
+    expect(markup).toContain("Locked out");
+    expect(markup).toContain("Priority only");
   });
 
   it("says when the follower fell behind", () => {
