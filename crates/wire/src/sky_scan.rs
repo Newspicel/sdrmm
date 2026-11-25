@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 use crate::{
     DEFAULT_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_BANDWIDTH_HZ, MAX_SIGNAL_MAP_OFFSET_HZ,
     channel::{NumberSpec, SettingField},
-    present::{Field, Unit, fields, number, text_of},
+    present::{Field, Unit, face_fields, number, text_of},
     satellite::SkyPoint,
 };
 
@@ -252,7 +252,7 @@ impl SkyScanStatus {
         let peak = self.peak();
         let total = self.columns.saturating_mul(self.rows);
         let progress = format!("{}/{total}", self.cells.len());
-        self.readouts = fields(&[
+        self.readouts = face_fields(&[
             ("progress", "Points", text_of(progress)),
             (
                 "peak_azimuth",
@@ -372,6 +372,12 @@ mod tests {
         }
         .with_readouts();
         assert_eq!(status.peak().map(|peak| peak.azimuth_deg), Some(90.0));
+        assert_eq!(status.readouts.len(), 4);
+    }
+
+    #[test]
+    fn an_idle_scan_keeps_every_readout_row() {
+        let status = SkyScanStatus::default().with_readouts();
         assert_eq!(status.readouts.len(), 4);
     }
 }

@@ -27,7 +27,6 @@ const NO_FACETS: ProcessorFacets = { views: [], actions: [], tuning: null };
 export const STALE_CHIP: Chip = {
   label: "Stale",
   title: "No reading for three report periods",
-  danger: true,
 };
 
 export interface ProcessorKindInfo {

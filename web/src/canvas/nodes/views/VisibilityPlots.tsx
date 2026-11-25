@@ -5,6 +5,7 @@ import { recordEvent } from "../../../lib/diagnostics";
 import type { VisibilityFrame } from "../../../lib/frame";
 import { useBoxSize } from "../../../lib/useBoxSize";
 import { useSurface } from "../../../lib/useSurface";
+import { PlotWell } from "../PlotIdle";
 import { SurfaceRefused } from "../SurfaceRefused";
 import {
   baselineSeries,
@@ -57,6 +58,7 @@ export function VisibilityPlots({
         Phase °
       </span>
       <span className="absolute right-1 bottom-0.5 font-mono text-plot text-ink-faint">MHz</span>
+      {frame === null && half > 0 && <IdlePlots amplitude={amplitude} phase={phase} />}
       <SurfaceRefused text={refused} />
       {frame !== null && whole.w > 0 && half > 0 && (
         <svg
@@ -93,16 +95,12 @@ function Plots({
   const levels = linearTicks(y.lo, y.hi, LEVEL_TICKS, (db) =>
     y.hi > y.lo ? (1 - (db - y.lo) / (y.hi - y.lo)) * amplitude.h : 0,
   );
-  const phases = PHASE_TICKS.map((deg) => ({
-    px: (1 - (deg - PHASE_SPAN.lo) / (PHASE_SPAN.hi - PHASE_SPAN.lo)) * phase.h,
-    label: String(deg),
-  }));
   return (
     <>
       <rect {...box(amplitude)} className="fill-none stroke-line" />
       <rect {...box(phase)} className="fill-none stroke-line" />
       <PlotAxis side="left" ticks={levels} plot={amplitude} />
-      <PlotAxis side="left" ticks={phases} plot={phase} />
+      <PlotAxis side="left" ticks={phaseTicks(phase)} plot={phase} />
       <PlotAxis side="bottom" ticks={freq} plot={phase} />
       <path
         transform={`translate(${amplitude.x} ${amplitude.y})`}
@@ -118,6 +116,30 @@ function Plots({
       />
     </>
   );
+}
+
+function phaseTicks(phase: PlotRect) {
+  return PHASE_TICKS.map((deg) => ({
+    px: (1 - (deg - PHASE_SPAN.lo) / (PHASE_SPAN.hi - PHASE_SPAN.lo)) * phase.h,
+    label: String(deg),
+  }));
+}
+
+/** Both plots before the first frame: their grids, and the phase span they always cover. */
+function IdlePlots({ amplitude, phase }: { amplitude: PlotRect; phase: PlotRect }) {
+  return (
+    <>
+      <PlotWell at={place(amplitude)} />
+      <PlotWell at={place(phase)} />
+      <svg aria-hidden className="pointer-events-none absolute inset-0 size-full overflow-visible">
+        <PlotAxis side="left" ticks={phaseTicks(phase)} plot={phase} />
+      </svg>
+    </>
+  );
+}
+
+function place(rect: PlotRect) {
+  return { left: rect.x, top: rect.y, width: rect.w, height: rect.h };
 }
 
 function box(rect: PlotRect): { x: number; y: number; width: number; height: number } {

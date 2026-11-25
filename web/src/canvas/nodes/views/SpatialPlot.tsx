@@ -9,6 +9,7 @@ import type { SpatialSpectrumFrame } from "../../../lib/frame";
 import type { ViewMark } from "../../../lib/types";
 import { useBoxSize } from "../../../lib/useBoxSize";
 import { useSurface } from "../../../lib/useSurface";
+import { PlotWell } from "../PlotIdle";
 import { SurfaceRefused } from "../SurfaceRefused";
 import type { BearingFrame } from "./bearing";
 import { MarkLayer } from "./MarkLayer";
@@ -83,6 +84,7 @@ export function SpatialPlot({
           <ColourScale colormap={colormap} min={frame.dbMin - frame.dbMax} max={0} unit="dB" />
         </span>
       )}
+      {frame === null && <IdleSpatial plot={plot} view={view} />}
       <SurfaceRefused text={refused} />
       {frame !== null && plot.w > 0 && plot.h > 0 && (
         <svg
@@ -149,7 +151,6 @@ function SpatialAxes({
   const freq = linearTicks(lo / 1e6, hi / 1e6, FREQ_TICKS, (mhz) =>
     hi > lo ? ((mhz * 1e6 - lo) / (hi - lo)) * plot.w : 0,
   );
-  const bearings = BEARING_TICKS.map((deg) => ({ px: (deg / 360) * plot.h, label: String(deg) }));
   return (
     <>
       <rect
@@ -160,7 +161,28 @@ function SpatialAxes({
         className="fill-none stroke-line"
       />
       <PlotAxis side="bottom" ticks={freq} plot={plot} />
-      {view === "map" && <PlotAxis side="left" ticks={bearings} plot={plot} />}
+      {view === "map" && <PlotAxis side="left" ticks={bearingTicks(plot)} plot={plot} />}
+    </>
+  );
+}
+
+function bearingTicks(plot: PlotRect) {
+  return BEARING_TICKS.map((deg) => ({ px: (deg / 360) * plot.h, label: String(deg) }));
+}
+
+/** The empty map before the first frame: its grid, and the bearings it always spans. */
+function IdleSpatial({ plot, view }: { plot: PlotRect; view: SpatialView }) {
+  return (
+    <>
+      <PlotWell at={GUTTERS} />
+      {view === "map" && plot.h > 0 && (
+        <svg
+          aria-hidden
+          className="pointer-events-none absolute inset-0 size-full overflow-visible"
+        >
+          <PlotAxis side="left" ticks={bearingTicks(plot)} plot={plot} />
+        </svg>
+      )}
     </>
   );
 }

@@ -9,6 +9,7 @@ import { LIGHT_SPEED_M_S, RANGE_DOPPLER_DB } from "../../../lib/limits";
 import type { ViewMark } from "../../../lib/types";
 import { useBoxSize } from "../../../lib/useBoxSize";
 import { useSurface } from "../../../lib/useSurface";
+import { PlotWell } from "../PlotIdle";
 import { SurfaceRefused } from "../SurfaceRefused";
 import { MarkLayer } from "./MarkLayer";
 import {
@@ -88,6 +89,7 @@ export function RangeDopplerPlot({
           </svg>
         </svg>
       )}
+      {axes === null && <PlotWell at={GUTTERS} />}
       <SurfaceRefused text={refused} />
       {axes !== null && (
         <div

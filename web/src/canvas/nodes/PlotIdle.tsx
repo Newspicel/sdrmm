@@ -27,6 +27,17 @@ export function PlotIdle({
   );
 }
 
+/** A plot area with no data yet: its frame and grid, placed where the data would draw. */
+export function PlotWell({ at }: { at: CSSProperties }) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute border border-line"
+      style={{ ...at, ...PLOT_GRID }}
+    />
+  );
+}
+
 /** The faint note an idle plot carries, centred on it. */
 export function PlotHint({ hint }: { hint: string }) {
   return (

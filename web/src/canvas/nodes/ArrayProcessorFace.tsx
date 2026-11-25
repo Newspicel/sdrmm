@@ -67,7 +67,7 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
   const [picked, setPicked] = useState<number | null>(null);
   const catalog = useWorkspaceSelect((workspace) => workspace.context.catalog);
   const kind = processorKindOf(catalog, node);
-  const stale = processorStale(state, now);
+  const stale = !unwired && processorStale(state, now);
   const health = processorStatusOf(status, node.id);
   const ask = useWorkspaceSelect((workspace) =>
     tuningAsk(workspace.graph, array, kind.facets.tuning),
@@ -104,7 +104,7 @@ export function ArrayProcessorFace({ node }: { node: PatchNode }) {
             node={node.id}
             specs={kind.facets.views}
             state={state}
-            dim={stale || state === undefined}
+            dim={stale || unwired || state === undefined}
             known={health !== null}
             colormap={colormap}
             picked={picked}
