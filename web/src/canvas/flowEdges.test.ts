@@ -39,7 +39,9 @@ function flowEdge(id: string, className: string) {
 describe("keptEdges", () => {
   it("hands back the same array when no wire changed", () => {
     const previous = [flowEdge("one", "wire-iq"), flowEdge("two", "wire-audio")];
-    expect(keptEdges(previous, [flowEdge("one", "wire-iq"), flowEdge("two", "wire-audio")])).toBe(previous);
+    expect(keptEdges(previous, [flowEdge("one", "wire-iq"), flowEdge("two", "wire-audio")])).toBe(
+      previous,
+    );
   });
 
   it("keeps unchanged wires and swaps the changed one", () => {
