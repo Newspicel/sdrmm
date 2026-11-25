@@ -89,6 +89,7 @@ Making a radio? Write to [hi@jhaag.me](mailto:hi@jhaag.me) to get it supported a
 Copyright (C) 2026 Julian Haag.
 
 Licensed under the [GNU Affero General Public License, version 3 or later](LICENSE).
+Contributions need a signed [CLA](CLA.md), see [CONTRIBUTING.md](CONTRIBUTING.md).
 Need a commercial license or custom work? Write to [hi@jhaag.me](mailto:hi@jhaag.me).
 [Third-party notices](THIRD_PARTY_NOTICES.md) and license texts are also available in the app's
 About panel.
