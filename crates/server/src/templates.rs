@@ -79,8 +79,14 @@ struct Entry {
     channels: Vec<Channel>,
 }
 
-const COLUMN: f32 = 520.0;
-const ROW: f32 = 240.0;
+/// Room for the widest middle face, the 520 wide Scope, plus a gap before the sinks.
+const COLUMN: f32 = 560.0;
+const SCOPE_Y: f32 = -40.0;
+/// The first channel sits below the 360 tall Scope.
+const CHANNEL_Y: f32 = 360.0;
+/// A channel face fits its content; the tallest, NFM, measures about 600.
+const ROW: f32 = 640.0;
+/// The tallest sink face, Map or Decoder log, is 380.
 const SINK_ROW: f32 = 420.0;
 
 fn patch(channels: &[Channel]) -> PatchGraph {
@@ -104,7 +110,7 @@ fn patch(channels: &[Channel]) -> PatchGraph {
 
     let mut nodes = vec![
         node("dev", NodeBody::Device(DeviceNode::default()), 0.0, 0.0),
-        node("scope", NodeBody::Scope, COLUMN, -40.0),
+        node("scope", NodeBody::Scope, COLUMN, SCOPE_Y),
     ];
     let mut edges = vec![wire(("dev", IQ_PORT), ("scope", IQ_PORT))];
 
@@ -114,7 +120,7 @@ fn patch(channels: &[Channel]) -> PatchGraph {
             clippy::cast_precision_loss,
             reason = "a template has a handful of channels; the row index is exact in f32"
         )]
-        let y = 260.0 + index as f32 * ROW;
+        let y = CHANNEL_Y + index as f32 * ROW;
         nodes.push(node(
             &id,
             NodeBody::Channel(ChannelNode {
@@ -139,7 +145,7 @@ fn patch(channels: &[Channel]) -> PatchGraph {
             clippy::cast_precision_loss,
             reason = "a template draws at most five sinks; the row index is exact in f32"
         )]
-        let y = -40.0 + index as f32 * SINK_ROW;
+        let y = SCOPE_Y + index as f32 * SINK_ROW;
         nodes.push(node(sink.node(), sink.body(), COLUMN * 2.0, y));
     }
     PatchGraph { nodes, edges }
@@ -472,6 +478,49 @@ mod tests {
             .filter(|type_id| !templated.contains(type_id.as_str()))
             .collect();
         assert!(missing.is_empty(), "no template runs {missing:?}");
+    }
+
+    /// A face that fits its content gets the height the canvas assumes when placing it.
+    fn default_rect(node: &PatchNode) -> (f32, f32, f32, f32) {
+        let kind = node.body.kind();
+        let face = kind.face();
+        let fit_width = if face.dial { 320 } else { 280 };
+        let width = face.width.max(if face.resizable() { 0 } else { fit_width });
+        let height = face
+            .height
+            .unwrap_or(if kind == sdrmm_wire::NodeKind::Channel {
+                600
+            } else {
+                320
+            });
+        (
+            node.position.x,
+            node.position.y,
+            f32::from(width),
+            f32::from(height),
+        )
+    }
+
+    #[test]
+    fn no_template_places_a_node_over_another() {
+        const GAP: f32 = 40.0;
+        for entry in entries() {
+            let patch = patch(&entry.channels);
+            let rects: Vec<_> = patch.nodes.iter().map(default_rect).collect();
+            for (i, a) in rects.iter().enumerate() {
+                for (j, b) in rects.iter().enumerate().skip(i + 1) {
+                    let apart = a.0 + a.2 + GAP <= b.0
+                        || b.0 + b.2 + GAP <= a.0
+                        || a.1 + a.3 + GAP <= b.1
+                        || b.1 + b.3 + GAP <= a.1;
+                    assert!(
+                        apart,
+                        "{}: {} overlaps {}",
+                        entry.id, patch.nodes[i].id, patch.nodes[j].id
+                    );
+                }
+            }
+        }
     }
 
     #[test]
