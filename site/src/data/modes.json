@@ -139,7 +139,7 @@
       "name": "AM",
       "summary": "AM voice, airband and shortwave",
       "family": "analog_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -237,7 +237,7 @@
       "name": "DAB / DAB+",
       "summary": "DAB and DAB+ digital radio",
       "family": "broadcast",
-      "verification": "reference_fixture",
+      "verification": "on_air",
       "input_rate_hz": 2048000.0,
       "bands": [
         {
@@ -418,7 +418,7 @@
       "name": "DVB-T/T2",
       "summary": "DVB-T and T2 digital TV",
       "family": "broadcast",
-      "verification": "experimental",
+      "verification": "on_air",
       "input_rate_hz": 9142857.142857144,
       "bands": [],
       "doc": "/docs/operate/decoders/broadcast-video#dvb-tt2-and-datv"
@@ -1099,7 +1099,7 @@
       "name": "NFM",
       "summary": "Narrowband FM voice with CTCSS and DCS",
       "family": "analog_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": [
         {
@@ -1214,7 +1214,7 @@
       "name": "POCSAG",
       "summary": "POCSAG pager messages",
       "family": "paging",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 24000.0,
       "bands": [
         {
@@ -1392,7 +1392,7 @@
       "name": "SSB",
       "summary": "Single sideband voice, USB or LSB",
       "family": "analog_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 48000.0,
       "bands": []
     },
@@ -1586,7 +1586,7 @@
       "name": "WFM (broadcast)",
       "summary": "FM broadcast radio with stereo and RDS",
       "family": "analog_voice",
-      "verification": "own_modulator",
+      "verification": "on_air",
       "input_rate_hz": 240000.0,
       "bands": [
         {

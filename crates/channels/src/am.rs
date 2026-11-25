@@ -32,7 +32,7 @@ static DESCRIPTOR: LazyLock<ChannelDescriptor> = LazyLock::new(|| ChannelDescrip
     name: "AM".to_owned(),
     summary: "AM voice, airband and shortwave".to_owned(),
     family: DecoderFamily::ANALOG_VOICE,
-    verification: sdrmm_wire::Verification::OwnModulator,
+    verification: sdrmm_wire::Verification::OnAir,
     bandwidth_hz: 10_000.0,
     input_rate_hz: 48_000.0,
     has_audio: true,
