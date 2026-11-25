@@ -10,9 +10,12 @@ use std::{
 use sdrmm_wire::{AudioRecordingStatus, NodeStream, ServerEvent, StateScope};
 use tokio::sync::broadcast;
 
+use sdrmm_decoder::ClickProfile;
+
 use crate::{
     AudioPacket, EngineError, PcmBlock, PcmPayload,
     audio::{AUDIO_CHANNEL_CAP, spawn_encoder},
+    audio_fx::{Stage, report},
     audio_recording::{self, AudioRecorderTap, AudioRecordingShared},
 };
 
@@ -33,7 +36,7 @@ impl VoiceRecording {
     fn status(&self) -> AudioRecordingStatus {
         AudioRecordingStatus {
             node: self.recorder.clone(),
-            fx: Vec::new(),
+            fx: None,
             file: self.file.clone(),
             started_at: self.started_at.clone(),
             channels: 1,
@@ -59,7 +62,7 @@ impl VoiceRecording {
         }
         AudioRecordingStatus {
             node: recorder,
-            fx: Vec::new(),
+            fx: None,
             file,
             started_at,
             channels: 1,
@@ -70,17 +73,39 @@ impl VoiceRecording {
     }
 }
 
+/// A voice's Audio FX chain, run on each frame before anyone hears it.
+pub(crate) struct VoiceFx {
+    stage: Stage,
+    failed: bool,
+}
+
+impl VoiceFx {
+    /// False once the node's chain is off.
+    pub(crate) fn run(&mut self, pcm: &mut [f32]) -> bool {
+        match self.stage.prepare(1, ClickProfile::default()) {
+            Ok(false) => return false,
+            Ok(true) => {}
+            Err(error) => report(&mut self.failed, &error),
+        }
+        if let Err(error) = self.stage.process(pcm) {
+            report(&mut self.failed, &error);
+        }
+        true
+    }
+}
+
 struct VoiceStream {
     pcm_tx: broadcast::Sender<PcmBlock>,
     audio_tx: broadcast::Sender<AudioPacket>,
     next_frame: u64,
     recordings: Vec<VoiceRecording>,
+    fx: Option<VoiceFx>,
     /// Ends on its own once `pcm_tx` drops.
     _encoder: JoinHandle<()>,
 }
 
 impl VoiceStream {
-    fn open() -> Result<Self, EngineError> {
+    fn open(stage: Option<Stage>) -> Result<Self, EngineError> {
         let (pcm_tx, pcm_rx) = broadcast::channel(VOICE_QUEUE);
         let (audio_tx, _) = broadcast::channel(AUDIO_CHANNEL_CAP);
         let encoder = spawn_encoder(1, pcm_rx, audio_tx.clone())?;
@@ -89,6 +114,7 @@ impl VoiceStream {
             audio_tx,
             next_frame: 0,
             recordings: Vec::new(),
+            fx: stage.map(voice_fx),
             _encoder: encoder,
         })
     }
@@ -108,10 +134,23 @@ pub(crate) struct VoiceHub {
     streams: HashMap<String, VoiceStream>,
 }
 
+fn voice_fx(stage: Stage) -> VoiceFx {
+    VoiceFx {
+        stage,
+        failed: false,
+    }
+}
+
 impl VoiceHub {
-    fn stream(&mut self, node: &str) -> Result<&mut VoiceStream, EngineError> {
+    /// `node`'s stream, opened with `stage` as its Audio FX when it was not running.
+    fn stream(
+        &mut self,
+        node: &str,
+        stage: Option<Stage>,
+    ) -> Result<&mut VoiceStream, EngineError> {
         if !self.streams.contains_key(node) {
-            self.streams.insert(node.to_owned(), VoiceStream::open()?);
+            self.streams
+                .insert(node.to_owned(), VoiceStream::open(stage)?);
         }
         self.streams
             .get_mut(node)
@@ -121,15 +160,35 @@ impl VoiceHub {
     pub(crate) fn subscribe_pcm(
         &mut self,
         node: &str,
+        stage: Option<Stage>,
     ) -> Result<broadcast::Receiver<PcmBlock>, EngineError> {
-        Ok(self.stream(node)?.pcm_tx.subscribe())
+        Ok(self.stream(node, stage)?.pcm_tx.subscribe())
     }
 
     pub(crate) fn subscribe_audio(
         &mut self,
         node: &str,
+        stage: Option<Stage>,
     ) -> Result<broadcast::Receiver<AudioPacket>, EngineError> {
-        Ok(self.stream(node)?.audio_tx.subscribe())
+        Ok(self.stream(node, stage)?.audio_tx.subscribe())
+    }
+
+    /// Runs a running voice through the chain its node just switched on.
+    pub(crate) fn attach_fx(&mut self, node: &str, stage: Option<Stage>) {
+        if let (Some(stream), Some(stage)) = (self.streams.get_mut(node), stage) {
+            stream.fx = Some(voice_fx(stage));
+        }
+    }
+
+    pub(crate) fn take_fx(&mut self, node: &str) -> Option<VoiceFx> {
+        self.streams.get_mut(node)?.fx.take()
+    }
+
+    /// Hands back a chain taken to run, unless a newer one came on meanwhile.
+    pub(crate) fn restore_fx(&mut self, node: &str, fx: VoiceFx) {
+        if let Some(stream) = self.streams.get_mut(node) {
+            stream.fx.get_or_insert(fx);
+        }
     }
 
     /// Hands one mono 48 kHz frame to whoever listens to `node`; a voice nobody listens to
@@ -167,6 +226,7 @@ impl VoiceHub {
         &mut self,
         voice: &str,
         recording: VoiceRecording,
+        stage: Option<Stage>,
     ) -> Result<AudioRecordingStatus, (EngineError, Box<VoiceRecording>)> {
         if self.records(voice, &recording.recorder) {
             return Err((
@@ -174,7 +234,7 @@ impl VoiceHub {
                 Box::new(recording),
             ));
         }
-        match self.stream(voice) {
+        match self.stream(voice, stage) {
             Ok(stream) => {
                 let status = recording.status();
                 stream.recordings.push(recording);
@@ -272,7 +332,8 @@ impl crate::Engine {
             shared,
             writer,
         };
-        let recorded = self.voices().record(voice, take);
+        let stage = self.fx_hub().stage(voice);
+        let recorded = self.voices().record(voice, take, stage);
         match recorded {
             Ok(status) => {
                 self.voice_changed();
@@ -330,7 +391,7 @@ mod tests {
     #[test]
     fn a_listener_hears_what_the_voice_says_in_order() {
         let mut hub = VoiceHub::default();
-        let mut heard = hub.subscribe_pcm("mic").expect("opens");
+        let mut heard = hub.subscribe_pcm("mic", None).expect("opens");
         hub.speak("mic", &[0.5; 960]);
         hub.speak("mic", &[0.25; 960]);
         let first = heard.try_recv().expect("first frame");
@@ -349,7 +410,7 @@ mod tests {
     #[test]
     fn a_removed_voice_closes_its_listeners() {
         let mut hub = VoiceHub::default();
-        let mut heard = hub.subscribe_pcm("mic").expect("opens");
+        let mut heard = hub.subscribe_pcm("mic", None).expect("opens");
         hub.retain(&HashSet::new());
         assert!(matches!(
             heard.try_recv(),
@@ -378,10 +439,70 @@ mod tests {
         assert!(engine.snapshot().node_streams.is_empty());
     }
 
+    fn highpass() -> sdrmm_wire::AudioProcessing {
+        sdrmm_wire::AudioProcessing {
+            filter: sdrmm_wire::AudioFilterSettings {
+                enabled: true,
+                low_hz: 1_000.0,
+                high_hz: 3_000.0,
+            },
+            ..sdrmm_wire::AudioProcessing::default()
+        }
+    }
+
+    fn hum() -> Vec<f32> {
+        (0..960)
+            .map(|n| 0.3 * (std::f32::consts::TAU * 200.0 * n as f32 / 48_000.0).sin())
+            .collect()
+    }
+
+    /// The loudness of what a listener hears of ten frames of 200 Hz hum, after the first five.
+    fn heard_hum(engine: &crate::Engine, heard: &mut broadcast::Receiver<PcmBlock>) -> f32 {
+        let mut late = Vec::new();
+        for n in 0..10 {
+            engine.speak_voice("mic", &hum());
+            if let PcmPayload::Samples(samples) = heard.try_recv().expect("a frame").payload
+                && n >= 5
+            {
+                late.extend_from_slice(&samples);
+            }
+        }
+        (late.iter().map(|x| x * x).sum::<f32>() / late.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn a_voice_is_heard_through_its_node_s_audio_fx() {
+        let engine = crate::Engine::new(None);
+        engine.set_audio_fx("mic", highpass()).expect("valid");
+        let stage = engine.fx_hub().stage("mic");
+        let mut heard = engine.voices().subscribe_pcm("mic", stage).expect("opens");
+        assert!(
+            heard_hum(&engine, &mut heard) < 0.05,
+            "the highpass let the hum through"
+        );
+    }
+
+    #[test]
+    fn a_running_voice_follows_its_chain_on_and_off() {
+        let engine = crate::Engine::new(None);
+        let mut heard = engine.voices().subscribe_pcm("mic", None).expect("opens");
+        assert!(heard_hum(&engine, &mut heard) > 0.15);
+        engine.set_audio_fx("mic", highpass()).expect("valid");
+        assert!(
+            heard_hum(&engine, &mut heard) < 0.05,
+            "the chain never came on"
+        );
+        engine.retain_audio_fx(&HashSet::new());
+        assert!(
+            heard_hum(&engine, &mut heard) > 0.15,
+            "the chain never went off"
+        );
+    }
+
     #[test]
     fn a_voice_reaches_the_browser_as_opus() {
         let mut hub = VoiceHub::default();
-        let mut packets = hub.subscribe_audio("chat").expect("opens");
+        let mut packets = hub.subscribe_audio("chat", None).expect("opens");
         hub.speak("chat", &[0.1; 960]);
         let packet = packets.blocking_recv().expect("one opus frame");
         assert_eq!((packet.channels, packet.timestamp), (1, 0));

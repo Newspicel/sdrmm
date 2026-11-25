@@ -45,6 +45,13 @@ pub(super) fn structure(
 
 fn settings(node: &PatchNode, channels: Option<&[ChannelDescriptor]>) -> Result<(), PatchError> {
     let refused = || Err(PatchError::NodeSettings(node.id.clone()));
+    if node
+        .body
+        .audio_chain()
+        .is_some_and(|chain| chain.validate().is_err())
+    {
+        return refused();
+    }
     match &node.body {
         NodeBody::Channel(channel) => {
             if let Some(descriptors) = channels
@@ -53,9 +60,6 @@ fn settings(node: &PatchNode, channels: Option<&[ChannelDescriptor]>) -> Result<
                     .any(|d| d.type_id == channel.channel_type)
             {
                 return Err(PatchError::ChannelType(channel.channel_type.clone()));
-            }
-            if channel.audio.validate().is_err() {
-                return refused();
             }
         }
         NodeBody::Gps(gps) => {

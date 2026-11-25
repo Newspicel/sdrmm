@@ -181,7 +181,7 @@ async fn a_recording_through_audio_fx_holds_the_processed_audio() {
         )
         .unwrap();
     let route = sdrmm_wire::AudioRoute {
-        fx: vec!["fx".to_owned()],
+        fx: Some("fx".to_owned()),
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
 
@@ -210,7 +210,7 @@ async fn a_channel_records_raw_and_through_audio_fx_at_once() {
         .set_audio_fx("fx", sdrmm_wire::AudioProcessing::default())
         .unwrap();
     let processed = sdrmm_wire::AudioRoute {
-        fx: vec!["fx".to_owned()],
+        fx: Some("fx".to_owned()),
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
     let raw = engine
@@ -231,12 +231,13 @@ async fn a_channel_records_raw_and_through_audio_fx_at_once() {
         .find(|c| c.id == ch)
         .unwrap()
         .audio_recordings;
-    let routes: Vec<(String, Vec<String>)> = statuses.into_iter().map(|s| (s.node, s.fx)).collect();
+    let routes: Vec<(String, Option<String>)> =
+        statuses.into_iter().map(|s| (s.node, s.fx)).collect();
     assert_eq!(
         routes,
         vec![
-            ("clean".to_owned(), vec!["fx".to_owned()]),
-            ("raw".to_owned(), Vec::new())
+            ("clean".to_owned(), Some("fx".to_owned())),
+            ("raw".to_owned(), None)
         ]
     );
     engine.stop_audio_recording("clean", ds, ch).unwrap();
@@ -303,7 +304,7 @@ async fn a_skip_silence_recording_through_dpdfnet_keeps_only_an_open_squelch() {
             )
             .unwrap();
         let gated = AudioRoute {
-            fx: vec!["fx".to_owned()],
+            fx: Some("fx".to_owned()),
             ..AudioRoute::channel(ds, ch)
         };
         engine.start_audio_recording("gated", &gated, true).unwrap();
@@ -336,7 +337,7 @@ async fn a_recording_through_an_unknown_audio_fx_is_refused_and_leaves_no_file()
     let ds = set_at_test_rate(&engine);
     let ch = nfm_channel(&engine, ds);
     let route = sdrmm_wire::AudioRoute {
-        fx: vec!["ghost".to_owned()],
+        fx: Some("ghost".to_owned()),
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
     assert!(engine.start_audio_recording(REC, &route, false).is_err());

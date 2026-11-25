@@ -26,6 +26,9 @@
 - One job, one node. Never two nodes, or a node and a device kind, that do the same thing: a radio
   is picked by a Device node and by nothing else. An abstraction over devices is a node wired to
   Device nodes, never a second kind of device that opens radios of its own. 
+- A node's settings shape its own output; a node of its own makes something new from a wire or
+  picks what passes. Every node with an audio output carries the Audio FX chain, and Audio FX is
+  never a node of its own.
 - A node hears another only through a wire. A runtime reads a wire through its resolved `Feed`
   (`tap`, `audio_routes`); only the resolver makes a `Tap`. A wire the contract admits must
   carry: `resolve::tests::delivery` wires every output into every input to check it.

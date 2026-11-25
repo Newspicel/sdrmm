@@ -53,7 +53,7 @@ fn a_decoder_with_audio_on_routes_its_listeners_through_its_chain() {
         vec![wire(("voice", "audio"), ("spk", "audio"))],
     );
     tap_all(&mut patch, &Tap::test_channel(1, 4));
-    let route = AudioRoute::channel(1, 4).through(vec!["voice".to_owned()]);
+    let route = AudioRoute::channel(1, 4).through(Some("voice".to_owned()));
     let from = Upstream {
         source: "voice".to_owned(),
         via: Vec::new(),

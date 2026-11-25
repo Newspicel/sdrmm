@@ -42,6 +42,7 @@ import {
 import { Inspect } from "../inspector";
 import { dropNodes } from "../remove";
 import { movesCanvas, wheelStaysOnFace } from "../wheel";
+import { AudioFxInspect, audioFxOf, withAudioFxBadge } from "./AudioFx";
 import { NodeName } from "./NodeName";
 import type { Anchors } from "./portAnchor";
 import { type AnchorSlot, useContentHeight, useFaceLayout } from "./useFaceLayout";
@@ -232,7 +233,10 @@ function FramedShell({
   const surface = useContext(Surface);
   const signal = liveSignal(live);
   const remove = useRemoveNode(node);
-  const ports = surface === "canvas" ? nodePorts(workspace.context, node) : [];
+  const allPorts = nodePorts(workspace.context, node);
+  const ports = surface === "canvas" ? allPorts : [];
+  const audioFx = audioFxOf(node, allPorts);
+  const shownBadge = withAudioFxBadge(badge, audioFx);
   const pinned = isPinned(workspace.rack, node.id);
   const selected = workspace.selected === node.id;
   const active = surface === "rack" || selected;
@@ -271,7 +275,7 @@ function FramedShell({
             name={node.label ?? title}
             category={category}
             live={live}
-            badge={badge}
+            badge={shownBadge}
             subtitle={subtitle}
           />
         </Inspect>
@@ -296,8 +300,8 @@ function FramedShell({
             />
           )}
           <NodeName node={node} title={title} />
-          {badge !== undefined && (
-            <span className="shrink-0 font-mono text-2xs text-ink-dim">{badge}</span>
+          {shownBadge !== undefined && (
+            <span className="shrink-0 font-mono text-2xs text-ink-dim">{shownBadge}</span>
           )}
           <ProblemMark node={node.id} />
           <span className="nodrag flex cursor-auto">
@@ -373,6 +377,7 @@ function FramedShell({
             </WheelClaimSlot>
           </Active>
         </div>
+        <AudioFxInspect node={node} audio={audioFx} />
 
         {ports.map((port, index) => (
           <PortHandle

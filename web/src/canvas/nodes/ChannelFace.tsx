@@ -1,8 +1,6 @@
-import { AudioControls } from "../../components/AudioControls";
 import { Button } from "../../components/BaseControls";
 import { ChannelControls, ChannelDial, SquelchMargin } from "../../components/ChannelControls";
 import {
-  audioChainActive,
   bandWidthHz,
   channelFrequencyHz,
   channelHasAudio,
@@ -12,7 +10,7 @@ import {
 import { FACE_BTN } from "../../components/controls";
 import { ANY_FREQUENCY, tuningRange } from "../../components/dial";
 import { dialId } from "../../components/FrequencyDial";
-import { ChipRows, Chips } from "../../components/face/Chips";
+import { ChipRows } from "../../components/face/Chips";
 import { HealthStats, hasHealth } from "../../components/face/Health";
 import { FaceStats, Stat } from "../../components/face/Stats";
 import {
@@ -78,7 +76,6 @@ export function ChannelFace({ node }: { node: PatchNode }) {
     reaches: set === null || frequencyHz === null || reachesHz(frequencyHz, window),
   });
   const locked = node.data.tuning_locked ?? false;
-  const audio = node.data.audio ?? {};
   const scanned = sweptBy(workspace.resolved, node.id);
   const controller = controllerOf(workspace.resolved, node.id);
   const editNode = (next: Partial<ChannelNodeData>): void =>
@@ -111,10 +108,7 @@ export function ChannelFace({ node }: { node: PatchNode }) {
       category="channel"
       subtitle={status ?? "Decoder"}
       badge={
-        <span className="flex gap-1.5">
-          {widthHz !== null && <span title="Channel bandwidth">{formatHz(widthHz)}</span>}
-          {audioChainActive(audio) && <span title="Audio processing on">FX</span>}
-        </span>
+        widthHz === null ? undefined : <span title="Channel bandwidth">{formatHz(widthHz)}</span>
       }
       live={audioPassing(level)}
     >
@@ -161,13 +155,6 @@ export function ChannelFace({ node }: { node: PatchNode }) {
               status={channelStatus}
               onEdit={onEdit}
             />
-          </InspectSection>
-        )}
-        {channelHasAudio(descriptor) && (
-          <InspectSection label="Audio">
-            <Chips inset="none">
-              <AudioControls audio={audio} onAudio={(next) => editNode({ audio: next })} />
-            </Chips>
           </InspectSection>
         )}
         {(channelStatus?.readouts ?? []).length > 0 && (

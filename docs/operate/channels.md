@@ -29,9 +29,9 @@ SDRmm resamples Device IQ automatically. Matching native rate skips resampling (
 - **Blanker:** removes short impulse spikes from IQ before filtering.
 - **IF filter:** shapes IQ before demodulation so adjacent stations cannot capture FM or swamp a decoder. **Edges** trim each side independently; **Notches** pin to RF frequencies and stay on interferers when you retune (shaded/red on Scope).
 
-## Audio
+## Audio FX
 
-The **Audio** chain at the end of a decoder (or voice encoder) processes its `audio` output (**FX** lights in header). Stages run in order:
+Every node with an `audio` output (decoder, trunk, microphone, voice chat) carries the **Audio FX** chain in its inspector, and every wire from it carries the processed sound (**FX** lights in header). Voice encoders run the same chain on their input. Stages run in order:
 
 | Stage | Does |
 |---|---|

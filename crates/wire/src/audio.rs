@@ -13,7 +13,6 @@ pub const MIN_AUDIO_TONE_HZ: f64 = 30.0;
 pub const MAX_AUDIO_TONE_HZ: f64 = 20_000.0;
 pub const MIN_NOTCH_WIDTH_HZ: f64 = 10.0;
 pub const MAX_NOTCH_WIDTH_HZ: f64 = 2_000.0;
-pub const MAX_AUDIO_FX_CHAIN: usize = 16;
 pub const DENOISE_MODELS_PREFIX: &str = "denoise/v1";
 pub const DENOISE_MODELS_URL: &str = "https://downloads.sdrmm.com/denoise/v1";
 
@@ -433,8 +432,9 @@ pub enum AudioFrom {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 pub struct AudioRoute {
     pub from: AudioFrom,
-    #[serde(default)]
-    pub fx: Vec<String>,
+    /// The node whose Audio FX chain the audio passes, while that chain is on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fx: Option<String>,
 }
 
 impl AudioRoute {
@@ -445,7 +445,7 @@ impl AudioRoute {
                 device_set,
                 channel,
             },
-            fx: Vec::new(),
+            fx: None,
         }
     }
 
@@ -455,12 +455,12 @@ impl AudioRoute {
             from: AudioFrom::Voice {
                 node: node.to_owned(),
             },
-            fx: Vec::new(),
+            fx: None,
         }
     }
 
     #[must_use]
-    pub fn through(self, fx: Vec<String>) -> Self {
+    pub fn through(self, fx: Option<String>) -> Self {
         Self { fx, ..self }
     }
 
@@ -477,16 +477,10 @@ impl AudioRoute {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.fx.len() > MAX_AUDIO_FX_CHAIN {
-            return Err(format!(
-                "audio passes through at most {MAX_AUDIO_FX_CHAIN} audio FX nodes, got {}",
-                self.fx.len()
-            ));
-        }
         if self
             .fx
-            .iter()
-            .any(|node| node.is_empty() || node.len() > crate::patch::MAX_NODE_ID_LEN)
+            .as_ref()
+            .is_some_and(|node| node.is_empty() || node.len() > crate::patch::MAX_NODE_ID_LEN)
         {
             return Err("an audio FX node id is empty or too long".to_owned());
         }
@@ -547,14 +541,9 @@ mod tests {
     }
 
     #[test]
-    fn a_route_through_too_many_fx_nodes_is_refused() {
-        let route = AudioRoute {
-            fx: vec!["fx".to_owned(); MAX_AUDIO_FX_CHAIN + 1],
-            ..AudioRoute::channel(0, 0)
-        };
-        assert!(route.validate().is_err());
+    fn a_route_through_a_blank_fx_node_is_refused() {
         let blank = AudioRoute {
-            fx: vec![String::new()],
+            fx: Some(String::new()),
             ..AudioRoute::channel(0, 0)
         };
         assert!(blank.validate().is_err());

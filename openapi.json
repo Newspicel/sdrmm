@@ -8896,10 +8896,10 @@
             "minimum": 0
           },
           "fx": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "node": {
             "type": "string"
@@ -10504,8 +10504,7 @@
         ],
         "properties": {
           "audio": {
-            "$ref": "#/components/schemas/AudioProcessing",
-            "description": "Filters, denoise and AGC on the decoder's audio, for everything wired to it."
+            "$ref": "#/components/schemas/AudioProcessing"
           },
           "channel_type": {
             "type": "string"
@@ -16616,6 +16615,9 @@
           "hang_ms"
         ],
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AudioProcessing"
+          },
           "hang_ms": {
             "type": "integer",
             "format": "int32",
@@ -28778,6 +28780,9 @@
       "TrunkNode": {
         "type": "object",
         "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AudioProcessing"
+          },
           "band": {
             "oneOf": [
               {
@@ -29434,6 +29439,35 @@
             },
             "description": "Chat users whose voice goes to the air. Empty lets anyone through.",
             "default": []
+          },
+          "audio": {
+            "$ref": "#/components/schemas/AudioProcessing",
+            "default": {
+              "agc": "off",
+              "auto_notch": false,
+              "click_removal": {
+                "enabled": false,
+                "threshold": 6.0
+              },
+              "denoise": {
+                "enabled": false,
+                "mode": "spectral",
+                "model": "dpdfnet2_8khz",
+                "strength": 0.5
+              },
+              "filter": {
+                "enabled": false,
+                "high_hz": 3000.0,
+                "low_hz": 300.0
+              },
+              "notches": [],
+              "peak": {
+                "enabled": false,
+                "freq_hz": 700.0,
+                "gain_db": 12.0,
+                "width_hz": 100.0
+              }
+            }
           },
           "channel": {
             "type": "string",

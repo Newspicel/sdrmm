@@ -398,7 +398,7 @@ fn switched_on(graph: &PatchGraph, kind: NodeKind) -> impl Iterator<Item = &sdrm
         .filter(move |node| node.body.kind() == kind && recording(&node.body))
 }
 
-fn running_audio(snapshot: &StateSnapshot) -> HashMap<AudioTake, Vec<String>> {
+fn running_audio(snapshot: &StateSnapshot) -> HashMap<AudioTake, Option<String>> {
     let channels = snapshot.device_sets.iter().flat_map(|set| {
         set.channels.iter().flat_map(move |channel| {
             let heard = Heard::Channel {

@@ -93,7 +93,10 @@ impl Engine {
         settings
             .validate()
             .map_err(|reason| EngineError::from(ChannelError::InvalidSettings(reason)))?;
-        self.fx_hub().set(node, settings);
+        if self.fx_hub().set(node, settings) {
+            let stage = self.fx_hub().stage(node);
+            self.voices().attach_fx(node, stage);
+        }
         Ok(())
     }
 
@@ -105,16 +108,19 @@ impl Engine {
         &self,
         route: &AudioRoute,
     ) -> Result<broadcast::Receiver<AudioPacket>, EngineError> {
-        match (&route.from, route.fx.is_empty()) {
-            (AudioFrom::Voice { node, .. }, true) => self.voices().subscribe_audio(node),
+        match (&route.from, &route.fx) {
+            (AudioFrom::Voice { node, .. }, None) => {
+                let stage = self.fx_hub().stage(node);
+                self.voices().subscribe_audio(node, stage)
+            }
             (
                 AudioFrom::Channel {
                     device_set,
                     channel,
                 },
-                true,
+                None,
             ) => self.subscribe_audio(*device_set, *channel),
-            (_, false) => {
+            (_, Some(_)) => {
                 check_route(route)?;
                 self.fx_hub()
                     .subscribe_audio(route, || self.fx_source(route))
@@ -126,25 +132,39 @@ impl Engine {
         &self,
         route: &AudioRoute,
     ) -> Result<broadcast::Receiver<PcmBlock>, EngineError> {
-        match (&route.from, route.fx.is_empty()) {
-            (AudioFrom::Voice { node, .. }, true) => self.voices().subscribe_pcm(node),
+        match (&route.from, &route.fx) {
+            (AudioFrom::Voice { node, .. }, None) => {
+                let stage = self.fx_hub().stage(node);
+                self.voices().subscribe_pcm(node, stage)
+            }
             (
                 AudioFrom::Channel {
                     device_set,
                     channel,
                 },
-                true,
+                None,
             ) => self.subscribe_pcm(*device_set, *channel),
-            (_, false) => {
+            (_, Some(_)) => {
                 check_route(route)?;
                 self.fx_hub().subscribe_pcm(route, || self.fx_source(route))
             }
         }
     }
 
-    /// Carries one mono 48 kHz frame of the voice `node` speaks to every wire that listens.
+    /// Carries one mono 48 kHz frame of the voice `node` speaks to every wire that listens,
+    /// through the node's Audio FX. The chain runs outside the hub's lock.
     pub fn speak_voice(&self, node: &str, pcm: &[f32]) {
-        self.voices().speak(node, pcm);
+        let Some(mut fx) = self.voices().take_fx(node) else {
+            self.voices().speak(node, pcm);
+            return;
+        };
+        let mut processed = pcm.to_vec();
+        let kept = fx.run(&mut processed);
+        let mut voices = self.voices();
+        if kept {
+            voices.restore_fx(node, fx);
+        }
+        voices.speak(node, &processed);
     }
 
     /// Closes every voice but those of `nodes`, finishing their takes.
@@ -176,7 +196,7 @@ impl Engine {
     pub(crate) fn fx_source(&self, route: &AudioRoute) -> Result<FxSource, EngineError> {
         let Some((ds, ch)) = route.channel_addr() else {
             return Err(EngineError::Audio(
-                "a voice runs through no audio FX".to_owned(),
+                "a voice runs its audio FX where it is spoken".to_owned(),
             ));
         };
         let inner = self.lock();

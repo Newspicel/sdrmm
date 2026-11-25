@@ -71,6 +71,7 @@ pub struct VoiceChatNode {
     /// Read from `to_chat` too, its name in workspaces saved before.
     #[serde(alias = "to_chat")]
     pub to_channel: VoiceGateSettings,
+    pub audio: crate::AudioProcessing,
 }
 
 impl VoiceChatNode {

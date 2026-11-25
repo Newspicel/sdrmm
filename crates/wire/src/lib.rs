@@ -84,11 +84,11 @@ pub use array::{
 pub use audio::{
     AudioAgcMode, AudioFilterSettings, AudioFrom, AudioProcessing, AudioRoute,
     ClickRemovalSettings, DENOISE_MODELS_PREFIX, DENOISE_MODELS_URL, DenoiseMode, DenoiseModel,
-    DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings, MAX_AUDIO_FX_CHAIN,
-    MAX_AUDIO_NOTCHES, MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD, MAX_CLICK_THRESHOLD,
-    MAX_NOTCH_WIDTH_HZ, MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ, MIN_BLANKER_THRESHOLD,
-    MIN_CLICK_THRESHOLD, MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB, ModelArtifact, ModelState,
-    NoiseBlankerSettings, NotchSettings, PeakSettings, ServerOutputsResponse,
+    DenoiseModelStatus, DenoiseModelsResponse, DenoiseSettings, MAX_AUDIO_NOTCHES,
+    MAX_AUDIO_TONE_HZ, MAX_BLANKER_THRESHOLD, MAX_CLICK_THRESHOLD, MAX_NOTCH_WIDTH_HZ,
+    MAX_PEAK_GAIN_DB, MIN_AUDIO_TONE_HZ, MIN_BLANKER_THRESHOLD, MIN_CLICK_THRESHOLD,
+    MIN_NOTCH_WIDTH_HZ, MIN_PEAK_GAIN_DB, ModelArtifact, ModelState, NoiseBlankerSettings,
+    NotchSettings, PeakSettings, ServerOutputsResponse,
 };
 pub use bandplan::{
     BandAllocation, BandBlock, BandChannel, BandLane, BandLayerInfo, BandLayerKind, BandPlan,
@@ -678,7 +678,7 @@ mod contract_tests {
 
         info.audio_recordings = vec![AudioRecordingStatus {
             node: "rec".to_owned(),
-            fx: vec!["fx".to_owned()],
+            fx: Some("fx".to_owned()),
             file: "ch_1_3_20260815T120000Z.wav".to_owned(),
             started_at: "2026-08-15T12:00:00Z".to_owned(),
             channels: 1,
@@ -688,7 +688,7 @@ mod contract_tests {
         }];
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["audio_recordings"][0]["frames"], 48_000);
-        assert_eq!(json["audio_recordings"][0]["fx"][0], "fx");
+        assert_eq!(json["audio_recordings"][0]["fx"], "fx");
         assert_eq!(json["audio_recordings"][0]["node"], "rec");
         assert!(json["audio_recordings"][0].get("error").is_none());
         let back: ChannelInfo = serde_json::from_value(json).unwrap();

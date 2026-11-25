@@ -297,7 +297,7 @@ async fn a_route_through_audio_fx_carries_the_channel_audio() {
         )
         .unwrap();
     let route = sdrmm_wire::AudioRoute {
-        fx: vec!["fx".to_owned()],
+        fx: Some("fx".to_owned()),
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
     let mut rx = engine.subscribe_route_pcm(&route).unwrap();
@@ -307,7 +307,7 @@ async fn a_route_through_audio_fx_carries_the_channel_audio() {
         .expect("the route stays open");
     assert_eq!(block.channels, 1);
     let unknown = sdrmm_wire::AudioRoute {
-        fx: vec!["ghost".to_owned()],
+        fx: Some("ghost".to_owned()),
         ..sdrmm_wire::AudioRoute::channel(ds, ch)
     };
     assert!(engine.subscribe_route_pcm(&unknown).is_err());

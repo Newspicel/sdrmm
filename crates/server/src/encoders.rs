@@ -242,7 +242,10 @@ pub(crate) fn route_lane(route: &AudioRoute) -> u64 {
         } => format!("{device_set}/{channel}"),
         AudioFrom::Voice { node, .. } => format!("voice/{node}"),
     };
-    lane_of(&format!("{from}/{}", route.fx.join(",")))
+    lane_of(&format!(
+        "{from}/{}",
+        route.fx.as_deref().unwrap_or_default()
+    ))
 }
 
 fn forward(engine: &Arc<Engine>, link: &Link) -> Result<Arc<AtomicBool>, String> {

@@ -322,6 +322,32 @@
         "threshold_db": -35.0,
         "hang_ms": 600,
         "volume": 1.0
+      },
+      "audio": {
+        "agc": "off",
+        "auto_notch": false,
+        "click_removal": {
+          "enabled": false,
+          "threshold": 6.0
+        },
+        "denoise": {
+          "enabled": false,
+          "mode": "spectral",
+          "model": "dpdfnet2_8khz",
+          "strength": 0.5
+        },
+        "filter": {
+          "enabled": false,
+          "high_hz": 3000.0,
+          "low_hz": 300.0
+        },
+        "notches": [],
+        "peak": {
+          "enabled": false,
+          "freq_hz": 700.0,
+          "gain_db": 12.0,
+          "width_hz": 100.0
+        }
       }
     }
   }

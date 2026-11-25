@@ -1084,12 +1084,12 @@ impl DeviceSetState {
             .collect()
     }
 
-    fn route_taps(&self, channel: u32, fx: &[String]) -> Vec<audio_recording::AudioRecorderTap> {
+    fn route_taps(&self, channel: u32, fx: Option<&str>) -> Vec<audio_recording::AudioRecorderTap> {
         self.audio_recordings
             .values()
             .filter(|recording| {
                 recording.route.channel_addr().map(|(_, ch)| ch) == Some(channel)
-                    && recording.route.fx == fx
+                    && recording.route.fx.as_deref() == fx
             })
             .map(|recording| recording.tap.clone())
             .collect()
@@ -1114,7 +1114,7 @@ impl DeviceSetState {
     }
 
     fn rearm_audio_recording(&self, ch: u32, stream: u32) {
-        let taps = audio_recording::AudioTaps::of(self.route_taps(ch, &[]));
+        let taps = audio_recording::AudioTaps::of(self.route_taps(ch, None));
         if taps.is_some() {
             self.send_dsp(stream, DspCommand::SetChannelRecordings { id: ch, taps });
         }

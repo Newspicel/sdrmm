@@ -210,7 +210,6 @@ pub struct ChannelNode {
     pub channel_type: String,
     #[serde(default)]
     pub tuning_locked: bool,
-    /// Filters, denoise and AGC on the decoder's audio, for everything wired to it.
     #[serde(default, skip_serializing_if = "crate::AudioProcessing::is_off")]
     pub audio: crate::AudioProcessing,
 }
@@ -316,7 +315,7 @@ impl TrunkDiscovery {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct TrunkNode {
     /// The decoder the system's control and traffic channels run; empty picks the first
     /// registered decoder that can trunk.
@@ -344,6 +343,8 @@ pub struct TrunkNode {
     /// The serial port of a DVSI vocoder chip the followed calls play through; unset is blip25.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vocoder: Option<String>,
+    #[serde(default, skip_serializing_if = "crate::AudioProcessing::is_off")]
+    pub audio: crate::AudioProcessing,
 }
 
 fn auto_protocol() -> String {
@@ -506,6 +507,7 @@ impl Default for TrunkNode {
             talkgroups: crate::TrunkTalkgroups::default(),
             keys: Vec::new(),
             vocoder: None,
+            audio: crate::AudioProcessing::default(),
         }
     }
 }
@@ -745,16 +747,14 @@ impl PatchGraph {
         self.nodes.iter().find(|node| node.id == id)
     }
 
-    /// The audio chain a decoder's listeners hear through: the decoder itself while its audio
-    /// processing is on, else none.
+    /// The node whose Audio FX chain the listeners of `source` hear through: the source itself
+    /// while its chain is on.
     #[must_use]
-    pub fn audio_fx(&self, source: &str) -> Vec<String> {
-        match self.node(source).map(|node| &node.body) {
-            Some(NodeBody::Channel(channel)) if channel.audio.is_active() => {
-                vec![source.to_owned()]
-            }
-            _ => Vec::new(),
-        }
+    pub fn audio_fx(&self, source: &str) -> Option<String> {
+        self.node(source)
+            .and_then(|node| node.body.audio_chain())
+            .is_some_and(crate::AudioProcessing::is_active)
+            .then(|| source.to_owned())
     }
 
     pub fn device_nodes(&self) -> impl Iterator<Item = &PatchNode> {

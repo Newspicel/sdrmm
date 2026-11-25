@@ -655,6 +655,18 @@ impl NodeBody {
         }
     }
 
+    /// The Audio FX chain on this node's audio output. Every node with an audio output has one.
+    #[must_use]
+    pub const fn audio_chain(&self) -> Option<&crate::AudioProcessing> {
+        match self {
+            Self::Channel(node) => Some(&node.audio),
+            Self::Trunk(node) => Some(&node.audio),
+            Self::Microphone(node) => Some(&node.audio),
+            Self::VoiceChat(node) => Some(&node.audio),
+            _ => None,
+        }
+    }
+
     #[must_use]
     pub fn processor_params(&self) -> Option<crate::processor::ProcessorParams> {
         match self {

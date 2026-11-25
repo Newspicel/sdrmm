@@ -178,7 +178,7 @@ fn subscribe(
     route: &AudioRoute,
     sync_fx: &dyn Fn(),
 ) -> Result<Option<broadcast::Receiver<PcmBlock>>, String> {
-    if !route.fx.is_empty() {
+    if route.fx.is_some() {
         sync_fx();
     }
     match engine.subscribe_route_pcm(route) {

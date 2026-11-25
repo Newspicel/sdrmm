@@ -152,7 +152,7 @@ impl Running {
             return;
         };
         if self.audio.as_ref().is_none_or(JoinHandle::is_finished) {
-            if !route.fx.is_empty() {
+            if route.fx.is_some() {
                 sync_fx();
             }
             self.audio = match engine.subscribe_route_pcm(route) {

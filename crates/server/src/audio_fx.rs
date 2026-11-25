@@ -55,13 +55,10 @@ pub(crate) fn sync(engine: &Engine, resolved: &ResolvedHub) {
 fn apply(engine: &Engine, graph: &PatchGraph) {
     let mut present = HashSet::new();
     for node in &graph.nodes {
-        let NodeBody::Channel(channel) = &node.body else {
+        let Some(chain) = node.body.audio_chain().filter(|chain| chain.is_active()) else {
             continue;
         };
-        if !channel.audio.is_active() {
-            continue;
-        }
-        match engine.set_audio_fx(&node.id, channel.audio.clone()) {
+        match engine.set_audio_fx(&node.id, chain.clone()) {
             Ok(()) => {
                 present.insert(node.id.clone());
             }
@@ -84,7 +81,9 @@ pub(crate) fn video_sound(graph: &PatchGraph, source: &str, at: ChannelAddr) -> 
 
 #[cfg(test)]
 mod tests {
-    use sdrmm_wire::{AudioProcessing, AudioRoute, ChannelNode, NodeKind, PatchNode, Position};
+    use sdrmm_wire::{
+        AudioProcessing, AudioRoute, ChannelNode, NodeKind, PatchNode, Position, TrunkNode,
+    };
 
     use super::*;
 
@@ -106,19 +105,39 @@ mod tests {
     }
 
     #[test]
-    fn only_decoders_with_audio_on_can_be_routed_through() {
+    fn only_nodes_with_audio_fx_on_can_be_routed_through() {
         let engine = Engine::new(None);
+        let trunk = PatchNode {
+            body: NodeBody::Trunk(TrunkNode {
+                audio: AudioProcessing {
+                    auto_notch: true,
+                    ..AudioProcessing::default()
+                },
+                ..TrunkNode::default()
+            }),
+            ..fx("trunk")
+        };
+        let idle = PatchNode {
+            body: NodeBody::default_for(NodeKind::Microphone),
+            ..fx("idle")
+        };
         apply(
             &engine,
             &PatchGraph {
-                nodes: vec![fx("kept")],
+                nodes: vec![fx("kept"), trunk, idle],
                 edges: Vec::new(),
             },
         );
-        let through = |node: &str| AudioRoute {
-            fx: vec![node.to_owned()],
-            ..AudioRoute::channel(0, 0)
-        };
+        let through = |node: &str| AudioRoute::channel(0, 0).through(Some(node.to_owned()));
+        for off in ["gone", "idle"] {
+            let refused = engine.subscribe_route_pcm(&through(off)).unwrap_err();
+            assert!(
+                refused.to_string().contains("not in the patch"),
+                "{refused}"
+            );
+        }
+        let trunk = engine.subscribe_route_pcm(&through("trunk")).unwrap_err();
+        assert!(trunk.is_not_found(), "{trunk}");
         let unknown = engine.subscribe_route_pcm(&through("gone")).unwrap_err();
         assert!(
             unknown.to_string().contains("not in the patch"),
@@ -152,10 +171,7 @@ mod tests {
             )
             .expect("save");
         state.resolve_now();
-        let through = AudioRoute {
-            fx: vec!["kept".to_owned()],
-            ..AudioRoute::channel(0, 0)
-        };
+        let through = AudioRoute::channel(0, 0).through(Some("kept".to_owned()));
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             let refused = state.engine.subscribe_route_pcm(&through).unwrap_err();

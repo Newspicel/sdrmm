@@ -2209,13 +2209,48 @@ fn a_decoder_with_audio_settings_out_of_range_is_refused() {
 #[test]
 fn a_decoder_runs_its_listeners_through_its_own_audio_chain_only_while_on() {
     let mut graph = workspace();
-    assert!(graph.audio_fx("ch").is_empty());
+    assert_eq!(graph.audio_fx("ch"), None);
     let NodeBody::Channel(channel) = &mut graph.nodes[2].body else {
         panic!("ch is a decoder");
     };
     channel.audio.auto_notch = true;
-    assert_eq!(graph.audio_fx("ch"), ["ch"]);
-    assert!(graph.audio_fx("nowhere").is_empty());
+    assert_eq!(graph.audio_fx("ch").as_deref(), Some("ch"));
+    assert_eq!(graph.audio_fx("nowhere"), None);
+}
+
+#[test]
+fn every_node_with_an_audio_output_carries_audio_fx() {
+    for kind in NodeKind::ALL {
+        let speaks = kind
+            .ports()
+            .iter()
+            .any(|port| port.direction == PortDirection::Out && port.port_type == PortType::Audio);
+        let body = NodeBody::default_for(*kind);
+        assert_eq!(
+            body.audio_chain().is_some(),
+            speaks,
+            "{} has an audio output exactly when it has Audio FX",
+            kind.as_str()
+        );
+    }
+}
+
+#[test]
+fn a_microphone_with_audio_settings_out_of_range_is_refused() {
+    let mut graph = workspace();
+    let mut microphone = crate::MicrophoneNode::default();
+    microphone.audio.denoise.strength = 3.0;
+    graph.nodes.push(PatchNode {
+        id: "mic".to_owned(),
+        body: NodeBody::Microphone(microphone),
+        position: Position { x: 0.0, y: 0.0 },
+        size: None,
+        label: None,
+    });
+    assert_eq!(
+        graph.validate(),
+        Err(PatchError::NodeSettings("mic".to_owned()))
+    );
 }
 
 fn radio(key: &str) -> DeviceNode {

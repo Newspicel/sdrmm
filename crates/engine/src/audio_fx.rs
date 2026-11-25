@@ -58,21 +58,21 @@ impl AudioFxHub {
         }
     }
 
-    pub(crate) fn set(&mut self, node: &str, settings: AudioProcessing) {
-        match self.settings.get(node) {
-            Some(tx) => {
-                tx.send_if_modified(|current| {
-                    let changed = *current != settings;
-                    if changed {
-                        *current = settings;
-                    }
-                    changed
-                });
-            }
-            None => {
-                self.settings
-                    .insert(node.to_owned(), watch::channel(settings).0);
-            }
+    /// True when `node`'s chain just came on.
+    pub(crate) fn set(&mut self, node: &str, settings: AudioProcessing) -> bool {
+        if let Some(tx) = self.settings.get(node) {
+            tx.send_if_modified(|current| {
+                let changed = *current != settings;
+                if changed {
+                    *current = settings;
+                }
+                changed
+            });
+            false
+        } else {
+            self.settings
+                .insert(node.to_owned(), watch::channel(settings).0);
+            true
         }
     }
 
@@ -83,6 +83,13 @@ impl AudioFxHub {
 
     fn prune(&mut self) {
         self.streams.retain(|_, stream| stream.live());
+    }
+
+    /// A chain following `node`'s Audio FX settings, for a voice that runs it where it is spoken.
+    pub(crate) fn stage(&self, node: &str) -> Option<Stage> {
+        self.settings
+            .get(node)
+            .map(|settings| Stage::new(settings.subscribe(), Arc::clone(&self.models)))
     }
 
     #[cfg(test)]
@@ -129,19 +136,17 @@ impl AudioFxHub {
     ) -> Result<&FxStream, EngineError> {
         self.prune();
         if !self.streams.contains_key(route) {
-            let stages = route
-                .fx
-                .iter()
-                .map(|node| {
-                    self.settings
-                        .get(node)
-                        .map(watch::Sender::subscribe)
-                        .ok_or_else(|| {
-                            EngineError::Audio(format!("audio FX `{node}` is not in the patch"))
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let stream = spawn(source()?, stages, Arc::clone(&self.models))?;
+            let node = route.fx.as_deref().ok_or_else(|| {
+                EngineError::Audio("the route runs through no audio FX".to_owned())
+            })?;
+            let settings = self
+                .settings
+                .get(node)
+                .map(watch::Sender::subscribe)
+                .ok_or_else(|| {
+                    EngineError::Audio(format!("audio FX `{node}` is not in the patch"))
+                })?;
+            let stream = spawn(source()?, settings, Arc::clone(&self.models))?;
             self.streams.insert(route.clone(), stream);
         }
         self.streams
@@ -156,7 +161,7 @@ fn stopped() -> EngineError {
 
 fn spawn(
     source: FxSource,
-    settings: Vec<watch::Receiver<AudioProcessing>>,
+    settings: watch::Receiver<AudioProcessing>,
     models: Arc<DenoiseModels>,
 ) -> Result<FxStream, EngineError> {
     let (pcm_tx, pcm_rx) = broadcast::channel(source.capacity);
@@ -171,10 +176,7 @@ fn spawn(
             .spawn(move || {
                 sdrmm_device::schedule::claim(sdrmm_device::Latency::Interactive);
                 Worker {
-                    stages: settings
-                        .into_iter()
-                        .map(|settings| Stage::new(settings, Arc::clone(&models)))
-                        .collect(),
+                    stage: Stage::new(settings, models),
                     profile: source.profile,
                     pcm_tx,
                     audio_tx,
@@ -253,13 +255,13 @@ impl Stage {
             .map_or(Ok(()), |chain| chain.process_audio(pcm))
     }
 
-    fn tail(&self) -> usize {
+    pub(crate) fn tail(&self) -> usize {
         self.chain.as_ref().map_or(0, AudioChain::tail)
     }
 }
 
 struct Worker {
-    stages: Vec<Stage>,
+    stage: Stage,
     profile: ClickProfile,
     pcm_tx: broadcast::Sender<PcmBlock>,
     audio_tx: broadcast::Sender<AudioPacket>,
@@ -342,29 +344,26 @@ impl Worker {
             && self.pcm_tx.receiver_count() <= 1
     }
 
-    /// False once a stage's settings are gone.
+    /// False once the chain's settings are gone.
     fn prepare(&mut self, channels: u8) -> bool {
-        for stage in &mut self.stages {
-            match stage.prepare(channels, self.profile) {
-                Ok(true) => {}
-                Ok(false) => return false,
-                Err(error) => report(&mut self.failed, &error),
+        match self.stage.prepare(channels, self.profile) {
+            Ok(ready) => ready,
+            Err(error) => {
+                report(&mut self.failed, &error);
+                true
             }
         }
-        true
     }
 
     fn processed(&mut self, mut pcm: Vec<f32>) -> Arc<[f32]> {
-        for stage in &mut self.stages {
-            if let Err(error) = stage.process(&mut pcm) {
-                report(&mut self.failed, &error);
-            }
+        if let Err(error) = self.stage.process(&mut pcm) {
+            report(&mut self.failed, &error);
         }
         Arc::from(pcm)
     }
 
     fn tail(&self) -> usize {
-        self.stages.iter().map(Stage::tail).sum()
+        self.stage.tail()
     }
 }
 
@@ -407,11 +406,8 @@ mod tests {
         }
     }
 
-    fn route(fx: &[&str]) -> AudioRoute {
-        AudioRoute {
-            fx: fx.iter().map(|&node| node.to_owned()).collect(),
-            ..AudioRoute::channel(0, 1)
-        }
+    fn route(fx: &str) -> AudioRoute {
+        AudioRoute::channel(0, 1).through(Some(fx.to_owned()))
     }
 
     fn highpass() -> AudioProcessing {
@@ -446,19 +442,18 @@ mod tests {
     }
 
     #[test]
-    fn a_route_runs_its_channel_audio_through_every_fx_node_in_order() {
+    fn a_route_runs_its_channel_audio_through_its_node_s_chain() {
         let (tx, _keep) = broadcast::channel(64);
         let mut hub = AudioFxHub::new(Arc::default());
-        hub.set("a", highpass());
         hub.set(
-            "b",
+            "a",
             AudioProcessing {
                 agc: AudioAgcMode::Fast,
-                ..AudioProcessing::default()
+                ..highpass()
             },
         );
         let mut rx = hub
-            .subscribe_pcm(&route(&["a", "b"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         let low = tone(200.0, 0.3, 4_800);
         for n in 0..20 {
@@ -476,7 +471,15 @@ mod tests {
     fn a_route_through_an_unknown_node_is_refused() {
         let (tx, _keep) = broadcast::channel::<PcmBlock>(8);
         let mut hub = AudioFxHub::new(Arc::default());
-        let refused = hub.subscribe_pcm(&route(&["ghost"]), || Ok(source(&tx)));
+        let refused = hub.subscribe_pcm(&route("ghost"), || Ok(source(&tx)));
+        assert!(matches!(refused, Err(EngineError::Audio(_))));
+    }
+
+    #[test]
+    fn a_route_through_no_node_is_refused() {
+        let (tx, _keep) = broadcast::channel::<PcmBlock>(8);
+        let mut hub = AudioFxHub::new(Arc::default());
+        let refused = hub.subscribe_pcm(&AudioRoute::channel(0, 1), || Ok(source(&tx)));
         assert!(matches!(refused, Err(EngineError::Audio(_))));
     }
 
@@ -486,7 +489,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", AudioProcessing::default());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         let low = tone(200.0, 0.3, 4_800);
         feed(&tx, &low, 0);
@@ -505,7 +508,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", highpass());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         tx.send(PcmBlock {
             start_frame: 777,
@@ -564,7 +567,7 @@ mod tests {
         let mut hub = AudioFxHub::new(dpdfnet(dir.path()));
         hub.set("a", delaying());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         let over = tone(1_000.0, 0.3, 4_800);
         for n in 0..10 {
@@ -598,7 +601,7 @@ mod tests {
         let mut hub = AudioFxHub::new(dpdfnet(dir.path()));
         hub.set("a", delaying());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         feed(&tx, &tone(1_000.0, 0.3, 4_800), 0);
         silence(&tx, 4_800, 4_800);
@@ -623,7 +626,7 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", AudioProcessing::default());
         let mut rx = hub
-            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         hub.retain(&HashSet::new());
         feed(&tx, &[0.1; 480], 0);
@@ -636,11 +639,11 @@ mod tests {
         let mut hub = AudioFxHub::new(Arc::default());
         hub.set("a", AudioProcessing::default());
         let rx = hub
-            .subscribe_pcm(&route(&["a"]), || Ok(source(&tx)))
+            .subscribe_pcm(&route("a"), || Ok(source(&tx)))
             .expect("the route opens");
         drop(rx);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while hub.has(&route(&["a"])) {
+        while hub.has(&route("a")) {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the idle route kept running"

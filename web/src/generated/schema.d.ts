@@ -2648,7 +2648,7 @@ export interface components {
             file: string;
             /** Format: int64 */
             frames: number;
-            fx?: string[];
+            fx?: string | null;
             node: string;
             started_at: string;
         };
@@ -3083,7 +3083,6 @@ export interface components {
             mode: "dmr";
         });
         ChannelNode: {
-            /** @description Filters, denoise and AGC on the decoder's audio, for everything wired to it. */
             audio?: components["schemas"]["AudioProcessing"];
             channel_type: string;
             tuning_locked?: boolean;
@@ -4746,6 +4745,7 @@ export interface components {
         /** @enum {string} */
         MergePart: "contacts" | "group_lists" | "channels" | "zones" | "scan_lists" | "radio_ids" | "settings";
         MicrophoneNode: {
+            audio?: components["schemas"]["AudioProcessing"];
             /**
              * Format: int32
              * @description How long the voice key stays open after the level falls.
@@ -7950,6 +7950,7 @@ export interface components {
          */
         TrunkKind: "grants" | "distributed";
         TrunkNode: {
+            audio?: components["schemas"]["AudioProcessing"];
             band?: components["schemas"]["TrunkBand"] | null;
             channel_map?: components["schemas"]["TrunkChannelEntry"][];
             /** Format: int64 */
@@ -8168,6 +8169,35 @@ export interface components {
              * @default []
              */
             allowed: string[];
+            /**
+             * @default {
+             *       "agc": "off",
+             *       "auto_notch": false,
+             *       "click_removal": {
+             *         "enabled": false,
+             *         "threshold": 6
+             *       },
+             *       "denoise": {
+             *         "enabled": false,
+             *         "mode": "spectral",
+             *         "model": "dpdfnet2_8khz",
+             *         "strength": 0.5
+             *       },
+             *       "filter": {
+             *         "enabled": false,
+             *         "high_hz": 3000,
+             *         "low_hz": 300
+             *       },
+             *       "notches": [],
+             *       "peak": {
+             *         "enabled": false,
+             *         "freq_hz": 700,
+             *         "gain_db": 12,
+             *         "width_hz": 100
+             *       }
+             *     }
+             */
+            audio: components["schemas"]["AudioProcessing"];
             /** @default  */
             channel: string;
             /**

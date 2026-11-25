@@ -87,6 +87,8 @@ pub struct MicrophoneNode {
     pub threshold_db: f64,
     /// How long the voice key stays open after the level falls.
     pub hang_ms: u32,
+    #[serde(skip_serializing_if = "crate::AudioProcessing::is_off")]
+    pub audio: crate::AudioProcessing,
 }
 
 impl Default for MicrophoneNode {
@@ -120,6 +122,7 @@ struct MicrophoneSaved {
     vox: Option<bool>,
     threshold_db: f64,
     hang_ms: u32,
+    audio: crate::AudioProcessing,
 }
 
 impl Default for MicrophoneSaved {
@@ -129,6 +132,7 @@ impl Default for MicrophoneSaved {
             vox: None,
             threshold_db: DEFAULT_VOX_THRESHOLD_DB,
             hang_ms: DEFAULT_VOX_HANG_MS,
+            audio: crate::AudioProcessing::default(),
         }
     }
 }
@@ -143,6 +147,7 @@ impl From<MicrophoneSaved> for MicrophoneNode {
             send,
             threshold_db: saved.threshold_db,
             hang_ms: saved.hang_ms,
+            audio: saved.audio,
         }
     }
 }

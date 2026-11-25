@@ -527,7 +527,7 @@ fn subscribe(
     ctx: &Ctx<'_>,
     route: &AudioRoute,
 ) -> Result<Option<tokio::sync::broadcast::Receiver<sdrmm_engine::PcmBlock>>, String> {
-    if !route.fx.is_empty() {
+    if route.fx.is_some() {
         (ctx.sync_fx)();
     }
     match ctx.engine.subscribe_route_pcm(route) {

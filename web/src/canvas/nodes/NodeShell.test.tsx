@@ -6,6 +6,7 @@ import type { PatchNode } from "../../lib/types";
 import { stubWorkspace } from "../../test/faceHarness";
 import { placed } from "../../test/fixtures";
 import { WorkspaceProvider } from "../context";
+import { InlineInspector } from "../inspector";
 import { CanvasSurface, NodeShell } from "./NodeShell";
 
 const NODE: PatchNode = placed("scan1", { kind: "scanner", data: {} });
@@ -31,6 +32,46 @@ function render(content: string, over: { selected?: string; live?: boolean } = {
     </QueryClientProvider>,
   );
 }
+
+const MICROPHONE = placed("mic", {
+  kind: "microphone",
+  data: { send: "push_to_talk", threshold_db: -35, hang_ms: 600, audio: { auto_notch: true } },
+});
+
+function inspect(node: PatchNode): string {
+  return renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <ReactFlowProvider>
+        <WorkspaceProvider
+          value={{
+            ...stubWorkspace({ graph: { nodes: [node], edges: [] }, resolved: null }),
+            inspected: node.id,
+          }}
+        >
+          <InlineInspector>
+            <NodeShell node={node} title="Node" category="source">
+              face
+            </NodeShell>
+          </InlineInspector>
+        </WorkspaceProvider>
+      </ReactFlowProvider>
+    </QueryClientProvider>,
+  );
+}
+
+describe("Audio FX", () => {
+  it("sits on every node with an audio output, marked while on", () => {
+    const html = inspect(MICROPHONE);
+    expect(html).toContain("Audio FX");
+    expect(html).toContain('title="Audio processing on"');
+  });
+
+  it("leaves a node without an audio output alone", () => {
+    const html = inspect(NODE);
+    expect(html).not.toContain("Audio FX");
+    expect(html).not.toContain('title="Audio processing on"');
+  });
+});
 
 describe("NodeShell on the canvas", () => {
   it("keeps a content-sized face at one width whatever it shows", () => {

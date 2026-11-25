@@ -512,7 +512,7 @@ impl Session {
                 let resolved = self.state.resolved.clone();
                 let rx = flatten_join(
                     tokio::task::spawn_blocking(move || {
-                        if !route.fx.is_empty() {
+                        if route.fx.is_some() {
                             crate::audio_fx::sync(&engine, &resolved);
                         }
                         engine.subscribe_route_audio(&route)
@@ -543,7 +543,7 @@ impl Session {
                 let resolved = self.state.resolved.clone();
                 let rx = flatten_join(
                     tokio::task::spawn_blocking(move || {
-                        if !route.fx.is_empty() {
+                        if route.fx.is_some() {
                             crate::audio_fx::sync(&engine, &resolved);
                         }
                         engine.subscribe_route_pcm(&route)

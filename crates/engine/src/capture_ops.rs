@@ -178,7 +178,7 @@ impl Engine {
         route: &AudioRoute,
         skip_silence: bool,
     ) -> Result<AudioRecordingStatus, EngineError> {
-        if !route.fx.is_empty() {
+        if route.fx.is_some() {
             route.validate().map_err(EngineError::Recording)?;
         }
         let (device_set, channel) = match &route.from {
@@ -219,7 +219,7 @@ impl Engine {
             let (tap, blocks, shared) =
                 audio_recording::create_tap(source.device_rate, skip_silence);
             let thread = audio_recording::spawn_writer(writer, blocks, shared.clone())?;
-            let fx_control = if route.fx.is_empty() {
+            let fx_control = if route.fx.is_none() {
                 None
             } else {
                 let control = self.fx_hub().control(route, || self.fx_source(route));
@@ -322,7 +322,7 @@ impl Engine {
         if !fits {
             return Err(Box::new(recording));
         }
-        let mut taps = state.route_taps(take.channel, &recording.route.fx);
+        let mut taps = state.route_taps(take.channel, recording.route.fx.as_deref());
         taps.push(recording.tap.clone());
         if !state.send_taps(&recording, audio_recording::AudioTaps::of(taps)) {
             return Err(Box::new(recording));
@@ -375,7 +375,7 @@ impl Engine {
                 .audio_recordings
                 .remove(&take)
                 .ok_or_else(not_recording)?;
-            let taps = state.route_taps(ch, &recording.route.fx);
+            let taps = state.route_taps(ch, recording.route.fx.as_deref());
             state.send_taps(&recording, audio_recording::AudioTaps::of(taps));
             inner.revision += 1;
             recording

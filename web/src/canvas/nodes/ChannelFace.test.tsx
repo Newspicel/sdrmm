@@ -95,23 +95,8 @@ describe("ChannelFace", () => {
     expect(html).toContain("One channel");
   });
 
-  it("puts audio processing at the end of an audio decoder's settings", () => {
-    expect(face(0, 0, DESCRIPTOR, true)).not.toContain("Auto notch");
-    const html = face(0, 0, { ...DESCRIPTOR, has_audio: true }, true);
-    expect(html.indexOf("Auto notch")).toBeGreaterThan(html.indexOf("One channel"));
-  });
-
-  it("marks the header while audio processing is on", () => {
-    const fx = placed("ble", {
-      kind: "channel",
-      data: { channel_type: "ble", audio: { auto_notch: true } },
-    });
-    const html = renderFace(ChannelFace, fx, {
-      graph: { ...GRAPH, nodes: [RADIO, fx] },
-      channelTypes: [DESCRIPTOR],
-    });
-    expect(html).toContain('title="Audio processing on"');
-    expect(face(0)).not.toContain('title="Audio processing on"');
+  it("has no Audio FX while its decoder makes no sound", () => {
+    expect(face(0, 0, DESCRIPTOR, true)).not.toContain("Audio FX");
   });
 
   it("shows the readouts the decoder publishes in its status", () => {
