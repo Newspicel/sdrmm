@@ -1,9 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import { addNode } from "./canvas";
+import { addFace } from "./canvas";
 
 async function pickGenerator(page: Page) {
-  await addNode(page, "Device");
-  const device = page.locator('.react-flow__node[data-id^="device:"]').last();
+  const device = await addFace(page, "Device", "device");
   await device.locator("header").click();
   await device.getByRole("button", { name: /^Virtual/ }).click();
   await device.getByRole("button", { name: "Signal generator" }).click();
@@ -11,8 +10,7 @@ async function pickGenerator(page: Page) {
 }
 
 async function pickRecording(page: Page) {
-  await addNode(page, "Device");
-  const device = page.locator('.react-flow__node[data-id^="device:"]').last();
+  const device = await addFace(page, "Device", "device");
   await device.locator("header").click();
   await device.getByRole("button", { name: "Recording" }).click();
   return device;
@@ -77,9 +75,7 @@ test.describe("the source nodes", () => {
   });
 
   test("one device node offers every source", async ({ page }) => {
-    await addNode(page, "Device");
-
-    const device = page.locator('.react-flow__node[data-id^="device:"]').last();
+    const device = await addFace(page, "Device", "device");
     await device.locator("header").click();
     const source = device.getByRole("group", { name: "Radio source" });
     await expect(source).toBeVisible();

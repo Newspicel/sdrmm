@@ -111,7 +111,7 @@ impl Framer {
         let coded = &mut self.coded[..bits];
         coded.copy_from_slice(self.bits.get(start..start + bits)?);
         let payload = &mut self.payload[..size];
-        let fixed = layer2::decode(coded, payload);
+        let fixed = layer2::decode(coded, payload)?;
         let mut frame = packet::parse(payload)?;
         frame.errors_corrected = fixed;
         frame.raw = packet::hex(payload);

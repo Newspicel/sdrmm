@@ -3,7 +3,7 @@
 
 use sdrmm_dsp::coding::fec::{
     conv::{CONFIDENT, Soft},
-    crc16_msb, golay23_decode_soft,
+    crc16_msb, golay23_correct, golay23_decode_soft,
 };
 
 pub(crate) const UNIQUE_WORD: u16 = 0x2424;
@@ -36,12 +36,16 @@ pub(crate) const fn coded_bits(payload: usize) -> usize {
     coded_bytes(payload) * 8
 }
 
+/// Mean hard Golay corrections a group past which the bits are noise. Golay(23,12) is perfect,
+/// so a random word lands about 2.86 bits from a codeword; a frame worth decoding sits far below.
+const NOISE_CORRECTIONS: f32 = 2.0;
+
 /// The payload carried by the soft bits after the unique word, in the order sent, and how many
-/// decisions Golay overturned.
-pub(crate) fn decode(coded: &mut [Soft], payload: &mut [u8]) -> u32 {
+/// decisions Golay overturned; `None` when the bits look like noise.
+pub(crate) fn decode(coded: &mut [Soft], payload: &mut [u8]) -> Option<u32> {
     descramble(coded);
     deinterleave(coded);
-    unpack(coded, payload)
+    looks_coded(coded, payload.len() * 8).then(|| unpack(coded, payload))
 }
 
 /// The CRC-16/CCITT-FALSE horusdemodlib checks.
@@ -132,27 +136,51 @@ fn msb_bit(bytes: &[u8], index: usize) -> u32 {
     u32::from((bytes[index / 8] >> (7 - index % 8)) & 1)
 }
 
-/// Soft-decodes each 12-bit group of payload bits with its 11 parity bits. A short last group
-/// sits one bit up from the bottom of its 12, as horusdemodlib packs it, the bits around it
-/// known zeros.
+/// Whether the hard decisions sit as near Golay codewords as a frame's do, so noise never pays
+/// for the soft decoder.
+fn looks_coded(coded: &[Soft], data_bits: usize) -> bool {
+    let groups = data_bits.div_ceil(DATA_BITS);
+    let corrections: u32 = (0..groups)
+        .map(|group| {
+            let (_, received) = codeword(coded, data_bits, group);
+            let hard = received
+                .iter()
+                .fold(0, |word, &value| (word << 1) | u32::from(value > 0));
+            golay23_correct(hard).1
+        })
+        .sum();
+    (corrections as f32) < NOISE_CORRECTIONS * groups as f32
+}
+
+/// The width of payload bits in `group` and its 23 soft bits. A short last group sits one bit up
+/// from the bottom of its 12, as horusdemodlib packs it, the bits around it known zeros.
+fn codeword(
+    coded: &[Soft],
+    data_bits: usize,
+    group: usize,
+) -> (usize, [Soft; DATA_BITS + PARITY_BITS]) {
+    let parity = &coded[data_bits..];
+    let first = group * DATA_BITS;
+    let width = DATA_BITS.min(data_bits - first);
+    let mut received = [-CONFIDENT; DATA_BITS + PARITY_BITS];
+    let top = if width == DATA_BITS {
+        0
+    } else {
+        DATA_BITS - 1 - width
+    };
+    received[top..top + width].copy_from_slice(&coded[first..first + width]);
+    received[DATA_BITS..].copy_from_slice(&parity[group * PARITY_BITS..(group + 1) * PARITY_BITS]);
+    (width, received)
+}
+
+/// Soft-decodes each 12-bit group of payload bits with its 11 parity bits.
 fn unpack(coded: &[Soft], payload: &mut [u8]) -> u32 {
     let data_bits = payload.len() * 8;
-    let parity = &coded[data_bits..];
     payload.fill(0);
     let mut fixed = 0;
     let mut written = 0;
     for group in 0..data_bits.div_ceil(DATA_BITS) {
-        let first = group * DATA_BITS;
-        let width = DATA_BITS.min(data_bits - first);
-        let mut received = [-CONFIDENT; DATA_BITS + PARITY_BITS];
-        let top = if width == DATA_BITS {
-            0
-        } else {
-            DATA_BITS - 1 - width
-        };
-        received[top..top + width].copy_from_slice(&coded[first..first + width]);
-        received[DATA_BITS..]
-            .copy_from_slice(&parity[group * PARITY_BITS..(group + 1) * PARITY_BITS]);
+        let (width, received) = codeword(coded, data_bits, group);
         let (word, errors) = golay23_decode_soft(&received);
         fixed += errors;
         let corrected = word >> PARITY_BITS;
@@ -243,7 +271,7 @@ mod tests {
             let payload: Vec<u8> = (0..size).map(|n| (n * 37 + 11) as u8).collect();
             let mut coded = soften(&encode(&payload));
             let mut out = vec![0; size];
-            assert_eq!(decode(&mut coded, &mut out), 0, "size {size}");
+            assert_eq!(decode(&mut coded, &mut out), Some(0), "size {size}");
             assert_eq!(out, payload, "size {size}");
         }
     }
@@ -256,7 +284,7 @@ mod tests {
             coded[index] = -coded[index];
         }
         let mut out = [0; 22];
-        assert_eq!(decode(&mut coded, &mut out), 6);
+        assert_eq!(decode(&mut coded, &mut out), Some(6));
         assert_eq!(out.as_slice(), payload.as_slice());
     }
 
@@ -277,5 +305,22 @@ mod tests {
         };
         assert_ne!(decoded(1).as_slice(), payload.as_slice());
         assert_eq!(decoded(4).as_slice(), payload.as_slice());
+    }
+
+    #[test]
+    fn noise_never_reaches_the_soft_decoder() {
+        for size in PAYLOAD_SIZES {
+            let mut state = 0x2545_F491_u32.wrapping_add(size as u32);
+            let mut coded: Vec<Soft> = (0..coded_bits(size) - UNIQUE_WORD_BITS)
+                .map(|_| {
+                    state ^= state << 13;
+                    state ^= state >> 17;
+                    state ^= state << 5;
+                    (state % 255) as Soft - 127
+                })
+                .collect();
+            let mut out = vec![0; size];
+            assert_eq!(decode(&mut coded, &mut out), None, "size {size}");
+        }
     }
 }

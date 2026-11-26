@@ -9,19 +9,19 @@ mod other {
 
     use anyhow::{Result, bail};
 
-    pub struct Disclaimed;
+    pub enum Disclaimed {}
 
     impl Disclaimed {
         pub fn id(&self) -> u32 {
-            0
+            match *self {}
         }
 
         pub fn exited(&mut self) -> Result<Option<String>> {
-            Ok(None)
+            match *self {}
         }
 
         pub fn stop(&mut self) -> Result<()> {
-            Ok(())
+            match *self {}
         }
     }
 

@@ -33,18 +33,12 @@ const SCREEN_GAP = 24;
 export function useNodePlacement(): (graph: PatchGraph, of: Faced) => Position {
   const flow = useReactFlow();
   const store = useStoreApi();
+  const reveal = useReveal();
 
   return useCallback(
     (graph, of) => {
       const { width, height } = store.getState();
-      const { x, y, zoom } = flow.getViewport();
-      const gap = SCREEN_GAP / zoom;
-      const viewport = {
-        x: -x / zoom,
-        y: -y / zoom,
-        w: width / zoom,
-        h: height / zoom,
-      };
+      const { zoom } = flow.getViewport();
       const rendered = new Map(flow.getNodes().map((node) => [node.id, node]));
       const occupied = graph.nodes.map((node) => nodeRect(node, rendered.get(node.id)));
       const size = dropSize(of);
@@ -52,20 +46,48 @@ export function useNodePlacement(): (graph: PatchGraph, of: Faced) => Position {
       if (width <= 0 || height <= 0 || zoom <= 0) {
         return dropPosition({ x: 0, y: 0, w: 1200, h: 800 }, size, occupied, SCREEN_GAP);
       }
-      const position = dropPosition(viewport, size, occupied, gap);
-      const face = {
+      const gap = SCREEN_GAP / zoom;
+      const position = dropPosition(onScreen(flow, store), size, occupied, gap);
+      reveal({
         x: position.x - gap,
         y: position.y - gap,
-        width: size.w + 2 * gap,
-        height: size.h + 2 * gap,
-      };
-      if (!encloses(viewport, face)) {
-        void flow.fitBounds(union(viewport, face), { padding: 0 });
-      }
+        w: size.w + 2 * gap,
+        h: size.h + 2 * gap,
+      });
       return position;
+    },
+    [flow, store, reveal],
+  );
+}
+
+/** Zooms out just enough that `face`, in flow coordinates, joins what is on screen. */
+export function useReveal(): (face: PlacementRect) => void {
+  const flow = useReactFlow();
+  const store = useStoreApi();
+
+  return useCallback(
+    (face) => {
+      const { width, height } = store.getState();
+      if (width <= 0 || height <= 0 || flow.getViewport().zoom <= 0) {
+        return;
+      }
+      const viewport = onScreen(flow, store);
+      const rect = { x: face.x, y: face.y, width: face.w, height: face.h };
+      if (!encloses(viewport, rect)) {
+        void flow.fitBounds(union(viewport, rect), { padding: 0 });
+      }
     },
     [flow, store],
   );
+}
+
+function onScreen(
+  flow: ReturnType<typeof useReactFlow>,
+  store: ReturnType<typeof useStoreApi>,
+): PlacementRect {
+  const { width, height } = store.getState();
+  const { x, y, zoom } = flow.getViewport();
+  return { x: -x / zoom, y: -y / zoom, w: width / zoom, h: height / zoom };
 }
 
 export function dropPosition(

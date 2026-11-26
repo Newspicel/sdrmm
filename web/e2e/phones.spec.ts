@@ -2,7 +2,7 @@ import { type APIRequestContext, expect, type Locator, type Page, test } from "@
 import { WS_BEARER_PROTOCOL_PREFIX, WS_SUBPROTOCOL } from "../src/generated/frame";
 import { hexUtf8 } from "../src/lib/hex";
 import type { AboutResponse, PairingOffer, PairResponse } from "../src/lib/types";
-import { addNode, stage, unstage } from "./canvas";
+import { addFace, stage, unstage } from "./canvas";
 
 test.describe.configure({ mode: "serial" });
 test.use({ ignoreHTTPSErrors: true });
@@ -55,11 +55,7 @@ async function phonesOff(request: APIRequestContext, port: number): Promise<void
 }
 
 async function addGps(page: Page): Promise<Locator> {
-  await addNode(page, "GPS position");
-  const added = page.locator('.react-flow__node[data-id^="gps:"]').last();
-  await expect(added).toBeVisible();
-  const id = await added.getAttribute("data-id");
-  const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+  const node = await addFace(page, "GPS position", "gps");
   await node.locator("header").click();
   return node;
 }

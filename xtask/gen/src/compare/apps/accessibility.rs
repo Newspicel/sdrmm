@@ -43,7 +43,7 @@ mod other {
 
     pub struct Control;
 
-    pub struct Found;
+    pub enum Found {}
 
     impl Control {
         pub const fn toggle(_: &'static str) -> Self {
@@ -57,7 +57,7 @@ mod other {
 
     impl Found {
         pub fn press(&self) -> Result<()> {
-            bail!("pressing a control needs macOS Accessibility")
+            match *self {}
         }
     }
 

@@ -53,6 +53,7 @@ import {
 } from "./graph";
 import { useGridStep } from "./grid";
 import { useConnections, useGraphChanges } from "./handlers";
+import { KeepInView } from "./KeepInView";
 import { type MenuPlace, menuPlace } from "./menuPlace";
 import { flowTypeOf, NODE_TYPES } from "./nodes";
 import { ReplaceDecoder } from "./nodes/ReplaceDecoder";
@@ -264,6 +265,7 @@ export function Canvas() {
       >
         <Background variant={BackgroundVariant.Dots} gap={grid.step} size={1} className="!bg-bg" />
         <PeerLayer nodes={nodes} />
+        <KeepInView node={workspace.inspected} />
       </ReactFlow>
       {menu !== null && (
         <ContextMenu

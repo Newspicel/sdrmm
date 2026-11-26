@@ -2,6 +2,7 @@ import { pushToast } from "../lib/toasts";
 import type { NodeKind, PatchNode, Position } from "../lib/types";
 import { useWorkspaceNow } from "./context";
 import { addNode, newNodeId, nodeIds, opensDevice } from "./graph";
+import { revealWhenInspected } from "./KeepInView";
 import { newNodeBody } from "./newNode";
 import { useNodePlacement } from "./placement";
 
@@ -28,6 +29,7 @@ export function useAddNode(): AddNode {
     workspace.edit((snapshot) => ({ ...snapshot, graph: addNode(snapshot.graph, node) }));
     workspace.select(id);
     workspace.inspect(id);
+    revealWhenInspected(id);
     if (opensDevice(kind)) {
       workspace.apply();
     }

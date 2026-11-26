@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { channelFrequencyHz } from "../src/components/channelSettings";
 import type { StateSnapshot, WorkspaceDetail } from "../src/lib/types";
-import { activate, addNode, dragWire, fitPatch, nodeUrl, radioNodeOf } from "./canvas";
+import { activate, addFace, addNode, dragWire, fitPatch, nodeUrl, radioNodeOf } from "./canvas";
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -157,10 +157,7 @@ test.describe("the workspace", () => {
     await receiver.getByRole("button", { name: /test band/i }).click();
     await expect(receiver.locator('[id^="frequency-dial"]')).toBeVisible();
 
-    await addNode(page, "Device");
-    const added = page.locator('.react-flow__node[data-id^="device:"]').last();
-    await expect(added).toBeVisible();
-    const library = node((await added.getAttribute("data-id")) ?? "");
+    const library = await addFace(page, "Device", "device");
     await activate(library);
     await library.getByRole("button", { name: "Recording" }).click();
     await expect(library.getByRole("button", { name: /Upload SigMF/i })).toBeVisible();
@@ -531,11 +528,7 @@ test.describe("the workspace", () => {
     await expect(page.locator('.react-flow__node[data-id="device"]')).toBeVisible();
 
     const addGps = async (): Promise<Locator> => {
-      await addNode(page, "GPS position");
-      const added = page.locator('.react-flow__node[data-id^="gps:"]').last();
-      await expect(added).toBeVisible();
-      const id = await added.getAttribute("data-id");
-      const node = page.locator(`.react-flow__node[data-id="${id}"]`);
+      const node = await addFace(page, "GPS position", "gps");
       await activate(node);
       return node;
     };

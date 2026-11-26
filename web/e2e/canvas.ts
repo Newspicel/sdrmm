@@ -231,6 +231,27 @@ export async function addNode(page: Page, name: string, group?: string): Promise
   await scope.getByRole("button", { name, exact: true }).click();
 }
 
+/** Adds a node from the palette and waits for its face: the selected `kind` face that was not
+ * on the canvas before, since an older one may still be the last. */
+function ids(locator: Locator): Promise<string[]> {
+  return locator.evaluateAll((all) => all.map((element) => element.getAttribute("data-id") ?? ""));
+}
+
+export async function addFace(page: Page, name: string, kind: string): Promise<Locator> {
+  const faces = page.locator(`.react-flow__node[data-id^="${kind}:"]`);
+  const before = new Set(await ids(faces));
+  await addNode(page, name);
+  const selected = page.locator(`.react-flow__node.selected[data-id^="${kind}:"]`);
+  let added = "";
+  await expect
+    .poll(async () => {
+      added = (await ids(selected)).find((id) => id !== "" && !before.has(id)) ?? "";
+      return added;
+    })
+    .not.toBe("");
+  return face(page, added);
+}
+
 export function face(page: Page, id: string): Locator {
   return page.locator(`.react-flow__node[data-id="${id}"]`);
 }
