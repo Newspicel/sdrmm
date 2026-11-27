@@ -101,7 +101,7 @@ export function ListRow({
         ) : (
           <Button
             type="button"
-            className="group min-w-0 flex-1 text-left disabled:pointer-events-none disabled:opacity-45 pointer-coarse:min-h-10"
+            className="group min-w-0 flex-1 text-left disabled:pointer-events-none disabled:opacity-45 touch:min-h-10"
             title={hint}
             disabled={disabled}
             onClick={onSelect}

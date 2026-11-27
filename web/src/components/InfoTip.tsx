@@ -15,7 +15,7 @@ export function InfoTip({ text }: { text: string }) {
         aria-label={text}
         onPointerEnter={prepare}
         onFocus={prepare}
-        className="nodrag nopan inline-flex size-3.5 shrink-0 cursor-help items-center justify-center rounded-full text-ink-faint/60 hover:text-accent data-open:text-accent"
+        className="nodrag nopan relative inline-flex size-3.5 touch:before:absolute touch:before:-inset-2 shrink-0 cursor-help items-center justify-center rounded-full text-ink-faint/60 hover:text-accent data-open:text-accent"
       >
         <Icon glyph={Info} size={12} />
       </PopoverTrigger>

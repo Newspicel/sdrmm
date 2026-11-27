@@ -1,6 +1,6 @@
 const INSTANT =
   "inline-flex items-center gap-1.5 rounded-control " +
-  "disabled:opacity-45 disabled:pointer-events-none pointer-coarse:min-h-10";
+  "disabled:opacity-45 disabled:pointer-events-none touch:min-h-10";
 
 const INTERACTIVE = `${INSTANT} transition-colors duration-100`;
 
@@ -76,25 +76,25 @@ const ICON_PRESSABLE =
 
 const ICON_BASE = `${INTERACTIVE} justify-center border border-transparent text-ink-dim ${ICON_PRESSABLE}`;
 
-export const ICON_BTN = `${ICON_BASE} size-7 pointer-coarse:size-10`;
+export const ICON_BTN = `${ICON_BASE} size-7 touch:size-10`;
 
-export const ICON_BTN_SM = `${ICON_BASE} size-5 pointer-coarse:size-10`;
+export const ICON_BTN_SM = `${ICON_BASE} size-5 touch:size-10`;
 
 export const ICON_BTN_SM_FAINT =
   `${INTERACTIVE} size-5 justify-center border border-transparent text-ink-faint ${ICON_PRESSABLE} ` +
-  "pointer-coarse:size-10";
+  "touch:size-10";
 
 export const ICON_BTN_DANGER =
   `${INTERACTIVE} size-7 justify-center border border-transparent text-ink-faint ` +
-  "hover:bg-danger/10 hover:text-danger pointer-coarse:size-10";
+  "hover:bg-danger/10 hover:text-danger touch:size-10";
 
 export const ICON_BTN_SM_DANGER =
   `${INTERACTIVE} size-5 justify-center border border-transparent text-ink-dim ` +
-  "hover:bg-danger/10 hover:text-danger pointer-coarse:size-10";
+  "hover:bg-danger/10 hover:text-danger touch:size-10";
 
 export const ICON_BTN_SM_DANGER_ARMED =
   `${INTERACTIVE} size-5 justify-center border border-transparent bg-danger/10 text-danger ` +
-  "hover:bg-danger/25 pointer-coarse:size-10";
+  "hover:bg-danger/25 touch:size-10";
 
 const FIELD_BASE =
   `${INTERACTIVE} min-w-0 border border-line bg-well font-mono ` +

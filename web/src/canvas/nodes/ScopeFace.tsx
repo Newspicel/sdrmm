@@ -450,7 +450,7 @@ function Divider({
       aria-orientation="horizontal"
       aria-label={`Trace and waterfall split, ${Math.round(fraction * 100)}% trace`}
       data-plot-chrome
-      className="group relative z-10 -my-1 h-[9px] shrink-0 cursor-row-resize"
+      className="group relative z-10 -my-1 h-[9px] shrink-0 cursor-row-resize touch-none touch:before:absolute touch:before:inset-x-0 touch:before:-inset-y-2"
       onPointerDown={(event) => {
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);

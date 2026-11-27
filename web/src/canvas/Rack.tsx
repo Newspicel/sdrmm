@@ -177,7 +177,7 @@ export function Rack() {
           <div
             key={slot.node}
             data-id={slot.node}
-            className={`relative min-h-0 min-w-0 rounded-control has-[>button:focus-visible]:outline-2 has-[>button:focus-visible]:outline-accent [&_header]:cursor-grab ${
+            className={`relative min-h-0 min-w-0 rounded-control has-[>button:focus-visible]:outline-2 has-[>button:focus-visible]:outline-accent [&_header]:cursor-grab [&_header]:touch-none ${
               ghost?.partner === slot.node ? "outline-2 outline-accent" : ""
             }`}
             style={area(slot)}
@@ -211,7 +211,7 @@ const RackFace = memo(function RackFace({ node }: { node: PatchNode }) {
 });
 
 const EDGE_LINE =
-  "before:absolute before:bg-accent before:opacity-0 before:transition-opacity hover:before:opacity-100";
+  "before:absolute before:bg-accent before:opacity-0 before:transition-opacity hover:before:opacity-100 touch:before:opacity-45";
 
 function Grips({
   node,
@@ -228,7 +228,7 @@ function Grips({
       aria-label={`${label} ${node}`}
       aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
       title={hint}
-      className={`absolute z-10 ${className}`}
+      className={`absolute z-10 touch-none touch:after:absolute touch:after:-inset-2 ${className}`}
       onPointerDown={(event) => onBegin(event, node, mode)}
       onKeyDown={(event) => onNudge(event, node, mode)}
     />

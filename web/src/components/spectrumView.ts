@@ -43,6 +43,21 @@ export function wheelView(
   return panView(view, wheel.deltaX / Math.max(1, widthPx));
 }
 
+export interface FingerPair {
+  a: number;
+  b: number;
+}
+
+/// Zooms by how far two fingers spread and keeps the span under their midpoint there.
+export function pinchView(view: SpectrumView, from: FingerPair, to: FingerPair): SpectrumView {
+  const spread = Math.abs(from.a - from.b);
+  const factor = spread > 0 ? Math.abs(to.a - to.b) / spread : 1;
+  const anchor = viewToSpan(view, (from.a + from.b) / 2);
+  const width = Math.min(1, Math.max(MIN_WIDTH, viewWidth(view) / factor));
+  const start = anchor - ((to.a + to.b) / 2) * width;
+  return slide({ start, end: start + width });
+}
+
 export function viewToSpan(view: SpectrumView, at: number): number {
   return view.start + at * viewWidth(view);
 }

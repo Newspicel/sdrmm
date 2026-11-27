@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 
 export const SLIDER_CONTROL =
   "flex h-7 w-full cursor-pointer touch-none items-center data-dragging:cursor-grabbing " +
-  "data-disabled:cursor-not-allowed data-disabled:opacity-45 pointer-coarse:h-10";
+  "data-disabled:cursor-not-allowed data-disabled:opacity-45 touch:h-10";
 
 export const SLIDER_TRACK = "relative h-2 w-full rounded-inset bg-well inset-shadow-track";
 

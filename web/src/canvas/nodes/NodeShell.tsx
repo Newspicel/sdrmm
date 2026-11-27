@@ -23,6 +23,7 @@ import { activityText, idlePort, usePortActivity } from "../../lib/activity";
 import { kindLabel } from "../../lib/eventKinds";
 import { rem, useUiScale } from "../../lib/prefs";
 import { ignoredOf, useNodeProblems } from "../../lib/resolved";
+import { useTouch } from "../../lib/touch";
 import type { NodeCategory, PatchNode, PortSpec, PortType } from "../../lib/types";
 import { portKey, useWiringStore } from "../../lib/wiring";
 import { HUE_TEXT, portHue } from "../../sinks/hues";
@@ -274,7 +275,7 @@ function FramedShell({
             minHeight={minimum.h * scale}
             autoScale={false}
             lineClassName="!border-accent/40"
-            handleClassName="!size-2 !rounded-inset !border-accent !bg-panel"
+            handleClassName="!size-2 !rounded-inset !border-accent !bg-panel touch:before:absolute touch:before:-inset-3"
           />
         )}
         <Inspect node={node.id} slot="head">
@@ -573,7 +574,7 @@ function PortHandle({
         style={{ top: offset }}
         title={refusal ?? description}
         aria-label={`${out ? "output" : "input"} ${description}`}
-        className={`!size-3 !border-0 !bg-transparent transition-opacity duration-150 ${color} ${
+        className={`!size-3 !border-0 !bg-transparent touch:before:absolute touch:before:-inset-2 transition-opacity duration-150 ${color} ${
           waiting ? "pointer-events-none opacity-0" : idlePort(activity) ? "opacity-45" : ""
         }`}
       >
@@ -603,10 +604,13 @@ export function FaceBody({
   scroll?: boolean;
   title?: string;
 }) {
+  const touch = useTouch();
   return (
     <div
       title={title}
-      className={`flex min-h-0 flex-1 flex-col overflow-x-hidden ${scroll ? "overflow-y-auto" : ""}`}
+      className={`flex min-h-0 flex-1 flex-col overflow-x-hidden ${scroll ? "overflow-y-auto" : ""} ${
+        scroll && touch ? "nodrag nopan" : ""
+      }`}
     >
       {children}
     </div>

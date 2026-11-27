@@ -3,6 +3,8 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/base.css";
 
+@custom-variant touch (&:where([data-touch], [data-touch] *));
+
 @theme static {
   --color-bg: oklch(0.135 0.014 252);
   --color-panel: oklch(0.195 0.015 252);

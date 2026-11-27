@@ -10,6 +10,7 @@ import {
   niceStep,
   offsetToSpan,
   panView,
+  pinchView,
   spanToView,
   viewToSpan,
   viewWidth,
@@ -88,6 +89,37 @@ describe("wheelView", () => {
   it("treats a diagonal tie as a zoom", () => {
     const view = wheelView(FULL_VIEW, { deltaX: -50, deltaY: -50 }, 0.5, 400);
     expect(viewWidth(view)).toBeCloseTo(1 / 1.2, 10);
+  });
+});
+
+describe("pinchView", () => {
+  const zoomed = zoomView(FULL_VIEW, 0.5, 4);
+
+  it("zooms in as the fingers spread", () => {
+    const view = pinchView(FULL_VIEW, { a: 0.4, b: 0.6 }, { a: 0.3, b: 0.7 });
+    expect(viewWidth(view)).toBeCloseTo(0.5, 10);
+  });
+
+  it("zooms out as the fingers close", () => {
+    const view = pinchView(zoomed, { a: 0.3, b: 0.7 }, { a: 0.4, b: 0.6 });
+    expect(viewWidth(view)).toBeCloseTo(0.5, 10);
+  });
+
+  it("keeps the frequency between the fingers under them", () => {
+    const before = viewToSpan(zoomed, 0.4);
+    const view = pinchView(zoomed, { a: 0.3, b: 0.5 }, { a: 0.2, b: 0.6 });
+    expect(viewToSpan(view, 0.4)).toBeCloseTo(before, 10);
+  });
+
+  it("pans when both fingers slide together", () => {
+    const view = pinchView(zoomed, { a: 0.4, b: 0.6 }, { a: 0.2, b: 0.4 });
+    expect(view.start - zoomed.start).toBeCloseTo(0.2 * 0.25, 10);
+    expect(viewWidth(view)).toBeCloseTo(viewWidth(zoomed), 10);
+  });
+
+  it("clamps at full span and survives fingers that touch", () => {
+    expect(isFullView(pinchView(zoomed, { a: 0.3, b: 0.7 }, { a: 0.5, b: 0.5 }))).toBe(true);
+    expect(pinchView(zoomed, { a: 0.5, b: 0.5 }, { a: 0.5, b: 0.5 })).toEqual(zoomed);
   });
 });
 

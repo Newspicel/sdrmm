@@ -164,7 +164,7 @@ function Digit({
         disabled={disabled}
         data-place={digit.place}
         aria-label={`${10 ** digit.place} hertz digit`}
-        className={`relative min-h-7 overflow-hidden rounded-inset px-0.5 tabular-nums transition-colors duration-100 pointer-coarse:min-h-10 ${DIGIT_SIZE} ${
+        className={`relative min-h-7 overflow-hidden rounded-inset px-0.5 tabular-nums transition-colors duration-100 touch:min-h-10 ${DIGIT_SIZE} ${
           armed === null ? "" : armed > 0 ? "cursor-n-resize" : "cursor-s-resize"
         } ${
           armed !== null || active

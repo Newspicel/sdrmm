@@ -321,7 +321,7 @@ function ColumnHandle({
       aria-orientation="vertical"
       aria-label={`Resize ${label} column`}
       tabIndex={0}
-      className="group absolute inset-y-0 -right-[5px] z-10 flex w-[9px] cursor-col-resize touch-none justify-center focus-visible:outline-none"
+      className="group absolute inset-y-0 -right-[5px] z-10 flex w-[9px] cursor-col-resize touch-none justify-center focus-visible:outline-none touch:before:absolute touch:before:inset-y-0 touch:before:-inset-x-2"
       onPointerDown={(event) => {
         event.preventDefault();
         event.stopPropagation();

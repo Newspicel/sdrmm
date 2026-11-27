@@ -233,7 +233,7 @@ function WorkspaceRow({
       >
         {workspace.nodes}
       </span>
-      <span className="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within:opacity-100 group-hover:opacity-100">
+      <span className="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
         <Button
           type="button"
           className={ICON_BTN_SM}

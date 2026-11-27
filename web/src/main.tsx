@@ -4,6 +4,7 @@ import { adoptUrlToken } from "./lib/auth";
 import { installGlobalHandlers } from "./lib/diagnostics";
 import { initPrefs } from "./lib/prefs";
 import { initTheme } from "./lib/theme";
+import { initTouch } from "./lib/touch";
 import { createQueryClient, Root } from "./Root";
 import "@fontsource-variable/jetbrains-mono";
 import "./index.css";
@@ -11,6 +12,7 @@ import "./index.css";
 adoptUrlToken(window.location, window.history);
 initTheme();
 initPrefs();
+initTouch(window);
 installGlobalHandlers(window);
 
 const rootEl = document.getElementById("root");

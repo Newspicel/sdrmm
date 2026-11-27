@@ -34,6 +34,7 @@ import {
   within,
 } from "../lib/remembered";
 import { useCanEdit } from "../lib/role";
+import { useTouch } from "../lib/touch";
 import type { ClientCommand, PatchGraph, PatchNode, Pointer } from "../lib/types";
 import { CanvasPalette, type ScreenPoint } from "./CanvasPalette";
 import { useClipboard } from "./clipboard";
@@ -78,11 +79,14 @@ export function isViewport(value: unknown): value is Viewport {
 }
 
 const DELETE_KEYS = ["Backspace", "Delete"];
+const MOUSE_REACH = 20;
+const TOUCH_REACH = 40;
 
 export function Canvas() {
   const workspace = useWorkspaceContext();
   const grid = useGridStep();
   const scale = useUiScale();
+  const touch = useTouch();
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<FlowData>>(
     toFlowNodes(workspace.graph, scale),
   );
@@ -90,47 +94,19 @@ export function Canvas() {
     toFlowEdges(workspace.graph, workspace.context),
   );
 
-  const pasted = useRef<ReadonlySet<string>>(new Set());
+  const { held, heldScale, markPasted } = useGraphSync(
+    workspace.graph,
+    workspace.context,
+    scale,
+    setNodes,
+    setEdges,
+  );
   const selection = nodes.filter((node) => node.selected).map((node) => node.id);
   useClipboard(
     workspace,
     selection.length > 0 ? selection : workspace.selected === null ? [] : [workspace.selected],
-    useCallback((ids: readonly string[]) => {
-      pasted.current = new Set(ids);
-    }, []),
+    markPasted,
   );
-
-  const held = useRef<PatchGraph>(workspace.graph);
-  const heldScale = useRef(scale);
-  const context = workspace.context;
-  useEffect(() => {
-    if (sameGraph(held.current, workspace.graph) && heldScale.current === scale) {
-      setEdges((previous) => keptEdges(previous, toFlowEdges(workspace.graph, context)));
-      return;
-    }
-    held.current = workspace.graph;
-    heldScale.current = scale;
-    const fresh = pasted.current;
-    const arrived = workspace.graph.nodes.some((node) => fresh.has(node.id));
-    if (arrived) {
-      pasted.current = new Set();
-    }
-    setNodes((previous) => {
-      const mountedById = new Map(previous.map((node) => [node.id, node]));
-      return toFlowNodes(workspace.graph, scale).map((node) => {
-        const mounted = mountedById.get(node.id);
-        const selected = arrived ? fresh.has(node.id) : (mounted?.selected ?? false);
-        if (mounted === undefined) {
-          return { ...node, selected };
-        }
-        const position = mounted.dragging === true ? mounted.position : node.position;
-        return sameFlowNode(mounted, node, position, selected)
-          ? mounted
-          : { ...mounted, ...node, position, selected };
-      });
-    });
-    setEdges((previous) => keptEdges(previous, toFlowEdges(workspace.graph, context)));
-  }, [workspace.graph, context, scale, setNodes, setEdges]);
 
   const focus = workspace.selected;
   useEffect(() => {
@@ -150,7 +126,7 @@ export function Canvas() {
       return;
     }
     edit((snapshot) => ({ ...snapshot, graph: withGeometry(snapshot.graph, moved) }));
-  }, [edit]);
+  }, [edit, held, heldScale]);
 
   const publish = usePointer(workspace.socket);
   usePublishSelection(publish, selection.length > 0 ? selection : [workspace.selected ?? ""]);
@@ -224,6 +200,7 @@ export function Canvas() {
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         isValidConnection={isValidConnection}
+        connectionRadius={touch ? TOUCH_REACH : MOUSE_REACH}
         onPaneClick={() => {
           workspace.select(null);
           workspace.inspect(null);
@@ -284,6 +261,50 @@ export function Canvas() {
 }
 
 /** Tells peers which nodes this operator has selected, once per change. */
+function useGraphSync(
+  graph: PatchGraph,
+  context: Parameters<typeof toFlowEdges>[1],
+  scale: number,
+  setNodes: ReturnType<typeof useNodesState<Node<FlowData>>>[1],
+  setEdges: ReturnType<typeof useEdgesState>[1],
+) {
+  const pasted = useRef<ReadonlySet<string>>(new Set());
+  const held = useRef<PatchGraph>(graph);
+  const heldScale = useRef(scale);
+  useEffect(() => {
+    if (sameGraph(held.current, graph) && heldScale.current === scale) {
+      setEdges((previous) => keptEdges(previous, toFlowEdges(graph, context)));
+      return;
+    }
+    held.current = graph;
+    heldScale.current = scale;
+    const fresh = pasted.current;
+    const arrived = graph.nodes.some((node) => fresh.has(node.id));
+    if (arrived) {
+      pasted.current = new Set();
+    }
+    setNodes((previous) => {
+      const mountedById = new Map(previous.map((node) => [node.id, node]));
+      return toFlowNodes(graph, scale).map((node) => {
+        const mounted = mountedById.get(node.id);
+        const selected = arrived ? fresh.has(node.id) : (mounted?.selected ?? false);
+        if (mounted === undefined) {
+          return { ...node, selected };
+        }
+        const position = mounted.dragging === true ? mounted.position : node.position;
+        return sameFlowNode(mounted, node, position, selected)
+          ? mounted
+          : { ...mounted, ...node, position, selected };
+      });
+    });
+    setEdges((previous) => keptEdges(previous, toFlowEdges(graph, context)));
+  }, [graph, context, scale, setNodes, setEdges]);
+  const markPasted = useCallback((ids: readonly string[]) => {
+    pasted.current = new Set(ids);
+  }, []);
+  return { held, heldScale, markPasted };
+}
+
 function usePublishSelection(publish: ReturnType<typeof usePointer>, selected: readonly string[]) {
   const key = selected.filter((id) => id !== "").join("\n");
   useEffect(() => {

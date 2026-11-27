@@ -1,7 +1,9 @@
 import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useState } from "react";
 import {
+  type FingerPair,
   isFullView,
   panView,
+  pinchView,
   type SpectrumView,
   spanToOffset,
   viewToSpan,
@@ -26,6 +28,11 @@ interface Gesture {
   centerHz: number;
   sentHz: number | null;
   sentAt: number;
+}
+
+interface Pinch {
+  view: SpectrumView;
+  from: FingerPair;
 }
 
 export interface ScopePreview {
@@ -63,6 +70,8 @@ export function useScopeGesture(input: {
 }): ScopeGesture {
   const { plotRef, active, meta, channels, levels, display, hoverRef, tuning } = input;
   const gestureRef = useRef<Gesture | null>(null);
+  const touches = useRef(new Map<number, number>());
+  const pinchRef = useRef<Pinch | null>(null);
   const [preview, setPreview] = useState<ScopePreview | null>(null);
   const [panning, setPanning] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -78,12 +87,61 @@ export function useScopeGesture(input: {
     return rect === undefined || rect.width === 0 ? 0 : (clientX - rect.left) / rect.width;
   };
 
+  const fingers = (): FingerPair | null => {
+    const [a, b] = [...touches.current.values()];
+    return a === undefined || b === undefined
+      ? null
+      : { a: pointerFraction(a), b: pointerFraction(b) };
+  };
+
+  const touchDown = (event: ReactPointerEvent<HTMLDivElement>): boolean => {
+    if (event.pointerType !== "touch") {
+      return false;
+    }
+    touches.current.set(event.pointerId, event.clientX);
+    const from = fingers();
+    if (from === null) {
+      return false;
+    }
+    gestureRef.current = null;
+    setPanning(false);
+    setPreview(null);
+    pinchRef.current ??= { view: display.view, from };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    return true;
+  };
+
+  const touchMove = (event: ReactPointerEvent<HTMLDivElement>): boolean => {
+    if (!touches.current.has(event.pointerId)) {
+      return false;
+    }
+    touches.current.set(event.pointerId, event.clientX);
+    const pinch = pinchRef.current;
+    const to = fingers();
+    if (pinch === null || to === null) {
+      return false;
+    }
+    display.setView(pinchView(pinch.view, pinch.from, to));
+    return true;
+  };
+
+  const touchUp = (event: ReactPointerEvent<HTMLDivElement>): boolean => {
+    touches.current.delete(event.pointerId);
+    if (pinchRef.current === null) {
+      return false;
+    }
+    if (touches.current.size < 2) {
+      pinchRef.current = null;
+    }
+    return true;
+  };
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const plot = plotRef.current;
     if (!active || event.button !== 0 || plot === null || meta === null || spanHz <= 0) {
       return;
     }
-    if (!onPlotSurface(event.target, plot)) {
+    if (!onPlotSurface(event.target, plot) || touchDown(event)) {
       return;
     }
     const rect = plot.getBoundingClientRect();
@@ -138,7 +196,7 @@ export function useScopeGesture(input: {
         : null,
     );
     const gesture = gestureRef.current;
-    if (gesture === null) {
+    if (touchMove(event) || gesture === null) {
       return;
     }
     if (!gesture.moved && Math.abs(event.clientX - gesture.pointerX) < DRAG_SLOP_PX) {
@@ -188,6 +246,9 @@ export function useScopeGesture(input: {
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (touchUp(event)) {
+      return;
+    }
     const gesture = gestureRef.current;
     gestureRef.current = null;
     setPanning(false);
