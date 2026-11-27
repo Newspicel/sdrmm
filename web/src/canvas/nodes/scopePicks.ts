@@ -15,6 +15,7 @@ export interface ScopePicks {
   menu: Opened | null;
   picker: ScopePick | null;
   onContextMenu: (event: React.MouseEvent<HTMLDivElement>) => void;
+  openAt: (clientX: number, clientY: number) => void;
   pickChannel: () => void;
   closeMenu: () => void;
   closePicker: () => void;
@@ -25,13 +26,25 @@ export function useScopePicks(input: {
   active: boolean;
   meta: FrameMeta | null;
   view: SpectrumView;
-  pointerFraction: (clientX: number) => number;
 }): ScopePicks {
-  const { plotRef, active, meta, view, pointerFraction } = input;
+  const { plotRef, active, meta, view } = input;
   const [menu, setMenu] = useState<Opened | null>(null);
   const [picker, setPicker] = useState<{ pick: ScopePick; frame: string } | null>(null);
   const frame = `${meta?.centerHz}:${meta?.spanHz}:${view.start}:${view.end}`;
   const open = menu?.frame === frame ? menu : null;
+
+  const openAt = (clientX: number, clientY: number): void => {
+    const rect = plotRef.current?.getBoundingClientRect();
+    if (!active || meta === null || rect === undefined || rect.width === 0) {
+      return;
+    }
+    const at = (clientX - rect.left) / rect.width;
+    setMenu({
+      pick: pickAt(meta.centerHz, meta.spanHz, view, at),
+      at: { x: at, y: rect.height === 0 ? 0 : (clientY - rect.top) / rect.height },
+      frame,
+    });
+  };
 
   return {
     menu: open,
@@ -43,14 +56,9 @@ export function useScopePicks(input: {
       }
       event.preventDefault();
       event.stopPropagation();
-      const rect = plot.getBoundingClientRect();
-      const at = pointerFraction(event.clientX);
-      setMenu({
-        pick: pickAt(meta.centerHz, meta.spanHz, view, at),
-        at: { x: at, y: rect.height === 0 ? 0 : (event.clientY - rect.top) / rect.height },
-        frame,
-      });
+      openAt(event.clientX, event.clientY);
     },
+    openAt,
     pickChannel: () => {
       if (open !== null) {
         setPicker({ pick: open.pick, frame });

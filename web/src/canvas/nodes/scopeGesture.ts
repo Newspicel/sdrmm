@@ -1,4 +1,10 @@
-import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type FingerPair,
   isFullView,
@@ -18,6 +24,7 @@ import { dragTuneHz, markerAt, markerFrom } from "./scopePick";
 const DRAG_SLOP_PX = 4;
 const GRAB_PX = 12;
 const TUNE_THROTTLE_MS = 150;
+const HOLD_MS = 500;
 
 interface Gesture {
   pointerX: number;
@@ -51,6 +58,21 @@ export interface ScopeGesture {
   hover: (at: number | null) => void;
 }
 
+/// The click a browser sends after a held finger lifts would close the menu the hold opened.
+function swallowNextClick(target: Window): void {
+  const swallow = (event: MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    forget();
+  };
+  const forget = (): void => {
+    target.removeEventListener("click", swallow, { capture: true });
+    target.removeEventListener("pointerdown", forget, { capture: true });
+  };
+  target.addEventListener("click", swallow, { capture: true });
+  target.addEventListener("pointerdown", forget, { capture: true });
+}
+
 export function onPlotSurface(target: EventTarget | null, plot: HTMLElement): boolean {
   if (!(target instanceof Node) || !plot.contains(target)) {
     return false;
@@ -67,11 +89,13 @@ export function useScopeGesture(input: {
   display: ScopeDisplay;
   hoverRef: RefObject<number | null>;
   tuning: ScopeChannels;
+  onHold: (clientX: number, clientY: number) => void;
 }): ScopeGesture {
-  const { plotRef, active, meta, channels, levels, display, hoverRef, tuning } = input;
+  const { plotRef, active, meta, channels, levels, display, hoverRef, tuning, onHold } = input;
   const gestureRef = useRef<Gesture | null>(null);
   const touches = useRef(new Map<number, number>());
   const pinchRef = useRef<Pinch | null>(null);
+  const holdRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<ScopePreview | null>(null);
   const [panning, setPanning] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -85,6 +109,36 @@ export function useScopeGesture(input: {
   const pointerFraction = (clientX: number): number => {
     const rect = plotRef.current?.getBoundingClientRect();
     return rect === undefined || rect.width === 0 ? 0 : (clientX - rect.left) / rect.width;
+  };
+
+  const cancelHold = (): void => {
+    if (holdRef.current !== null) {
+      window.clearTimeout(holdRef.current);
+      holdRef.current = null;
+    }
+  };
+
+  useEffect(
+    () => () => {
+      if (holdRef.current !== null) {
+        window.clearTimeout(holdRef.current);
+      }
+    },
+    [],
+  );
+
+  /// A finger held still opens the pick menu, since touch has no right click.
+  const armHold = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.pointerType !== "touch") {
+      return;
+    }
+    const { clientX, clientY } = event;
+    holdRef.current = window.setTimeout(() => {
+      holdRef.current = null;
+      gestureRef.current = null;
+      swallowNextClick(window);
+      onHold(clientX, clientY);
+    }, HOLD_MS);
   };
 
   const fingers = (): FingerPair | null => {
@@ -104,6 +158,7 @@ export function useScopeGesture(input: {
       return false;
     }
     gestureRef.current = null;
+    cancelHold();
     setPanning(false);
     setPreview(null);
     pinchRef.current ??= { view: display.view, from };
@@ -162,6 +217,9 @@ export function useScopeGesture(input: {
       sentHz: null,
       sentAt: 0,
     };
+    if (grabbed === null) {
+      armHold(event);
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -203,6 +261,7 @@ export function useScopeGesture(input: {
       return;
     }
     gesture.moved = true;
+    cancelHold();
     if (gesture.channel !== null) {
       if (!tuning.heldChannel(gesture.channel)) {
         dragChannel(gesture, pointerFraction(event.clientX));
@@ -246,6 +305,7 @@ export function useScopeGesture(input: {
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    cancelHold();
     if (touchUp(event)) {
       return;
     }

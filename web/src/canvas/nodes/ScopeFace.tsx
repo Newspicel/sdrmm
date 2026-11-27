@@ -117,6 +117,13 @@ function Spectrum({
     densityRef,
   });
   const tuning = useScopeChannels({ node, set, source, channels, meta: feed.meta });
+  const picks = useScopePicks({
+    plotRef,
+    active,
+    meta: feed.meta,
+    view: display.view,
+  });
+
   const gesture = useScopeGesture({
     plotRef,
     active,
@@ -126,14 +133,7 @@ function Spectrum({
     display,
     hoverRef,
     tuning,
-  });
-
-  const picks = useScopePicks({
-    plotRef,
-    active,
-    meta: feed.meta,
-    view: display.view,
-    pointerFraction: gesture.pointerFraction,
+    onHold: picks.openAt,
   });
 
   const meta = feed.meta;
