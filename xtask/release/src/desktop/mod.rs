@@ -142,6 +142,28 @@ pub fn cef_dir(root: &Path, platform: &Platform) -> Result<PathBuf> {
     Ok(dir)
 }
 
+/// Desktop tests run from `target`, where no rpath reaches `libcef`, so the loader is pointed
+/// at the CEF build. macOS links the framework by path and needs nothing.
+pub fn cef_loader_path(
+    root: &Path,
+    triple: &str,
+    extra: &[PathBuf],
+) -> Result<Option<(&'static str, String)>> {
+    let platform = Platform::of(triple)?;
+    let var = match platform.os {
+        Os::Linux => "LD_LIBRARY_PATH",
+        Os::Windows => "PATH",
+        Os::Mac => return Ok(None),
+    };
+    let mut dirs = vec![cef_dir(root, &platform)?];
+    dirs.extend_from_slice(extra);
+    if let Some(existing) = std::env::var_os(var) {
+        dirs.extend(std::env::split_paths(&existing));
+    }
+    let joined = std::env::join_paths(dirs).context("join the loader path")?;
+    Ok(Some((var, joined.to_string_lossy().into_owned())))
+}
+
 pub fn cef_version(lock: &str) -> Result<&str> {
     let mut lines = lock.lines();
     lines

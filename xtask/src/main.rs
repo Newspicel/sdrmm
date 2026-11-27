@@ -919,26 +919,46 @@ fn desktop(root: &Path, target: Option<&str>, bundles: Option<&str>, run: bool) 
     ensure_target(root, target)?;
     let cef = xtask_release::desktop::cef_path(root);
     let media = media_dir(root, target)?;
-    let env = [("CEF_PATH", utf8(&cef)?)];
-    for step in [&["clippy", "--all-targets"][..], &["test"][..]] {
-        let features = release_features();
-        let mut args = step.to_vec();
-        args.extend([
-            "-p",
-            "sdrmm-desktop",
-            &features[0],
-            &features[1],
-            &features[2],
-        ]);
-        if let Some(triple) = target {
-            args.extend(["--target", triple]);
-        }
-        if step[0] == "clippy" {
-            args.extend(["--", "-D", "warnings"]);
-        }
-        xtask_release::media::run_against_media_with(&args, root, media.as_deref(), &env)?;
+    let mut env = vec![("CEF_PATH", utf8(&cef)?.to_owned())];
+    desktop_cargo(
+        root,
+        &["clippy", "--all-targets"],
+        target,
+        media.as_deref(),
+        &env,
+    )?;
+    let triple = target.map_or_else(xtask_release::media::host_triple, |t| Ok(t.to_owned()))?;
+    let media_lib: Vec<PathBuf> = media.iter().map(|dir| dir.join("lib")).collect();
+    env.extend(xtask_release::desktop::cef_loader_path(
+        root, &triple, &media_lib,
+    )?);
+    desktop_cargo(root, &["test"], target, media.as_deref(), &env)
+}
+
+fn desktop_cargo(
+    root: &Path,
+    step: &[&str],
+    target: Option<&str>,
+    media: Option<&Path>,
+    env: &[(&str, String)],
+) -> Result<()> {
+    let features = release_features();
+    let mut args = step.to_vec();
+    args.extend([
+        "-p",
+        "sdrmm-desktop",
+        &features[0],
+        &features[1],
+        &features[2],
+    ]);
+    if let Some(triple) = target {
+        args.extend(["--target", triple]);
     }
-    Ok(())
+    if step[0] == "clippy" {
+        args.extend(["--", "-D", "warnings"]);
+    }
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    xtask_release::media::run_against_media_with(&args, root, media, &env)
 }
 
 fn perf(root: &Path) -> Result<()> {
