@@ -388,8 +388,13 @@ impl EventKindEntry {
     }
 
     #[must_use]
-    pub fn sighting(mut self) -> Self {
-        self.lifetime = Lifetime::Sighting { ttl_s: SIGHTING_S };
+    pub fn sighting(self) -> Self {
+        self.sighting_for(SIGHTING_S)
+    }
+
+    #[must_use]
+    pub fn sighting_for(mut self, ttl_s: u32) -> Self {
+        self.lifetime = Lifetime::Sighting { ttl_s };
         self
     }
 
@@ -526,6 +531,12 @@ impl KindSpecBuilder {
     #[must_use]
     pub fn sighting(mut self) -> Self {
         self.entry = self.entry.sighting();
+        self
+    }
+
+    #[must_use]
+    pub fn sighting_for(mut self, ttl_s: u32) -> Self {
+        self.entry = self.entry.sighting_for(ttl_s);
         self
     }
 

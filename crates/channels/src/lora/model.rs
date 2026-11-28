@@ -1046,11 +1046,14 @@ impl EventPayload for LoraFrame {
     }
 }
 
+/// Mesh nodes advertise hours apart (`MeshCore` floods every 12 h), so a node stays on the map a day.
+const MESH_NODE_TTL_S: u32 = 24 * 60 * 60;
+
 pub(crate) fn lora_kind() -> KindSpec {
     KindSpec::of::<LoraFrame>("LoRa", "Nodes", Hue::Green)
         .caps(&[Capability::Log, Capability::Station, Capability::Geo])
         .symbol(Symbol::NODE)
-        .sighting()
+        .sighting_for(MESH_NODE_TTL_S)
         .view(KindView::table(&[
             "protocol",
             "sf",
@@ -1073,6 +1076,7 @@ impl sdrmm_wire::DecoderSettings for LoraParams {
 #[cfg(test)]
 mod model_tests {
     use super::*;
+    use sdrmm_wire::Lifetime;
     use sdrmm_wire::present::count;
 
     use sdrmm_wire::IdentReport;
@@ -1414,5 +1418,13 @@ mod model_tests {
                 sdrmm_wire::DecoderEvent::of(&telemetry),
             ],
         );
+    }
+
+    #[test]
+    fn a_mesh_node_outlives_its_advert_interval() {
+        let Lifetime::Sighting { ttl_s } = lora_kind().entry.lifetime else {
+            panic!("lora nodes age out");
+        };
+        assert!(ttl_s >= 12 * 60 * 60);
     }
 }
