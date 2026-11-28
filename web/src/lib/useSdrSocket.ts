@@ -34,6 +34,7 @@ import { usePositionStore } from "./position";
 import { authorKey, savedName, usePresenceStore } from "./presence";
 import { useProcessorStore } from "./processors";
 import { useReadouts } from "./readouts";
+import { refresh, refreshKey } from "./refresh";
 import { observeResolved } from "./resolved";
 import { useRotatorStore } from "./rotator";
 import { useSatelliteStore } from "./satellite";
@@ -173,7 +174,7 @@ export function useSdrSocket(queryClient: QueryClient, workspaceError: string | 
   return { socket, retrySocket };
 }
 export function invalidateReads(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === "get" });
+  refresh(queryClient, "reads", { predicate: (query) => query.queryKey[0] === "get" });
 }
 
 export function invalidateScope(queryClient: QueryClient, scope: StateScope): void {
@@ -182,47 +183,47 @@ export function invalidateScope(queryClient: QueryClient, scope: StateScope): vo
       invalidateReads(queryClient);
       break;
     case "devices":
-      void queryClient.invalidateQueries({ queryKey: STATE_KEY });
-      void queryClient.invalidateQueries({ queryKey: DEVICES_KEY });
-      void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
+      refreshKey(queryClient, STATE_KEY);
+      refreshKey(queryClient, DEVICES_KEY);
+      refreshKey(queryClient, TEMPLATES_KEY);
       break;
     case "device_set":
     case "arrays":
-      void queryClient.invalidateQueries({ queryKey: STATE_KEY });
+      refreshKey(queryClient, STATE_KEY);
       break;
     case "presets":
-      void queryClient.invalidateQueries({ queryKey: PRESETS_KEY });
+      refreshKey(queryClient, PRESETS_KEY);
       break;
     case "bookmarks":
-      void queryClient.invalidateQueries({ queryKey: BOOKMARKS_KEY });
+      refreshKey(queryClient, BOOKMARKS_KEY);
       break;
     case "saved_radios":
-      void queryClient.invalidateQueries({ queryKey: SAVED_RADIOS_KEY });
+      refreshKey(queryClient, SAVED_RADIOS_KEY);
       break;
     case "recordings":
-      void queryClient.invalidateQueries({ queryKey: RECORDINGS_KEY });
-      void queryClient.invalidateQueries({ queryKey: AUDIO_RECORDINGS_KEY });
+      refreshKey(queryClient, RECORDINGS_KEY);
+      refreshKey(queryClient, AUDIO_RECORDINGS_KEY);
       break;
     case "workspaces":
-      void queryClient.invalidateQueries({ queryKey: WORKSPACES_KEY });
+      refreshKey(queryClient, WORKSPACES_KEY);
       break;
     case "workspace":
-      void queryClient.invalidateQueries({ queryKey: [...WORKSPACES_KEY, scope.id], exact: true });
+      refreshKey(queryClient, [...WORKSPACES_KEY, scope.id], true);
       break;
     case "decoder_log":
-      void queryClient.invalidateQueries({ queryKey: DECODER_LOG_KEY });
+      refreshKey(queryClient, DECODER_LOG_KEY);
       break;
     case "images":
       break;
     case "phones":
-      void queryClient.invalidateQueries({ queryKey: PHONES_KEY });
+      refreshKey(queryClient, PHONES_KEY);
       break;
     case "missions":
       break;
     case "decoders":
-      void queryClient.invalidateQueries({ queryKey: CHANNEL_TYPES_KEY });
-      void queryClient.invalidateQueries({ queryKey: ENCODER_TYPES_KEY });
-      void queryClient.invalidateQueries({ queryKey: PATCH_CATALOG_KEY });
+      refreshKey(queryClient, CHANNEL_TYPES_KEY);
+      refreshKey(queryClient, ENCODER_TYPES_KEY);
+      refreshKey(queryClient, PATCH_CATALOG_KEY);
       break;
   }
 }

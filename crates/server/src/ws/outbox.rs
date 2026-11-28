@@ -8,7 +8,6 @@ use axum::extract::ws::Message;
 use sdrmm_wire::{FrameError, FrameKind};
 use tokio::sync::Notify;
 
-const CONTROL_LIMIT: usize = 64;
 const BYTE_LIMIT: usize = 16 * 1024 * 1024;
 const FRAME_LIMIT: usize = 8 * 1024 * 1024;
 const AUDIO_AGE: Duration = Duration::from_millis(100);
@@ -16,7 +15,11 @@ const MEDIA_AGE: Duration = Duration::from_millis(250);
 const AUDIO_LIMIT: usize = 256;
 const MEDIA_LIMIT: usize = 128;
 pub(super) const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+/// A control message waiting this long means the client stopped reading. A count would also
+/// trip on a burst, as a large patch sends when it starts.
+const CONTROL_AGE: Duration = Duration::from_secs(5);
 const STREAM_STOPPED_PREFIX: &str = r#"{"type":"StreamStopped""#;
+const STATE_CHANGED_PREFIX: &str = r#"{"type":"StateChanged""#;
 
 #[derive(serde::Deserialize)]
 struct StoppedStream {
@@ -33,6 +36,8 @@ struct Packet {
     queued: Instant,
     key: Option<(u8, u16)>,
     barrier: Option<u16>,
+    /// A refetch hint: one still queued already covers the same one sent again.
+    refetch: bool,
 }
 
 #[derive(Default)]
@@ -81,11 +86,13 @@ fn packet(message: Message) -> Packet {
         }
         _ => None,
     };
+    let refetch = matches!(&message, Message::Text(text) if text.starts_with(STATE_CHANGED_PREFIX));
     Packet {
         message,
         queued: Instant::now(),
         key,
         barrier,
+        refetch,
     }
 }
 
@@ -121,9 +128,16 @@ impl Queue {
         self.expire(packet.queued);
         let len = packet.len();
         if packet.key.is_none() {
-            if self.control.len() >= CONTROL_LIMIT || len > BYTE_LIMIT {
+            if len > BYTE_LIMIT || self.control_stalled(packet.queued) {
+                tracing::warn!(
+                    queued = self.control.len(),
+                    "client stopped reading; closing"
+                );
                 self.closed = true;
                 return Err(());
+            }
+            if self.queued_already(&packet) {
+                return Ok(());
             }
             while self.bytes + len > BYTE_LIMIT {
                 let Some(old) = self.media.pop_front().or_else(|| self.audio.pop_front()) else {
@@ -160,6 +174,20 @@ impl Queue {
         self.bytes += len;
         queue.push_back(packet);
         Ok(())
+    }
+
+    fn control_stalled(&self, now: Instant) -> bool {
+        self.control
+            .front()
+            .is_some_and(|oldest| now.duration_since(oldest.queued) > CONTROL_AGE)
+    }
+
+    fn queued_already(&self, packet: &Packet) -> bool {
+        packet.refetch
+            && self
+                .control
+                .iter()
+                .any(|held| held.refetch && held.message == packet.message)
     }
 
     fn push_pointer(&mut self, peer: u32, packet: Packet) -> Result<(), ()> {
@@ -367,7 +395,7 @@ mod tests {
     #[tokio::test]
     async fn a_pointer_keeps_only_its_latest_position_and_never_closes_the_socket() {
         let (tx, mut rx) = channel();
-        for step in 0..(CONTROL_LIMIT * 4) {
+        for step in 0..256 {
             tx.send_pointer(1, Message::Text(format!("a{step}").into()))
                 .expect("pointer");
         }
@@ -375,7 +403,7 @@ mod tests {
             .expect("pointer");
         tx.send(Message::Text("control".into())).expect("control");
         assert_eq!(rx.recv().await, Some(Message::Text("control".into())));
-        let last = format!("a{}", CONTROL_LIMIT * 4 - 1);
+        let last = format!("a{}", 256 - 1);
         assert_eq!(rx.recv().await, Some(Message::Text(last.into())));
         assert_eq!(rx.recv().await, Some(Message::Text("b".into())));
         assert!(rx.try_recv().is_err());
@@ -404,24 +432,54 @@ mod tests {
     }
 
     #[test]
-    fn stale_audio_is_discarded_and_control_congestion_closes_the_connection() {
+    fn stale_audio_is_discarded_and_a_stalled_client_closes_the_connection() {
         let mut queue = Queue::default();
         let mut old = packet(media(FrameKind::AudioOpus, 1, 0));
         old.queued -= AUDIO_AGE * 2;
         queue.push(old).expect("audio");
         assert!(queue.pop().is_none());
         assert_eq!(queue.dropped, 1);
-        for _ in 0..CONTROL_LIMIT {
-            queue
-                .push(packet(Message::Text("x".into())))
-                .expect("control");
-        }
+        let mut waiting = packet(Message::Text("x".into()));
+        waiting.queued -= CONTROL_AGE * 2;
+        queue.push(waiting).expect("control");
         assert!(
             queue
                 .push(packet(Message::Text("overflow".into())))
                 .is_err()
         );
         assert!(queue.closed);
+    }
+
+    fn state_changed(scope: sdrmm_wire::StateScope) -> Message {
+        let event = sdrmm_wire::ServerEvent::StateChanged { scope };
+        Message::Text(serde_json::to_string(&event).expect("json").into())
+    }
+
+    #[test]
+    fn a_burst_of_control_keeps_the_connection_and_queues_each_refetch_once() {
+        let mut queue = Queue::default();
+        for step in 0..1000 {
+            queue
+                .push(packet(Message::Text(format!("event {step}").into())))
+                .expect("burst");
+            queue
+                .push(packet(state_changed(sdrmm_wire::StateScope::DeviceSet(9))))
+                .expect("refetch");
+        }
+        queue
+            .push(packet(state_changed(sdrmm_wire::StateScope::Arrays)))
+            .expect("other scope");
+        assert!(!queue.closed);
+        assert_eq!(queue.control.len(), 1002);
+        assert_eq!(queue.pop(), Some(Message::Text("event 0".into())));
+        assert_eq!(
+            queue.pop(),
+            Some(state_changed(sdrmm_wire::StateScope::DeviceSet(9)))
+        );
+        queue
+            .push(packet(state_changed(sdrmm_wire::StateScope::DeviceSet(9))))
+            .expect("sent one is not held");
+        assert_eq!(queue.control.len(), 1001);
     }
 
     #[test]
