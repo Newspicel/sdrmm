@@ -115,7 +115,7 @@ impl Channel for RadioClockChannel {
 
     fn process(&mut self, iq: &[Complex<f32>], out: &mut ChannelOutputs) {
         for sample in iq {
-            self.push(sample.norm(), out);
+            self.push(sample.norm_sqr().sqrt(), out);
         }
     }
 }
@@ -148,15 +148,14 @@ impl RadioClockChannel {
     }
 
     fn debounce(&mut self, raw: bool) -> bool {
-        if raw == self.held {
-            self.disagreeing = 0;
+        let disagreeing = if raw == self.held {
+            0
         } else {
-            self.disagreeing += 1;
-            if self.disagreeing >= DEBOUNCE {
-                self.held = raw;
-                self.disagreeing = 0;
-            }
-        }
+            self.disagreeing + 1
+        };
+        let flip = disagreeing >= DEBOUNCE;
+        self.held ^= flip;
+        self.disagreeing = if flip { 0 } else { disagreeing };
         self.held
     }
 
@@ -172,29 +171,20 @@ impl RadioClockChannel {
         if !magnitude.is_finite() {
             return;
         }
-        self.low = if magnitude < self.low {
-            magnitude
-        } else {
-            self.low + (magnitude - self.low) * 0.000_001
-        };
-        self.high = if magnitude > self.high {
-            magnitude
-        } else {
-            self.high + (magnitude - self.high) * 0.000_001
-        };
+        self.low = magnitude.min(self.low + (magnitude - self.low) * 0.000_001);
+        self.high = magnitude.max(self.high + (magnitude - self.high) * 0.000_001);
         let (enter, leave) = match self.standard {
             RadioClockStandard::Jjy => (0.2, 0.35),
             _ => (0.35, 0.6),
         };
         let span = self.high - self.low;
-        if span > self.high * MIN_CONTRAST {
-            let level = (magnitude - self.low) / span;
-            self.reduced = if self.reduced {
-                level < leave
-            } else {
-                level < enter
-            };
-        }
+        let threshold = if self.reduced { leave } else { enter };
+        let level = (magnitude - self.low) / span;
+        self.reduced = if span > self.high * MIN_CONTRAST {
+            level < threshold
+        } else {
+            self.reduced
+        };
         let normally_active = match self.standard {
             RadioClockStandard::Jjy => !self.reduced,
             _ => self.reduced,

@@ -4011,7 +4011,7 @@
       "hue": "green",
       "lifetime": {
         "type": "sighting",
-        "ttl_s": 300
+        "ttl_s": 86400
       },
       "verifies": true,
       "views": [
