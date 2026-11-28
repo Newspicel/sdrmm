@@ -65,6 +65,19 @@ describe("sink feeds", () => {
     expect(next.lost).toBe(2);
   });
 
+  it("clears a node's view but keeps its lost count", () => {
+    useSinkStore.setState({
+      sinks: {
+        readout: { ...EMPTY_SINK, entities: [plane("north")], lost: 3 },
+        other: { ...EMPTY_SINK, entities: [plane("south")] },
+      },
+    });
+    useSinkStore.getState().clear("readout");
+    const { sinks } = useSinkStore.getState();
+    expect(sinks.readout).toEqual({ ...EMPTY_SINK, lost: 3 });
+    expect(sinks.other?.entities).toHaveLength(1);
+  });
+
   it("drops tracks only when an update says the list is empty", () => {
     const track = { source: "gps", trail: [] };
     const tracked = updatedView(EMPTY_SINK, { tracks: [track], lost: 0 });

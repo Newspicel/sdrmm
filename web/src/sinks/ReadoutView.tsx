@@ -1,12 +1,8 @@
 import { useLayoutEffect, useRef } from "react";
 import { FaceWell } from "../canvas/nodes/NodeShell";
-import { Button } from "../components/BaseControls";
-import { BTN } from "../components/controls";
 import { buildTranscript, fieldColumns, isAtBottom } from "../components/decoderViews";
-import { copyText } from "../lib/copyText";
 import { kindHas, kindLabel, kindViews, useEventKinds } from "../lib/eventKinds";
 import { groupsOf, type SinkGroup, type SinkView } from "../lib/sinks";
-import { toastError } from "../lib/toasts";
 import type { CapturedImage, EventKindEntry } from "../lib/types";
 import { Fields } from "./Fields";
 import { FileView } from "./FileView";
@@ -106,19 +102,7 @@ function Transcript({ group }: { group: SinkGroup }) {
 
   return (
     <div className={PANE}>
-      <div className="flex items-center gap-3">
-        <Fields fields={group.records[0]?.view?.fields ?? []} />
-        <Button
-          type="button"
-          className={`${BTN} ml-auto`}
-          disabled={text === ""}
-          onClick={() => {
-            copyText(text).catch(toastError);
-          }}
-        >
-          Copy all
-        </Button>
-      </div>
+      <Fields fields={group.records[0]?.view?.fields ?? []} />
       <pre
         ref={paneRef}
         tabIndex={0}

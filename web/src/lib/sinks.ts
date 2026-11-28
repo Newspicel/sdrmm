@@ -103,6 +103,7 @@ interface SinkStore {
   sinks: Readonly<Record<string, SinkView>>;
   observe: (event: ServerEvent) => void;
   forget: (node: string) => void;
+  clear: (node: string) => void;
   reset: () => void;
 }
 
@@ -124,6 +125,10 @@ export const useSinkStore = create<SinkStore>((set) => ({
       const { [node]: _gone, ...rest } = state.sinks;
       return { sinks: rest };
     }),
+  clear: (node) =>
+    set((state) => ({
+      sinks: { ...state.sinks, [node]: { ...EMPTY_SINK, lost: state.sinks[node]?.lost ?? 0 } },
+    })),
   reset: () => set({ sinks: {} }),
 }));
 

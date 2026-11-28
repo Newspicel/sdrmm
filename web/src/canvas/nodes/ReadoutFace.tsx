@@ -2,6 +2,7 @@ import { useFeeds } from "../../lib/resolved";
 import { useSinkFeed } from "../../lib/sinks";
 import type { PatchNode } from "../../lib/types";
 import { useNow } from "../../lib/useNow";
+import { ReadoutInspector } from "../../sinks/ReadoutInspector";
 import { ReadoutView } from "../../sinks/ReadoutView";
 import { useWorkspaceSelect, type Workspace } from "../context";
 import { FaceBody, FaceWell, NodeShell } from "./NodeShell";
@@ -14,6 +15,7 @@ export function ReadoutFace({ node }: { node: PatchNode }) {
   const sourceName = (source: string): string => labels[source] ?? source;
   return (
     <NodeShell node={node} title="Readout" category="output">
+      <ReadoutInspector node={node.id} feed={feed} sourceName={sourceName} now={now} />
       <FaceBody>
         {feeds.length === 0 ? (
           <FaceWell />

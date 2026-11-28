@@ -131,7 +131,7 @@ describe("readout", () => {
     });
     expect(html).toContain("CQ CQ DE DL1ABC");
     expect(html).toContain("22 WPM");
-    expect(html).toContain("Copy all");
+    expect(html).not.toContain("Copy all");
   });
 
   it("shows the pictures a picture kind's decoder captured", () => {
